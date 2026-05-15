@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json.schemastore.org/releaserc.json",
+  "releaseBranchPrefix": "release/v",
+  "mainBranch": "main",
+  "runTests": true,
+  "runBuild": true,
+  "generateChangelog": true,
+  "createTag": true,
+  "pushToRemote": true,
+  "requireCleanWorkingDirectory": true,
+  "preReleaseHooks": {
+    "beforeTests": [],
+    "beforeBuild": [],
+    "beforeVersionBump": [],
+    "beforeChangelog": [],
+    "beforeCommit": [],
+    "beforeTag": [],
+    "beforePush": []
+  },
+  "postReleaseHooks": {
+    "afterPush": [],
+    "onSuccess": [],
+    "onError": []
+  },
+  "changelog": {
+    "includeAuthor": true,
+    "includeHash": true,
+    "includeDate": true,
+    "groupByType": true,
+    "showBreakingChanges": true,
+    "showContributors": true
+  },
+  "git": {
+    "commitMessageTemplate": "chore(release): bump version to {version}",
+    "tagMessageTemplate": "Release {version}",
+    "requireSignedCommits": false,
+    "requireSignedTags": false
+  },
+  "npm": {
+    "publish": false,
+    "registry": "https://registry.npmjs.org/",
+    "access": "public",
+    "tag": "latest"
+  },
+  "github": {
+    "createRelease": false,
+    "draft": false,
+    "prerelease": false,
+    "includeChangelog": true
+  }
+}

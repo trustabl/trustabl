@@ -21,11 +21,11 @@ func PredHasParams(t models.ToolDef) bool {
 }
 
 func PredHasTypedParams(t models.ToolDef) bool {
-	return t.HasInputSchema
+	return t.HasTypedParams
 }
 
 func PredHasRaise(t models.ToolDef, pf analysis.ParsedFile) bool {
-	root := findFunctionNode(t, pf)
+	root := analysis.FindFunctionNode(t, pf)
 	if root == nil {
 		return false
 	}
@@ -33,7 +33,7 @@ func PredHasRaise(t models.ToolDef, pf analysis.ParsedFile) bool {
 }
 
 func PredHasTryExcept(t models.ToolDef, pf analysis.ParsedFile) bool {
-	root := findFunctionNode(t, pf)
+	root := analysis.FindFunctionNode(t, pf)
 	if root == nil {
 		return false
 	}
@@ -41,7 +41,7 @@ func PredHasTryExcept(t models.ToolDef, pf analysis.ParsedFile) bool {
 }
 
 func PredHasShellCall(t models.ToolDef, pf analysis.ParsedFile) bool {
-	root := findFunctionNode(t, pf)
+	root := analysis.FindFunctionNode(t, pf)
 	if root == nil {
 		return false
 	}
@@ -68,7 +68,7 @@ func PredHasShellCall(t models.ToolDef, pf analysis.ParsedFile) bool {
 }
 
 func PredHasWriteCall(t models.ToolDef, pf analysis.ParsedFile) bool {
-	root := findFunctionNode(t, pf)
+	root := analysis.FindFunctionNode(t, pf)
 	if root == nil {
 		return false
 	}
@@ -109,7 +109,7 @@ func PredHasWriteCall(t models.ToolDef, pf analysis.ParsedFile) bool {
 }
 
 func PredHasDynamicURLCall(t models.ToolDef, pf analysis.ParsedFile) bool {
-	root := findFunctionNode(t, pf)
+	root := analysis.FindFunctionNode(t, pf)
 	if root == nil {
 		return false
 	}
@@ -125,7 +125,7 @@ func PredHasDynamicURLCall(t models.ToolDef, pf analysis.ParsedFile) bool {
 		if fn == nil {
 			return true
 		}
-		if !isHTTPCall(astutil.NodeText(fn, pf.Source)) {
+		if !analysis.IsHTTPCall(astutil.NodeText(fn, pf.Source)) {
 			return true
 		}
 		args := n.ChildByFieldName("arguments")
@@ -173,7 +173,7 @@ func PredNameHasPrefix(prefixes []string, t models.ToolDef) bool {
 }
 
 func PredHasBodyText(needles []string, t models.ToolDef, pf analysis.ParsedFile) bool {
-	root := findFunctionNode(t, pf)
+	root := analysis.FindFunctionNode(t, pf)
 	if root == nil {
 		return false
 	}
@@ -216,7 +216,7 @@ func PredParamNameMatches(expr ParamNameMatchExpr, t models.ToolDef) bool {
 // ─── call-site predicates ─────────────────────────────────────────────────────
 
 func PredCallWithoutKwarg(expr CallWithoutKwargExpr, t models.ToolDef, pf analysis.ParsedFile) bool {
-	root := findFunctionNode(t, pf)
+	root := analysis.FindFunctionNode(t, pf)
 	if root == nil {
 		return false
 	}
@@ -239,7 +239,7 @@ func PredCallWithoutKwarg(expr CallWithoutKwargExpr, t models.ToolDef, pf analys
 		if _, ok := calleeSet[astutil.NodeText(fn, pf.Source)]; !ok {
 			return true
 		}
-		if !hasKwarg(n, pf.Source, expr.Missing) {
+		if !astutil.HasKwarg(n, pf.Source, expr.Missing) {
 			found = true
 		}
 		return !found
@@ -248,7 +248,7 @@ func PredCallWithoutKwarg(expr CallWithoutKwargExpr, t models.ToolDef, pf analys
 }
 
 func PredCallWithKwargValue(expr CallWithKwargValueExpr, t models.ToolDef, pf analysis.ParsedFile) bool {
-	root := findFunctionNode(t, pf)
+	root := analysis.FindFunctionNode(t, pf)
 	if root == nil {
 		return false
 	}
@@ -304,14 +304,142 @@ func PredCallWithKwargValue(expr CallWithKwargValueExpr, t models.ToolDef, pf an
 	return found
 }
 
+// PredCallUsesUnnormalizedPathParam mirrors the per-param CSDK-004 detector:
+// fires when a path-like parameter flows to an I/O call AND that specific
+// param has not been normalized (.resolve()/realpath()) earlier in the
+// function. Returns true on the first unsafe pairing.
+func PredCallUsesUnnormalizedPathParam(expr CallUsesUnnormalizedPathParamExpr, t models.ToolDef, pf analysis.ParsedFile) bool {
+	root := analysis.FindFunctionNode(t, pf)
+	if root == nil {
+		return false
+	}
+	pathish := map[string]bool{}
+	for _, p := range t.ParamNames {
+		if analysis.IsPathishParam(p) {
+			pathish[p] = true
+		}
+	}
+	if len(pathish) == 0 {
+		return false
+	}
+	normalized := normalizedPathParams(root, pf.Source, pathish)
+
+	calleeSet := make(map[string]struct{}, len(expr.Callees))
+	for _, c := range expr.Callees {
+		calleeSet[c] = struct{}{}
+	}
+	found := false
+	astutil.Walk(root, func(n *sitter.Node) bool {
+		if found {
+			return false
+		}
+		if n.Type() != "call" {
+			return true
+		}
+		fn := n.ChildByFieldName("function")
+		if fn == nil {
+			return true
+		}
+		callee := astutil.NodeText(fn, pf.Source)
+		matches := false
+		if _, ok := calleeSet[callee]; ok {
+			matches = true
+		}
+		if !matches {
+			for _, pref := range expr.CalleePrefixes {
+				if strings.HasPrefix(callee, pref) {
+					matches = true
+					break
+				}
+			}
+		}
+		if !matches {
+			return true
+		}
+		args := n.ChildByFieldName("arguments")
+		if args == nil {
+			return true
+		}
+		astutil.Walk(args, func(arg *sitter.Node) bool {
+			if found {
+				return false
+			}
+			if arg.Type() != "identifier" {
+				return true
+			}
+			name := astutil.NodeText(arg, pf.Source)
+			if pathish[name] && !normalized[name] {
+				found = true
+				return false
+			}
+			return true
+		})
+		return !found
+	})
+	return found
+}
+
+// normalizedPathParams returns the set of pathish identifier names that
+// appear as the receiver of .resolve() or as the argument to realpath()
+// inside fn. Mirrors the discovery logic in the original CSDK-004 detector.
+func normalizedPathParams(fn *sitter.Node, src []byte, pathish map[string]bool) map[string]bool {
+	out := map[string]bool{}
+	astutil.Walk(fn, func(n *sitter.Node) bool {
+		if n.Type() != "call" {
+			return true
+		}
+		fnNode := n.ChildByFieldName("function")
+		if fnNode == nil {
+			return true
+		}
+		callee := astutil.NodeText(fnNode, src)
+		if callee == "realpath" || callee == "os.path.realpath" {
+			if args := n.ChildByFieldName("arguments"); args != nil {
+				count := int(args.NamedChildCount())
+				for i := 0; i < count; i++ {
+					c := args.NamedChild(i)
+					if c.Type() == "identifier" {
+						name := astutil.NodeText(c, src)
+						if pathish[name] {
+							out[name] = true
+							break
+						}
+					}
+				}
+			}
+			return true
+		}
+		if fnNode.Type() == "attribute" {
+			attr := fnNode.ChildByFieldName("attribute")
+			if attr != nil && astutil.NodeText(attr, src) == "resolve" {
+				obj := fnNode.ChildByFieldName("object")
+				if obj != nil {
+					astutil.Walk(obj, func(m *sitter.Node) bool {
+						if m.Type() != "identifier" {
+							return true
+						}
+						name := astutil.NodeText(m, src)
+						if pathish[name] {
+							out[name] = true
+						}
+						return true
+					})
+				}
+			}
+		}
+		return true
+	})
+	return out
+}
+
 func PredCallUsesParam(expr CallUsesParamExpr, t models.ToolDef, pf analysis.ParsedFile) bool {
-	root := findFunctionNode(t, pf)
+	root := analysis.FindFunctionNode(t, pf)
 	if root == nil {
 		return false
 	}
 	pathish := make(map[string]struct{})
 	for _, p := range t.ParamNames {
-		if isPathishParam(p) {
+		if analysis.IsPathishParam(p) {
 			pathish[p] = struct{}{}
 		}
 	}
@@ -368,74 +496,3 @@ func PredCallUsesParam(expr CallUsesParamExpr, t models.ToolDef, pf analysis.Par
 	return found
 }
 
-// ─── helpers ──────────────────────────────────────────────────────────────────
-
-func findFunctionNode(t models.ToolDef, pf analysis.ParsedFile) *sitter.Node {
-	if pf.Tree == nil {
-		return nil
-	}
-	var match *sitter.Node
-	astutil.Walk(pf.Tree.RootNode(), func(n *sitter.Node) bool {
-		if match != nil {
-			return false
-		}
-		if n.Type() != "function_definition" {
-			return true
-		}
-		if astutil.NodeLine(n) == t.Line && astutil.FunctionName(n, pf.Source) == t.Name {
-			match = n
-			return false
-		}
-		return true
-	})
-	return match
-}
-
-func hasKwarg(call *sitter.Node, src []byte, name string) bool {
-	args := call.ChildByFieldName("arguments")
-	if args == nil {
-		return false
-	}
-	found := false
-	astutil.Walk(args, func(n *sitter.Node) bool {
-		if n.Type() != "keyword_argument" {
-			return true
-		}
-		k := n.ChildByFieldName("name")
-		if k != nil && astutil.NodeText(k, src) == name {
-			found = true
-			return false
-		}
-		return true
-	})
-	return found
-}
-
-func isHTTPCall(callee string) bool {
-	switch callee {
-	case "requests.get", "requests.post", "requests.put", "requests.delete",
-		"requests.patch", "requests.head", "requests.request",
-		"requests.Session.get", "requests.Session.post",
-		"httpx.get", "httpx.post", "httpx.put", "httpx.delete",
-		"httpx.patch", "httpx.head", "httpx.request",
-		"httpx.AsyncClient", "httpx.Client",
-		"urllib.request.urlopen", "aiohttp.ClientSession.get",
-		"aiohttp.ClientSession.post":
-		return true
-	}
-	return false
-}
-
-func isPathishParam(name string) bool {
-	lower := strings.ToLower(name)
-	switch lower {
-	case "path", "file", "filename", "filepath", "dir", "directory":
-		return true
-	}
-	return strings.HasSuffix(lower, "_path") ||
-		strings.HasSuffix(lower, "_file") ||
-		strings.HasSuffix(lower, "_dir") ||
-		strings.HasSuffix(lower, "_directory") ||
-		strings.HasPrefix(lower, "file_") ||
-		strings.HasPrefix(lower, "path_")
-}

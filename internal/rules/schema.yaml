@@ -1,0 +1,211 @@
+# karenctl rule schema — annotated reference
+#
+# This file documents every field accepted by the YAML rules engine. It is
+# DOCUMENTATION, not a runtime policy: it lives outside policies/ so the
+# embed directive (//go:embed all:policies) and the loader never see it.
+#
+# To author a new rule:
+#   1. Read this file end-to-end.
+#   2. Copy fields from the annotated example below into a new entry under
+#      internal/rules/policies/<category>/<topic>.yaml.
+#   3. Use the predicate reference (bottom of this file) to express your
+#      match condition.
+#
+# Source of truth for the schema is internal/rules/schema.go. If a struct
+# field there does not match this file, schema.go wins — and this file is
+# wrong, fix it.
+
+
+# ─── annotated example ──────────────────────────────────────────────────────
+# A complete, valid policy file with every commonly-used field shown. Copy
+# from this; lint with `yq` or `python -c "import yaml,sys; yaml.safe_load(sys.stdin)"`
+# if you want to be sure a paste is well-formed.
+
+policy:
+  id: claude_sdk_network                    # REQUIRED. lowercase_underscored. file-level identifier;
+                                            # surfaces only in error messages, not in detection.
+                                            # Convention: <category>_<topic>.
+
+  name: Network call hygiene                # REQUIRED. Human title. Reserved for future UX surfaces.
+
+  category: claude_sdk                      # REQUIRED. Allowed: claude_sdk | openshell.
+                                            # Inherited by every rule in this file.
+
+  description: >                            # REQUIRED. Multi-line ok. Describe the policy's intent.
+    Rules that govern outbound network calls made from inside agent tools.
+    The SDK does not enforce reliability guarantees on its own — these
+    checks make sure tool authors set them explicitly.
+
+rules:
+  - id: CSDK-003                            # REQUIRED. GLOBALLY UNIQUE across every file in policies/.
+                                            # Convention: <CATEGORY-NNN>. Treat as immutable once shipped —
+                                            # downstream consumers cite IDs.
+
+    title: Network call has no timeout      # REQUIRED. Short human title shown in scan output.
+
+    severity: high                          # REQUIRED. info | low | medium | high | critical.
+                                            # Drives scoring weight (models.SeverityWeight) and the CLI
+                                            # exit code (medium+ → exit 1; --strict treats any as failure).
+
+    confidence: 0.85                        # REQUIRED. (0, 1]. Probability the match is a real problem
+                                            # vs. a false positive. Multiplies severity in scoring.
+                                            # Loader rejects values <= 0.
+
+    language: python                        # OPTIONAL (default: python). Source language this rule
+                                            # targets. Allowed: python | typescript | javascript | go.
+                                            # A rule only fires against tools whose Language matches.
+                                            # Today only Python tools are discovered (no TS parser
+                                            # plumbed in), so non-python rules will be inert until
+                                            # the corresponding language parser ships. Future TS/JS/Go
+                                            # rules MUST set this explicitly.
+
+    applies_to:                             # REQUIRED. Non-empty list of ToolKind strings:
+      - claude_sdk_tool                     #   claude_sdk_tool   — @tool / @claude_tool / claude_agent_sdk
+      - mcp_tool                            #   mcp_tool          — @server.tool / @mcp.tool / .register_tool
+                                            #   shell_invocation  — bare functions calling subprocess.* / os.system
+                                            #   unknown           — fallback; rarely useful
+
+    singleton: false                        # OPTIONAL (default false). If true, the rule fires AT MOST
+                                            # once per scan, against the first applicable tool. Use for
+                                            # manifest-level checks ("no resource limits configured")
+                                            # whose finding does not vary per tool. Pair with `match: {}`
+                                            # to fire unconditionally.
+
+    match:                                  # REQUIRED. Predicate expression. See the reference section
+                                            # below the example for the full vocabulary.
+      call_without_kwarg:
+        callees: [requests.get, requests.post]
+        missing: timeout
+
+    explanation: >                          # REQUIRED. Multi-paragraph explanation shown to the user.
+      An agent tool that makes a network request without a timeout can hang
+      indefinitely, blocking the conversation loop and exhausting the
+      agent's wall-clock budget. The SDK does not enforce timeouts for you.
+
+    fix: >                                  # REQUIRED. Concrete remediation instruction.
+      Pass `timeout=` (typically 5–30s) to the request. Surface failures
+      as a structured error the model can react to.
+
+    fix_hints:                              # OPTIONAL. Free-form keys consumed by the generators.
+                                            # Unknown keys are ignored. Common keys:
+      hook: pretooluse_validate             #   hook: <name>          — opts the finding into hook generation
+      guard: timeout_required               #   guard: <name>         — generator-specific guard
+                                            #   policy_emit: <kind>   — opts into OpenShell policy generation
+                                            #   policy_action: <kind> — generator-specific policy action
+                                            #   inject_idempotency: true
+
+
+# ─── predicate reference ────────────────────────────────────────────────────
+#
+# `match:` is a recursive MatchExpr. SEMANTICS:
+#
+#   • Every set field on a node is conjoined (logical AND). A node with two
+#     predicates means "BOTH must hold".
+#   • An empty `match: {}` is vacuously true. Useful with singleton rules.
+#   • Combinators (all/any/not) recurse into sub-expressions.
+#
+# The vocabulary below is exhaustive. If you need something not listed,
+# extend MatchExpr in schema.go AND add a Pred* in predicates.go AND wire it
+# in evaluator.go AND document it here. Never invent a YAML key — the loader
+# uses KnownFields(true) and rejects unknowns immediately.
+#
+#
+# ━━━ COMBINATORS ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#
+#   all: [<expr>, <expr>, ...]
+#       Every sub-expression must match. Equivalent to listing predicates
+#       inline at the same level; use for clarity in complex rules.
+#
+#   any: [<expr>, <expr>, ...]
+#       At least one sub-expression must match.
+#
+#   not: <expr>
+#       Negate the sub-expression. Common: `not: { has_try_except: true }`.
+#
+#
+# ━━━ BOOL PREDICATES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#
+# Each is a tri-state: omitted = "don't check", true = "must have it",
+# false = "must NOT have it". The pointer typing in MatchExpr is what makes
+# this distinction work.
+#
+#   has_docstring:          tool has a non-empty docstring
+#   has_params:             tool has at least one parameter (excluding self/cls)
+#   has_typed_params:       at least one parameter is type-annotated
+#   has_raise:              body contains a `raise` statement
+#   has_try_except:         body contains a try/except block
+#   has_shell_call:         body calls subprocess.* / os.system / os.popen
+#   has_write_call:         body opens a file 'w'/'a'/'x', or shutil.copy/copy2/move/rmtree
+#   has_dynamic_url_call:   HTTP call where the URL is a non-literal (param/f-string)
+#   always:                 sentinel — `false` matches nothing; `true` is a no-op
+#                           (an empty match{} is already vacuously true)
+#
+#
+# ━━━ STRING-LIST PREDICATES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#
+#   name_in: [name, name, ...]
+#       Tool name (case-insensitive) is exactly one of the listed names.
+#
+#   name_has_prefix: [prefix, prefix, ...]
+#       Tool name (case-insensitive) starts with any listed prefix.
+#
+#   has_body_text: [substring, substring, ...]
+#       The function body's raw text contains any listed substring. Use
+#       sparingly — substring matching is brittle vs AST-based predicates.
+#       Useful when you need to detect a known constant by name.
+#
+#
+# ━━━ NESTED STRUCT PREDICATES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#
+#   param_name_matches:
+#       Match any parameter name against any of the listed patterns. Sub-
+#       fields are OR'd within the predicate.
+#
+#       exact:    [path, file]           exact match (case-insensitive)
+#       contains: [idempot]              substring match (case-insensitive)
+#       suffixes: [_path, _dir]          whole-suffix match (case-insensitive)
+#       prefixes: [file_, path_]         whole-prefix match (case-insensitive)
+#
+#
+#   call_without_kwarg:
+#       Fires if a call to one of `callees` is missing the named kwarg.
+#
+#       callees: [requests.get, requests.post, ...]   REQUIRED. Exact callee text.
+#       missing: timeout                              REQUIRED. The kwarg name.
+#
+#
+#   call_with_kwarg_value:
+#       Fires if a matching call has kwarg == value (literal text comparison
+#       against the source — booleans are written as the strings "True"/"False").
+#       Use either callees, callee_prefix, or both.
+#
+#       callees:       [os.system]       OPTIONAL. Exact-match list.
+#       callee_prefix: subprocess.       OPTIONAL. Prefix match.
+#       kwarg:         shell             REQUIRED.
+#       value:         "True"            REQUIRED. Literal text — quote bool/None.
+#
+#
+#   call_uses_param:
+#       Body-wide path-flow check. Fires when ANY pathish param flows into
+#       a matching call AND .resolve()/realpath() does NOT appear anywhere
+#       in the body. COARSE: a single body-wide normalization suppresses the
+#       rule even if some other param is unresolved.
+#
+#       callees:         [open, Path]    OPTIONAL. Exact-match callees.
+#       callee_prefixes: [shutil., os.]  OPTIONAL. Prefix-match callees.
+#
+#       "Pathish" parameters are determined by analysis.IsPathishParam:
+#       names like path/file/dir, suffixes _path/_file/_dir/_directory,
+#       prefixes file_/path_. Word-boundary; `editor_id` does not match.
+#
+#
+#   call_uses_unnormalized_path_param:
+#       Per-param path-flow check. Like call_uses_param, but tracks WHICH
+#       params have been normalized — fires only on params that flow into a
+#       matching call AND have NOT been .resolve()'d / realpath()'d in the
+#       same function. PREFER THIS over call_uses_param for path-safety
+#       rules; it avoids the false-negative where one normalized param
+#       suppresses findings on an unrelated unnormalized one.
+#
+#       callees:         [open, Path]    OPTIONAL. Exact-match callees.
+#       callee_prefixes: [shutil., os.]  OPTIONAL. Prefix-match callees.

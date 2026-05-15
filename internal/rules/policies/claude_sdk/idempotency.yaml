@@ -1,0 +1,49 @@
+policy:
+  id: claude_sdk_idempotency
+  name: Mutating-tool idempotency
+  category: claude_sdk
+  description: >
+    Rules that flag mutating tools (create/send/refund/...) without an
+    idempotency key. Agents retry tool calls under timeouts and ambiguous
+    failures; without a key the same action can fire twice.
+
+rules:
+  - id: CSDK-006
+    title: Mutating tool has no idempotency key
+    severity: medium
+    confidence: 0.55
+    language: python
+    applies_to:
+      - claude_sdk_tool
+      - mcp_tool
+    singleton: false
+    match:
+      all:
+        - name_has_prefix:
+            - create_
+            - send_
+            - delete_
+            - post_
+            - update_
+            - refund_
+            - charge_
+            - issue_
+        - not:
+            param_name_matches:
+              contains:
+                - idempot
+              exact:
+                - request_id
+                - txn_id
+    explanation: >
+      Tool name suggests a side effect (create/send/refund/…). Agents retry
+      tool calls under timeouts and ambiguous failures; without an
+      idempotency key the same action can fire twice. The hook generator can
+      stamp a key into the request, but the downstream service has to honor
+      it.
+    fix: >
+      Add an `idempotency_key: str` parameter; verify the receiving API
+      respects it.
+    fix_hints:
+      hook: pretooluse_validate
+      inject_idempotency: true

@@ -1,0 +1,33 @@
+policy:
+  id: claude_sdk_error_handling
+  name: Error contract hygiene
+  category: claude_sdk
+  description: >
+    Rules covering how a tool surfaces failures back to the model. Raising
+    raw exceptions yields opaque error strings that the model cannot branch
+    on intelligently.
+
+rules:
+  - id: CSDK-005
+    title: Tool raises exceptions without a structured error contract
+    severity: medium
+    confidence: 0.6
+    language: python
+    applies_to:
+      - claude_sdk_tool
+      - mcp_tool
+    singleton: false
+    match:
+      all:
+        - has_raise: true
+        - has_try_except: false
+    explanation: >
+      When a tool raises, the SDK surfaces the exception to the model as an
+      opaque string. The model often cannot recover or retry intelligently.
+      Returning a structured error object lets the model branch on the
+      failure mode.
+    fix: >
+      Catch known failure modes and return a `{"error": ..., "retryable": bool}`
+      payload.
+    fix_hints:
+      wrap_errors: true

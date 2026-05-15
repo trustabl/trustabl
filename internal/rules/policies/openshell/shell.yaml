@@ -1,0 +1,64 @@
+policy:
+  id: openshell_shell
+  name: Shell-invocation safety
+  category: openshell
+  description: >
+    Rules covering subprocess and shell invocations from agent tools.
+    OpenShell can constrain these at the sandbox layer, but only if the
+    surface is identifiable in code.
+
+rules:
+  - id: OSH-001
+    title: subprocess called with shell=True
+    severity: critical
+    confidence: 0.99
+    language: python
+    applies_to:
+      - claude_sdk_tool
+      - mcp_tool
+      - shell_invocation
+    singleton: false
+    match:
+      call_with_kwarg_value:
+        callee_prefix: subprocess.
+        kwarg: shell
+        value: "True"
+    explanation: >
+      `shell=True` invokes the system shell to interpret the command string,
+      which means any model-controlled substring becomes a shell injection
+      vector. The OpenShell sandbox cannot fully constrain this — moving to a
+      list-form invocation is required, not optional.
+    fix: >
+      Pass the command as a list and remove `shell=True`. Encode any user
+      data as a positional argument, never via string interpolation.
+    fix_hints:
+      policy_action: deny_shell_true
+
+  - id: OSH-002
+    title: Shell invocation without an allowed-command list
+    severity: high
+    confidence: 0.85
+    language: python
+    applies_to:
+      - claude_sdk_tool
+      - mcp_tool
+      - shell_invocation
+    singleton: false
+    match:
+      all:
+        - has_shell_call: true
+        - not:
+            has_body_text:
+              - ALLOWED_COMMANDS
+              - allowlist
+              - ALLOWED_CMDS
+    explanation: >
+      The tool shells out but does not constrain which binaries can be
+      invoked. Even with `shell=False`, an unconstrained `argv[0]` lets the
+      model invoke arbitrary installed binaries. OpenShell can enforce an
+      allowlist at the sandbox layer.
+    fix: >
+      Define a constant ALLOWED_COMMANDS and assert argv[0] is in it. The
+      generated OpenShell policy will also include a command allowlist.
+    fix_hints:
+      policy_emit: command_allowlist

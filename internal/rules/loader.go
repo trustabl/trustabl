@@ -4,20 +4,37 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"sort"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 
 	"github.com/trustabl/karenctl/internal/models"
 )
 
-// Load reads all .yaml files from fsys, unmarshals and validates each, and
-// returns all policy files. All errors are collected — not fail-fast — so a
+// Load walks fsys recursively, decodes every .yaml file, validates it, and
+// returns the collected policies. All errors are batched (not fail-fast) so a
 // contributor sees every problem in one run.
+//
+// Recursive walk supports the by-category directory layout
+// (e.g. policies/claude_sdk/*.yaml, policies/openshell/*.yaml). The flat
+// layout still works — fs.WalkDir at "." is a strict superset of fs.Glob.
 func Load(fsys fs.FS) ([]PolicyFile, error) {
-	entries, err := fs.Glob(fsys, "*.yaml")
-	if err != nil {
-		return nil, fmt.Errorf("glob: %w", err)
+	var entries []string
+	if err := fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() && strings.HasSuffix(path, ".yaml") {
+			entries = append(entries, path)
+		}
+		return nil
+	}); err != nil {
+		return nil, fmt.Errorf("walk: %w", err)
 	}
+	// Sort for deterministic load order — matters for the duplicate-rule-ID
+	// "previously defined in" message and for any stable iteration downstream.
+	sort.Strings(entries)
 
 	var (
 		policies []PolicyFile
@@ -26,20 +43,12 @@ func Load(fsys fs.FS) ([]PolicyFile, error) {
 	)
 
 	for _, name := range entries {
-		f, err := fsys.Open(name)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("%s: open: %w", name, err))
-			continue
-		}
-		defer f.Close()
-
-		var pf PolicyFile
-		dec := yaml.NewDecoder(f)
-		dec.KnownFields(true)
-		decErr := dec.Decode(&pf)
-
+		// Per-file work in a closure so the file is closed at the end of each
+		// iteration, not deferred to the end of Load (which would leak fds
+		// proportional to the number of policy files).
+		pf, decErr := decodePolicyFile(fsys, name)
 		if decErr != nil {
-			errs = append(errs, fmt.Errorf("%s: decode: %w", name, decErr))
+			errs = append(errs, decErr)
 			continue
 		}
 
@@ -105,8 +114,23 @@ func Load(fsys fs.FS) ([]PolicyFile, error) {
 					seenIDs[rule.ID] = name
 				}
 			}
+			if rule.Language != "" {
+				switch rule.Language {
+				case models.LanguagePython, models.LanguageTypeScript,
+					models.LanguageJavaScript, models.LanguageGo:
+					// valid
+				default:
+					errs = append(errs, fmt.Errorf("%s: unknown language %q (allowed: python, typescript, javascript, go)", tag, rule.Language))
+				}
+			}
 			// Populate category from policy metadata — not in YAML.
 			pf.Rules[i].Category = models.DetectorCategory(pf.Policy.Category)
+			// Default language to python for backwards compatibility. Once
+			// we ship rules in a second language, the convention should shift
+			// to "language is required"; for now an omitted language is python.
+			if pf.Rules[i].Language == "" {
+				pf.Rules[i].Language = models.LanguagePython
+			}
 		}
 		policies = append(policies, pf)
 	}
@@ -115,4 +139,22 @@ func Load(fsys fs.FS) ([]PolicyFile, error) {
 		return nil, errors.Join(errs...)
 	}
 	return policies, nil
+}
+
+// decodePolicyFile opens, decodes, and closes one YAML file from fsys.
+// Returning errors as values rather than holding the fd open via defer keeps
+// the descriptor budget bounded by Load's iteration, not by total policy count.
+func decodePolicyFile(fsys fs.FS, name string) (PolicyFile, error) {
+	var pf PolicyFile
+	f, err := fsys.Open(name)
+	if err != nil {
+		return pf, fmt.Errorf("%s: open: %w", name, err)
+	}
+	defer f.Close()
+	dec := yaml.NewDecoder(f)
+	dec.KnownFields(true)
+	if err := dec.Decode(&pf); err != nil {
+		return pf, fmt.Errorf("%s: decode: %w", name, err)
+	}
+	return pf, nil
 }

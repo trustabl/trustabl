@@ -1,0 +1,83 @@
+policy:
+  id: claude_sdk_tool_definition
+  name: Tool definition hygiene
+  category: claude_sdk
+  description: >
+    Rules that govern how a Claude Agent SDK tool presents itself to the model
+    via name, description, and parameter shape. Violations degrade the model's
+    ability to select the right tool for a request.
+
+rules:
+  - id: CSDK-001
+    title: Tool has no description
+    severity: low
+    confidence: 0.95
+    language: python
+    applies_to:
+      - claude_sdk_tool
+      - mcp_tool
+    singleton: false
+    match:
+      has_docstring: false
+    explanation: >
+      The Claude Agent SDK uses the tool's docstring as the description shown
+      to the model. With no description, the model must guess from the
+      function name when to call this tool — which causes mis-selection under
+      ambiguous prompts.
+    fix: >
+      Add a one-paragraph docstring describing inputs, outputs, and when to
+      use this tool.
+    fix_hints:
+      add_docstring: true
+
+  - id: CSDK-002
+    title: Tool parameters are not type-annotated
+    severity: medium
+    confidence: 0.9
+    language: python
+    applies_to:
+      - claude_sdk_tool
+      - mcp_tool
+    singleton: false
+    match:
+      all:
+        - has_params: true
+        - has_typed_params: false
+    explanation: >
+      Without parameter type annotations, the SDK cannot generate an input
+      schema to validate model output. The model can hallucinate parameter
+      shapes the tool does not accept, and the failure surfaces at runtime as
+      a TypeError instead of a clean validation error pre-invocation.
+    fix: >
+      Annotate every parameter with a type. Prefer pydantic models for nested
+      args.
+    fix_hints:
+      add_input_schema: true
+
+  - id: CSDK-007
+    title: Ambiguous tool name
+    severity: low
+    confidence: 0.9
+    language: python
+    applies_to:
+      - claude_sdk_tool
+      - mcp_tool
+    singleton: false
+    match:
+      name_in:
+        - process
+        - handle
+        - run
+        - do
+        - execute
+        - perform
+        - work
+        - go
+        - thing
+        - stuff
+    explanation: >
+      Tool names like `process`, `handle`, or `run` give the model no signal
+      about intent. The model will either call this tool for the wrong job or
+      refuse to call it at all.
+    fix: >
+      Rename to a verb-object form, e.g. `summarize_invoice`, `refund_charge`.

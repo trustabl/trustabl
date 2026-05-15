@@ -1,0 +1,53 @@
+policy:
+  id: claude_sdk_network
+  name: Network call hygiene
+  category: claude_sdk
+  description: >
+    Rules covering outbound network calls made from inside agent tools. The
+    SDK does not enforce network reliability guarantees (timeouts, retries)
+    on its own — these checks make sure tool authors set them explicitly.
+
+rules:
+  - id: CSDK-003
+    title: Network call has no timeout
+    severity: high
+    confidence: 0.85
+    language: python
+    applies_to:
+      - claude_sdk_tool
+      - openai_tool
+      - mcp_tool
+    singleton: false
+    match:
+      call_without_kwarg:
+        callees:
+          - requests.get
+          - requests.post
+          - requests.put
+          - requests.delete
+          - requests.patch
+          - requests.head
+          - requests.request
+          - requests.Session.get
+          - requests.Session.post
+          - httpx.get
+          - httpx.post
+          - httpx.put
+          - httpx.delete
+          - httpx.patch
+          - httpx.head
+          - httpx.request
+          - urllib.request.urlopen
+          - aiohttp.ClientSession.get
+          - aiohttp.ClientSession.post
+        missing: timeout
+    explanation: >
+      An agent tool that makes a network request without a timeout can hang
+      indefinitely, blocking the conversation loop and exhausting the agent's
+      wall-clock budget. The SDK does not enforce timeouts for you.
+    fix: >
+      Pass `timeout=` (typically 5–30s) to the request. Surface failures as a
+      structured error the model can react to.
+    fix_hints:
+      hook: pretooluse_validate
+      guard: timeout_required

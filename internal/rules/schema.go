@@ -18,11 +18,13 @@ type PolicyMeta struct {
 
 // RuleDef is one rule entry inside a policy file.
 // Category is not in YAML — the loader copies it from PolicyMeta.Category.
+// Language defaults to "python" if absent in YAML — the loader fills it in.
 type RuleDef struct {
 	ID          string                  `yaml:"id"`
 	Title       string                  `yaml:"title"`
 	Severity    models.Severity         `yaml:"severity"`
 	Confidence  float64                 `yaml:"confidence"`
+	Language    models.Language         `yaml:"language,omitempty"`
 	AppliesTo   []string                `yaml:"applies_to"`
 	Singleton   bool                    `yaml:"singleton"`
 	Match       MatchExpr               `yaml:"match"`
@@ -56,10 +58,11 @@ type MatchExpr struct {
 	HasBodyText   []string `yaml:"has_body_text,omitempty"`
 
 	// Nested struct predicates
-	ParamNameMatches   *ParamNameMatchExpr     `yaml:"param_name_matches,omitempty"`
-	CallWithoutKwarg   *CallWithoutKwargExpr   `yaml:"call_without_kwarg,omitempty"`
-	CallWithKwargValue *CallWithKwargValueExpr `yaml:"call_with_kwarg_value,omitempty"`
-	CallUsesParam      *CallUsesParamExpr      `yaml:"call_uses_param,omitempty"`
+	ParamNameMatches              *ParamNameMatchExpr                 `yaml:"param_name_matches,omitempty"`
+	CallWithoutKwarg              *CallWithoutKwargExpr               `yaml:"call_without_kwarg,omitempty"`
+	CallWithKwargValue            *CallWithKwargValueExpr             `yaml:"call_with_kwarg_value,omitempty"`
+	CallUsesParam                 *CallUsesParamExpr                  `yaml:"call_uses_param,omitempty"`
+	CallUsesUnnormalizedPathParam *CallUsesUnnormalizedPathParamExpr  `yaml:"call_uses_unnormalized_path_param,omitempty"`
 }
 
 // ParamNameMatchExpr matches parameter names against exact/contains/suffix/prefix patterns.
@@ -85,7 +88,18 @@ type CallWithKwargValueExpr struct {
 }
 
 // CallUsesParamExpr fires when a matching call receives a path-like param as an arg.
+// Body-wide check: if .resolve()/realpath() appears anywhere, the rule is
+// suppressed entirely. For per-param fidelity use CallUsesUnnormalizedPathParamExpr.
 type CallUsesParamExpr struct {
+	Callees        []string `yaml:"callees,omitempty"`
+	CalleePrefixes []string `yaml:"callee_prefixes,omitempty"`
+}
+
+// CallUsesUnnormalizedPathParamExpr fires when a path-like param flows to an
+// I/O call AND that specific param has not been normalized
+// (.resolve()/realpath()) elsewhere in the function. Per-param: a tool with
+// two path params and one .resolve() still fires on the unresolved one.
+type CallUsesUnnormalizedPathParamExpr struct {
 	Callees        []string `yaml:"callees,omitempty"`
 	CalleePrefixes []string `yaml:"callee_prefixes,omitempty"`
 }
