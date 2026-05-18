@@ -15,7 +15,6 @@ rules:
     language: python
     applies_to:
       - openshell
-    singleton: true
     match: {}
     explanation: >
       The repo declares no OpenShell policy with cpu/memory/time limits. A

@@ -17,7 +17,6 @@ rules:
     applies_to:
       - claude_sdk_tool
       - mcp_tool
-    singleton: false
     match:
       has_docstring: false
     explanation: >
@@ -40,7 +39,6 @@ rules:
     applies_to:
       - claude_sdk_tool
       - mcp_tool
-    singleton: false
     match:
       all:
         - has_params: true
@@ -65,7 +63,6 @@ rules:
     applies_to:
       - claude_sdk_tool
       - mcp_tool
-    singleton: false
     match:
       name_in:
         - process

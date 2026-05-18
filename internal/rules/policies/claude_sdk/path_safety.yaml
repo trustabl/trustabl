@@ -17,7 +17,6 @@ rules:
     applies_to:
       - claude_sdk_tool
       - mcp_tool
-    singleton: false
     # call_uses_unnormalized_path_param is per-param: a tool with two path
     # params and one .resolve() correctly fires on the unresolved one. The
     # simpler call_uses_param suppresses the whole rule whenever any

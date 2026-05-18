@@ -8,9 +8,8 @@ import (
 	"github.com/trustabl/trustabl/internal/rules"
 )
 
-// loadRule fetches a single rule from the embedded policies and wraps it as
-// a Detector. Per-rule tests use this to exercise actual shipped YAML.
-func loadRule(t *testing.T, ruleID string) detectors.Detector {
+// loadToolRule fetches a tool-scoped rule from shipped policies as a ToolDetector.
+func loadToolRule(t *testing.T, ruleID string) detectors.ToolDetector {
 	t.Helper()
 	policies, err := rules.Load(rules.DefaultFS())
 	if err != nil {
@@ -18,24 +17,76 @@ func loadRule(t *testing.T, ruleID string) detectors.Detector {
 	}
 	for _, p := range policies {
 		for _, r := range p.Rules {
-			if r.ID == ruleID {
-				return rules.NewRuleDetector(r)
+			if r.ID == ruleID && r.Scope == models.ScopeTool {
+				return rules.NewToolRuleDetector(r)
 			}
 		}
 	}
-	t.Fatalf("rule %s not found in shipped policies", ruleID)
+	t.Fatalf("tool-scoped rule %s not found in shipped policies", ruleID)
 	return nil
 }
 
-// policyRuleCase is one fire-or-silent test against a shipped rule. Snippets
-// are deliberately small so the failure diagnostic points at exactly one
-// pattern. For predicate-level coverage see predicates_test.go.
+// loadAgentRule fetches an agent-scoped rule from shipped policies as an AgentDetector.
+func loadAgentRule(t *testing.T, ruleID string) detectors.AgentDetector {
+	t.Helper()
+	policies, err := rules.Load(rules.DefaultFS())
+	if err != nil {
+		t.Fatalf("load policies: %v", err)
+	}
+	for _, p := range policies {
+		for _, r := range p.Rules {
+			if r.ID == ruleID && r.Scope == models.ScopeAgent {
+				return rules.NewAgentRuleDetector(r)
+			}
+		}
+	}
+	t.Fatalf("agent-scoped rule %s not found in shipped policies", ruleID)
+	return nil
+}
+
+// loadRepoRule fetches a repo-scoped rule from shipped policies as a RepoDetector.
+func loadRepoRule(t *testing.T, ruleID string) detectors.RepoDetector {
+	t.Helper()
+	policies, err := rules.Load(rules.DefaultFS())
+	if err != nil {
+		t.Fatalf("load policies: %v", err)
+	}
+	for _, p := range policies {
+		for _, r := range p.Rules {
+			if r.ID == ruleID && r.Scope == models.ScopeRepo {
+				return rules.NewRepoRuleDetector(r)
+			}
+		}
+	}
+	t.Fatalf("repo-scoped rule %s not found in shipped policies", ruleID)
+	return nil
+}
+
+// policyRuleCase is one fire-or-silent test against a shipped tool-scoped rule.
 type policyRuleCase struct {
 	name      string          // test subname
 	ruleID    string          // YAML rule ID under test
 	kind      models.ToolKind // ToolKind for the synthetic tool
 	src       string          // Python snippet
 	wantFires bool            // expected: rule fires for this snippet
+}
+
+// policyAgentCase is one fire-or-silent test against a shipped agent-scoped rule.
+type policyAgentCase struct {
+	name      string
+	ruleID    string
+	agent     models.AgentDef
+	inv       models.RepoInventory
+	wantFires bool
+}
+
+// policyRepoCase is one fire-or-silent test against a shipped repo-scoped rule.
+type policyRepoCase struct {
+	name      string
+	ruleID    string
+	profile   models.RepoProfile
+	inv       models.RepoInventory
+	wantFires bool
 }
 
 var policyRuleCases = []policyRuleCase{
@@ -204,16 +255,6 @@ def read_output(name: str) -> str:
         return f.read()
 `, false},
 
-	// ─── OSH-004 no resource limits (repo-scoped) ───────────────────────────
-	// OSH-004 is scope:repo and applies_to:[openshell], so it never applies
-	// to an individual tool. The repo-scoped test driver (Task 45) covers it
-	// at the registry level; here we just satisfy AllRulesCovered.
-	{"OSH-004 does not apply to a tool", "OSH-004", models.KindClaudeSDKTool, `
-def some_tool(x: str) -> str:
-    """Does something."""
-    return x
-`, false},
-
 	// ─── OSH-005 broad network egress ───────────────────────────────────────
 	{"OSH-005 fires on dynamic URL", "OSH-005", models.KindClaudeSDKTool, `
 import requests
@@ -229,11 +270,25 @@ def fetch_resource() -> dict:
 `, false},
 }
 
+// policyRepoRuleCases covers repo-scoped rules.
+var policyRepoRuleCases = []policyRepoCase{
+	// ─── OSH-004 no resource limits (repo-scoped) ────────────────────────────
+	{"OSH-004 fires when openshell artifact present", "OSH-004",
+		models.RepoProfile{Manifest: models.ScanManifest{HasOpenShellArtifact: true}},
+		models.RepoInventory{SDKsDetected: []models.SDK{}, Manifest: models.ScanManifest{HasOpenShellArtifact: true}},
+		true},
+	{"OSH-004 silent when no openshell artifact", "OSH-004",
+		models.RepoProfile{},
+		models.RepoInventory{},
+		false},
+}
+
 func TestPolicyRules(t *testing.T) {
 	for _, tc := range policyRuleCases {
 		t.Run(tc.name, func(t *testing.T) {
-			d := loadRule(t, tc.ruleID)
+			d := loadToolRule(t, tc.ruleID)
 			tool, pf := parsePy(t, tc.src, tc.kind)
+			inv := models.RepoInventory{}
 			if !d.Applies(tool) {
 				if tc.wantFires {
 					t.Fatalf("rule %s does not Apply to a %s tool — applies_to mismatch?",
@@ -242,7 +297,7 @@ func TestPolicyRules(t *testing.T) {
 				return // can't fire, satisfies wantFires=false
 			}
 			fired := false
-			for _, f := range d.Detect(tool, pf) {
+			for _, f := range d.Detect(tool, pf, inv) {
 				if f.RuleID == tc.ruleID {
 					fired = true
 					break
@@ -255,9 +310,31 @@ func TestPolicyRules(t *testing.T) {
 	}
 }
 
-// TestPolicyRules_AllRulesCovered fails if a shipped rule has no test case
-// in policyRuleCases. Forces new rules to ship with explicit fire/silent
-// coverage rather than relying on the smoke sweep.
+func TestPolicyRepoRules(t *testing.T) {
+	for _, tc := range policyRepoRuleCases {
+		t.Run(tc.name, func(t *testing.T) {
+			d := loadRepoRule(t, tc.ruleID)
+			if !d.Applies(tc.profile, tc.inv) {
+				if tc.wantFires {
+					t.Fatalf("rule %s does not Apply — applies_to mismatch?", tc.ruleID)
+				}
+				return
+			}
+			fired := false
+			for _, f := range d.Detect(tc.profile, tc.inv) {
+				if f.RuleID == tc.ruleID {
+					fired = true
+					break
+				}
+			}
+			if fired != tc.wantFires {
+				t.Errorf("rule %s: fired=%v, want %v", tc.ruleID, fired, tc.wantFires)
+			}
+		})
+	}
+}
+
+// TestPolicyRules_AllRulesCovered fails if a shipped rule has no test case.
 func TestPolicyRules_AllRulesCovered(t *testing.T) {
 	policies, err := rules.Load(rules.DefaultFS())
 	if err != nil {
@@ -265,6 +342,9 @@ func TestPolicyRules_AllRulesCovered(t *testing.T) {
 	}
 	covered := map[string]bool{}
 	for _, tc := range policyRuleCases {
+		covered[tc.ruleID] = true
+	}
+	for _, tc := range policyRepoRuleCases {
 		covered[tc.ruleID] = true
 	}
 	var missing []string

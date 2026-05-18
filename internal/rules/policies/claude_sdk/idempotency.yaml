@@ -17,7 +17,6 @@ rules:
     applies_to:
       - claude_sdk_tool
       - mcp_tool
-    singleton: false
     match:
       all:
         - name_has_prefix:

@@ -18,7 +18,6 @@ rules:
       - claude_sdk_tool
       - mcp_tool
       - shell_invocation
-    singleton: false
     match:
       all:
         - has_dynamic_url_call: true

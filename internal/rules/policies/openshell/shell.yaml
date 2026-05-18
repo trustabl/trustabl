@@ -18,7 +18,6 @@ rules:
       - claude_sdk_tool
       - mcp_tool
       - shell_invocation
-    singleton: false
     match:
       call_with_kwarg_value:
         callee_prefix: subprocess.
@@ -45,7 +44,6 @@ rules:
       - claude_sdk_tool
       - mcp_tool
       - shell_invocation
-    singleton: false
     match:
       all:
         - has_shell_call: true

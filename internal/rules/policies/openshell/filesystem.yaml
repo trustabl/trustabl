@@ -17,7 +17,6 @@ rules:
       - claude_sdk_tool
       - mcp_tool
       - shell_invocation
-    singleton: false
     match:
       has_write_call: true
     explanation: >

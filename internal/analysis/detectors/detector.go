@@ -1,7 +1,7 @@
-// Package detectors defines the Detector interface and the Registry that
+// Package detectors defines typed Detector interfaces and the Registry that
 // runs them. Concrete detectors live elsewhere — today the only producer is
-// internal/rules, which loads YAML policies and wraps each one as a
-// RuleDetector that satisfies this interface.
+// internal/rules, which loads YAML policies and wraps each one as a typed
+// rule detector.
 //
 // Discipline:
 //   - A detector is pure: same inputs → same findings. No I/O, no clocks.
@@ -11,84 +11,120 @@
 package detectors
 
 import (
+	"sort"
+
 	"github.com/trustabl/trustabl/internal/analysis"
 	"github.com/trustabl/trustabl/internal/models"
 )
 
-// Detector is the unit of analysis. One instance per rule.
-type Detector interface {
-	// RuleID returns a stable identifier like "CSDK-001" or "OSH-002".
+// ToolDetector fires against one ToolDef at a time.
+type ToolDetector interface {
 	RuleID() string
-	// Category is the AutoFix category this detector feeds.
 	Category() models.DetectorCategory
-	// Applies returns true if this detector should run against the given tool.
-	Applies(tool models.ToolDef) bool
-	// Detect runs the rule. The ParsedFile is supplied so the detector can
-	// re-walk the AST around the tool's function — handy for body-level checks.
-	Detect(tool models.ToolDef, pf analysis.ParsedFile) []models.Finding
-	// Singleton returns true if this detector should fire at most once per scan
-	// (against the first applicable tool). Use for manifest-level checks that
-	// don't vary per tool.
-	Singleton() bool
+	Applies(models.ToolDef) bool
+	Detect(models.ToolDef, analysis.ParsedFile, models.RepoInventory) []models.Finding
+}
+
+// AgentDetector fires against one AgentDef at a time.
+type AgentDetector interface {
+	RuleID() string
+	Category() models.DetectorCategory
+	Applies(models.AgentDef) bool
+	Detect(models.AgentDef, models.RepoInventory) []models.Finding
+}
+
+// RepoDetector fires once per scan against the manifest.
+type RepoDetector interface {
+	RuleID() string
+	Category() models.DetectorCategory
+	Applies(models.RepoProfile, models.RepoInventory) bool
+	Detect(models.RepoProfile, models.RepoInventory) []models.Finding
 }
 
 // Registry is the set of detectors active for a scan.
 type Registry struct {
-	detectors []Detector
+	tool  []ToolDetector
+	agent []AgentDetector
+	repo  []RepoDetector
 }
 
-// New returns a Registry holding the given detectors. The order is preserved
-// across Run() so output is deterministic when the input slice is.
-func New(ds []Detector) *Registry {
-	return &Registry{detectors: ds}
+// New returns a Registry holding the given detectors.
+func New(tool []ToolDetector, agent []AgentDetector, repo []RepoDetector) *Registry {
+	return &Registry{tool: tool, agent: agent, repo: repo}
+}
+
+// Run executes every applicable detector across tools, agents, and repo,
+// returning all findings sorted deterministically.
+func (r *Registry) Run(profile models.RepoProfile, inv models.RepoInventory, parsed []analysis.ParsedFile) []models.Finding {
+	var out []models.Finding
+	for _, d := range r.tool {
+		for _, t := range inv.Tools {
+			if !d.Applies(t) {
+				continue
+			}
+			pf := parsedFor(t.FilePath, parsed)
+			out = append(out, d.Detect(t, pf, inv)...)
+		}
+	}
+	for _, d := range r.agent {
+		for _, a := range inv.Agents {
+			if !d.Applies(a) {
+				continue
+			}
+			out = append(out, d.Detect(a, inv)...)
+		}
+	}
+	for _, d := range r.repo {
+		if !d.Applies(profile, inv) {
+			continue
+		}
+		out = append(out, d.Detect(profile, inv)...)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].RuleID != out[j].RuleID {
+			return out[i].RuleID < out[j].RuleID
+		}
+		if out[i].FilePath != out[j].FilePath {
+			return out[i].FilePath < out[j].FilePath
+		}
+		return out[i].Line < out[j].Line
+	})
+	return out
 }
 
 // Subset returns a new registry containing only detectors in the given categories.
 func (r *Registry) Subset(cats ...models.DetectorCategory) *Registry {
-	want := make(map[models.DetectorCategory]struct{}, len(cats))
+	cset := make(map[models.DetectorCategory]bool, len(cats))
 	for _, c := range cats {
-		want[c] = struct{}{}
+		cset[c] = true
 	}
-	out := &Registry{}
-	for _, d := range r.detectors {
-		if _, ok := want[d.Category()]; ok {
-			out.detectors = append(out.detectors, d)
+	var sub Registry
+	for _, d := range r.tool {
+		if cset[d.Category()] {
+			sub.tool = append(sub.tool, d)
 		}
 	}
-	return out
-}
-
-// Run executes every applicable detector against every tool, returning all
-// findings. Order is detector-stable then tool-stable so output is
-// reproducible. Singleton detectors fire at most once per scan.
-func (r *Registry) Run(tools []models.ToolDef, files []analysis.ParsedFile) []models.Finding {
-	byPath := map[string]analysis.ParsedFile{}
-	for _, f := range files {
-		byPath[f.RelPath] = f
-	}
-	fired := map[string]bool{} // tracks singletons that have already fired
-	var out []models.Finding
-	for _, d := range r.detectors {
-		for _, t := range tools {
-			if d.Singleton() && fired[d.RuleID()] {
-				continue
-			}
-			if !d.Applies(t) {
-				continue
-			}
-			pf, ok := byPath[t.FilePath]
-			if !ok {
-				continue
-			}
-			findings := d.Detect(t, pf)
-			if d.Singleton() && len(findings) > 0 {
-				fired[d.RuleID()] = true
-			}
-			out = append(out, findings...)
+	for _, d := range r.agent {
+		if cset[d.Category()] {
+			sub.agent = append(sub.agent, d)
 		}
 	}
-	return out
+	for _, d := range r.repo {
+		if cset[d.Category()] {
+			sub.repo = append(sub.repo, d)
+		}
+	}
+	return &sub
 }
 
-// Count returns the number of registered detectors. Useful for reporting.
-func (r *Registry) Count() int { return len(r.detectors) }
+// Count returns the total number of registered detectors.
+func (r *Registry) Count() int { return len(r.tool) + len(r.agent) + len(r.repo) }
+
+func parsedFor(filePath string, parsed []analysis.ParsedFile) analysis.ParsedFile {
+	for _, pf := range parsed {
+		if pf.RelPath == filePath {
+			return pf
+		}
+	}
+	return analysis.ParsedFile{}
+}

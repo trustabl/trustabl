@@ -95,6 +95,7 @@ type ToolDef struct {
 	HasTypedParams bool              `json:"has_typed_params"`
 	ParamNames     []string          `json:"param_names,omitempty"`
 	Facts          map[string]string `json:"facts,omitempty"`
+	Config         map[string]string `json:"config,omitempty"` // decorator kwargs
 }
 
 // ComponentKind labels the type of an agent component the normalizer found
@@ -165,6 +166,41 @@ type ScanManifest struct {
 	HasClaudeSDKDependency bool             `json:"has_claude_sdk_dependency"`
 	HasOpenShellArtifact   bool             `json:"has_openshell_artifact"`
 	Components             []AgentComponent `json:"components,omitempty"`
+}
+
+// SDK identifies a tool/agent SDK we know about.
+type SDK string
+
+const (
+	SDKClaudeAgentSDK SDK = "claude_agent_sdk"
+	SDKOpenAIAgents   SDK = "openai_agents"
+	SDKMCP            SDK = "mcp"
+)
+
+type SDKDep struct {
+	Name       string  `json:"name"`
+	Source     string  `json:"source"`
+	Confidence float64 `json:"confidence"`
+}
+
+// RepoProfile is the output of Phase 1 (reconnaissance).
+type RepoProfile struct {
+	Languages []Language   `json:"languages"`
+	SDKDeps   []SDKDep     `json:"sdk_deps"`
+	Manifest  ScanManifest `json:"manifest"`
+}
+
+// RepoInventory is the output of Phase 2a.
+// AgentDef, GuardrailDef, SessionUse, HostedToolDef are in agent.go.
+type RepoInventory struct {
+	Tools              []ToolDef       `json:"tools"`
+	Agents             []AgentDef      `json:"agents"`
+	Guardrails         []GuardrailDef  `json:"guardrails"`
+	Sessions           []SessionUse    `json:"sessions"`
+	HostedTools        []HostedToolDef `json:"hosted_tools"`
+	SDKsDetected       []SDK           `json:"sdks_detected"`
+	Manifest           ScanManifest    `json:"manifest"` // convenience copy for repo-scope predicates
+	UsesDefaultTracing bool            `json:"uses_default_tracing"`
 }
 
 // GeneratedArtifact is a file the generators want to write into the user's repo.

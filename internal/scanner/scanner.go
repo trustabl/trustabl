@@ -46,6 +46,15 @@ func Run(cfg Config) (models.ScanResult, error) {
 		return models.ScanResult{}, fmt.Errorf("discover: %w", err)
 	}
 
+	// Build a minimal RepoProfile and RepoInventory. Phase B will formalize
+	// Recon() for Phase 1; Phase C will add agent/guardrail/session discovery.
+	profile := models.RepoProfile{Manifest: manifest}
+	inventory := models.RepoInventory{
+		Tools:              tools,
+		Manifest:           manifest,
+		UsesDefaultTracing: computeUsesDefaultTracing(parsed),
+	}
+
 	registry, err := rules.LoadRegistry(rules.DefaultFS())
 	if err != nil {
 		return models.ScanResult{}, fmt.Errorf("load rules: %w", err)
@@ -53,7 +62,7 @@ func Run(cfg Config) (models.ScanResult, error) {
 	if len(cfg.Categories) > 0 {
 		registry = registry.Subset(cfg.Categories...)
 	}
-	findings := registry.Run(tools, parsed)
+	findings := registry.Run(profile, inventory, parsed)
 
 	readiness, overall := analysis.Score(tools, findings)
 
@@ -74,12 +83,23 @@ func Run(cfg Config) (models.ScanResult, error) {
 		ScanID:             scanID(repoLabel, manifest),
 		Repo:               repoLabel,
 		Manifest:           manifest,
-		Tools:              tools,
+		Tools:              inventory.Tools,
 		Findings:           findings,
 		Readiness:          readiness,
 		OverallScore:       overall,
 		GeneratedArtifacts: artifacts,
 	}, nil
+}
+
+func computeUsesDefaultTracing(parsed []analysis.ParsedFile) bool {
+	for _, pf := range parsed {
+		src := string(pf.Source)
+		if strings.Contains(src, "add_trace_processor") ||
+			strings.Contains(src, "OPENAI_AGENTS_DISABLE_TRACING") {
+			return false
+		}
+	}
+	return true
 }
 
 // scanID is derived from the repo label and the sorted set of Python files so
