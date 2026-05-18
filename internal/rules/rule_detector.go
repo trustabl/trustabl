@@ -110,6 +110,48 @@ func findingFromRule(r RuleDef, filePath string, line int, toolName string) mode
 	}
 }
 
+// LoadFor returns a Registry containing only policy packs whose category matches
+// one of the observed SDKs. openshell rules are always loaded.
+// If sdks is empty, only openshell rules are returned.
+func LoadFor(fsys fs.FS, sdks []models.SDK) (*detectors.Registry, error) {
+	wanted := map[string]bool{
+		"openshell": true,
+	}
+	for _, sdk := range sdks {
+		switch sdk {
+		case models.SDKClaudeAgentSDK:
+			wanted["claude_sdk"] = true
+		case models.SDKOpenAIAgents:
+			wanted["openai_sdk"] = true
+		case models.SDKMCP:
+			wanted["mcp"] = true
+		}
+	}
+	all, err := Load(fsys)
+	if err != nil {
+		return nil, err
+	}
+	var tool []detectors.ToolDetector
+	var agent []detectors.AgentDetector
+	var repo []detectors.RepoDetector
+	for _, p := range all {
+		if !wanted[string(p.Policy.Category)] {
+			continue
+		}
+		for _, r := range p.Rules {
+			switch r.Scope {
+			case models.ScopeTool:
+				tool = append(tool, toolRuleDetector{r})
+			case models.ScopeAgent:
+				agent = append(agent, agentRuleDetector{r})
+			case models.ScopeRepo:
+				repo = append(repo, repoRuleDetector{r})
+			}
+		}
+	}
+	return detectors.New(tool, agent, repo), nil
+}
+
 // LoadRegistry loads policies from fsys and returns a populated detector Registry.
 func LoadRegistry(fsys fs.FS) (*detectors.Registry, error) {
 	policies, err := Load(fsys)

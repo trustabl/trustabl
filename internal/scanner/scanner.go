@@ -67,17 +67,19 @@ func Run(cfg Config) (models.ScanResult, error) {
 	}
 	analysis.ResolveEdges(&inventory, parsed)
 
-	// Phase 2b: policy selection (full implementation in Task 36)
-	registry, err := rules.LoadRegistry(rules.DefaultFS())
+	// Phase 2b: policy selection
+	registry, err := rules.LoadFor(rules.DefaultFS(), inventory.SDKsDetected)
 	if err != nil {
 		return models.ScanResult{}, fmt.Errorf("load rules: %w", err)
 	}
 	if len(cfg.Categories) > 0 {
 		registry = registry.Subset(cfg.Categories...)
 	}
+	metaFindings := SelectAndEmitMETA(profile, inventory)
 
 	// Phase 2c: analysis
-	findings := registry.Run(profile, inventory, parsed)
+	ruleFindings := registry.Run(profile, inventory, parsed)
+	findings := append(metaFindings, ruleFindings...)
 
 	readiness, overall := analysis.Score(tools, findings)
 	artifacts := append(
