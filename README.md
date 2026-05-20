@@ -1,11 +1,28 @@
 # trustabl
 
-Static analyzer for agent reliability. Scans a Claude Agent SDK repo, finds reliability
+Static analyzer for agent reliability. Scans an agent SDK repo (Claude Agent
+SDK, OpenAI Agents SDK, MCP, OpenShell), finds reliability and safety
 weaknesses, emits committable artifacts (Pre/PostToolUse hook configs +
 NVIDIA OpenShell sandbox policies).
 
 Implements the Phase 1 MVP scope of *Trustabl Architecture v1 (Strawman)* as a single
 Go binary.
+
+```mermaid
+flowchart LR
+    repo[("Agent repo<br/>(local path or GitHub URL)")]
+    cli["trustabl scan"]
+    findings[("Findings<br/>+ readiness scores")]
+    hooks["hooks/<br/>pretooluse_validate.py<br/>posttooluse_log.py"]
+    policy["openshell/<br/>policy.yaml"]
+    json[("--format json<br/>(CI / dashboards)")]
+
+    repo --> cli
+    cli --> findings
+    cli --> hooks
+    cli --> policy
+    cli --> json
+```
 
 ## Status
 

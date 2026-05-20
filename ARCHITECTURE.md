@@ -59,34 +59,73 @@ The scan is a staged pipeline. There is no concurrency between stages and no
 state shared across runs. `scanner.Run` ([internal/scanner/scanner.go](internal/scanner/scanner.go))
 calls each phase in order; the output of one is the typed input to the next.
 
+```mermaid
+flowchart TD
+    target["target (path or URL)"]
+
+    subgraph P1["Phase 1 — Reconnaissance"]
+        recon["ingestion.Recon"]
+        profile[["RepoProfile<br/>Languages · SDKDeps · Manifest · Components"]]
+        recon --> profile
+    end
+
+    subgraph P2a["Phase 2a — Inventory (per-language AST)"]
+        disc["analysis.DiscoverTools<br/>DiscoverAgents<br/>DiscoverGuardrails<br/>DiscoverSessions"]
+        edges["analysis.ResolveEdges"]
+        inv[["RepoInventory<br/>Tools · Agents · Guardrails · Sessions<br/>SDKsDetected · UsesDefaultTracing"]]
+        disc --> edges --> inv
+    end
+
+    subgraph P2b["Phase 2b — Policy selection"]
+        loadfor["rules.LoadFor(SDKsDetected)"]
+        meta["scanner.SelectAndEmitMETA<br/>scanner.EmitCoverageMETA"]
+        reg[["Registry + META-001..004"]]
+        loadfor --> reg
+        meta --> reg
+    end
+
+    subgraph P2c["Phase 2c — Analysis"]
+        run["Registry.Run"]
+        findings[["Findings<br/>sorted by (RuleID, FilePath, Line)"]]
+        run --> findings
+    end
+
+    subgraph Tail["Scoring · Generation · Review"]
+        score["analysis.Score"]
+        gen["generation.GenerateHooks<br/>generation.GeneratePolicy"]
+        score --> gen
+    end
+
+    result[["ScanResult<br/>(JSON-serializable, returned to CLI)"]]
+
+    target --> recon
+    profile --> disc
+    profile --> loadfor
+    inv --> loadfor
+    inv --> meta
+    inv --> run
+    reg --> run
+    findings --> score
+    gen --> result
 ```
-target (path or URL)
-    │
-    ▼
-PHASE 1 — Reconnaissance (ingestion.Recon)
-  Output: RepoProfile {Languages, SDKDeps, Manifest, Components}
-    │
-    ▼
-PHASE 2a — Inventory (analysis.DiscoverTools, DiscoverAgents,
-                       DiscoverGuardrails, DiscoverSessions, ResolveEdges)
-  Output: RepoInventory {Tools, Agents, Guardrails, Sessions, SDKsDetected,
-                          UsesDefaultTracing}
-    │
-    ▼
-PHASE 2b — Policy selection (rules.LoadFor + SelectAndEmitMETA)
-  Loads policy packs matching SDKsDetected; emits META-001/002/003 findings
-    │
-    ▼
-PHASE 2c — Analysis (detectors.Registry.Run)
-  ToolDetectors fire per inv.Tools entry
-  AgentDetectors fire per inv.Agents entry
-  RepoDetectors fire once per scan
-    │
-    ▼
-Scoring → Generation → Review
-    │
-    ▼
-ScanResult  (JSON-serializable, returned to the CLI)
+
+The three scopes a rule can fire at — `tool`, `agent`, `repo` — flow into
+`Registry.Run` from the same `RepoInventory`, but each detector consumes a
+different typed input:
+
+```mermaid
+flowchart LR
+    inv[("RepoInventory")]
+    profile[("RepoProfile")]
+
+    inv -- "for each ToolDef" --> tool["ToolDetector<br/>Applies(ToolDef)<br/>Detect(ToolDef, ParsedFile, Inv)"]
+    inv -- "for each AgentDef" --> agent["AgentDetector<br/>Applies(AgentDef)<br/>Detect(AgentDef, Inv)"]
+    profile --> repo["RepoDetector<br/>Applies(Profile, Inv)<br/>Detect(Profile, Inv) (once)"]
+    inv --> repo
+
+    tool --> f[("Findings")]
+    agent --> f
+    repo --> f
 ```
 
 ### Phase 1 — Reconnaissance ([internal/ingestion/normalizer.go](internal/ingestion/normalizer.go))
@@ -228,10 +267,13 @@ Pipeline at startup:
 
 1. `rules.DefaultFS()` returns the `embed.FS`-backed filesystem rooted at
    `internal/rules/policies/`.
-2. `rules.LoadRegistry(fsys)` walks recursively, decodes every `.yaml` file,
-   validates required fields / enums / cross-file rule-ID uniqueness, then
-   wraps each `RuleDef` as a `ToolRuleDetector`, `AgentRuleDetector`, or
-   `RepoRuleDetector` based on the rule's `scope:` field.
+2. `rules.LoadFor(fsys, inv.SDKsDetected)` walks recursively, decodes every
+   `.yaml` file, validates required fields / enums / cross-file rule-ID
+   uniqueness, then wraps each `RuleDef` whose category matches an SDK in
+   `SDKsDetected` as a `ToolRuleDetector`, `AgentRuleDetector`, or
+   `RepoRuleDetector` based on the rule's `scope:` field. (Tests that want
+   every shipped rule loaded unconditionally use `rules.LoadRegistry(fsys)`
+   instead — same loader, no SDK filter.)
 3. Each detector's `Detect` evaluates the rule's `MatchExpr` against the
    typed input; on a match it emits one `Finding` populated from the rule's
    metadata.
@@ -342,6 +384,73 @@ of scope; `--apply --yes` is the CLI equivalent of "accept all".
 All cross-package values live in [internal/models/](internal/models/). Anything
 that crosses ingestion → analysis → generation → review is a typed struct with
 JSON tags, because `ScanResult` is the contract for `--format json` CI output.
+
+```mermaid
+classDiagram
+    class ScanResult {
+        ScanID
+        Repo
+        Languages
+        SDKs
+        OverallScore
+    }
+    class RepoProfile {
+        Languages
+        SDKDeps
+        Manifest
+    }
+    class RepoInventory {
+        Tools
+        Agents
+        Guardrails
+        Sessions
+        SDKsDetected
+        UsesDefaultTracing
+    }
+    class ToolDef {
+        Name
+        Kind
+        Language
+        Description
+        HasTypedParams
+        Config
+        Facts
+    }
+    class AgentDef {
+        SDK
+        Class
+        Name
+        Kwargs : KwargTree
+        ToolRefs
+        HandoffRefs
+        InputGuards
+        OutputGuards
+        Opaque
+    }
+    class Finding {
+        RuleID
+        Category
+        Severity
+        Confidence
+        Explanation
+        SuggestedFix
+        FixHints
+    }
+    class ScanManifest {
+        RepoRoot
+        PythonFiles
+        Components
+    }
+
+    ScanResult o-- RepoInventory : embeds Tools/Agents
+    ScanResult *-- "many" Finding
+    ScanResult *-- ScanManifest
+    RepoProfile *-- ScanManifest
+    RepoInventory *-- "many" ToolDef
+    RepoInventory *-- "many" AgentDef
+    AgentDef o-- "many" ToolDef : ToolRefs resolve
+    AgentDef o-- "many" AgentDef : HandoffRefs resolve
+```
 
 ```go
 // Phase 1 output
@@ -477,12 +586,12 @@ internal/
 │   ├── embed.go                 //go:embed all:policies → DefaultFS().
 │   └── policies/                Embedded YAML rule definitions.
 │       ├── claude_sdk/
-│       │   ├── tool_definition.yaml   CSDK-001, CSDK-002, CSDK-007
-│       │   ├── network.yaml           CSDK-003
-│       │   ├── path_safety.yaml       CSDK-004
+│       │   ├── agent_safety.yaml      CSDK-101 (agent scope)
 │       │   ├── error_handling.yaml    CSDK-005
 │       │   ├── idempotency.yaml       CSDK-006
-│       │   └── agent_safety.yaml      CSDK-101 (agent scope)
+│       │   ├── network.yaml           CSDK-003
+│       │   ├── path_safety.yaml       CSDK-004
+│       │   └── tool_definition.yaml   CSDK-001, CSDK-002, CSDK-007
 │       ├── openai_sdk/
 │       │   ├── tool_definition.yaml   OAI-001, OAI-002
 │       │   ├── decorator_config.yaml  OAI-003, OAI-004
@@ -628,16 +737,38 @@ or any other `fs.FS` to `LoadRegistry` to exercise alternate rule sets.
 
 ### Detector interface boundary ([detectors/detector.go](internal/analysis/detectors/detector.go))
 
-The `detectors` package is now interface + runtime only. It owns:
+The `detectors` package is interface + runtime only. It owns three typed
+interfaces — `ToolDetector`, `AgentDetector`, `RepoDetector` — and the
+`Registry` type that runs them. `Registry.New(tool, agent, repo []…)` accepts
+three slices; `Run`, `Subset(cats…)`, `ApplicableCategories`, and `Count`
+operate on the union. There is no single `Detector` interface and no
+`Singleton` flag — scope is now an explicit choice at construction time.
 
-- The `Detector` interface (RuleID, Category, Applies, Detect, Singleton).
-- The `Registry` type with `New(ds []Detector)`, `Subset(cats...)`, `Run`,
-  and `Count`.
+The package deliberately ships no concrete detectors. Any producer (the rules
+engine today; potentially a future Go-native or LLM-judged producer) builds
+its own typed slices and hands them to `detectors.New(...)`. This keeps the
+runtime agnostic to where a rule comes from.
 
-It deliberately ships no concrete detectors. Any producer (the rules engine
-today; potentially a future Go-native or LLM-judged producer) builds its own
-`[]Detector` and hands it to `detectors.New(...)`. This keeps the runtime
-agnostic to where a rule comes from.
+### Rule lifecycle
+
+From YAML source on disk to a `Finding` emitted at scan time:
+
+```mermaid
+flowchart LR
+    yaml["policies/&lt;sdk&gt;/&lt;topic&gt;.yaml"]
+    embed["//go:embed all:policies"]
+    fs[("DefaultFS()<br/>(embed.FS rooted at policies/)")]
+    loader["rules.Load<br/>· KnownFields(true)<br/>· required-field validation<br/>· severity/category/scope enums<br/>· applies_to-vs-scope check<br/>· cross-file ID uniqueness"]
+    rules[("[]PolicyFile")]
+    loadfor["rules.LoadFor(SDKsDetected)<br/>filters by inventory"]
+    wrap["wrap each RuleDef as<br/>ToolRuleDetector / AgentRuleDetector / RepoRuleDetector"]
+    registry[("detectors.Registry")]
+    evaluate["MatchExpr.Evaluate<br/>(recursive conjunctive walker)"]
+    finding[("Finding<br/>RuleID · Severity · Confidence<br/>Explanation · SuggestedFix · FixHints")]
+
+    yaml --> embed --> fs --> loader --> rules --> loadfor --> wrap --> registry
+    registry -- "Run(profile, inv, parsed)" --> evaluate --> finding
+```
 
 ---
 

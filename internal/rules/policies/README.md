@@ -11,25 +11,36 @@ Rules are grouped by `<category>/<topic>.yaml`:
 
 ```
 policies/
-├── claude_sdk/                      Claude Agent SDK reliability rules (CSDK-NNN)
-│   ├── tool_definition.yaml
-│   ├── network.yaml
-│   ├── path_safety.yaml
-│   ├── error_handling.yaml
-│   └── idempotency.yaml
-└── openshell/                       OpenShell sandbox policy rules (OSH-NNN)
-    ├── shell.yaml
-    ├── filesystem.yaml
-    ├── resources.yaml
-    └── network.yaml
+├── claude_sdk/                      Claude Agent SDK rules (CSDK-NNN)
+│   ├── agent_safety.yaml            CSDK-101 (agent scope)
+│   ├── error_handling.yaml          CSDK-005
+│   ├── idempotency.yaml             CSDK-006
+│   ├── network.yaml                 CSDK-003
+│   ├── path_safety.yaml             CSDK-004
+│   └── tool_definition.yaml         CSDK-001, CSDK-002, CSDK-007
+├── openai_sdk/                      OpenAI Agents SDK rules (OAI-NNN)
+│   ├── agent_safety.yaml            OAI-101..104 (agent scope)
+│   ├── decorator_config.yaml        OAI-003, OAI-004
+│   ├── mcp_safety.yaml              OAI-105 (agent scope)
+│   ├── network.yaml                 OAI-005
+│   ├── path_safety.yaml             OAI-006
+│   ├── tool_definition.yaml         OAI-001, OAI-002
+│   └── tracing.yaml                 OAI-201 (repo scope)
+└── openshell/                       OpenShell sandbox rules (OSH-NNN)
+    ├── filesystem.yaml              OSH-003
+    ├── network.yaml                 OSH-005
+    ├── resources.yaml               OSH-004 (repo scope)
+    └── shell.yaml                   OSH-001, OSH-002
 ```
 
 The category is the first path segment. The topic file is your call —
 group related rules. One rule per file is overkill; fifty rules per file is
 unwieldy. Topic files of 1-5 rules read best.
 
-The loader walks recursively, so a new category like `openai/` or `mcp/`
-just works once you drop a YAML in it.
+The loader walks recursively, so a new category just works once you drop a
+YAML in it. To add a new SDK (e.g. `mcp/`), create the directory and use
+the matching `category:` value (extend `models.DetectorCategory` and the
+loader's category-enum switch first if it's not yet recognized).
 
 ## Schema
 
@@ -101,9 +112,10 @@ If a pattern truly applies cross-SDK, author one rule per SDK with the
 framing each SDK requires (different `explanation` references, different
 `fix_hints`). Duplication of the predicate is the price of honest framing.
 
-The shipped `policies/claude_sdk/` rules are intentionally Claude-SDK-only
-for this reason. OpenAI Agents SDK rules will live in their own
-`policies/openai_sdk/` directory when authored.
+The shipped `policies/claude_sdk/` and `policies/openai_sdk/` packs follow
+this discipline — the structurally-similar "missing docstring" rule appears
+as CSDK-001 and OAI-001 with SDK-specific framing in each, not as one
+rule with `applies_to: [claude_sdk_tool, openai_tool]`.
 
 ## Language scope
 
@@ -155,9 +167,8 @@ authoring:
 - Don't write predicates that depend on map iteration order.
 - The `fix_hints` map is sorted on serialization; safe to use freely.
 
-There is no dedicated byte-equality regression test today — the smoke test
-[`internal/scanner/scanner_test.go`](../../scanner/scanner_test.go) was
-refactored to the examples-corpus sweep, which checks "doesn't crash on
-real-world inputs" rather than artifact stability. Adding a focused
-determinism test is open work; in the meantime, the contract relies on
-generator discipline (sorted inputs before marshaling).
+This is enforced by [`internal/scanner/determinism_test.go`](../../scanner/determinism_test.go),
+which runs `scanner.Run` twice over `testdata/deterministic-fixture` and
+asserts that `ScanID` and every `GeneratedArtifact.Contents` is byte-identical
+across both runs. A non-deterministic rule or generator is a build failure,
+not a latent bug.

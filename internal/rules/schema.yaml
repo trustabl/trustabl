@@ -28,7 +28,7 @@ policy:
 
   name: Network call hygiene                # REQUIRED. Human title. Reserved for future UX surfaces.
 
-  category: claude_sdk                      # REQUIRED. Allowed: claude_sdk | openshell.
+  category: claude_sdk                      # REQUIRED. Allowed: claude_sdk | openai_sdk | openshell.
                                             # Inherited by every rule in this file.
 
   description: >                            # REQUIRED. Multi-line ok. Describe the policy's intent.

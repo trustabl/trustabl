@@ -71,14 +71,27 @@ against. Pick values from the table for the scope you're targeting.
 | `openai_sandbox_agent`    | `SandboxAgent(...)` from `openai-agents` SDK                  |
 | `claude_agent_definition` | `AgentDefinition(...)` from `claude-agent-sdk`                |
 
-**`scope: repo`** — receives `RepoProfile` + `RepoInventory`; `applies_to`
-is matched against the SDK names in `RepoInventory.SDKsDetected`:
+**`scope: repo`** — receives `RepoProfile` + `RepoInventory`. `applies_to`
+at this scope is matched against a fixed token list (the loader's
+`validAppliesToForScope`); these tokens are *category-like* labels, not the
+SDK enum values used by the `repo_has_sdk_in_code` predicate:
 
 | `applies_to` value | Matches repos that use               |
 | ------------------ | ------------------------------------ |
-| `openai_agents`    | OpenAI Agents SDK (observed in code) |
-| `claude_agent_sdk` | Claude Agent SDK (observed in code)  |
+| `claude_sdk`       | Claude Agent SDK                     |
+| `openai_agents`    | OpenAI Agents SDK                    |
 | `openshell`        | NVIDIA OpenShell SDK                 |
+| `mcp`              | Model Context Protocol               |
+
+Repo-scope rules typically combine `applies_to` with a `repo_has_sdk_in_code`
+predicate to narrow firing to repos that actually use the SDK in code (e.g.
+OAI-201's `match: { all: [ repo_has_sdk_in_code: [openai_agents], ... ] }`).
+The two tokens look similar but live in different namespaces — `applies_to`
+accepts `openai_agents`, and `repo_has_sdk_in_code` also accepts `openai_agents`
+(the SDK enum, `models.SDKOpenAIAgents`); for Claude, `applies_to` uses
+`claude_sdk` (the category) while `repo_has_sdk_in_code` uses `claude_agent_sdk`
+(the SDK enum). Mismatching the two will silently fail the loader's scope
+check.
 
 Always set `applies_to` explicitly — the loader does not infer scope from
 the category. Omitting it would make a rule fire against every entity of
