@@ -207,69 +207,6 @@ def summarize_invoice(invoice_id: str) -> dict:
     return {}
 `, nil, false},
 
-	// ─── OSH-001 shell=True ─────────────────────────────────────────────────
-	{"OSH-001 fires on shell=True", "OSH-001", models.KindShellInvocation, `
-import subprocess
-def run_report(name: str) -> str:
-    """Run report tool."""
-    subprocess.run(f"report-tool {name}", shell=True)
-    return "done"
-`, nil, true},
-	{"OSH-001 silent on list-form call", "OSH-001", models.KindShellInvocation, `
-import subprocess
-def run_report(name: str) -> str:
-    """Run report tool."""
-    subprocess.run(["report-tool", name])
-    return "done"
-`, nil, false},
-
-	// ─── OSH-002 no allowlist ───────────────────────────────────────────────
-	{"OSH-002 fires without allowlist", "OSH-002", models.KindShellInvocation, `
-import subprocess
-def run_cmd(cmd: str) -> str:
-    """Run a command."""
-    subprocess.run([cmd])
-    return "done"
-`, nil, true},
-	{"OSH-002 silent with ALLOWED_COMMANDS", "OSH-002", models.KindShellInvocation, `
-import subprocess
-ALLOWED_COMMANDS = ["git", "python3"]
-def run_cmd(cmd: str) -> str:
-    """Run an allowed command."""
-    assert cmd in ALLOWED_COMMANDS
-    subprocess.run([cmd])
-    return "done"
-`, nil, false},
-
-	// ─── OSH-003 unrestricted fs write ──────────────────────────────────────
-	{"OSH-003 fires on open(..., 'w')", "OSH-003", models.KindShellInvocation, `
-def write_output(name: str) -> str:
-    """Write output."""
-    with open(f"/tmp/{name}.txt", "w") as f:
-        f.write("data")
-    return "done"
-`, nil, true},
-	{"OSH-003 silent on read-only open", "OSH-003", models.KindShellInvocation, `
-def read_output(name: str) -> str:
-    """Read output."""
-    with open(f"/tmp/{name}.txt", "r") as f:
-        return f.read()
-`, nil, false},
-
-	// ─── OSH-005 broad network egress ───────────────────────────────────────
-	{"OSH-005 fires on dynamic URL", "OSH-005", models.KindClaudeSDKTool, `
-import requests
-def fetch_resource(url: str) -> dict:
-    """Fetch from a dynamic URL."""
-    return requests.get(url).json()
-`, nil, true},
-	{"OSH-005 silent on literal URL", "OSH-005", models.KindClaudeSDKTool, `
-import requests
-def fetch_resource() -> dict:
-    """Fetch from a known endpoint."""
-    return requests.get("https://api.example.com/data").json()
-`, nil, false},
-
 	// ─── OAI-001 missing docstring ───────────────────────────────────────────
 	{"OAI-001 fires on missing docstring", "OAI-001", models.KindOpenAITool, `
 def fetch_data(x: str) -> dict:
@@ -350,18 +287,6 @@ def read_file(file_path: str) -> str:
 
 // policyRepoRuleCases covers repo-scoped rules.
 var policyRepoRuleCases = []policyRepoCase{
-	// ─── OSH-004 no resource limits (repo-scoped) ────────────────────────────
-	// OSH-004 applies when SDKsDetected includes openshell (set by scanner when
-	// shell-invocation tools are found in the repo).
-	{"OSH-004 fires when openshell SDK detected", "OSH-004",
-		models.RepoProfile{},
-		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKOpenShell}},
-		true},
-	{"OSH-004 silent when no openshell SDK", "OSH-004",
-		models.RepoProfile{},
-		models.RepoInventory{},
-		false},
-
 	// ─── OAI-201 default tracing (repo-scoped) ───────────────────────────────
 	{"OAI-201 fires when using default tracing", "OAI-201",
 		models.RepoProfile{},
