@@ -169,3 +169,55 @@ async def main():
 		}
 	}
 }
+
+func TestMCPServers_MultiItemWith(t *testing.T) {
+	src := `
+from agents import Agent
+from agents.mcp import MCPServerStdio, MCPServerSse
+
+async def main():
+    async with MCPServerStdio(params={"command": "npx"}) as fs, MCPServerSse(params={"url": "https://example.com/sse"}) as sse:
+        agent = Agent(name="a", mcp_servers=[fs, sse])
+`
+	pf := parsePyFile(t, "main.py", src)
+	inv := &models.RepoInventory{Agents: analysis.DiscoverAgents([]analysis.ParsedFile{pf})}
+	analysis.ResolveEdges(inv, []analysis.ParsedFile{pf})
+
+	if len(inv.MCPServers) != 2 {
+		t.Fatalf("expected 2 MCP servers from a multi-item with, got %d: %+v", len(inv.MCPServers), inv.MCPServers)
+	}
+	classes := map[string]bool{}
+	for _, m := range inv.MCPServers {
+		classes[m.Class] = true
+	}
+	if !classes["MCPServerStdio"] || !classes["MCPServerSse"] {
+		t.Errorf("expected both MCPServerStdio and MCPServerSse, got %+v", inv.MCPServers)
+	}
+	if len(inv.Agents) != 1 || len(inv.Agents[0].MCPServerRefs) != 2 {
+		t.Fatalf("expected 2 resolved refs on the agent, got %+v", inv.Agents)
+	}
+	for _, ref := range inv.Agents[0].MCPServerRefs {
+		if ref.Resolved == nil || ref.External {
+			t.Errorf("ref not resolved: %+v", ref)
+		}
+	}
+}
+
+func TestMCPServers_NonMCPWithIgnored(t *testing.T) {
+	src := `
+from agents import Agent
+from agents.mcp import MCPServerStdio
+
+async def main():
+    with open("data.txt") as f:
+        async with MCPServerStdio(params={"command": "npx"}) as fs:
+            agent = Agent(name="a", mcp_servers=[fs])
+`
+	pf := parsePyFile(t, "main.py", src)
+	inv := &models.RepoInventory{Agents: analysis.DiscoverAgents([]analysis.ParsedFile{pf})}
+	analysis.ResolveEdges(inv, []analysis.ParsedFile{pf})
+
+	if len(inv.MCPServers) != 1 || inv.MCPServers[0].Class != "MCPServerStdio" {
+		t.Fatalf("expected exactly one MCPServerStdio (the open() with must be ignored), got %+v", inv.MCPServers)
+	}
+}

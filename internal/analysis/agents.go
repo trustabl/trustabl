@@ -127,6 +127,8 @@ func ResolveEdges(inv *models.RepoInventory, parsed []ParsedFile) {
 				// (agent.FilePath, agent.Line, Class) — matches it uniformly
 				// with inline servers. v1 simplification: one alias referenced
 				// by N agents yields N MCPServerDef entries, one per agent.
+				// TODO(v2): alias resolution is same-file only — an alias imported from
+				// another module is not resolved and falls through to External.
 				if item.Kind == models.ExprNameRef {
 					if aliasDef, ok := mcpAliasesByFile[a.FilePath][item.Text]; ok {
 						inv.MCPServers = append(inv.MCPServers, models.MCPServerDef{

@@ -104,6 +104,13 @@ func collectWithStatementMCPAliases(pf ParsedFile) map[string]models.MCPServerDe
 				if callNode == nil || aliasField == nil || callNode.Type() != "call" {
 					continue
 				}
+				// as_pattern_target normally wraps the bound name as a named
+				// child (the identifier); descend to it. The fallback
+				// (aliasNode = aliasField) covers grammar shapes where the
+				// target node IS the identifier. A non-identifier target
+				// (e.g. tuple unpacking `as (a, b)`) yields a non-name key
+				// that simply never matches an mcp_servers=[...] item — an
+				// acceptable v1 limitation, not a crash.
 				aliasNode := aliasField
 				if aliasField.NamedChildCount() > 0 {
 					aliasNode = aliasField.NamedChild(0)
@@ -125,6 +132,8 @@ func collectWithStatementMCPAliases(pf ParsedFile) map[string]models.MCPServerDe
 				}
 			}
 		}
+		// return true → Walk descends into the with-statement body, so a
+		// nested `with` is handled when the callback re-enters on that node.
 		return true
 	})
 	return out
