@@ -76,7 +76,7 @@ func ResolveEdges(inv *models.RepoInventory, parsed []ParsedFile) {
 			for _, item := range toolsKwarg.Value.List {
 				// Hosted-tool call (e.g. WebSearchTool()) — emit a HostedToolDef
 				// and a HostedToolRef. These never resolve to a ToolDef.
-				if h, ok := extractHostedToolFromCall(item, a.FilePath, a.Line); ok {
+				if h, ok := classifyHostedToolCall(item, a.FilePath, a.Line); ok {
 					inv.HostedTools = append(inv.HostedTools, h)
 					ref := models.HostedToolRef{Class: h.Class}
 					ref.Resolved = &inv.HostedTools[len(inv.HostedTools)-1]
@@ -114,18 +114,28 @@ func ResolveEdges(inv *models.RepoInventory, parsed []ParsedFile) {
 
 	sortHostedTools(inv.HostedTools)
 
-	// Re-resolve HostedToolRef pointers after sorting (the append-and-take-address
-	// pattern in the loop above can leave stale pointers if the backing array
-	// reallocated, and the sort definitely moves elements). Match by
-	// (Class, owning-agent FilePath, owning-agent Line).
+	// Re-resolve HostedToolRef pointers after sorting. The append-and-take-address
+	// pattern in the loop above leaves stale pointers when sort moves elements;
+	// also, append itself can realloc the backing array. For each agent, walk
+	// inv.HostedTools to find matches by (FilePath, Line, Class), consuming each
+	// match at most once so duplicate classes in the same agent (e.g.
+	// tools=[WebSearchTool(), WebSearchTool()]) resolve to distinct entries.
 	for i := range inv.Agents {
 		a := &inv.Agents[i]
+		if len(a.HostedToolRefs) == 0 {
+			continue
+		}
+		consumed := make(map[int]bool, len(a.HostedToolRefs))
 		for j := range a.HostedToolRefs {
 			ref := &a.HostedToolRefs[j]
 			for k := range inv.HostedTools {
+				if consumed[k] {
+					continue
+				}
 				h := &inv.HostedTools[k]
-				if h.Class == ref.Class && h.FilePath == a.FilePath && h.Line == a.Line {
+				if h.FilePath == a.FilePath && h.Line == a.Line && h.Class == ref.Class {
 					ref.Resolved = h
+					consumed[k] = true
 					break
 				}
 			}

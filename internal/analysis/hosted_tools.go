@@ -27,9 +27,9 @@ var HostedToolClasses = map[string]bool{
 // SDK hosted-tool class.
 func IsHostedToolClass(className string) bool { return HostedToolClasses[className] }
 
-// extractHostedToolFromCall inspects an ExprCall item from a tools=[...] list
+// classifyHostedToolCall inspects an ExprCall item from a tools=[...] list
 // and returns a HostedToolDef + true if the callee names a hosted-tool class.
-func extractHostedToolFromCall(callItem models.Expr, filePath string, line int) (models.HostedToolDef, bool) {
+func classifyHostedToolCall(callItem models.Expr, filePath string, line int) (models.HostedToolDef, bool) {
 	if callItem.Kind != models.ExprCall {
 		return models.HostedToolDef{}, false
 	}
