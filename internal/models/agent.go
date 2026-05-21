@@ -47,18 +47,19 @@ type GuardrailRef struct {
 
 // AgentDef is one discovered agent declaration in the repo.
 type AgentDef struct {
-	SDK          SDK            `json:"sdk"`
-	Class        string         `json:"class"`    // "Agent", "SandboxAgent", "AgentDefinition"
-	FilePath     string         `json:"file_path"`
-	Line         int            `json:"line"`
-	EndLine      int            `json:"end_line"`
-	Name         string         `json:"name"` // from name= kwarg literal
-	Kwargs       *KwargTree     `json:"kwargs"`
-	ToolRefs     []ToolRef      `json:"tool_refs"`
-	HandoffRefs  []AgentRef     `json:"handoff_refs"`
-	InputGuards  []GuardrailRef `json:"input_guards"`
-	OutputGuards []GuardrailRef `json:"output_guards"`
-	Opaque       bool           `json:"opaque"` // true if Agent(**config) or tools=non-literal
+	SDK            SDK             `json:"sdk"`
+	Class          string          `json:"class"`    // "Agent", "SandboxAgent", "AgentDefinition"
+	FilePath       string          `json:"file_path"`
+	Line           int             `json:"line"`
+	EndLine        int             `json:"end_line"`
+	Name           string          `json:"name"` // from name= kwarg literal
+	Kwargs         *KwargTree      `json:"kwargs"`
+	ToolRefs       []ToolRef       `json:"tool_refs"`
+	HostedToolRefs []HostedToolRef `json:"hosted_tool_refs"`
+	HandoffRefs    []AgentRef      `json:"handoff_refs"`
+	InputGuards    []GuardrailRef  `json:"input_guards"`
+	OutputGuards   []GuardrailRef  `json:"output_guards"`
+	Opaque         bool            `json:"opaque"` // true if Agent(**config) or tools=non-literal
 }
 
 type GuardrailKind string
@@ -81,9 +82,20 @@ type SessionUse struct {
 	Line     int    `json:"line"`
 }
 
+// HostedToolDef is one OpenAI Agents SDK hosted tool instance (WebSearchTool,
+// FileSearchTool, ComputerTool, etc.) found inside an agent's tools=[...]
+// list. Hosted tools have no function body — they are SDK-managed runtimes —
+// so unlike ToolDef they carry no docstring, params, or facts.
 type HostedToolDef struct {
-	Class    string     `json:"class"` // "WebSearchTool", "ComputerTool", ...
+	Class    string     `json:"class"` // "WebSearchTool", "FileSearchTool", ...
+	SDK      SDK        `json:"sdk"`
 	FilePath string     `json:"file_path"`
 	Line     int        `json:"line"`
-	Kwargs   *KwargTree `json:"kwargs"`
+	Kwargs   *KwargTree `json:"kwargs,omitempty"`
+}
+
+// HostedToolRef points from an AgentDef to a HostedToolDef. Parallels ToolRef.
+type HostedToolRef struct {
+	Class    string         `json:"class"`
+	Resolved *HostedToolDef `json:"-"`
 }
