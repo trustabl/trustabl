@@ -70,7 +70,7 @@ flowchart TD
     end
 
     subgraph P2a["Phase 2a — Inventory (per-language AST)"]
-        disc["analysis.DiscoverTools<br/>DiscoverAgents<br/>DiscoverGuardrails<br/>DiscoverSessions"]
+        disc["analysis.DiscoverTools<br/>DiscoverAgents<br/>DiscoverGuardrails<br/>DiscoverSessions<br/>DiscoverSubagents<br/>DiscoverClaudeSettings"]
         edges["analysis.ResolveEdges"]
         inv[["RepoInventory<br/>Tools · Agents · Guardrails · Sessions<br/>SDKsDetected · UsesDefaultTracing"]]
         disc --> edges --> inv
@@ -157,9 +157,32 @@ For each language Phase 1 cleared, do the AST work and produce a `RepoInventory`
   decorated functions.
 - **DiscoverSessions** — finds construction sites for `*Session` classes from
   the agents SDK.
+- **DiscoverSubagents** (`subagents.go`) — reads every `.claude/agents/*.md`
+  component file in the manifest, parses YAML frontmatter (the block between
+  leading `---` markers), and emits one `SubagentDef` per file with frontmatter.
+  Files without frontmatter or with malformed YAML are skipped silently. The
+  `tools:` field accepts both the comma-separated scalar form
+  (`tools: Read, Bash`) and the YAML-list form (`tools:\n - Read\n - Bash`).
+- **DiscoverClaudeSettings** (`claude_settings.go`) — JSON-parses every
+  `.claude/settings.json` (and `settings.local.json`) component into a typed
+  `ClaudeSettings`. The `permissions` block's allow/deny/ask lists are
+  decomposed via `ParsePermissionRule` into typed `PermissionRule` records
+  (`Tool`, `Pattern`, `Raw`) using the grammar `<Tool>` | `<Tool>(<pattern>)`
+  plus the literal MCP-tool form `mcp__<server>__<tool>`. Malformed JSON is
+  skipped silently.
 - **ResolveEdges** — links agent `tools=`, `handoffs=`, `input_guardrails=`
   references to discovered definitions in the same repo; cross-module resolution
   uses import statements; unresolvable references are flagged `External=true`.
+  Hosted-tool calls (`WebSearchTool()`, `FileSearchTool()`, etc.) inside
+  `tools=[...]` are classified into `HostedToolDef` records and a parallel
+  `HostedToolRefs` edge slice on the owning agent — separate from regular
+  `ToolRefs`. `mcp_servers=[...]` is processed for MCP server constructors
+  (`MCPServerStdio`, `MCPServerSse`, `MCPServerStreamableHttp`) — both inline
+  calls and aliases bound by `async with X() as srv:`. Each match becomes an
+  `MCPServerDef` and an entry in `MCPServerRefs`. After all agents are
+  processed, `inv.HostedTools` and `inv.MCPServers` are sorted by
+  `(FilePath, Line, Class)` and `HostedToolRefs`/`MCPServerRefs.Resolved`
+  pointers are re-resolved to the post-sort positions.
 
 **Discovered agent components** (`Components []AgentComponent`).
 
@@ -470,6 +493,9 @@ RepoInventory {
     Guardrails         []GuardrailDef
     Sessions           []SessionUse
     HostedTools        []HostedToolDef
+    MCPServers         []MCPServerDef
+    Subagents          []SubagentDef
+    ClaudeSettings     []ClaudeSettings
     SDKsDetected       []SDK     // observed in code (drives Phase 2b policy selection)
     Manifest           ScanManifest
     UsesDefaultTracing bool
@@ -477,13 +503,15 @@ RepoInventory {
 
 AgentDef {
     SDK, Class, FilePath string; Line, EndLine int
-    Name         string         // from name= kwarg literal
-    Kwargs       *KwargTree     // all constructor kwargs, typed
-    ToolRefs     []ToolRef      // resolved to ToolDef or flagged External
-    HandoffRefs  []AgentRef
-    InputGuards  []GuardrailRef
-    OutputGuards []GuardrailRef
-    Opaque       bool           // Agent(**config) or tools=non-literal
+    Name           string         // from name= kwarg literal
+    Kwargs         *KwargTree     // all constructor kwargs, typed
+    ToolRefs       []ToolRef      // resolved to ToolDef or flagged External
+    HostedToolRefs []HostedToolRef
+    MCPServerRefs  []MCPServerRef
+    HandoffRefs    []AgentRef
+    InputGuards    []GuardrailRef
+    OutputGuards   []GuardrailRef
+    Opaque         bool           // Agent(**config) or tools=non-literal
 }
 
 // KwargTree holds a kwarg value as either a leaf or a nested map
@@ -518,6 +546,64 @@ AgentComponent {
     Note     string
 }
 
+HostedToolDef {
+    Class    string     // "WebSearchTool" | "FileSearchTool" | "ComputerTool" | ...
+    SDK      SDK
+    FilePath string
+    Line     int
+    Kwargs   *KwargTree
+}
+
+HostedToolRef {
+    Class    string         // matches HostedToolDef.Class
+    Resolved *HostedToolDef // nil if not resolved
+}
+
+MCPServerDef {
+    Class     string     // "MCPServerStdio" | "MCPServerSse" | "MCPServerStreamableHttp"
+    Transport string     // "stdio" | "sse" | "streamable_http"
+    SDK       SDK
+    FilePath  string
+    Line      int
+    Kwargs    *KwargTree
+}
+
+MCPServerRef {
+    Class    string        // matches MCPServerDef.Class
+    Resolved *MCPServerDef // nil if not resolved
+    External bool
+}
+
+SubagentDef {
+    Name        string
+    Description string
+    Tools       []string   // parsed from frontmatter tools: field
+    Model       string
+    FilePath    string
+}
+
+PermissionRule {
+    Tool    string  // "Bash" | "Read" | "Edit" | "WebFetch" | "MCP" | "Agent" | ...
+    Pattern string  // empty for bare tool; "npm run *" for "Bash(npm run *)"
+    Raw     string  // original string from JSON for attribution
+}
+
+ClaudePermissions {
+    Allow []PermissionRule
+    Deny  []PermissionRule
+    Ask   []PermissionRule
+}
+
+ClaudeSettings {
+    FilePath        string
+    Permissions     ClaudePermissions
+    DefaultMode     string
+    AdditionalDirs  []string
+    HasEnvBlock     bool
+    HasHooks        bool
+    HasSandboxBlock bool
+}
+
 // Top-level output
 ScanResult {
     ScanID             string
@@ -527,6 +613,10 @@ ScanResult {
     Manifest           ScanManifest
     Tools              []ToolDef
     Agents             []AgentDef
+    HostedTools        []HostedToolDef
+    MCPServers         []MCPServerDef
+    Subagents          []SubagentDef
+    ClaudeSettings     []ClaudeSettings
     Findings           []Finding
     Readiness          []ToolReadiness
     OverallScore       float64
