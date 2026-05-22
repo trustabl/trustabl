@@ -23,6 +23,8 @@ import (
 
 	"github.com/trustabl/trustabl/internal/models"
 	"github.com/trustabl/trustabl/internal/review"
+	"github.com/trustabl/trustabl/internal/rules"
+	"github.com/trustabl/trustabl/internal/rulesource"
 	"github.com/trustabl/trustabl/internal/scanner"
 )
 
@@ -46,6 +48,7 @@ func main() {
 	}
 	rootCmd.AddCommand(newScanCommand())
 	rootCmd.AddCommand(newVersionCommand())
+	rootCmd.AddCommand(newRulesCommand())
 
 	if err := rootCmd.Execute(); err != nil {
 		var ec exitCodeError
@@ -72,10 +75,13 @@ func newVersionCommand() *cobra.Command {
 // ────────────────────────────────────────────────────────────────────────────
 
 type scanFlags struct {
-	detectors string
-	format    string
-	strict    bool
-	noColor   bool
+	detectors     string
+	format        string
+	strict        bool
+	noColor       bool
+	rulesRepo     string
+	rulesRef      string
+	noRulesUpdate bool
 }
 
 func newScanCommand() *cobra.Command {
@@ -96,6 +102,12 @@ func newScanCommand() *cobra.Command {
 		"exit 1 if any finding is present, regardless of severity")
 	cmd.Flags().BoolVar(&f.noColor, "no-color", false,
 		"disable colored output")
+	cmd.Flags().StringVar(&f.rulesRepo, "rules-repo", "",
+		"rules repository URL (default: official trustabl-rules; or TRUSTABL_RULES_REPO)")
+	cmd.Flags().StringVar(&f.rulesRef, "rules-ref", "",
+		"rules branch or tag to use (default: the repo's default branch)")
+	cmd.Flags().BoolVar(&f.noRulesUpdate, "no-rules-update", false,
+		"do not fetch rules; use the local cache only")
 	return cmd
 }
 
@@ -108,6 +120,27 @@ func runScan(target string, f scanFlags) error {
 		}
 		cfg.Categories = cats
 	}
+
+	// Resolve detection rules from the external rules repository.
+	res, err := rulesource.Resolve(rulesConfigFromScan(f), rules.SupportedSchemaVersion)
+	if err != nil {
+		if errors.Is(err, rulesource.ErrNoRules) || errors.Is(err, rulesource.ErrNoCompatibleRules) {
+			fmt.Fprintln(os.Stderr,
+				"No usable rules found locally and could not fetch from the rules repository.")
+			fmt.Fprintln(os.Stderr,
+				`Run "trustabl rules pull" to download the rule packs.`)
+			return exitCodeError{2}
+		}
+		return fmt.Errorf("resolve rules: %w", err)
+	}
+	if res.FromCache {
+		fmt.Fprintf(os.Stderr,
+			"warning: could not reach the rules repository; using local rules %s\n", res.SHA)
+	}
+	cfg.RulesFS = res.FS
+	cfg.RulesSource = res.RepoURL
+	cfg.RulesVersion = res.SHA
+	cfg.RulesFromCache = res.FromCache
 
 	result, err := scanner.Run(cfg)
 	if err != nil {
@@ -153,6 +186,55 @@ func exitCode(result models.ScanResult, strict bool) int {
 		}
 	}
 	return 0
+}
+
+// rulesConfigFromScan builds a rulesource.Config from scan flags, applying the
+// TRUSTABL_RULES_REPO environment override when --rules-repo is not set.
+func rulesConfigFromScan(f scanFlags) rulesource.Config {
+	repo := f.rulesRepo
+	if repo == "" {
+		repo = os.Getenv("TRUSTABL_RULES_REPO")
+	}
+	return rulesource.Config{
+		RepoURL:  repo,
+		Ref:      f.rulesRef,
+		NoUpdate: f.noRulesUpdate,
+	}
+}
+
+func newRulesCommand() *cobra.Command {
+	rulesCmd := &cobra.Command{
+		Use:   "rules",
+		Short: "Manage Trustabl's detection rules",
+	}
+
+	var repo, ref string
+	pull := &cobra.Command{
+		Use:   "pull",
+		Short: "Download the detection rule packs into the local cache",
+		Args:  cobra.NoArgs,
+		RunE: func(_ *cobra.Command, _ []string) error {
+			if repo == "" {
+				repo = os.Getenv("TRUSTABL_RULES_REPO")
+			}
+			res, err := rulesource.Pull(
+				rulesource.Config{RepoURL: repo, Ref: ref},
+				rules.SupportedSchemaVersion,
+			)
+			if err != nil {
+				return fmt.Errorf("rules pull: %w", err)
+			}
+			fmt.Printf("Pulled rules from %s at %s\n", res.RepoURL, res.SHA)
+			return nil
+		},
+	}
+	pull.Flags().StringVar(&repo, "rules-repo", "",
+		"rules repository URL (default: official trustabl-rules; or TRUSTABL_RULES_REPO)")
+	pull.Flags().StringVar(&ref, "rules-ref", "",
+		"rules branch or tag to pull (default: the repo's default branch)")
+
+	rulesCmd.AddCommand(pull)
+	return rulesCmd
 }
 
 func parseCategories(s string) ([]models.DetectorCategory, error) {
