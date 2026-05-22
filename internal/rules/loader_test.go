@@ -208,3 +208,35 @@ rules:
 		t.Fatalf("expected unknown-scope error, got %v", err)
 	}
 }
+
+func TestLoad_SkipsManifestYAML(t *testing.T) {
+	// A pack FS with a root manifest.yaml alongside a real policy file. Load
+	// must ignore manifest.yaml, not try to decode it as a policy.
+	fsys := fstest.MapFS{
+		"manifest.yaml": &fstest.MapFile{Data: []byte("schema_version: 1\n")},
+		"claude_sdk/x.yaml": &fstest.MapFile{Data: []byte(`policy:
+  id: p
+  name: P
+  category: claude_sdk
+  description: d
+rules:
+  - id: X-001
+    title: t
+    scope: tool
+    severity: low
+    confidence: 0.5
+    applies_to: [claude_sdk_tool]
+    match:
+      has_docstring: true
+    explanation: e
+    fix: f
+`)},
+	}
+	policies, err := rules.Load(fsys)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if len(policies) != 1 {
+		t.Fatalf("len(policies) = %d, want 1 (manifest.yaml must be skipped)", len(policies))
+	}
+}

@@ -25,7 +25,9 @@ func Load(fsys fs.FS) ([]PolicyFile, error) {
 		if err != nil {
 			return err
 		}
-		if !d.IsDir() && strings.HasSuffix(path, ".yaml") {
+		// manifest.yaml at the pack root carries schema metadata, not a
+		// policy. The rulesource package reads it; the loader skips it.
+		if !d.IsDir() && strings.HasSuffix(path, ".yaml") && path != "manifest.yaml" {
 			entries = append(entries, path)
 		}
 		return nil
