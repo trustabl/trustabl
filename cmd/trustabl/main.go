@@ -39,7 +39,7 @@ func main() {
 	rootCmd := &cobra.Command{
 		Use:   "trustabl",
 		Short: "Static analyzer for agent reliability",
-		Long: "trustabl scans Claude Agent SDK repos for reliability weaknesses\n" +
+		Long: "Trustabl scans Claude Agent SDK repos for reliability weaknesses\n" +
 			"and emits committable hook configs + OpenShell sandbox policies.",
 		SilenceUsage:  true,
 		SilenceErrors: true, // we handle error printing ourselves below
@@ -62,7 +62,7 @@ func newVersionCommand() *cobra.Command {
 		Use:   "version",
 		Short: "Print version",
 		Run: func(_ *cobra.Command, _ []string) {
-			fmt.Println("trustabl", version)
+			fmt.Println("Trustabl", version)
 		},
 	}
 }
@@ -74,10 +74,6 @@ func newVersionCommand() *cobra.Command {
 type scanFlags struct {
 	detectors string
 	format    string
-	apply     bool
-	export    string
-	yes       bool
-	overwrite bool
 	strict    bool
 	noColor   bool
 }
@@ -96,14 +92,6 @@ func newScanCommand() *cobra.Command {
 		"comma-separated detector categories: claude_sdk, openai_sdk, openshell (default: all)")
 	cmd.Flags().StringVar(&f.format, "format", "human",
 		"output format: human|json")
-	cmd.Flags().BoolVar(&f.apply, "apply", false,
-		"write generated artifacts into the target repo")
-	cmd.Flags().StringVar(&f.export, "export", "",
-		"write generated artifacts to a ZIP at this path")
-	cmd.Flags().BoolVar(&f.yes, "yes", false,
-		"skip the apply-confirmation prompt")
-	cmd.Flags().BoolVar(&f.overwrite, "overwrite", false,
-		"allow --apply to overwrite existing files")
 	cmd.Flags().BoolVar(&f.strict, "strict", false,
 		"exit 1 if any finding is present, regardless of severity")
 	cmd.Flags().BoolVar(&f.noColor, "no-color", false,
@@ -112,7 +100,7 @@ func newScanCommand() *cobra.Command {
 }
 
 func runScan(target string, f scanFlags) error {
-	cfg := scanner.Config{Target: target, Version: version}
+	cfg := scanner.Config{Target: target}
 	if f.detectors != "" {
 		cats, err := parseCategories(f.detectors)
 		if err != nil {
@@ -121,7 +109,7 @@ func runScan(target string, f scanFlags) error {
 		cfg.Categories = cats
 	}
 
-	result, artifacts, err := scanner.Run(cfg)
+	result, err := scanner.Run(cfg)
 	if err != nil {
 		return err
 	}
@@ -137,34 +125,6 @@ func runScan(target string, f scanFlags) error {
 		fmt.Print(r.Render(result))
 	default:
 		return fmt.Errorf("unknown --format %q", f.format)
-	}
-
-	// Apply side effects.
-	if f.apply {
-		if !f.yes && !confirm(
-			fmt.Sprintf("Write %d artifact(s) to %s?", len(artifacts), target),
-		) {
-			fmt.Fprintln(os.Stderr, "Apply cancelled.")
-			// Intentional fall-through: --export still runs, and exit code
-			// is still based on findings severity.
-		} else {
-			// For remote scans, the temp dir is already gone; apply only
-			// makes sense for local targets.
-			if result.Manifest.IsRemote {
-				return fmt.Errorf("--apply requires a local target (remote source is cleaned up)")
-			}
-			if err := review.ApplyArtifacts(result.Manifest.RepoRoot,
-				artifacts, f.overwrite); err != nil {
-				return fmt.Errorf("apply: %w", err)
-			}
-			fmt.Fprintf(os.Stderr, "Wrote %d artifact(s).\n", len(artifacts))
-		}
-	}
-	if f.export != "" {
-		if err := review.ExportZIP(f.export, artifacts); err != nil {
-			return fmt.Errorf("export: %w", err)
-		}
-		fmt.Fprintf(os.Stderr, "Wrote bundle to %s\n", f.export)
 	}
 
 	if code := exitCode(result, f.strict); code != 0 {
@@ -207,12 +167,4 @@ func parseCategories(s string) ([]models.DetectorCategory, error) {
 		}
 	}
 	return out, nil
-}
-
-func confirm(prompt string) bool {
-	fmt.Fprintf(os.Stderr, "%s [y/N]: ", prompt)
-	var resp string
-	_, _ = fmt.Fscanln(os.Stdin, &resp)
-	resp = strings.ToLower(strings.TrimSpace(resp))
-	return resp == "y" || resp == "yes"
 }

@@ -1,4 +1,4 @@
-# Instructions for Claude — trustabl
+# Instructions for Claude — Trustabl
 
 This file captures durable architectural commitments that span the whole
 codebase. Per-area conventions live in nested CLAUDE.md files (see
@@ -10,10 +10,16 @@ This file is for principles; ARCHITECTURE.md is for facts.
 
 ## Project naming
 
-The project is **trustabl** — the binary, the CLI command, and the Go
-module path (`github.com/trustabl/trustabl`) all use this name. In
-external docs and status reports, refer to it as "trustabl CLI tool"
-or just "trustabl".
+The product is named **Trustabl** (capital T). Use this spelling in all
+human-facing prose: docs, status reports, finding messages shown in scan
+reports, and CLI help text.
+
+The lowercase `trustabl` is reserved for machine identifiers that must
+**not** be capitalized: the binary name, the CLI command (`trustabl scan`,
+`trustabl version`), the Go module path (`github.com/trustabl/trustabl`),
+and internal prefixes (e.g. the clone temp-dir `trustabl-clone-*`). When in
+doubt: if a human reads it as a sentence, it's "Trustabl"; if a machine
+parses it as a token, it's `trustabl`.
 
 ## Detection model: three scopes
 
@@ -48,13 +54,16 @@ to `tool` (the historical behavior).
 What older code calls `singleton: true` is `repo` scope in disguise.
 Promote to explicit `scope: repo` when touching those rules.
 
-## Two-phase scanning pipeline
+## Scanning pipeline
 
-The scanner is staged into a recon phase and an analysis phase. The
-boundary is load-bearing: it is what makes policy selection data-driven
-rather than statically configured.
+The scan is a flat sequence of steps; the output of each is the typed
+input to the next. The boundary between the cheap recon step and the
+AST-driven steps that follow is load-bearing: recon stays cheap so it can
+gate whether the expensive AST work runs at all, and the inventory those
+steps build is what makes policy selection data-driven rather than
+statically configured.
 
-### Phase 1 — Reconnaissance (cheap, no AST)
+### Step 1 — Recon (cheap, no AST)
 
 Walk the repo and answer "what's in here" without parsing any source
 language. Produces a `RepoProfile`:
@@ -67,14 +76,14 @@ language. Produces a `RepoProfile`:
 - File inventory (the existing `ScanManifest` work).
 - Component discovery (MCP configs, hook scripts, CLAUDE.md, sandbox
   policies, etc.).
-- A per-language "should we attempt Phase 2 here" decision.
+- A per-language "should we attempt the AST steps here" decision.
 
-Phase 1 must remain cheap. No tree-sitter parses here — those belong in
-Phase 2a.
+Recon must remain cheap. No tree-sitter parses here — those belong in the
+inventory step.
 
-### Phase 2a — Inventory (per-language AST)
+### Step 2 — Inventory (per-language AST)
 
-For each language Phase 1 cleared, do the AST work and extract a
+For each language recon cleared, do the AST work and extract a
 `RepoInventory`:
 
 - `ToolDef`s with **their config captured** — decorator kwargs
@@ -99,7 +108,7 @@ The inventory is typed. Detectors read fields off Go structs — never
 re-parse, never substring-match against raw source from inside a
 detector.
 
-### Phase 2b — Policy selection (data-driven)
+### Step 3 — Policy selection (data-driven)
 
 Based on `inventory.SDKsDetected`, decide which policy packs to load.
 
@@ -109,13 +118,13 @@ Rules:
   inventory. Do not eagerly load every embedded YAML.
 - For each SDK in `inventory.SDKsDetected` that has **no policy pack
   shipped**, emit one `info`-level finding: *"this repo uses SDK X,
-  which trustabl does not currently audit."* This is the honest
+  which Trustabl does not currently audit."* This is the honest
   unaudited signal — silence on an unknown SDK is wrong.
 - For each SDK declared as a dep but with no observed code use, emit
   a different `info`-level finding noting the dep is unused (low
   priority — surfaces drift between deps and code).
 
-### Phase 2c — Analysis
+### Step 4 — Analysis
 
 Run the selected policy packs against the inventory. Detectors are
 scope-aware (see the three-scope model below) and receive typed inputs:
@@ -134,11 +143,11 @@ location: tool file/line, agent constructor call site, or the manifest.
   with only Claude agents skip OpenAI policy loading.
 - **Honest coverage.** An "unaudited SDK" info finding is louder than a
   zero-findings clean bill of health on an SDK we don't know about.
-- **Determinism.** Each phase's output is a structured artifact (Go
+- **Determinism.** Each step's output is a structured artifact (Go
   struct, JSON-serializable) that can be logged, diffed, and tested in
   isolation.
 - **Future SDKs slot in cleanly.** Adding a new SDK means: extend the
-  Phase 1 dep-scan needles, extend the Phase 2a discovery patterns for
+  recon dep-scan needles, extend the inventory-step discovery patterns for
   that SDK's tool/agent shapes, add a policy pack under
   `internal/rules/policies/<sdk>/`. No engine changes.
 
@@ -215,17 +224,16 @@ commit — stale docs are a defect, not a TODO. The three living docs and
 their update triggers:
 
 - **`ARCHITECTURE.md`** — update after any wiring change: a new or removed
-  pipeline stage, a new discovery shape, a changed data-model struct, a new
-  generator, or a moved package. It must always describe what the engine
-  does *today*.
+  pipeline step, a new discovery shape, a changed data-model struct, or a
+  moved package. It must always describe what the engine does *today*.
 - **`README.md`** — update when the user-facing surface changes: CLI flags,
-  exit codes, build steps, produced artifacts, or the supported-SDK
-  summary. Keep it honest — do not advertise capabilities that are not
-  wired (e.g. LLM enrichment is opt-in and makes no call without a key).
+  exit codes, build steps, output formats, or the supported-SDK summary.
+  Keep it honest — do not advertise capabilities that are not wired (e.g.
+  LLM enrichment is opt-in and makes no call without a key).
 - **`COVERAGE.md`** — update whenever SDK or language support changes: a new
-  dep needle, a new discovery pattern, a new rule pack, or a new generated
-  artifact. Re-derive the coverage matrix from the actual code, and bump the
-  `_Last reviewed_` line to the current date and HEAD.
+  dep needle, a new discovery pattern, or a new rule pack. Re-derive the
+  coverage matrix from the actual code, and bump the `_Last reviewed_` line
+  to the current date and HEAD.
 
 After any such edit, re-scan the precedence list above and reconcile any
 downstream doc that now disagrees, in the same commit.
@@ -240,9 +248,10 @@ duplicate its rules here.
 
 Repo-wide hard rules that span the whole codebase:
 
-- **Determinism is a contract.** Same inputs → same `ScanID`. Same
-  findings → byte-identical generated artifacts. New generators MUST
-  sort their inputs and dedupe deterministically before emitting.
+- **Determinism is a contract.** Same inputs → same `ScanID`, and a
+  byte-stable report. Any ordered output (findings, inventory slices,
+  components) MUST be sorted and deduped deterministically before
+  emitting — no timestamps, map iteration order, or scheduling may leak in.
 - **Never commit secrets, credentials, or example repos under
   `examples/`** without confirming the source is public and
   unencumbered. The examples corpus is part of the test contract — it

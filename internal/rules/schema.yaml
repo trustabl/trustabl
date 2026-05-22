@@ -98,14 +98,6 @@ rules:
       Pass `timeout=` (typically 5–30s) to the request. Surface failures
       as a structured error the model can react to.
 
-    fix_hints:                              # OPTIONAL. Free-form keys consumed by the generators.
-                                            # Unknown keys are ignored. Common keys:
-      hook: pretooluse_validate             #   hook: <name>          — opts the finding into hook generation
-      guard: timeout_required               #   guard: <name>         — generator-specific guard
-                                            #   policy_emit: <kind>   — opts into OpenShell policy generation
-                                            #   policy_action: <kind> — generator-specific policy action
-                                            #   inject_idempotency: true
-
 
 # ─── predicate reference ────────────────────────────────────────────────────
 #

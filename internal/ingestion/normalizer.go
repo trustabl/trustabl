@@ -10,7 +10,7 @@ import (
 	"github.com/trustabl/trustabl/internal/models"
 )
 
-// Recon is the Phase 1 entrypoint. It walks the source tree (cheap, no AST)
+// Recon is the recon-step entrypoint. It walks the source tree (cheap, no AST)
 // and returns a typed RepoProfile capturing languages, SDK deps, and the
 // existing ScanManifest.
 func Recon(src *Source) (models.RepoProfile, error) {

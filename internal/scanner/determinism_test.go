@@ -9,36 +9,21 @@ import (
 )
 
 // TestScanDeterministic asserts that two runs over the same fixture produce
-// byte-identical artifacts and the same ScanID. Guards the contract
-// documented in ARCHITECTURE.md §7.
+// the same ScanID. Guards the contract documented in ARCHITECTURE.md §7.
 func TestScanDeterministic(t *testing.T) {
 	_, thisFile, _, _ := runtime.Caller(0)
 	fixture := filepath.Join(filepath.Dir(thisFile), "..", "..", "testdata", "deterministic-fixture")
 
-	r1, arts1, err := scanner.Run(scanner.Config{Target: fixture})
+	r1, err := scanner.Run(scanner.Config{Target: fixture})
 	if err != nil {
 		t.Fatalf("first run: %v", err)
 	}
-	r2, arts2, err := scanner.Run(scanner.Config{Target: fixture})
+	r2, err := scanner.Run(scanner.Config{Target: fixture})
 	if err != nil {
 		t.Fatalf("second run: %v", err)
 	}
 
 	if r1.ScanID != r2.ScanID {
 		t.Errorf("ScanID drifted: %q vs %q", r1.ScanID, r2.ScanID)
-	}
-	if len(arts1) != len(arts2) {
-		t.Fatalf("artifact count differs: %d vs %d", len(arts1), len(arts2))
-	}
-	for i, a1 := range arts1 {
-		a2 := arts2[i]
-		if a1.RelativePath != a2.RelativePath {
-			t.Errorf("artifact %d path differs: %q vs %q", i, a1.RelativePath, a2.RelativePath)
-			continue
-		}
-		if a1.Contents != a2.Contents {
-			t.Errorf("artifact %q content not byte-equal across runs (len %d vs %d)",
-				a1.RelativePath, len(a1.Contents), len(a2.Contents))
-		}
 	}
 }

@@ -1,6 +1,6 @@
 # Architecture
 
-This document describes the concrete architecture of the trustabl codebase as it
+This document describes the concrete architecture of the Trustabl codebase as it
 exists today. It is the implementer's reference: what each package owns, the
 data that crosses package boundaries, and the decisions that shaped the layout.
 
@@ -12,25 +12,20 @@ scoped to the Go binary in this repository.
 ## 1. Goal
 
 trustabl scans an agent SDK repository (Claude Agent SDK, OpenAI Agents SDK,
-MCP), finds reliability weaknesses in its tool definitions, and emits
-committable artifacts that close those gaps:
-
-- `hooks/pretooluse_validate.py` and `hooks/posttooluse_log.py` — Claude Agent
-  SDK hook scripts the user commits to their own repo.
-- `openshell/policy.yaml` — a defaults-only NVIDIA OpenShell sandbox policy
-  starter. The detection rules that would populate it shipped in a previous
-  version of trustabl and now live in a closed-source companion project; the
-  generator still emits a starter file so users have somewhere to begin
-  authoring policy by hand.
+MCP), finds reliability weaknesses in its tool and agent definitions, and
+reports them. A scan is read-only: it writes nothing into the scanned repo. The
+output is a `ScanResult` — findings (each with an explanation, suggested fix,
+and confidence), per-tool readiness scores, an overall score, and the
+discovered inventory — rendered as a human summary or as JSON for CI.
 
 Single Go binary, no daemon, no server. Web app and CI surfaces are out of
-scope (see `README.md` § Status).
+scope (see `README.md`).
 
 ---
 
 ## 1.1 Language scope
 
-trustabl ships with **Python tool discovery** wired in. The scanner can also
+Trustabl ships with **Python tool discovery** wired in. The scanner can also
 recognize TypeScript, JavaScript, and Go *files* (they appear in
 `manifest.typescript_files` etc. and feed component discovery), but no AST
 parser for those languages is plumbed in yet — so no tools are extracted
@@ -52,35 +47,32 @@ Adding a new tool-discovery language requires:
 4. New rule files under `internal/rules/policies/<category>/` declaring
    `language: <new>`.
 
-The OpenShell policy generator is already language-agnostic — that
-infrastructure carries over for free when language #2 ships.
-
 ---
 
 ## 2. Pipeline
 
-The scan is a staged pipeline. There is no concurrency between stages and no
-state shared across runs. `scanner.Run` ([internal/scanner/scanner.go](internal/scanner/scanner.go))
-calls each phase in order; the output of one is the typed input to the next.
+The scan is a flat sequence of steps. There is no concurrency between steps and
+no state shared across runs. `scanner.Run` ([internal/scanner/scanner.go](internal/scanner/scanner.go))
+calls each step in order; the output of one is the typed input to the next.
 
 ```mermaid
 flowchart TD
     target["target (path or URL)"]
 
-    subgraph P1["Phase 1 — Reconnaissance"]
+    subgraph S1["Step 1 — Recon"]
         recon["ingestion.Recon"]
         profile[["RepoProfile<br/>Languages · SDKDeps · Manifest · Components"]]
         recon --> profile
     end
 
-    subgraph P2a["Phase 2a — Inventory (per-language AST)"]
+    subgraph S2["Step 2 — Inventory (per-language AST)"]
         disc["analysis.DiscoverTools<br/>DiscoverAgents<br/>DiscoverGuardrails<br/>DiscoverSessions<br/>DiscoverSubagents<br/>DiscoverClaudeSettings"]
         edges["analysis.ResolveEdges"]
         inv[["RepoInventory<br/>Tools · Agents · Guardrails · Sessions<br/>SDKsDetected · UsesDefaultTracing"]]
         disc --> edges --> inv
     end
 
-    subgraph P2b["Phase 2b — Policy selection"]
+    subgraph S3["Step 3 — Policy selection"]
         loadfor["rules.LoadFor(SDKsDetected)"]
         meta["scanner.SelectAndEmitMETA<br/>scanner.EmitCoverageMETA"]
         reg[["Registry + META-001..004"]]
@@ -88,16 +80,16 @@ flowchart TD
         meta --> reg
     end
 
-    subgraph P2c["Phase 2c — Analysis"]
+    subgraph S4["Step 4 — Analysis"]
         run["Registry.Run"]
         findings[["Findings<br/>sorted by (RuleID, FilePath, Line)"]]
         run --> findings
     end
 
-    subgraph Tail["Scoring · Generation · Review"]
+    subgraph S56["Steps 5–6 — Scoring · Review"]
         score["analysis.Score"]
-        gen["generation.GenerateHooks<br/>generation.GeneratePolicy"]
-        score --> gen
+        render["review.Renderer.Render<br/>(human) / JSON marshal"]
+        score --> render
     end
 
     result[["ScanResult<br/>(JSON-serializable, returned to CLI)"]]
@@ -110,7 +102,7 @@ flowchart TD
     inv --> run
     reg --> run
     findings --> score
-    gen --> result
+    score --> result
 ```
 
 The three scopes a rule can fire at — `tool`, `agent`, `repo` — flow into
@@ -132,7 +124,7 @@ flowchart LR
     repo --> f
 ```
 
-### Phase 1 — Reconnaissance ([internal/ingestion/normalizer.go](internal/ingestion/normalizer.go))
+### Step 1 — Recon ([internal/ingestion/normalizer.go](internal/ingestion/normalizer.go))
 
 `ingestion.Resolve` resolves a CLI target to a directory on disk (cloning
 remote repos). `ingestion.Recon` then walks the source tree and returns a
@@ -144,11 +136,11 @@ remote repos). `ingestion.Recon` then walks the source tree and returns a
   for known SDK package names. Each hit becomes a typed `SDKDep{Name, Source}`.
 - **`ScanManifest`** — per-language file paths and discovered agent components.
 
-Phase 1 must stay cheap. No tree-sitter parses here.
+Recon must stay cheap. No tree-sitter parses here.
 
-### Phase 2a — Inventory ([internal/analysis/](internal/analysis/))
+### Step 2 — Inventory ([internal/analysis/](internal/analysis/))
 
-For each language Phase 1 cleared, do the AST work and produce a `RepoInventory`:
+For each language recon cleared, do the AST work and produce a `RepoInventory`:
 
 - **DiscoverTools** (`discovery.go`) — two-pass Python discovery (decorated
   functions and bare shell-invoking functions). Also captures decorator kwargs
@@ -257,7 +249,7 @@ combinations) and triple-vs-single quote markers. Parameter names come from
 any parameter is type-annotated (`typed_parameter` or `typed_default_parameter`
 in tree-sitter terms).
 
-### Phase 2c — Analysis ([internal/rules/](internal/rules/) + [internal/analysis/detectors/](internal/analysis/detectors/))
+### Steps 3–4 — Policy selection and analysis ([internal/rules/](internal/rules/) + [internal/analysis/detectors/](internal/analysis/detectors/))
 
 Detection is **YAML-driven**. The `internal/analysis/detectors` package owns
 three typed interfaces and the `Registry` runtime; concrete detectors are
@@ -342,7 +334,7 @@ Shipped rules (one row per YAML rule entry):
 | OAI-105 | agent | openai_sdk | high     | `openai_sdk/mcp_safety.yaml`             | Agent uses MCP servers without `input_guardrails`                   |
 | OAI-201 | repo  | openai_sdk | medium   | `openai_sdk/tracing.yaml`                | OpenAI Agents SDK present but no custom trace processor configured  |
 
-### Stage 5 — Scoring ([internal/analysis/scoring.go](internal/analysis/scoring.go))
+### Step 5 — Scoring ([internal/analysis/scoring.go](internal/analysis/scoring.go))
 
 Per-tool:
 
@@ -360,56 +352,30 @@ Both `saturation` and the severity weights in [models.SeverityWeight](internal/m
 are initial values pending corpus calibration (architecture § 8). They live in one
 place so the curve can be tuned without touching detectors.
 
-### Stage 6 — Generation ([internal/generation/](internal/generation/))
+### Step 6 — Review ([internal/review/](internal/review/))
 
-Two generators, both deterministic by contract: same findings → byte-identical
-output. The contract is enforced by the generators themselves (sorted tool
-names, sorted findings by `RuleID`, deduped global-deny entries before
-marshaling). `TestScanDeterministic` (see §6 test layer 4) asserts this
-mechanically — a non-deterministic generator is a build failure, not a latent
-bug.
-
-- **Hooks** ([hooks.go](internal/generation/hooks.go)) — emits
-  `hooks/pretooluse_validate.py` (per-tool validators behind a dispatch table)
-  and `hooks/posttooluse_log.py` (structured logging). A finding is
-  hook-eligible if its `FixHints["hook"]` is non-empty, OR if its rule ID is
-  one of `CSDK-003` / `CSDK-004` / `CSDK-006` (the rules whose remediation is
-  a runtime mutation rather than a code change). `stanzaForFinding` maps each
-  hook-eligible rule to the Python lines it injects.
-- **Policy** ([policy.go](internal/generation/policy.go)) — emits
-  `openshell/policy.yaml`. The generator currently always produces a
-  defaults-only starter policy, because the OpenShell detection rule pack
-  (OSH-001..005) was removed from this open-source repo and moved to a
-  closed-source companion project. The generator's per-rule field mapping
-  (OSH-001 → globalDeny, OSH-002 → per-tool commands.allowed, OSH-003 →
-  per-tool filesystem.writePrefixes, OSH-005 → per-tool
-  network.allowedHosts) is preserved in code so the rule pack can be
-  re-introduced or re-wired without engine changes.
-
-The OpenShell schema (`apiVersion: openshell.nvidia.com/v1`, `kind:
-SandboxPolicy`) is the generator's interpretation pending the real spec link;
-renames are mechanical when the spec lands.
-
-### Stage 7 — Review ([internal/review/](internal/review/))
+The scan is read-only: review renders the `ScanResult`, it does not write
+anything into the scanned repo.
 
 - `Renderer.Render` ([diff.go](internal/review/diff.go)) — produces the human
-  scan summary printed to stdout for `--format human`. Color via lipgloss,
-  disabled with `--no-color`.
-- `ApplyArtifacts` — writes generated files into the repo root. Refuses to
-  overwrite by default; `--overwrite` opts in.
-- `ExportZIP` ([export.go](internal/review/export.go)) — packages all
-  generated artifacts into one ZIP for `--export <path>`.
+  scan summary printed to stdout for `--format human`: per-tool readiness, the
+  overall score, the discovered inventory, and the findings list. Color via
+  lipgloss, disabled with `--no-color`.
+- `--format json` marshals the `ScanResult` directly (in `cmd/trustabl`), for
+  CI consumers.
 
-The CLI's per-finding interactive accept/reject UX from the design doc is out
-of scope; `--apply --yes` is the CLI equivalent of "accept all".
+An earlier version of Trustabl also generated committable artifacts
+(Pre/PostToolUse hook scripts, an OpenShell sandbox-policy starter) and could
+apply or export them. That generation path has been removed — Trustabl now
+detects and reports only.
 
 ---
 
 ## 3. Data model
 
 All cross-package values live in [internal/models/](internal/models/). Anything
-that crosses ingestion → analysis → generation → review is a typed struct with
-JSON tags, because `ScanResult` is the contract for `--format json` CI output.
+that crosses ingestion → analysis → review is a typed struct with JSON tags,
+because `ScanResult` is the contract for `--format json` CI output.
 
 ```mermaid
 classDiagram
@@ -479,7 +445,7 @@ classDiagram
 ```
 
 ```go
-// Phase 1 output
+// Recon output
 RepoProfile {
     Languages []Language   // detected by file extension
     SDKDeps   []SDKDep     // declared deps (from manifests)
@@ -489,7 +455,7 @@ RepoProfile {
 SDKDep { Name, Source string; Confidence float64 }
 SDK = "claude_agent_sdk" | "openai_agents" | "mcp" | "openshell"
 
-// Phase 2a output
+// Inventory output
 RepoInventory {
     Tools              []ToolDef
     Agents             []AgentDef
@@ -499,7 +465,7 @@ RepoInventory {
     MCPServers         []MCPServerDef
     Subagents          []SubagentDef
     ClaudeSettings     []ClaudeSettings
-    SDKsDetected       []SDK     // observed in code (drives Phase 2b policy selection)
+    SDKsDetected       []SDK     // observed in code (drives the policy-selection step)
     Manifest           ScanManifest
     UsesDefaultTracing bool
 }
@@ -611,8 +577,8 @@ ClaudeSettings {
 ScanResult {
     ScanID             string
     Repo               string
-    Languages          []Language          // Phase 1, by file extension
-    SDKs               []SDK               // Phase 2a, observed in code
+    Languages          []Language          // recon, by file extension
+    SDKs               []SDK               // inventory, observed in code
     Manifest           ScanManifest
     Tools              []ToolDef
     Agents             []AgentDef
@@ -626,14 +592,9 @@ ScanResult {
 }
 ```
 
-Generated artifacts (hooks + OpenShell policy) are **not** a field on
-`ScanResult`. `scanner.Run` returns them as a separate
-`[]GeneratedArtifact` value, because they are derived from the findings
-rather than part of the analysis record — and a JSON consumer that only
-wants the report should not pay to serialize file bodies it will not
-commit. The CLI consumes that slice only for `--apply` and `--export`;
-neither output format renders the artifacts inline (the human summary
-lists findings and readiness, not the generated file bodies).
+`scanner.Run` returns `(ScanResult, error)` — the whole result is the
+record, and both output formats render from it (the human summary lists
+findings and readiness; `--format json` marshals the struct directly).
 
 `ScanID` is derived deterministically from the repo label and the sorted
 Python file list, so identical inputs produce diff-comparable JSON across runs.
@@ -647,12 +608,8 @@ Discipline rules:
   hosted-tool args) captured at discovery time. Detectors read these fields
   instead of re-parsing the decorator from inside a rule.
 - `ToolDef.Facts map[string]string` is reserved for detector-injected body
-  facts (e.g., "this function shells out") that downstream stages can read
+  facts (e.g., "this function shells out") that downstream steps can read
   without re-walking the AST.
-- `Finding.FixHints map[string]any` carries generator-specific keys (e.g.,
-  `"hook": "pretooluse_validate"`, `"policy_emit": "command_allowlist"`,
-  `"unsafe_params": [...]`). The generators read these instead of hardcoding
-  rule IDs in their own logic.
 - `AgentComponent.Path` always uses forward slashes (`filepath.ToSlash`),
   even on Windows. This keeps manifest output platform-stable so JSON
   consumers and snapshot tests don't see `/` vs `\` differences.
@@ -702,8 +659,7 @@ internal/
 │       │   ├── mcp_safety.yaml        OAI-105
 │       │   └── tracing.yaml           OAI-201
 │       └── (no openshell/ — OSH-001..005 moved to a closed-source project)
-├── generation/                  Hooks + Policy generators (deterministic).
-├── review/                      Human renderer, apply, export ZIP.
+├── review/                      Human renderer (read-only; no file writes).
 └── inference/                   BYOK inference router (interface + cache).
 ```
 
@@ -752,9 +708,6 @@ rules:
     explanation: >
       An agent tool that makes a network request without a timeout ...
     fix: Pass `timeout=` (typically 5–30s) to the request.
-    fix_hints:
-      hook: pretooluse_validate
-      guard: timeout_required
 ```
 
 ### Adding a rule
@@ -776,13 +729,13 @@ rules:
 
 ### §5.1 META findings (engine-emitted, not YAML-driven)
 
-Phase 2b emits up to three engine-level findings before any rule runs. These
+The policy-selection step emits up to three engine-level findings before any rule runs. These
 are not backed by YAML policy files; they come from `SelectAndEmitMETA` in the
 scanner.
 
 | ID       | Trigger                                                    | Severity | Intent                                               |
 | -------- | ---------------------------------------------------------- | -------- | ---------------------------------------------------- |
-| META-001 | An SDK is observed in code (`SDKsDetected`) but trustabl has no policy pack for it | info | Honest "unaudited SDK" signal — silence on an unknown SDK is wrong |
+| META-001 | An SDK is observed in code (`SDKsDetected`) but Trustabl has no policy pack for it | info | Honest "unaudited SDK" signal — silence on an unknown SDK is wrong |
 | META-002 | An SDK appears in declared deps (`SDKDeps`) but no code use was observed | info | Dep declared but not used — surfaces drift between manifests and code |
 | META-003 | An `AgentDef` has `Opaque=true` (`Agent(**config)` or `tools=non-literal`) | info | Agent analysis is partial; tool-graph predicates on this agent are unreliable |
 | META-004 | An audited SDK (Claude/OpenAI) was observed but **no loaded rule was applicable** to any discovered tool/agent | info | Distinguishes "could not audit" from "audited, clean" — prevents a false clean bill when discovery extracted nothing a rule targets |
@@ -891,10 +844,9 @@ Coverage is split across three layers, each with a focused contract:
    shouldn't panic the discovery pass.
 4. **Determinism regression** ([determinism_test.go](internal/scanner/determinism_test.go)).
    `TestScanDeterministic` runs `scanner.Run` twice over
-   `testdata/deterministic-fixture` and asserts that `ScanID` and all
-   `GeneratedArtifact.Contents` are byte-identical across both runs.
-   This enforces the §7 contract mechanically so a non-deterministic
-   generator is a build failure, not a latent bug.
+   `testdata/deterministic-fixture` and asserts that `ScanID` is identical
+   across both runs. This enforces the §7 contract mechanically so a
+   non-deterministic scan is a build failure, not a latent bug.
 
 Real-world examples in `examples/` are NOT a controlled fixture and are
 not expected to trigger every rule. Per-rule correctness lives in
@@ -906,22 +858,23 @@ Two invariants are load-bearing for the user-facing experience:
 
 1. **Same inputs → same `ScanID`.** Derived from a sorted file list, so file
    ordering from the OS walk does not leak into the ID.
-2. **Same findings → byte-identical generated artifacts.** Generators sort
-   tool names, sort findings by `RuleID`, and dedupe global deny entries by
-   `(RuleID, Reason)` before marshaling. `Components` are sorted by
-   `(Kind, Path)` for the same reason.
+2. **Same inputs → byte-stable report.** Findings are sorted by
+   `(RuleID, FilePath, Line)`; the inventory slices (`HostedTools`,
+   `MCPServers`, `Subagents`, `ClaudeSettings`) and `Components` (by
+   `(Kind, Path)`) are sorted before marshaling. The JSON output is therefore
+   diff-stable across runs.
 
-This matters because users commit the generated files. A non-deterministic
-generator means a user sees spurious diffs on every CI run, which trains them
-to ignore the diff entirely.
+This matters because CI consumers diff scan output. A non-deterministic scan
+means spurious diffs on every run, which trains users to ignore the diff
+entirely.
 
 The contract is enforced by `TestScanDeterministic` in
 [internal/scanner/determinism_test.go](internal/scanner/determinism_test.go):
 two consecutive `scanner.Run` calls over `testdata/deterministic-fixture` must
-produce identical `ScanID` values and byte-equal `GeneratedArtifact.Contents`
-for every artifact. A new generator that violates this is a build failure.
+produce identical `ScanID` values. A change that violates this is a build
+failure.
 
-New generators MUST sort their inputs and deduplicate before emitting. No
+New ordered output MUST be sorted deterministically before emitting. No
 timestamp, no map iteration order, no goroutine scheduling may influence output.
 
 ---
@@ -930,8 +883,6 @@ timestamp, no map iteration order, no goroutine scheduling may influence output.
 
 ```
 trustabl scan <target> [--detectors=…] [--format=human|json]
-                       [--apply [--yes] [--overwrite]]
-                       [--export=path.zip]
                        [--strict] [--no-color]
 trustabl version
 ```
@@ -943,9 +894,8 @@ Exit codes:
 - `2` — scanner / I/O error.
 
 The CLI is a thin shell over `scanner.Run`. The same
-`Run(Config) (ScanResult, []GeneratedArtifact, error)` is what a future HTTP
-server, GitHub Action, or test harness calls; the boundary is intentionally
-narrow.
+`Run(Config) (ScanResult, error)` is what a future HTTP server, GitHub Action,
+or test harness calls; the boundary is intentionally narrow.
 
 ---
 
@@ -973,5 +923,7 @@ take it absent a concrete distribution requirement.
   regression coverage, not the corpus eval, which requires labelled-finding
   ground truth on real repos.
 - **No web app, no API server, no GitHub Action.** CLI-only.
-- **Per-finding interactive accept/edit/reject.** `--apply --yes` is the CLI
-  equivalent of accept-all; richer UX waits for a host that can render it.
+- **No artifact generation or remediation.** Trustabl detects and reports; it
+  does not write hook scripts, sandbox policies, or any other file into the
+  scanned repo. An earlier version generated and could apply/export such
+  artifacts; that path was removed.

@@ -22,7 +22,7 @@ Do not skip step 1.
 - **Never duplicate a rule ID across files.** The loader rejects this at
   startup; per-rule tests catch it faster — run `go test ./...`.
 - **Never widen `applies_to` across SDKs casually.** A rule's
-  `explanation` / `fix` / `fix_hints` text is usually SDK-specific. Adding
+  `explanation` / `fix` text is usually SDK-specific. Adding
   `openai_tool` to a Claude-SDK rule (or vice versa) makes the user-facing
   text lie. If a cross-SDK pattern is genuinely needed, author a separate
   rule under that SDK's category (`policies/<sdk>_sdk/<topic>.yaml`) with
@@ -186,9 +186,9 @@ production-grade, in priority order:
 
 ## Output discipline for explanation/fix text
 
-These strings are user-facing — they appear in the CLI's scan summary and
-guide whether a user commits the generator's output. Vague text undermines
-the product.
+These strings are user-facing — they appear in the CLI's scan summary (and
+JSON output) and guide whether a user acts on the finding. Vague text
+undermines the product.
 
 - **explanation**: name the consequence, not just the pattern. "Returns
   exceptions to the model as opaque strings, so it can't recover" beats

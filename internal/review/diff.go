@@ -1,16 +1,10 @@
-// Package review implements the Diff Renderer + Exporter of architecture §2.
-//
-// Note on scope: the doc envisions a web-based Approval UX with per-artifact
-// accept/edit/reject. In a CLI the equivalent is `--apply --yes` (accept all)
-// or interactive prompts (reject individually). Per-finding edit-in-place is
-// out of scope for v0.1.
+// Package review implements the Diff Renderer of architecture §2 — the
+// human-readable scan summary printed to stdout.
 package review
 
 import (
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -352,28 +346,4 @@ func wrapAt(s string, n int) string {
 		col += len(w)
 	}
 	return b.String()
-}
-
-// ApplyArtifacts writes generated artifacts into the repo root.
-//
-// Discipline:
-//   - Refuse to overwrite existing files unless `overwrite` is true.
-//   - Create parent directories as needed.
-//   - Never delete files; this function only writes.
-func ApplyArtifacts(repoRoot string, artifacts []models.GeneratedArtifact, overwrite bool) error {
-	for _, a := range artifacts {
-		dest := filepath.Join(repoRoot, a.RelativePath)
-		if !overwrite {
-			if _, err := os.Stat(dest); err == nil {
-				return fmt.Errorf("refusing to overwrite %s (re-run with --overwrite)", a.RelativePath)
-			}
-		}
-		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
-			return fmt.Errorf("mkdir %s: %w", filepath.Dir(dest), err)
-		}
-		if err := os.WriteFile(dest, []byte(a.Contents), 0o644); err != nil {
-			return fmt.Errorf("write %s: %w", dest, err)
-		}
-	}
-	return nil
 }

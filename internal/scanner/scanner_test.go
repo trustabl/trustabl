@@ -43,7 +43,7 @@ func TestScanExamples_NoCrash(t *testing.T) {
 
 		target := filepath.Join(examplesDir, e.Name())
 		t.Run(e.Name(), func(t *testing.T) {
-			result, _, err := scanner.Run(scanner.Config{Target: target})
+			result, err := scanner.Run(scanner.Config{Target: target})
 			if err != nil {
 				t.Fatalf("scan %s: %v", e.Name(), err)
 			}
@@ -63,7 +63,7 @@ func TestScanExamples_NoCrash(t *testing.T) {
 func TestScan_SurfacesNewInventoryFields(t *testing.T) {
 	_, thisFile, _, _ := runtime.Caller(0)
 	target := filepath.Join(filepath.Dir(thisFile), "..", "..", "examples", "financial_research_agent")
-	res, _, err := scanner.Run(scanner.Config{Target: target})
+	res, err := scanner.Run(scanner.Config{Target: target})
 	if err != nil {
 		t.Fatalf("scan: %v", err)
 	}

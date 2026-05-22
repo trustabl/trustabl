@@ -28,8 +28,6 @@ rules:
         has_docstring: true
     explanation: Explanation text.
     fix: Fix text.
-    fix_hints:
-      add_docstring: true
 `
 	var pf rules.PolicyFile
 	if err := yaml.Unmarshal([]byte(src), &pf); err != nil {

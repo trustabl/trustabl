@@ -39,6 +39,3 @@ rules:
       Pass timeout= (typically 5-30 seconds depending on the endpoint).
       Surface timeouts as a structured tool error the model can react to,
       using failure_error_function (see OAI-004).
-    fix_hints:
-      hook: pretooluse_validate
-      guard: timeout_required

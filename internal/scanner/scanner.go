@@ -1,5 +1,5 @@
 // Package scanner is the orchestration layer. It wires
-// ingestion → analysis → generation → review into one Run() call.
+// ingestion → analysis → review into one Run() call.
 //
 // Why split this out from cmd/trustabl: the CLI is one entry point. A future
 // HTTP server (architecture §1, Public API) or a unit test calls the same
@@ -14,7 +14,6 @@ import (
 	"strings"
 
 	"github.com/trustabl/trustabl/internal/analysis"
-	"github.com/trustabl/trustabl/internal/generation"
 	"github.com/trustabl/trustabl/internal/ingestion"
 	"github.com/trustabl/trustabl/internal/models"
 	"github.com/trustabl/trustabl/internal/rules"
@@ -24,20 +23,14 @@ import (
 type Config struct {
 	Target     string                    // local path or GitHub URL
 	Categories []models.DetectorCategory // empty means all categories
-	Version    string                    // injected by the CLI for artifact metadata
 }
 
 // Run executes the full pipeline. The returned ScanResult is what gets
 // JSON-serialized for CI output and what the Renderer prints for humans.
-//
-// Generated artifacts (hooks + OpenShell policy) are returned separately
-// rather than embedded in ScanResult: they are derived from the findings,
-// not part of the analysis record, and callers that only want the JSON
-// report should not pay to serialize file bodies they will not commit.
-func Run(cfg Config) (models.ScanResult, []models.GeneratedArtifact, error) {
+func Run(cfg Config) (models.ScanResult, error) {
 	src, err := ingestion.Resolve(cfg.Target)
 	if err != nil {
-		return models.ScanResult{}, nil, fmt.Errorf("ingest: %w", err)
+		return models.ScanResult{}, fmt.Errorf("ingest: %w", err)
 	}
 	defer src.Cleanup()
 
@@ -46,16 +39,16 @@ func Run(cfg Config) (models.ScanResult, []models.GeneratedArtifact, error) {
 		repoLabel = src.RootPath
 	}
 
-	// Phase 1: reconnaissance (cheap, no AST)
+	// Step 1: recon (cheap, no AST)
 	profile, err := ingestion.Recon(src)
 	if err != nil {
-		return models.ScanResult{}, nil, fmt.Errorf("recon: %w", err)
+		return models.ScanResult{}, fmt.Errorf("recon: %w", err)
 	}
 
-	// Phase 2a: per-language inventory (Python only for now)
+	// Step 2: inventory (per-language AST; Python only for now)
 	tools, parsed, err := analysis.DiscoverTools(profile.Manifest)
 	if err != nil {
-		return models.ScanResult{}, nil, fmt.Errorf("discover: %w", err)
+		return models.ScanResult{}, fmt.Errorf("discover: %w", err)
 	}
 	agents := analysis.DiscoverAgents(parsed)
 	guardrails := analysis.DiscoverGuardrails(parsed)
@@ -74,10 +67,10 @@ func Run(cfg Config) (models.ScanResult, []models.GeneratedArtifact, error) {
 	inventory.Subagents = analysis.DiscoverSubagents(profile.Manifest)
 	inventory.ClaudeSettings = analysis.DiscoverClaudeSettings(profile.Manifest)
 
-	// Phase 2b: policy selection
+	// Step 3: policy selection
 	registry, err := rules.LoadFor(rules.DefaultFS(), inventory.SDKsDetected)
 	if err != nil {
-		return models.ScanResult{}, nil, fmt.Errorf("load rules: %w", err)
+		return models.ScanResult{}, fmt.Errorf("load rules: %w", err)
 	}
 	if len(cfg.Categories) > 0 {
 		registry = registry.Subset(cfg.Categories...)
@@ -86,15 +79,12 @@ func Run(cfg Config) (models.ScanResult, []models.GeneratedArtifact, error) {
 	metaFindings = append(metaFindings,
 		EmitCoverageMETA(registry.ApplicableCategories(profile, inventory), inventory)...)
 
-	// Phase 2c: analysis
+	// Step 4: analysis
 	ruleFindings := registry.Run(profile, inventory, parsed)
 	findings := append(metaFindings, ruleFindings...)
 
+	// Step 5: scoring
 	readiness, overall := analysis.Score(tools, findings)
-	artifacts := append(
-		generation.GenerateHooks(findings),
-		generation.GeneratePolicy(findings, cfg.Version)...,
-	)
 
 	return models.ScanResult{
 		ScanID:         scanID(repoLabel, profile.Manifest),
@@ -111,7 +101,7 @@ func Run(cfg Config) (models.ScanResult, []models.GeneratedArtifact, error) {
 		Findings:       findings,
 		Readiness:      readiness,
 		OverallScore:   overall,
-	}, artifacts, nil
+	}, nil
 }
 
 // deriveSDKsDetected scans the inventory for tool/agent kinds that imply

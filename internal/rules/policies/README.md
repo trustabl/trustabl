@@ -110,13 +110,12 @@ kinds are:
 because the AST pattern is the same — an HTTP call without `timeout=` is
 the same shape regardless of which SDK calls it. Resist this. A rule's
 `explanation` and `fix` text usually references a specific SDK ("the Claude
-Agent SDK uses the docstring as the description shown to the model";
-"`pretooluse_validate` hook can inject the timeout"). Listing a kind whose
-SDK doesn't match makes the user-facing text lie.
+Agent SDK uses the docstring as the description shown to the model").
+Listing a kind whose SDK doesn't match makes the user-facing text lie.
 
 If a pattern truly applies cross-SDK, author one rule per SDK with the
-framing each SDK requires (different `explanation` references, different
-`fix_hints`). Duplication of the predicate is the price of honest framing.
+framing each SDK requires (different `explanation` and `fix` wording).
+Duplication of the predicate is the price of honest framing.
 
 The shipped `policies/claude_sdk/` and `policies/openai_sdk/` packs follow
 this discipline — the structurally-similar "missing docstring" rule appears
@@ -165,16 +164,13 @@ confidence rules contribute proportionally less to readiness.
 
 ## Determinism
 
-Generated artifacts are byte-equal across repeat scans of the same input.
-That property is a load-bearing contract (users commit the generated files;
-spurious diffs train them to ignore the diff). Two consequences for rule
-authoring:
+The scan output is byte-stable across repeat scans of the same input. That
+property is a load-bearing contract (CI consumers diff scan output; spurious
+diffs train them to ignore it). One consequence for rule authoring:
 
 - Don't write predicates that depend on map iteration order.
-- The `fix_hints` map is sorted on serialization; safe to use freely.
 
 This is enforced by [`internal/scanner/determinism_test.go`](../../scanner/determinism_test.go),
 which runs `scanner.Run` twice over `testdata/deterministic-fixture` and
-asserts that `ScanID` and every `GeneratedArtifact.Contents` is byte-identical
-across both runs. A non-deterministic rule or generator is a build failure,
-not a latent bug.
+asserts that `ScanID` is identical across both runs. A non-deterministic rule
+is a build failure, not a latent bug.

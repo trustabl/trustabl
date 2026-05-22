@@ -47,6 +47,3 @@ rules:
     fix: >
       Pass `timeout=` (typically 5–30s) to the request. Surface failures as a
       structured error the model can react to.
-    fix_hints:
-      hook: pretooluse_validate
-      guard: timeout_required

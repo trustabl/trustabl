@@ -29,5 +29,3 @@ rules:
     fix: >
       Catch known failure modes and return a `{"error": ..., "retryable": bool}`
       payload.
-    fix_hints:
-      wrap_errors: true

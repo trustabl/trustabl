@@ -27,8 +27,6 @@ rules:
     fix: >
       Add a one-paragraph docstring describing inputs, outputs, and when to
       use this tool.
-    fix_hints:
-      add_docstring: true
 
   - id: CSDK-002
     title: Tool parameters are not type-annotated
@@ -51,8 +49,6 @@ rules:
     fix: >
       Annotate every parameter with a type. Prefer pydantic models for nested
       args.
-    fix_hints:
-      add_input_schema: true
 
   - id: CSDK-007
     title: Ambiguous tool name

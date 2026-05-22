@@ -34,6 +34,3 @@ rules:
       PreToolUse hook that allowlists the specific commands the subagent
       may run, and do not pair it with permission_mode="bypassPermissions"
       at the ClaudeAgentOptions level.
-    fix_hints:
-      hook: pretooluse_validate
-      guard: command_allowlist

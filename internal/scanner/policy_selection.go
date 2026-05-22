@@ -37,7 +37,7 @@ func SelectAndEmitMETA(profile models.RepoProfile, inv models.RepoInventory) []m
 				Severity: models.SeverityInfo,
 				Title:    "Unaudited SDK in use",
 				Explanation: fmt.Sprintf(
-					"This repo uses SDK %q, which trustabl does not currently audit. "+
+					"This repo uses SDK %q, which Trustabl does not currently audit. "+
 						"No rules will fire against agents or tools from this SDK.", sdk),
 				SuggestedFix: "If detection for this SDK is needed, file an issue or contribute a policy pack under internal/rules/policies/<sdk>/.",
 				Confidence:   1.0,
@@ -68,7 +68,7 @@ func SelectAndEmitMETA(profile models.RepoProfile, inv models.RepoInventory) []m
 			Severity: models.SeverityInfo,
 			Title:    "Declared SDK dependency has no observed code use",
 			Explanation: fmt.Sprintf(
-				"The project declares %q as a dependency (in %s) but trustabl found no "+
+				"The project declares %q as a dependency (in %s) but Trustabl found no "+
 					"code that uses it. The corresponding rules will not fire until an "+
 					"agent or tool from this SDK appears in code.", dep.Name, dep.Source),
 			SuggestedFix: "If the dep was added intentionally for non-agent reasons, suppress this finding. Otherwise, remove the unused dep.",
@@ -89,7 +89,7 @@ func SelectAndEmitMETA(profile models.RepoProfile, inv models.RepoInventory) []m
 			Title:    "Agent configuration is opaque",
 			Explanation: "Agent configuration is opaque (kwargs come from a variable via **unpack, " +
 				"or tools= is a non-literal expression like a function call); rules cannot evaluate against this agent.",
-			SuggestedFix: "Inline the agent's kwargs at the constructor call site, or move the dynamic configuration into explicit code that trustabl can analyze.",
+			SuggestedFix: "Inline the agent's kwargs at the constructor call site, or move the dynamic configuration into explicit code that Trustabl can analyze.",
 			Confidence:   1.0,
 		})
 	}
@@ -123,10 +123,10 @@ func EmitCoverageMETA(applicable map[models.DetectorCategory]bool, inv models.Re
 			Severity: models.SeverityInfo,
 			Title:    "SDK detected but no rule was applicable",
 			Explanation: fmt.Sprintf(
-				"trustabl detected the %q SDK in code and loaded its policy pack, but "+
+				"Trustabl detected the %q SDK in code and loaded its policy pack, but "+
 					"none of that pack's rules were applicable to any discovered tool or "+
 					"agent. The absence of findings does NOT mean this code is clean — it "+
-					"means trustabl could not audit it (often because tools are declared in "+
+					"means Trustabl could not audit it (often because tools are declared in "+
 					"a shape discovery does not yet extract).", sdk),
 			SuggestedFix: "Treat this scan as uncovered for this SDK, not as a pass. File an issue with the agent/tool shape so discovery can be extended.",
 			Confidence:   1.0,

@@ -29,6 +29,3 @@ rules:
       Normalize the path before use: p = Path(file_path).resolve(). Then
       check that the resolved path is inside an explicit allowed-root
       directory before opening.
-    fix_hints:
-      hook: pretooluse_validate
-      guard: path_normalization

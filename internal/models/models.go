@@ -142,7 +142,6 @@ type Finding struct {
 	Explanation  string           `json:"explanation"` // "show your work" per doc §7
 	SuggestedFix string           `json:"suggested_fix"`
 	Confidence   float64          `json:"confidence"` // 0..1
-	FixHints     map[string]any   `json:"fix_hints,omitempty"`
 }
 
 // ToolReadiness is the per-tool score from the Scoring Engine.
@@ -185,14 +184,14 @@ type SDKDep struct {
 	Confidence float64 `json:"confidence"`
 }
 
-// RepoProfile is the output of Phase 1 (reconnaissance).
+// RepoProfile is the output of the recon step.
 type RepoProfile struct {
 	Languages []Language   `json:"languages"`
 	SDKDeps   []SDKDep     `json:"sdk_deps"`
 	Manifest  ScanManifest `json:"manifest"`
 }
 
-// RepoInventory is the output of Phase 2a.
+// RepoInventory is the output of the inventory step.
 // AgentDef, GuardrailDef, SessionUse, HostedToolDef, MCPServerDef are in agent.go.
 type RepoInventory struct {
 	Tools              []ToolDef        `json:"tools"`
@@ -208,20 +207,12 @@ type RepoInventory struct {
 	UsesDefaultTracing bool             `json:"uses_default_tracing"`
 }
 
-// GeneratedArtifact is a file the generators want to write into the user's repo.
-type GeneratedArtifact struct {
-	RelativePath string           `json:"relative_path"`
-	Contents     string           `json:"contents"`
-	Category     DetectorCategory `json:"category"`
-	Rationale    string           `json:"rationale"`
-}
-
 // ScanResult is the top-level output. JSON-serializable for CI.
 type ScanResult struct {
 	ScanID         string           `json:"scan_id"`
 	Repo           string           `json:"repo"`
-	Languages      []Language       `json:"languages"` // detected by file extension (Phase 1)
-	SDKs           []SDK            `json:"sdks"`      // observed in code (Phase 2a)
+	Languages      []Language       `json:"languages"` // detected by file extension (recon)
+	SDKs           []SDK            `json:"sdks"`      // observed in code (inventory)
 	Manifest       ScanManifest     `json:"manifest"`
 	Tools          []ToolDef        `json:"tools"`
 	Agents         []AgentDef       `json:"agents"`

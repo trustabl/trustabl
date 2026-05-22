@@ -44,6 +44,3 @@ rules:
     fix: >
       Add an `idempotency_key: str` parameter; verify the receiving API
       respects it.
-    fix_hints:
-      hook: pretooluse_validate
-      inject_idempotency: true

@@ -1,27 +1,26 @@
 # Coverage
 
-Coverage matrix for trustabl's static analysis: which agent SDKs (and which
-languages) we currently scan, analyse, detect, and generate policies for. This
-file is the at-a-glance reference; `ARCHITECTURE.md` has the implementation
-detail.
+Coverage matrix for Trustabl's static analysis: which agent SDKs (and which
+languages) we currently scan, analyse, and detect against. This file is the
+at-a-glance reference; `ARCHITECTURE.md` has the implementation detail.
 
-_Last reviewed: 2026-05-22 (HEAD `5f84f22`)._
+_Last reviewed: 2026-05-22 (HEAD `b2abf8b`)._
 
 ## Coverage matrix
 
 Legend: ✅ full · ◐ partial · ❌ none · — N/A
 
-| SDK | Language | Scanning | Analysis (AST discovery) | Detection rules | Policies / Artifacts |
-|---|---|---|---|---|---|
-| **Claude Agent SDK** | Python | ✅ dep-scan + file inventory + `.claude/` components | ✅ tools, agents, subagents, settings | ✅ CSDK-001..007 (tool), CSDK-101 (agent) | ✅ Pre/PostToolUse hooks generated |
-| **Claude Agent SDK** | TypeScript | ◐ file inventory + `.claude/` components | ❌ no TS AST parser | ❌ | ❌ |
-| **OpenAI Agents SDK** | Python | ✅ dep-scan + file inventory | ✅ tools, hosted tools (11 classes), agents, MCP servers (3 transports + alias), guardrails, sessions | ✅ OAI-001..006 (tool), OAI-101..105 (agent), OAI-201 (repo) | ❌ no OpenAI-specific artifacts |
-| **OpenAI Agents SDK** | TypeScript | ◐ file inventory only | ❌ no TS AST parser | ❌ | ❌ |
-| **MCP** | Python | ✅ tool registrations + config files | ◐ tool registrations only (no server-side resource/prompt discovery) | ❌ no dedicated pack (KindMCPTool is reachable by some CSDK rules' `applies_to`) | ❌ |
-| **MCP** | TypeScript / Go / Rust | ❌ no MCP-specific recognition (file paths inventoried generically, no MCP parser or dep needles) | ❌ | ❌ | ❌ |
-| **Google ADK** | Python | ❌ no dep needle, no AST | ❌ | ❌ | ❌ |
-| **Google ADK** | TypeScript / Go / Java / Kotlin | ❌ | ❌ | ❌ | ❌ |
-| **OpenShell** | Python | ✅ shell-invocation discovery + `openshell/*.yaml` policy files surfaced | ✅ `KindShellInvocation` tools | ❌ rules moved to closed-source companion project (META-001 fires instead) | ✅ defaults-only `openshell/policy.yaml` starter |
+| SDK | Language | Scanning | Analysis (AST discovery) | Detection rules |
+|---|---|---|---|---|
+| **Claude Agent SDK** | Python | ✅ dep-scan + file inventory + `.claude/` components | ✅ tools, agents, subagents, settings | ✅ CSDK-001..007 (tool), CSDK-101 (agent) |
+| **Claude Agent SDK** | TypeScript | ◐ file inventory + `.claude/` components | ❌ no TS AST parser | ❌ |
+| **OpenAI Agents SDK** | Python | ✅ dep-scan + file inventory | ✅ tools, hosted tools (11 classes), agents, MCP servers (3 transports + alias), guardrails, sessions | ✅ OAI-001..006 (tool), OAI-101..105 (agent), OAI-201 (repo) |
+| **OpenAI Agents SDK** | TypeScript | ◐ file inventory only | ❌ no TS AST parser | ❌ |
+| **MCP** | Python | ✅ tool registrations + config files | ◐ tool registrations only (no server-side resource/prompt discovery) | ❌ no dedicated pack (KindMCPTool is reachable by some CSDK rules' `applies_to`) |
+| **MCP** | TypeScript / Go / Rust | ❌ no MCP-specific recognition (file paths inventoried generically, no MCP parser or dep needles) | ❌ | ❌ |
+| **Google ADK** | Python | ❌ no dep needle, no AST | ❌ | ❌ |
+| **Google ADK** | TypeScript / Go / Java / Kotlin | ❌ | ❌ | ❌ |
+| **OpenShell** | Python | ✅ shell-invocation discovery + `openshell/*.yaml` policy files surfaced | ✅ `KindShellInvocation` tools | ❌ rules moved to closed-source companion project (META-001 fires instead) |
 
 ## What we parse exactly (per SDK)
 
@@ -65,11 +64,11 @@ Discovery sources: `internal/analysis/discovery.go`, `agents.go`, `hosted_tools.
 |---|---|
 | Shell-invocation surfaces | Any bare function body calling `subprocess.*`, `os.system`, or `os.popen` → tagged `KindShellInvocation` in inventory |
 | Sandbox policy files | `openshell/*.yaml` / `*.yml` surfaced as `sandbox_policy` components |
-| Dep | `openshell` text needle across dependency manifests |
+| Detection trigger | An `openshell/` directory, or any YAML declaring an OpenShell schema (`openshell.nvidia.com/v`). No dependency-manifest needle — OpenShell is recognized by artifact presence and shell-invocation surfaces, not by a declared dep |
 
 The OSH-001..005 detection rules previously shipped here; they moved to a
 closed-source companion project. Repos that use OpenShell now produce a
-META-001 info finding ("trustabl does not currently audit this SDK")
+META-001 info finding ("Trustabl does not currently audit this SDK")
 instead of firing the OSH rules.
 
 ## Gaps and what it would take to close them
