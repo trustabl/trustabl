@@ -1,0 +1,4 @@
+# Schema version this rule pack targets. The engine (internal/rules.
+# SupportedSchemaVersion) refuses a pack whose schema_version exceeds what it
+# can evaluate. Bump in lockstep when adding a predicate/schema field.
+schema_version: 1

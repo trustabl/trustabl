@@ -26,9 +26,7 @@ type Config struct {
 	Categories []models.DetectorCategory // empty means all categories
 
 	// RulesFS is the filesystem the rule packs are loaded from, resolved by
-	// the caller (cmd/trustabl) via the rulesource package. When nil, Run
-	// falls back to the embedded rules — a transitional behavior removed when
-	// the embedded rules are deleted.
+	// the caller (cmd/trustabl) via the rulesource package. Required.
 	RulesFS fs.FS
 	// Rules provenance, recorded into ScanResult and folded into ScanID.
 	RulesSource    string
@@ -79,13 +77,10 @@ func Run(cfg Config) (models.ScanResult, error) {
 	inventory.ClaudeSettings = analysis.DiscoverClaudeSettings(profile.Manifest)
 
 	// Step 3: policy selection
-	// Transitional: when no rules FS is injected, fall back to the embedded
-	// rules. Task 9 removes this fallback (and DefaultFS) entirely.
-	rulesFS := cfg.RulesFS
-	if rulesFS == nil {
-		rulesFS = rules.DefaultFS()
+	if cfg.RulesFS == nil {
+		return models.ScanResult{}, fmt.Errorf("scan: no rules filesystem provided")
 	}
-	registry, err := rules.LoadFor(rulesFS, inventory.SDKsDetected)
+	registry, err := rules.LoadFor(cfg.RulesFS, inventory.SDKsDetected)
 	if err != nil {
 		return models.ScanResult{}, fmt.Errorf("load rules: %w", err)
 	}

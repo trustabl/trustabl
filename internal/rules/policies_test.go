@@ -1,6 +1,10 @@
 package rules_test
 
 import (
+	"io/fs"
+	"os"
+	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/trustabl/trustabl/internal/analysis/detectors"
@@ -8,10 +12,20 @@ import (
 	"github.com/trustabl/trustabl/internal/rules"
 )
 
+// fixtureFS returns the rule packs from the repo-root testdata/rules-fixture
+// directory — the Phase-1 interim home of the packs (they move to the
+// trustabl-rules repo in Phase 2).
+func fixtureFS(t *testing.T) fs.FS {
+	t.Helper()
+	_, thisFile, _, _ := runtime.Caller(0)
+	root := filepath.Join(filepath.Dir(thisFile), "..", "..", "testdata", "rules-fixture")
+	return os.DirFS(root)
+}
+
 // loadToolRule fetches a tool-scoped rule from shipped policies as a ToolDetector.
 func loadToolRule(t *testing.T, ruleID string) detectors.ToolDetector {
 	t.Helper()
-	policies, err := rules.Load(rules.DefaultFS())
+	policies, err := rules.Load(fixtureFS(t))
 	if err != nil {
 		t.Fatalf("load policies: %v", err)
 	}
@@ -29,7 +43,7 @@ func loadToolRule(t *testing.T, ruleID string) detectors.ToolDetector {
 // loadAgentRule fetches an agent-scoped rule from shipped policies as an AgentDetector.
 func loadAgentRule(t *testing.T, ruleID string) detectors.AgentDetector {
 	t.Helper()
-	policies, err := rules.Load(rules.DefaultFS())
+	policies, err := rules.Load(fixtureFS(t))
 	if err != nil {
 		t.Fatalf("load policies: %v", err)
 	}
@@ -47,7 +61,7 @@ func loadAgentRule(t *testing.T, ruleID string) detectors.AgentDetector {
 // loadRepoRule fetches a repo-scoped rule from shipped policies as a RepoDetector.
 func loadRepoRule(t *testing.T, ruleID string) detectors.RepoDetector {
 	t.Helper()
-	policies, err := rules.Load(rules.DefaultFS())
+	policies, err := rules.Load(fixtureFS(t))
 	if err != nil {
 		t.Fatalf("load policies: %v", err)
 	}
@@ -532,7 +546,7 @@ func TestPolicyRepoRules(t *testing.T) {
 
 // TestPolicyRules_AllRulesCovered fails if a shipped rule has no test case.
 func TestPolicyRules_AllRulesCovered(t *testing.T) {
-	policies, err := rules.Load(rules.DefaultFS())
+	policies, err := rules.Load(fixtureFS(t))
 	if err != nil {
 		t.Fatalf("load policies: %v", err)
 	}

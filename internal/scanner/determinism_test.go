@@ -1,12 +1,22 @@
 package scanner_test
 
 import (
+	"io/fs"
+	"os"
 	"path/filepath"
 	"runtime"
 	"testing"
 
 	"github.com/trustabl/trustabl/internal/scanner"
 )
+
+// rulesFixtureFS returns the Phase-1 interim rule packs for tests.
+func rulesFixtureFS(t *testing.T) fs.FS {
+	t.Helper()
+	_, thisFile, _, _ := runtime.Caller(0)
+	root := filepath.Join(filepath.Dir(thisFile), "..", "..", "testdata", "rules-fixture")
+	return os.DirFS(root)
+}
 
 // TestScanDeterministic asserts that two runs over the same fixture with the
 // same rules version produce the same ScanID, and that changing the rules
@@ -15,7 +25,7 @@ func TestScanDeterministic(t *testing.T) {
 	_, thisFile, _, _ := runtime.Caller(0)
 	fixture := filepath.Join(filepath.Dir(thisFile), "..", "..", "testdata", "deterministic-fixture")
 
-	cfg := scanner.Config{Target: fixture, RulesVersion: "fixedsha"}
+	cfg := scanner.Config{Target: fixture, RulesFS: rulesFixtureFS(t), RulesVersion: "fixedsha"}
 	r1, err := scanner.Run(cfg)
 	if err != nil {
 		t.Fatalf("first run: %v", err)

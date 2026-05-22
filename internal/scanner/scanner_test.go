@@ -1,6 +1,7 @@
 package scanner_test
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -8,6 +9,14 @@ import (
 
 	"github.com/trustabl/trustabl/internal/scanner"
 )
+
+// rulesFixture returns the Phase-1 interim rule packs for tests.
+func rulesFixture(t *testing.T) fs.FS {
+	t.Helper()
+	_, thisFile, _, _ := runtime.Caller(0)
+	root := filepath.Join(filepath.Dir(thisFile), "..", "..", "testdata", "rules-fixture")
+	return os.DirFS(root)
+}
 
 // TestScanExamples_NoCrash sweeps every immediate subdirectory under
 // examples/ and asserts the scanner completes without error.
@@ -43,7 +52,7 @@ func TestScanExamples_NoCrash(t *testing.T) {
 
 		target := filepath.Join(examplesDir, e.Name())
 		t.Run(e.Name(), func(t *testing.T) {
-			result, err := scanner.Run(scanner.Config{Target: target})
+			result, err := scanner.Run(scanner.Config{Target: target, RulesFS: rulesFixture(t)})
 			if err != nil {
 				t.Fatalf("scan %s: %v", e.Name(), err)
 			}
@@ -63,7 +72,7 @@ func TestScanExamples_NoCrash(t *testing.T) {
 func TestScan_SurfacesNewInventoryFields(t *testing.T) {
 	_, thisFile, _, _ := runtime.Caller(0)
 	target := filepath.Join(filepath.Dir(thisFile), "..", "..", "examples", "financial_research_agent")
-	res, err := scanner.Run(scanner.Config{Target: target})
+	res, err := scanner.Run(scanner.Config{Target: target, RulesFS: rulesFixture(t)})
 	if err != nil {
 		t.Fatalf("scan: %v", err)
 	}
