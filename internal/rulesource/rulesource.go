@@ -11,10 +11,9 @@ import (
 	"path/filepath"
 )
 
-// DefaultRepoURL is the canonical rules repository. Phase 2 confirms the final
-// org/URL before release; the value is overridable via Config.RepoURL
-// (--rules-repo / TRUSTABL_RULES_REPO).
-const DefaultRepoURL = "https://github.com/trustabl/trustabl-rules"
+// DefaultRepoURL is the canonical rules repository pulled at scan time. It is
+// overridable via Config.RepoURL (--rules-repo / TRUSTABL_RULES_REPO).
+const DefaultRepoURL = "https://github.com/jhumel-code/trustabl-rules"
 
 // ErrNoRules means no rule pack could be made available — neither fetched nor
 // found in cache. A scan in this state must fail (exit 2), never report clean.

@@ -133,7 +133,10 @@ func runScan(target string, f scanFlags) error {
 		}
 		return fmt.Errorf("resolve rules: %w", err)
 	}
-	if res.FromCache {
+	// A cache hit is expected (not a warning) when the user opted out of
+	// fetching with --no-rules-update. Only warn when an attempted fetch fell
+	// back to the cache.
+	if res.FromCache && !f.noRulesUpdate {
 		fmt.Fprintf(os.Stderr,
 			"warning: using cached rules %s; could not fetch or use newer rules from %s\n",
 			res.SHA, res.RepoURL)
