@@ -216,7 +216,7 @@ def do_thing(x: str) -> str:
 		t.Fatal(err)
 	}
 	manifest := models.ScanManifest{RepoRoot: dir, PythonFiles: []string{"t.py"}}
-	tools, _, err := analysis.DiscoverTools(manifest)
+	tools, _, err := analysis.DiscoverTools(manifest, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

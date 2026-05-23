@@ -44,11 +44,14 @@ func DiscoverToolsFromParsed(parsed []ParsedFile) []models.ToolDef {
 //
 // A single function can be classified as both a tool AND a shell-invocation —
 // in that case it becomes KindClaudeSDKTool with a fact tagging the shell call.
-func DiscoverTools(manifest models.ScanManifest) ([]models.ToolDef, []ParsedFile, error) {
+func DiscoverTools(manifest models.ScanManifest, onFile func(path string)) ([]models.ToolDef, []ParsedFile, error) {
 	var tools []models.ToolDef
 	var parsed []ParsedFile
 
 	for _, rel := range manifest.PythonFiles {
+		if onFile != nil {
+			onFile(rel)
+		}
 		abs := filepath.Join(manifest.RepoRoot, rel)
 		src, err := os.ReadFile(abs)
 		if err != nil {

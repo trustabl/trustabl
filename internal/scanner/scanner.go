@@ -68,7 +68,10 @@ func Run(cfg Config) (models.ScanResult, error) {
 
 	// Step 2: inventory (per-language AST; Python only for now)
 	rep.StartPhase("inventory", "Inventory")
-	tools, parsed, err := analysis.DiscoverTools(profile.Manifest)
+	rep.SetTotal(len(profile.Manifest.PythonFiles))
+	tools, parsed, err := analysis.DiscoverTools(profile.Manifest, func(path string) {
+		rep.Advance(path)
+	})
 	if err != nil {
 		rep.Fatal(err)
 		return models.ScanResult{}, fmt.Errorf("discover: %w", err)
