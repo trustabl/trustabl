@@ -88,3 +88,25 @@ func scopeFromRuleID(id string) string {
 	}
 	return ""
 }
+
+// ruleFromFinding builds a SARIF reportingDescriptor (rule catalog entry) from
+// the first Finding emitted for a given rule. Title/Explanation/Fix are
+// rule-stable; severity is rule-stable; confidence is rule-stable today (may
+// vary per-finding once value-aware predicates land — the descriptor will then
+// reflect the rule's default and result.rank carries the per-finding value).
+func ruleFromFinding(f models.Finding) ReportingDescriptor {
+	return ReportingDescriptor{
+		ID:               f.RuleID,
+		ShortDescription: &Message{Text: f.Title},
+		FullDescription:  &Message{Text: f.Explanation},
+		Help:             &Message{Text: f.SuggestedFix},
+		DefaultConfiguration: &ReportingConfiguration{
+			Level: levelForSeverity(f.Severity),
+		},
+		Properties: map[string]any{
+			"security-severity": securitySeverityForSeverity(f.Severity),
+			"confidence":        f.Confidence,
+			"tags":              tagsForFinding(f),
+		},
+	}
+}
