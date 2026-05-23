@@ -77,6 +77,11 @@ Resolution order:
    print a warning.
 3. If no usable rules exist locally **and** none can be fetched, exit `2` and
    advise `trustabl rules pull`. The engine never runs rule-less.
+4. After a successful resolve, the cache is pruned to a single active pack —
+   the `<sha>/` for the newly recorded `current` plus the `current` pointer
+   itself are kept; every other pack directory (and any stale `.tmp-clone-*`
+   from interrupted clones) is removed. Pruning is best-effort, so a pack a
+   concurrent scan still holds open is left for next time.
 
 The pack's `manifest.yaml` declares a `schema_version`; resolution rejects a
 pack whose version is incompatible with the engine's
@@ -329,9 +334,12 @@ type RepoDetector interface {
 }
 ```
 
-`Registry.Run(profile, inv, parsed)` iterates all three slices: ToolDetectors
-fire per `inv.Tools`, AgentDetectors per `inv.Agents`, RepoDetectors once.
-Findings are sorted deterministically by `(RuleID, FilePath, Line)`.
+`Registry.Run(profile, inv, parsed, onEntity)` iterates all three slices:
+ToolDetectors fire per `inv.Tools`, AgentDetectors per `inv.Agents`,
+RepoDetectors once. The optional `onEntity` callback is invoked once per
+tool/agent visited (used by the CLI to drive the per-entity progress bar);
+passing `nil` is fine. Findings are sorted deterministically by
+`(RuleID, FilePath, Line)`.
 
 Pipeline at startup:
 
