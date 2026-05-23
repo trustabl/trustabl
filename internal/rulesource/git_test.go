@@ -3,6 +3,7 @@ package rulesource
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -59,23 +60,71 @@ func TestResolveRef_DefaultHEAD(t *testing.T) {
 func TestCloneInto_CopiesContent(t *testing.T) {
 	dir := t.TempDir()
 	remote := filepath.Join(dir, "remote")
-	newFixtureRepo(t, remote, map[string]string{
+	want := newFixtureRepo(t, remote, map[string]string{
 		"manifest.yaml":     "schema_version: 1\n",
 		"claude_sdk/a.yaml": "policy: {}\n",
 	})
-	dest := filepath.Join(dir, "clone")
+	cache := filepath.Join(dir, "cache")
 	_, name, err := resolveRef(remote, "")
 	if err != nil {
 		t.Fatalf("resolveRef: %v", err)
 	}
-	if err := cloneInto(remote, name, dest); err != nil {
+	sha, err := cloneInto(remote, name, cache)
+	if err != nil {
 		t.Fatalf("cloneInto: %v", err)
 	}
+	// The returned SHA is the actual cloned HEAD, and the pack lands under a
+	// directory named by that SHA.
+	if sha != want {
+		t.Errorf("cloneInto sha = %q, want %q", sha, want)
+	}
+	dest := packDir(cache, sha)
 	if _, err := os.Stat(filepath.Join(dest, "manifest.yaml")); err != nil {
 		t.Errorf("manifest.yaml not cloned: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(dest, "claude_sdk", "a.yaml")); err != nil {
 		t.Errorf("claude_sdk/a.yaml not cloned: %v", err)
+	}
+	// No temp clone directory is left behind after a successful install.
+	entries, err := os.ReadDir(cache)
+	if err != nil {
+		t.Fatalf("read cache: %v", err)
+	}
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".tmp-clone-") {
+			t.Errorf("leftover temp clone dir: %s", e.Name())
+		}
+	}
+}
+
+// TestResolve_IgnoresPartialPack guards the cache-atomicity contract: a
+// half-written pack directory (simulating an interrupted clone) must NOT be
+// reused as if it were a complete clone. Because packExists keys on the
+// resolved HEAD SHA and a real clone always lands via atomic rename, a stray
+// partial directory under a *different* name is simply ignored, and the scan
+// still resolves a valid pack.
+func TestResolve_IgnoresPartialPack(t *testing.T) {
+	dir := t.TempDir()
+	remote := filepath.Join(dir, "remote")
+	want := newFixtureRepo(t, remote, map[string]string{"manifest.yaml": "schema_version: 1\n"})
+	cache := filepath.Join(dir, "cache")
+
+	// Simulate a partial clone left behind under some stale SHA name: a dir
+	// that exists but holds no manifest.
+	partial := packDir(cache, "0000000000000000000000000000000000000000")
+	if err := os.MkdirAll(partial, 0o755); err != nil {
+		t.Fatalf("seed partial: %v", err)
+	}
+
+	res, err := Resolve(Config{RepoURL: remote, CacheDir: cache}, 1)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if res.SHA != want {
+		t.Errorf("resolved SHA = %q, want %q (the real HEAD, not the partial)", res.SHA, want)
+	}
+	if res.FromCache {
+		t.Error("FromCache = true; expected a fresh clone, not a fallback")
 	}
 }
 

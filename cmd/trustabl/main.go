@@ -135,7 +135,8 @@ func runScan(target string, f scanFlags) error {
 	}
 	if res.FromCache {
 		fmt.Fprintf(os.Stderr,
-			"warning: could not reach the rules repository; using local rules %s\n", res.SHA)
+			"warning: using cached rules %s; could not fetch or use newer rules from %s\n",
+			res.SHA, res.RepoURL)
 	}
 	cfg.RulesFS = res.FS
 	cfg.RulesSource = res.RepoURL

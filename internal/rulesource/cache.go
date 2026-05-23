@@ -37,10 +37,25 @@ func readCurrent(cacheDir string) (sha string, ok bool) {
 	return s, true
 }
 
-// writeCurrent records sha as the cache's current pointer.
+// writeCurrent records sha as the cache's current pointer. The write is
+// atomic — a temp file in the same directory followed by a rename — so an
+// interrupted write can never leave a truncated pointer that readCurrent would
+// misread.
 func writeCurrent(cacheDir, sha string) error {
 	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(currentFile(cacheDir), []byte(sha+"\n"), 0o644)
+	tmp, err := os.CreateTemp(cacheDir, ".tmp-current-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name()) // no-op once the rename succeeds
+	if _, err := tmp.WriteString(sha + "\n"); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), currentFile(cacheDir))
 }

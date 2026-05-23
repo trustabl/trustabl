@@ -93,9 +93,11 @@ func Resolve(cfg Config, supported int) (Resolved, error) {
 		return fallbackToCache(cfg, supported)
 	}
 	if !packExists(cfg.CacheDir, sha) {
-		if err := cloneInto(cfg.RepoURL, refName, packDir(cfg.CacheDir, sha)); err != nil {
+		cloned, err := cloneInto(cfg.RepoURL, refName, cfg.CacheDir)
+		if err != nil {
 			return fallbackToCache(cfg, supported)
 		}
+		sha = cloned // authoritative: the commit actually cloned (see cloneInto)
 	}
 	res, err := usePack(cfg, sha, false, supported)
 	if err != nil {
@@ -125,9 +127,11 @@ func Pull(cfg Config, supported int) (Resolved, error) {
 		return Resolved{}, err
 	}
 	if !packExists(cfg.CacheDir, sha) {
-		if err := cloneInto(cfg.RepoURL, refName, packDir(cfg.CacheDir, sha)); err != nil {
+		cloned, err := cloneInto(cfg.RepoURL, refName, cfg.CacheDir)
+		if err != nil {
 			return Resolved{}, err
 		}
+		sha = cloned // authoritative: the commit actually cloned (see cloneInto)
 	}
 	res, err := usePack(cfg, sha, false, supported)
 	if err != nil {
