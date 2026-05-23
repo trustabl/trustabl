@@ -20,6 +20,8 @@ func TestPickMode(t *testing.T) {
 		{"human piped is plain", "human", false, false, false, ModePlain},
 		{"human no-color is plain even on tty", "human", true, true, false, ModePlain},
 		{"json beats everything", "json", false, true, true, ModeOff},
+		{"sarif is always off", "sarif", true, false, false, ModeOff},
+		{"sarif beats no-progress flag", "sarif", false, true, false, ModeOff},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

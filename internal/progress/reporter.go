@@ -24,7 +24,7 @@ type Reporter interface {
 // PickMode resolves the render mode from output settings. isTTY reflects whether
 // stderr is an interactive terminal.
 func PickMode(format string, isTTY, noColor, noProgress bool) Mode {
-	if format == "json" || noProgress {
+	if format == "json" || format == "sarif" || noProgress {
 		return ModeOff
 	}
 	if isTTY && !noColor {
