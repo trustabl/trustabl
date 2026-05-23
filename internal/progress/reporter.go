@@ -21,9 +21,9 @@ type Reporter interface {
 	Fatal(err error)              // a phase failed; tear the UI down cleanly
 }
 
-// pickMode resolves the render mode from output settings. isTTY reflects whether
+// PickMode resolves the render mode from output settings. isTTY reflects whether
 // stderr is an interactive terminal.
-func pickMode(format string, isTTY, noColor, noProgress bool) Mode {
+func PickMode(format string, isTTY, noColor, noProgress bool) Mode {
 	if format == "json" || noProgress {
 		return ModeOff
 	}
@@ -31,11 +31,6 @@ func pickMode(format string, isTTY, noColor, noProgress bool) Mode {
 		return ModeTTY
 	}
 	return ModePlain
-}
-
-// PickMode is the exported entry point used by the CLI.
-func PickMode(format string, isTTY, noColor, noProgress bool) Mode {
-	return pickMode(format, isTTY, noColor, noProgress)
 }
 
 type nopReporter struct{}

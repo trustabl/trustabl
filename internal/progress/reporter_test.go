@@ -23,8 +23,8 @@ func TestPickMode(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if got := pickMode(c.format, c.isTTY, c.noColor, c.noProgress); got != c.want {
-				t.Errorf("pickMode(%q,%v,%v,%v) = %v, want %v",
+			if got := PickMode(c.format, c.isTTY, c.noColor, c.noProgress); got != c.want {
+				t.Errorf("PickMode(%q,%v,%v,%v) = %v, want %v",
 					c.format, c.isTTY, c.noColor, c.noProgress, got, c.want)
 			}
 		})

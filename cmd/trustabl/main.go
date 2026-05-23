@@ -191,6 +191,7 @@ func resolveAndScan(cfg *scanner.Config, f scanFlags, rep progress.Reporter, out
 
 	result, err := scanner.Run(*cfg)
 	if err != nil {
+		rep.Fatal(err)
 		return err
 	}
 	*out = result
@@ -217,6 +218,15 @@ func finishScan(result models.ScanResult, jobErr error, f scanFlags) error {
 			return exitCodeError{2}
 		}
 		return jobErr
+	}
+
+	// In silent mode (JSON or --no-progress) the "(cached, offline)" rules
+	// phase line is suppressed, so surface the cache-fallback as a stderr
+	// warning — stale rules should never be used without a human-visible signal.
+	if result.RulesFromCache && pickScanMode(f) == progress.ModeOff {
+		fmt.Fprintf(os.Stderr,
+			"warning: using cached rules %s; could not fetch or use newer rules\n",
+			result.RulesVersion)
 	}
 
 	switch f.format {
