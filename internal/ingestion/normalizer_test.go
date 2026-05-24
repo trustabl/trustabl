@@ -113,3 +113,20 @@ func TestDetectSDKDeps_TSPackageInPackageJSONProducesExactlyOneEntry(t *testing.
 		t.Errorf("expected Source=package.json (TS needle), got %q", matches[0])
 	}
 }
+
+func TestNormalize_CollectsMTSAndCTS(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"a.ts", "b.tsx", "c.mts", "d.cts"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(""), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	src := &Source{RootPath: dir}
+	m, err := Normalize(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m.TypeScriptFiles) != 4 {
+		t.Errorf("expected 4 TS files (.ts/.tsx/.mts/.cts), got %d: %v", len(m.TypeScriptFiles), m.TypeScriptFiles)
+	}
+}

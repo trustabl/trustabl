@@ -145,7 +145,10 @@ func Normalize(src *Source) (models.ScanManifest, error) {
 		switch {
 		case strings.HasSuffix(path, ".py"):
 			manifest.PythonFiles = append(manifest.PythonFiles, rel)
-		case strings.HasSuffix(path, ".ts"), strings.HasSuffix(path, ".tsx"):
+		case strings.HasSuffix(path, ".ts"),
+			strings.HasSuffix(path, ".tsx"),
+			strings.HasSuffix(path, ".mts"),
+			strings.HasSuffix(path, ".cts"):
 			manifest.TypeScriptFiles = append(manifest.TypeScriptFiles, rel)
 		case strings.HasSuffix(path, ".js"), strings.HasSuffix(path, ".jsx"), strings.HasSuffix(path, ".mjs"):
 			manifest.JavaScriptFiles = append(manifest.JavaScriptFiles, rel)
