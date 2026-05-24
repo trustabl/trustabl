@@ -3,9 +3,9 @@
 </p>
 
 Trustabl is a static analyzer for agent reliability. It parses an agent-SDK
-repository (Claude Agent SDK, OpenAI Agents SDK, MCP), models the tools and
-agents it declares, and checks them against a catalog of reliability and safety
-rules. It reports the weaknesses it finds — each with an explanation, a
+repository (Claude Agent SDK, OpenAI Agents SDK, Google ADK, MCP), models the
+tools and agents it declares, and checks them against a catalog of reliability
+and safety rules. It reports the weaknesses it finds — each with an explanation, a
 suggested fix, and a confidence score — as a human-readable summary or as JSON,
 plus a per-tool reliability score and a CI-friendly exit code. It ships as a
 single Go binary; there is no daemon, server, or hosted service.
@@ -22,8 +22,9 @@ is classified into exactly one of three scopes, and each scope receives a
 different typed input:
 
 - **`tool`** — fires once per tool definition. Input: a `ToolDef` (a
-  `@function_tool` / `@tool` function, an `@server.tool` MCP registration, or a
-  bare shell-invoking function) plus its parsed file. Catches a missing
+  `@function_tool` / `@tool` function, a `FunctionTool(fn)` ADK wrapper, an
+  `@server.tool` MCP registration, or a bare shell-invoking function) plus its
+  parsed file. Catches a missing
   docstring, an HTTP call with no timeout, untyped parameters, or an
   unnormalized path flowing into `open()`. (Hosted tools like `WebSearchTool()`
   are agent-scope edge data, captured as `HostedToolDef`, not `ToolDef`.)
@@ -202,7 +203,8 @@ trustabl scan https://github.com/org/repo
 # Restrict detectors
 trustabl scan ./repo --detectors claude_sdk
 trustabl scan ./repo --detectors openai_sdk
-trustabl scan ./repo --detectors claude_sdk,openai_sdk
+trustabl scan ./repo --detectors google_adk
+trustabl scan ./repo --detectors claude_sdk,openai_sdk,google_adk
 # --detectors openshell is accepted but selects zero rules (pack is closed-source now)
 
 # JSON output for CI piping
@@ -251,9 +253,10 @@ falling back to the cached rules if the fetch fails.
 | Inference router   | `internal/inference/router.go`           |
 
 Rule packs live in the separate `trustabl-rules` git repository (grouped
-`{claude_sdk,openai_sdk}/`), resolved at scan time rather than embedded in the
-binary. Naming convention: `CSDK-NNN` for Claude Agent SDK rules, `OAI-NNN` for
-OpenAI Agents SDK rules. See
+`{claude_sdk,openai_sdk,google_adk}/`), resolved at scan time rather than
+embedded in the binary. Naming convention: `CSDK-NNN` for Claude Agent SDK
+rules, `OAI-NNN` for OpenAI Agents SDK rules, `ADK-NNN` for Google ADK rules.
+See
 [ARCHITECTURE.md § 2 — steps 3–4](ARCHITECTURE.md#2-pipeline) for the shipped
 rule table and [COVERAGE.md](COVERAGE.md) for per-SDK recognition detail.
 

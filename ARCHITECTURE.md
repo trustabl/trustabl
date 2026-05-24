@@ -12,8 +12,8 @@ scoped to the Go binary in this repository.
 ## 1. Goal
 
 trustabl scans an agent SDK repository (Claude Agent SDK, OpenAI Agents SDK,
-MCP), finds reliability weaknesses in its tool and agent definitions, and
-reports them. A scan is read-only: it writes nothing into the scanned repo. The
+Google ADK, MCP), finds reliability weaknesses in its tool and agent
+definitions, and reports them. A scan is read-only: it writes nothing into the scanned repo. The
 output is a `ScanResult` — findings (each with an explanation, suggested fix,
 and confidence), per-tool readiness scores, an overall score, and the
 discovered inventory — rendered as a human summary or as JSON for CI.
@@ -118,7 +118,7 @@ flowchart TD
     end
 
     subgraph S2["Step 2 — Inventory (per-language AST)"]
-        disc["analysis.DiscoverTools<br/>DiscoverAgents<br/>DiscoverGuardrails<br/>DiscoverSessions<br/>DiscoverSubagents<br/>DiscoverClaudeSettings"]
+        disc["analysis.DiscoverTools<br/>DiscoverAgents<br/>DiscoverGuardrails<br/>DiscoverSessions<br/>DiscoverSubagents<br/>DiscoverClaudeSettings<br/>DiscoverADKAgents<br/>DiscoverADKTools"]
         edges["analysis.ResolveEdges"]
         inv[["RepoInventory<br/>Tools · Agents · Guardrails · Sessions<br/>SDKsDetected · UsesDefaultTracing"]]
         disc --> edges --> inv
@@ -218,19 +218,36 @@ For each language recon cleared, do the AST work and produce a `RepoInventory`:
   (`Tool`, `Pattern`, `Raw`) using the grammar `<Tool>` | `<Tool>(<pattern>)`
   plus the literal MCP-tool form `mcp__<server>__<tool>`. Malformed JSON is
   skipped silently.
+- **DiscoverADKAgents** (`adk_agents.go`) — finds `LlmAgent(...)`,
+  `SequentialAgent(...)`, `ParallelAgent(...)`, `LoopAgent(...)`,
+  `LanggraphAgent(...)`, and the `Agent(...)` alias (normalized to `LlmAgent`
+  in the emitted `AgentDef.Class`) in files that import from `google.adk`.
+  The import gate prevents the bare `Agent` class name from colliding with
+  OpenAI's identically-named class. All constructor kwargs are captured into a
+  typed `KwargTree`; `Agent(**config)` or `sub_agents=<non-literal>` sets
+  `Opaque=true`.
+- **DiscoverADKTools** (`adk_agents.go`) — finds `FunctionTool(symbol)` calls
+  and resolves the argument to a same-file top-level function definition. Each
+  resolved match emits a `ToolDef` with `Kind=adk_function_tool`. Cross-module
+  resolution is out of scope.
 - **ResolveEdges** — links agent `tools=`, `handoffs=`, `input_guardrails=`
   references to discovered definitions in the same repo; cross-module resolution
   uses import statements; unresolvable references are flagged `External=true`.
-  Hosted-tool calls (`WebSearchTool()`, `FileSearchTool()`, etc.) inside
-  `tools=[...]` are classified into `HostedToolDef` records and a parallel
-  `HostedToolRefs` edge slice on the owning agent — separate from regular
-  `ToolRefs`. `mcp_servers=[...]` is processed for MCP server constructors
-  (`MCPServerStdio`, `MCPServerSse`, `MCPServerStreamableHttp`) — both inline
-  calls and aliases bound by `async with X() as srv:`. Each match becomes an
-  `MCPServerDef` and an entry in `MCPServerRefs`. After all agents are
-  processed, `inv.HostedTools` and `inv.MCPServers` are sorted by
-  `(FilePath, Line, Class)` and `HostedToolRefs`/`MCPServerRefs.Resolved`
-  pointers are re-resolved to the post-sort positions.
+  Hosted-tool dispatch is SDK-aware: OpenAI agents are matched against
+  `HostedToolClasses` (11 classes); Google ADK agents are matched against
+  `ADKHostedToolClasses` (13 classes, defined in `adk_hosted_tools.go`). Each
+  match emits a `HostedToolDef` record and a parallel `HostedToolRefs` edge on
+  the owning agent. For Google ADK agents, `FunctionTool(symbol)` references
+  inside `tools=[...]` are unwrapped and resolved to same-file `ToolDef`s before
+  the hosted-tool check. `sub_agents=[...]` kwargs on ADK agents are resolved
+  into `HandoffRefs` pointing to same-file `AgentDef`s. `mcp_servers=[...]` is
+  processed for MCP server constructors (`MCPServerStdio`, `MCPServerSse`,
+  `MCPServerStreamableHttp`) — both inline calls and aliases bound by
+  `async with X() as srv:`. Each match becomes an `MCPServerDef` and an entry in
+  `MCPServerRefs`. After all agents are processed, `inv.HostedTools` and
+  `inv.MCPServers` are sorted by `(FilePath, Line, Class)` and
+  `HostedToolRefs`/`MCPServerRefs.Resolved` pointers are re-resolved to the
+  post-sort positions.
 
 **Discovered agent components** (`Components []AgentComponent`).
 
@@ -389,6 +406,12 @@ Shipped rules (one row per YAML rule entry):
 | OAI-104 | agent | openai_sdk | high     | `openai_sdk/agent_safety.yaml`           | Bare `Agent` (not `SandboxAgent`) with shell-invoking tools         |
 | OAI-105 | agent | openai_sdk | high     | `openai_sdk/mcp_safety.yaml`             | Agent uses MCP servers without `input_guardrails`                   |
 | OAI-201 | repo  | openai_sdk | medium   | `openai_sdk/tracing.yaml`                | OpenAI Agents SDK present but no custom trace processor configured  |
+| ADK-001 | tool  | google_adk | low      | `google_adk/tool_definition.yaml`        | FunctionTool-wrapped function has no docstring                      |
+| ADK-002 | tool  | google_adk | medium   | `google_adk/tool_definition.yaml`        | FunctionTool-wrapped function has no type-annotated parameters      |
+| ADK-003 | tool  | google_adk | high     | `google_adk/network.yaml`                | HTTP call inside wrapped function body without `timeout=`           |
+| ADK-101 | agent | google_adk | medium   | `google_adk/agent_safety.yaml`           | `LlmAgent` with no `description=` (becomes unreachable in delegation) |
+| ADK-102 | agent | google_adk | high     | `google_adk/agent_safety.yaml`           | `LlmAgent` with `BashTool` and no `before_tool_callback=`           |
+| ADK-103 | agent | google_adk | high     | `google_adk/agent_safety.yaml`           | Sub-agent (target of someone's `sub_agents`) granted `BashTool`     |
 
 ### Step 5 — Scoring ([internal/analysis/scoring.go](internal/analysis/scoring.go))
 
@@ -519,7 +542,7 @@ RepoProfile {
 }
 
 SDKDep { Name, Source string; Confidence float64 }
-SDK = "claude_agent_sdk" | "openai_agents" | "mcp" | "openshell"
+SDK = "claude_agent_sdk" | "openai_agents" | "mcp" | "openshell" | "google_adk"
 
 // Inventory output
 RepoInventory {
@@ -555,7 +578,7 @@ KwargTree { Value *Expr; Children map[string]*KwargTree }
 
 ToolDef {
     Name           string
-    Kind           ToolKind   // claude_sdk_tool | openai_tool | mcp_tool | shell_invocation | unknown
+    Kind           ToolKind   // claude_sdk_tool | openai_tool | mcp_tool | shell_invocation | unknown | adk_function_tool
     Language       Language   // python | typescript | javascript | go
     FilePath       string
     Line, EndLine  int
@@ -705,6 +728,8 @@ internal/
 │   │                            FunctionDocstring, FunctionHasTypedParams,
 │   │                            HasKwarg).
 │   ├── discovery.go             Tool discovery passes.
+│   ├── adk_agents.go            ADK agent + FunctionTool discovery (DiscoverADKAgents, DiscoverADKTools).
+│   ├── adk_hosted_tools.go      ADK built-in hosted-tool class set + classifier (ADKHostedToolClasses).
 │   ├── heuristics.go            Domain helpers shared by every detector path:
 │   │                            FindFunctionNode, IsHTTPCall, IsPathishParam.
 │   ├── scoring.go               Per-tool + overall scoring.

@@ -4,7 +4,7 @@ Coverage matrix for Trustabl's static analysis: which agent SDKs (and which
 languages) we currently scan, analyse, and detect against. This file is the
 at-a-glance reference; `ARCHITECTURE.md` has the implementation detail.
 
-_Last reviewed: 2026-05-24 (HEAD `e735f78`)._
+_Last reviewed: 2026-05-24 (HEAD `725ae49`)._
 
 > **Note:** Detection rules are not shipped in the binary. They live in the
 > separate `trustabl-rules` git repository
@@ -26,7 +26,7 @@ Legend: ✅ full · ◐ partial · ❌ none · — N/A
 | **OpenAI Agents SDK** | TypeScript | ◐ file inventory only | ❌ no TS AST parser | ❌ |
 | **MCP** | Python | ✅ tool registrations + config files | ◐ tool registrations only (no server-side resource/prompt discovery) | ❌ no dedicated pack (KindMCPTool is reachable by some CSDK rules' `applies_to`) |
 | **MCP** | TypeScript / Go / Rust | ❌ no MCP-specific recognition (file paths inventoried generically, no MCP parser or dep needles) | ❌ | ❌ |
-| **Google ADK** | Python | ❌ no dep needle, no AST | ❌ | ❌ |
+| **Google ADK** | Python | ✅ dep-scan (`google-adk`) + file inventory | ✅ LlmAgent (+ Agent alias), SequentialAgent, ParallelAgent, LoopAgent, LanggraphAgent; FunctionTool wrapping; 13 built-in hosted tools; sub_agents edges | ✅ ADK-001..003 (tool), ADK-101..103 (agent) |
 | **Google ADK** | TypeScript / Go / Java / Kotlin | ❌ | ❌ | ❌ |
 | **OpenShell** | Python | ✅ shell-invocation discovery + `openshell/*.yaml` policy files surfaced | ✅ `KindShellInvocation` tools | ❌ rules moved to closed-source companion project (META-001 fires instead) |
 
@@ -79,13 +79,29 @@ closed-source companion project. Repos that use OpenShell now produce a
 META-001 info finding ("Trustabl does not currently audit this SDK")
 instead of firing the OSH rules.
 
+### Google ADK — Python
+
+Discovery sources: `internal/analysis/adk_agents.go` (agents and FunctionTool-wrapped
+tools), `internal/analysis/adk_hosted_tools.go` (built-in hosted tool classes).
+Import gate: only files containing `from google.adk` or `import google.adk` are
+processed, which prevents the bare `Agent` class name from colliding with OpenAI's
+identically-named class.
+
+| Construct | Recognition |
+|---|---|
+| Agents | Constructor calls for `LlmAgent`, `SequentialAgent`, `ParallelAgent`, `LoopAgent`, `LanggraphAgent`. The `Agent` alias is recognized and normalized to `LlmAgent` in the emitted `AgentDef.Class`. All constructor kwargs captured into a typed `KwargTree` |
+| FunctionTool-wrapped tools | `FunctionTool(symbol)` calls where the argument resolves to a same-file top-level function → emits a `ToolDef` with `Kind=adk_function_tool`. Cross-module resolution is out of scope |
+| Built-in hosted tools | Closed set of 13 classes recognized as `HostedToolDef` with `SDK=google_adk`: `BashTool`, `GoogleSearchTool`, `VertexAiSearchTool`, `LangchainTool`, `CrewaiTool`, `AgentTool`, `LongRunningTool`, `LoadWebPage`, `ExitLoopTool`, `GoogleMapsGroundingTool`, `UrlContextTool`, `DiscoveryEngineSearchTool`, `EnterpriseSearchTool` |
+| sub_agents edges | `sub_agents=[...]` kwargs resolved into `HandoffRefs` pointing to same-file `AgentDef`s |
+
+**Limitation:** `AgentTool` wraps another agent. The wrapped agent is recorded as a `HostedToolDef` edge but is not transitively analyzed — its tools, guardrails, and sub-agents are not walked further.
+
 ## Gaps and what it would take to close them
 
 | Gap | Effort sketch |
 |---|---|
 | **Claude SDK TypeScript** (`@anthropic-ai/claude-agent-sdk`) | Tree-sitter TS binding in `astutil/`, new discovery file mirroring Python: `query()`, `ClaudeSDKClient`, hook factories. Per-language predicate impls in `rules/predicates.go`. New TS-language rule pack |
 | **OpenAI Agents SDK TypeScript** (`@openai/agents`) | Same as above — TS parser + discovery for `Agent`/`tool()` factory shape. The npm package uses a different shape than Python (e.g. `tool({})` factory rather than `@function_tool` decorator) |
-| **Google ADK Python** ([`google/adk-python`](https://github.com/google/adk-python)) | New dep needle (`google-adk`), discovery for the ADK shapes — `LlmAgent`, `SequentialAgent`, `ParallelAgent`, `BaseTool`, `FunctionTool`, Workflow Runtime nodes. New SDK constant `SDKGoogleADK`, new component kind for ADK config |
 | **Google ADK TypeScript** ([`google/adk-js`](https://github.com/google/adk-js)) | Depends on TS parser landing for any TS work; then ADK-JS-specific shape discovery |
 | **MCP cross-language** (TS, Rust, Go) | Two prerequisites are missing today: (1) MCP dep-scan needles in `internal/ingestion/normalizer.go` — currently only `claude-agent-sdk` / `claude_agent_sdk` / `openai-agents` / `@openai/agents` are matched; there is no `@modelcontextprotocol/sdk` (npm), no `rmcp` / `anthropic-mcp` (Cargo), no Go MCP module needle. (2) per-language AST parsers and discovery for the SDK shapes (`Server.tool()` factory in TS, `#[tool]` macros in Rust, etc.). File paths are recorded by the generic walk but no MCP-specific extraction happens against them |
 | **MCP server-side completeness** | We discover tools registered with `@server.tool` etc., but don't extract `Prompt`, `Resource`, `Sampling` registrations — those exist in the spec and would be a small additional pass |
@@ -99,11 +115,7 @@ rationale, not as a binding roadmap.
    covers Claude SDK TS, OpenAI Agents JS, Google ADK JS, and TS MCP servers.
    The discovery patterns are different per SDK but the AST plumbing is
    shared.
-2. **Google ADK Python** is the smallest standalone addition (one SDK, one
-   language, parser already in place). Its shape is similar to OpenAI's
-   `Agent(...)` constructor pattern, so the existing `KwargTree` machinery
-   transfers.
-3. **MCP rule pack** would be a small detection win — we already discover
+2. **MCP rule pack** would be a small detection win — we already discover
    MCP tools, but no rules target them. Useful checks include "MCP tool
    without input schema" and "stdio MCP server with absolute path to a
    binary outside the repo."
