@@ -52,7 +52,8 @@ type AgentDef struct {
 	FilePath       string          `json:"file_path"`
 	Line           int             `json:"line"`
 	EndLine        int             `json:"end_line"`
-	Name           string          `json:"name"` // from name= kwarg literal
+	Name           string          `json:"name"`           // from name= kwarg literal
+	VarName        string          `json:"-"`              // assignment-target identifier (for in-file edge resolution; not serialized)
 	Kwargs         *KwargTree      `json:"kwargs"`
 	ToolRefs       []ToolRef       `json:"tool_refs"`
 	HostedToolRefs []HostedToolRef `json:"hosted_tool_refs"`

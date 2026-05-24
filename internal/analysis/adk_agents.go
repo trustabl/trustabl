@@ -68,6 +68,14 @@ func discoverADKAgentsInFile(pf ParsedFile) []models.AgentDef {
 			kwargs.Children["name"].Value.Kind == models.ExprLiteralString {
 			a.Name = strings.Trim(kwargs.Children["name"].Value.Text, `"'`)
 		}
+		// Capture the assignment-target identifier (e.g. `greeter = LlmAgent(...)`)
+		// so sub_agents=[greeter] references resolve by variable name even when
+		// the Python variable differs from the name= literal.
+		if p := n.Parent(); p != nil && p.Type() == "assignment" {
+			if l := p.ChildByFieldName("left"); l != nil && l.Type() == "identifier" {
+				a.VarName = astutil.NodeText(l, pf.Source)
+			}
+		}
 		out = append(out, a)
 		return true
 	})

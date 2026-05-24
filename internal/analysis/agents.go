@@ -186,8 +186,17 @@ func ResolveEdges(inv *models.RepoInventory, parsed []ParsedFile) {
 			if subKwarg != nil && subKwarg.Value != nil && subKwarg.Value.Kind == models.ExprList {
 				agentsByName := map[string]*models.AgentDef{}
 				for j := range inv.Agents {
-					if inv.Agents[j].FilePath == a.FilePath {
-						agentsByName[inv.Agents[j].Name] = &inv.Agents[j]
+					if inv.Agents[j].FilePath != a.FilePath {
+						continue
+					}
+					// Key by both the name= literal and the assignment-target
+					// variable, because sub_agents=[X] references the variable
+					// while findings attribute to the name= value.
+					if n := inv.Agents[j].Name; n != "" {
+						agentsByName[n] = &inv.Agents[j]
+					}
+					if v := inv.Agents[j].VarName; v != "" {
+						agentsByName[v] = &inv.Agents[j]
 					}
 				}
 				for _, item := range subKwarg.Value.List {

@@ -248,3 +248,38 @@ outer = LlmAgent(name="outer", tools=[AgentTool(inner)])
 		t.Errorf("outer HostedToolRefs: want one AgentTool, got %#v", outer.HostedToolRefs)
 	}
 }
+
+func TestResolveEdges_ADKSubAgentsByVarName(t *testing.T) {
+	// Real-world shape: the Python variable name differs from the name= literal.
+	// sub_agents=[greeter] references the variable, not the name= value, so
+	// resolution must key on the assignment-target variable.
+	src := `from google.adk.agents import LlmAgent, SequentialAgent
+from google.adk.tools import BashTool
+
+greeter = LlmAgent(name="greeting_agent", tools=[BashTool()])
+root = SequentialAgent(name="root", sub_agents=[greeter])
+`
+	pf := parsePyFile(t, "main.py", src)
+	inv := models.RepoInventory{Agents: analysis.DiscoverADKAgents([]analysis.ParsedFile{pf})}
+	analysis.ResolveEdges(&inv, []analysis.ParsedFile{pf})
+
+	var root, greeter *models.AgentDef
+	for i := range inv.Agents {
+		switch inv.Agents[i].Name {
+		case "root":
+			root = &inv.Agents[i]
+		case "greeting_agent":
+			greeter = &inv.Agents[i]
+		}
+	}
+	if root == nil || greeter == nil {
+		t.Fatalf("expected both agents discovered; got %+v", inv.Agents)
+	}
+	if len(root.HandoffRefs) != 1 {
+		t.Fatalf("root.HandoffRefs: got %d, want 1", len(root.HandoffRefs))
+	}
+	if root.HandoffRefs[0].Resolved == nil ||
+		root.HandoffRefs[0].Resolved.Name != "greeting_agent" {
+		t.Errorf("sub_agents=[greeter] did not resolve to the greeting_agent def: %+v", root.HandoffRefs[0])
+	}
+}
