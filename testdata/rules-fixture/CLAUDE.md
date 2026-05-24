@@ -172,18 +172,21 @@ The shipped pack is calibrated as "signal to investigate," not an
 authoritative gate. The highest-leverage work to move it toward
 production-grade, in priority order:
 
-- **(a) Value-aware `timeout` check.** `call_without_kwarg` only tests that
-  the `timeout` keyword is *present* (`astutil.HasKwarg`), so
-  `requests.get(url, timeout=None)` — explicitly disabling the timeout —
-  reads as safe. CSDK-003 and OAI-005 need a predicate that rejects a
-  `None` value, not just an absent kwarg.
-- **(b) Attribute-call / alias matching for Session/Client.** Callee
-  matching is exact-text, so the `requests.Session.get`,
-  `requests.Session.post`, and `aiohttp.ClientSession.*` callee entries can
-  never fire — real code is `s = requests.Session(); s.get(...)`. The most
-  common production HTTP shape (a reused session/client) is invisible to
-  CSDK-003 / OAI-005 until an aliasing pass or attribute-call shape match
-  lands.
+- **(a) Value-aware `timeout` check — DONE.** `call_without_kwarg` now treats a
+  kwarg present with literal `None` as missing, so `requests.get(url,
+  timeout=None)` fires. Same for `agent_kwarg_missing` (e.g.
+  `before_tool_callback=None`).
+- **(b) Local client-alias matching — DONE (same-function scope).**
+  `call_without_kwarg` and `has_dynamic_url_call` resolve local-variable client
+  aliases (`s = requests.Session(); s.get(...)`, and the `with ... as c:` form)
+  via `analysis.ResolveClientAliases` + `IsHTTPCallNode`. **Residual
+  limitations:** (1) instance attributes (`self.client.get(...)`) and
+  cross-function / cross-module aliases are still unresolved; (2) the engine
+  canonicalizes an aiohttp session alias to `aiohttp.<method>` (e.g.
+  `aiohttp.get`), but rule callee lists currently use
+  `aiohttp.ClientSession.<method>` — so aiohttp aliasing is wired in the engine
+  but a rule pack must list `aiohttp.<method>` callees to benefit. `requests`
+  and `httpx` aliasing work end-to-end with existing callee lists.
 - **(c) Include `HostedToolRefs` + decorated shell tools in the agent
   shell-tool rules.** `agent_uses_tool_kind: [shell_invocation]` (OAI-101,
   OAI-104) only matches a *bare, undecorated* function in `tools=`. A
