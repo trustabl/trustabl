@@ -102,3 +102,53 @@ a = LlmAgent(**cfg)
 		t.Errorf("Opaque: got false, want true (LlmAgent(**cfg))")
 	}
 }
+
+func TestDiscoverADKTools_FunctionToolWrapping(t *testing.T) {
+	src := `from google.adk.agents import LlmAgent
+from google.adk.tools import FunctionTool
+
+def get_weather(city: str) -> str:
+    """Look up the weather for a city."""
+    return "sunny"
+
+def no_docs(x):
+    return x
+
+root = LlmAgent(
+    name="root",
+    tools=[FunctionTool(get_weather), FunctionTool(no_docs)],
+)
+`
+	pf := parsePyFile(t, "main.py", src)
+	tools := analysis.DiscoverADKTools([]analysis.ParsedFile{pf})
+	if len(tools) != 2 {
+		t.Fatalf("got %d tools, want 2", len(tools))
+	}
+	byName := map[string]models.ToolDef{}
+	for _, td := range tools {
+		byName[td.Name] = td
+	}
+	weather, ok := byName["get_weather"]
+	if !ok {
+		t.Fatal("get_weather tool not found")
+	}
+	if weather.Kind != models.KindADKFunctionTool {
+		t.Errorf("Kind: got %q, want %q", weather.Kind, models.KindADKFunctionTool)
+	}
+	if weather.Language != models.LanguagePython {
+		t.Errorf("Language: got %q, want python", weather.Language)
+	}
+	if weather.Description == "" {
+		t.Errorf("Description: got empty, want docstring text")
+	}
+	if !weather.HasTypedParams {
+		t.Errorf("HasTypedParams: got false, want true")
+	}
+	nodocs := byName["no_docs"]
+	if nodocs.Description != "" {
+		t.Errorf("no_docs Description: got %q, want empty", nodocs.Description)
+	}
+	if nodocs.HasTypedParams {
+		t.Errorf("no_docs HasTypedParams: got true, want false")
+	}
+}
