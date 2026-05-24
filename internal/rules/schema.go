@@ -75,6 +75,7 @@ type MatchExpr struct {
 	AgentUsesToolKind      []string             `yaml:"agent_uses_tool_kind,omitempty"`
 	AgentGrantsBuiltinTool []string             `yaml:"agent_grants_builtin_tool,omitempty"`
 	AgentHandoffToClass    []string             `yaml:"agent_handoff_to_class,omitempty"`
+	AgentUsesHostedToolClass []string           `yaml:"agent_uses_hosted_tool_class,omitempty"`
 
 	// Repo-scope predicates
 	RepoHasSDKDep          []string `yaml:"repo_has_sdk_dep,omitempty"`

@@ -253,6 +253,13 @@ rules:
 #   agent_handoff_to_class: [Agent, SandboxAgent, ...]
 #       Fires when any of the agent's resolved HandoffRefs has the given class.
 #
+#   agent_uses_hosted_tool_class: [BashTool, WebSearchTool, ...]
+#       Returns true if the agent's HostedToolRefs include any of the named
+#       hosted-tool classes (e.g. BashTool, WebSearchTool, GoogleSearchTool).
+#       Matches by class name on the ref, so an unresolved HostedToolRef
+#       (e.g. an SDK we discovered but did not resolve back to a typed def)
+#       still counts.
+#
 #
 # ━━━ REPO-SCOPE PREDICATES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # (used only in scope: repo rules; match runs once per scan)

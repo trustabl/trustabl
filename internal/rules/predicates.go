@@ -571,6 +571,20 @@ func PredAgentHandoffToClass(classes []string, a models.AgentDef) bool {
 	return false
 }
 
+// PredAgentUsesHostedToolClass fires when the agent's HostedToolRefs include
+// any of the named classes. Matches by the Class string on the ref itself
+// (does not require Resolved), so unresolved hosted-tool refs still count.
+func PredAgentUsesHostedToolClass(classes []string, a models.AgentDef) bool {
+	for _, ref := range a.HostedToolRefs {
+		for _, want := range classes {
+			if ref.Class == want {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // ─── repo predicates ──────────────────────────────────────────────────────────
 
 func PredRepoHasSDKDep(names []string, p models.RepoProfile) bool {

@@ -597,3 +597,59 @@ func TestPredRepoUsesDefaultTracing(t *testing.T) {
 		t.Error("expected default tracing = false after custom processor")
 	}
 }
+
+func TestPredAgentUsesHostedToolClass(t *testing.T) {
+	bashRef := models.HostedToolRef{
+		Class:    "BashTool",
+		Resolved: &models.HostedToolDef{Class: "BashTool"},
+	}
+	webRef := models.HostedToolRef{
+		Class:    "WebSearchTool",
+		Resolved: &models.HostedToolDef{Class: "WebSearchTool"},
+	}
+	cases := []struct {
+		name    string
+		agent   models.AgentDef
+		classes []string
+		want    bool
+	}{
+		{
+			name:    "matches single class",
+			agent:   models.AgentDef{HostedToolRefs: []models.HostedToolRef{bashRef}},
+			classes: []string{"BashTool"},
+			want:    true,
+		},
+		{
+			name:    "matches one of many",
+			agent:   models.AgentDef{HostedToolRefs: []models.HostedToolRef{webRef, bashRef}},
+			classes: []string{"BashTool"},
+			want:    true,
+		},
+		{
+			name:    "no match",
+			agent:   models.AgentDef{HostedToolRefs: []models.HostedToolRef{webRef}},
+			classes: []string{"BashTool"},
+			want:    false,
+		},
+		{
+			name:    "unresolved ref still matches by class name",
+			agent:   models.AgentDef{HostedToolRefs: []models.HostedToolRef{{Class: "BashTool"}}},
+			classes: []string{"BashTool"},
+			want:    true,
+		},
+		{
+			name:    "no refs",
+			agent:   models.AgentDef{},
+			classes: []string{"BashTool"},
+			want:    false,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := rules.PredAgentUsesHostedToolClass(c.classes, c.agent)
+			if got != c.want {
+				t.Errorf("got %v, want %v", got, c.want)
+			}
+		})
+	}
+}
