@@ -656,6 +656,58 @@ func TestPredAgentUsesHostedToolClass(t *testing.T) {
 
 // ─── agent_is_subagent_of_any ─────────────────────────────────────────────────
 
+// ─── call_without_kwarg: alias-aware + None-aware ────────────────────────────
+
+func TestPredCallWithoutKwarg_AliasAndNone(t *testing.T) {
+	expr := rules.CallWithoutKwargExpr{
+		Callees: []string{"requests.get", "requests.post", "httpx.post"},
+		Missing: "timeout",
+	}
+	cases := []struct {
+		name string
+		src  string
+		want bool
+	}{
+		{"session alias fires", `
+def tool(url: str) -> str:
+    """t."""
+    s = requests.Session()
+    return s.get(url).text
+`, true},
+		{"session alias with timeout silent", `
+def tool(url: str) -> str:
+    """t."""
+    s = requests.Session()
+    return s.get(url, timeout=10).text
+`, false},
+		{"with-binding fires", `
+def tool(url: str) -> str:
+    """t."""
+    with httpx.Client() as c:
+        return c.post(url).text
+`, true},
+		{"timeout=None fires", `
+def tool(url: str) -> str:
+    """t."""
+    return requests.get(url, timeout=None).text
+`, true},
+		{"direct with timeout still silent", `
+def tool(url: str) -> str:
+    """t."""
+    return requests.get(url, timeout=10).text
+`, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			tool, pf := parsePy(t, c.src, models.KindOpenAITool)
+			got := rules.PredCallWithoutKwarg(expr, tool, pf)
+			if got != c.want {
+				t.Errorf("got %v, want %v", got, c.want)
+			}
+		})
+	}
+}
+
 func TestPredAgentIsSubagentOfAny(t *testing.T) {
 	childResolved := &models.AgentDef{Name: "child", FilePath: "main.py"}
 	parent := models.AgentDef{

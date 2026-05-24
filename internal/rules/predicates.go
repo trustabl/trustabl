@@ -220,6 +220,7 @@ func PredCallWithoutKwarg(expr CallWithoutKwargExpr, t models.ToolDef, pf analys
 	if root == nil {
 		return false
 	}
+	aliases := analysis.ResolveClientAliases(root, pf.Source)
 	calleeSet := make(map[string]struct{}, len(expr.Callees))
 	for _, c := range expr.Callees {
 		calleeSet[c] = struct{}{}
@@ -232,14 +233,24 @@ func PredCallWithoutKwarg(expr CallWithoutKwargExpr, t models.ToolDef, pf analys
 		if n.Type() != "call" {
 			return true
 		}
-		fn := n.ChildByFieldName("function")
-		if fn == nil {
+		// Resolve the canonical callee (direct or aliased). Fall back to raw
+		// callee text for non-HTTP callees so the predicate stays usable for
+		// any callee list, not only HTTP ones.
+		canonical, ok := analysis.IsHTTPCallNode(n, pf.Source, aliases)
+		if !ok {
+			fn := n.ChildByFieldName("function")
+			if fn == nil {
+				return true
+			}
+			canonical = astutil.NodeText(fn, pf.Source)
+		}
+		if _, want := calleeSet[canonical]; !want {
 			return true
 		}
-		if _, ok := calleeSet[astutil.NodeText(fn, pf.Source)]; !ok {
-			return true
-		}
-		if !astutil.HasKwarg(n, pf.Source, expr.Missing) {
+		// Fires when the kwarg is absent OR present with literal None (an
+		// explicitly-disabled value is the same hazard as a missing one).
+		value, present := astutil.KwargValue(n, pf.Source, expr.Missing)
+		if !present || value == "None" {
 			found = true
 		}
 		return !found
