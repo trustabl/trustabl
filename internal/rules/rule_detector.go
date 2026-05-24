@@ -81,6 +81,16 @@ func agentKindMatches(kind string, a models.AgentDef) bool {
 		return a.SDK == models.SDKOpenAIAgents && a.Class == "SandboxAgent"
 	case "claude_agent_definition":
 		return a.SDK == models.SDKClaudeAgentSDK && a.Class == "AgentDefinition"
+	case "adk_llm_agent":
+		return a.SDK == models.SDKGoogleADK && a.Class == "LlmAgent"
+	case "adk_sequential_agent":
+		return a.SDK == models.SDKGoogleADK && a.Class == "SequentialAgent"
+	case "adk_parallel_agent":
+		return a.SDK == models.SDKGoogleADK && a.Class == "ParallelAgent"
+	case "adk_loop_agent":
+		return a.SDK == models.SDKGoogleADK && a.Class == "LoopAgent"
+	case "adk_langgraph_agent":
+		return a.SDK == models.SDKGoogleADK && a.Class == "LanggraphAgent"
 	}
 	return false
 }
@@ -124,6 +134,8 @@ func LoadFor(fsys fs.FS, sdks []models.SDK) (*detectors.Registry, error) {
 			wanted["openai_sdk"] = true
 		case models.SDKMCP:
 			wanted["mcp"] = true
+		case models.SDKGoogleADK:
+			wanted["google_adk"] = true
 		}
 	}
 	all, err := Load(fsys)

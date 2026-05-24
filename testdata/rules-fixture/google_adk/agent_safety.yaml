@@ -1,0 +1,86 @@
+policy:
+  id: google_adk_agent_safety
+  name: ADK agent safety
+  category: google_adk
+  description: >
+    Agent-scope safety rules for Google ADK LlmAgents and workflow
+    agents. Covers description hygiene, callback-based interception
+    of shell tools, and sub-agent shell exposure.
+
+rules:
+  - id: ADK-101
+    title: LlmAgent has no description
+    scope: agent
+    severity: medium
+    confidence: 0.85
+    language: python
+    applies_to: [adk_llm_agent]
+    match:
+      all:
+        - agent_class: [LlmAgent]
+        - agent_kwarg_missing: [description]
+    explanation: >
+      Google ADK routes delegation between agents using the
+      `description=` field on each LlmAgent. When a parent agent
+      decides whether to delegate to a child in its `sub_agents` tree,
+      the model sees only the child's description. An agent with no
+      description becomes effectively unreachable through delegation —
+      it sits in the tree but the parent's model has no signal to pick
+      it. This usually shows up as a silent routing bug.
+    fix: >
+      Add a `description=` kwarg that names this agent's role and the
+      kind of input it expects. One sentence is usually enough. Treat
+      it as documentation for the parent agent's model.
+
+  - id: ADK-102
+    title: Agent with BashTool has no before_tool_callback
+    scope: agent
+    severity: high
+    confidence: 0.85
+    language: python
+    applies_to: [adk_llm_agent]
+    match:
+      all:
+        - agent_class: [LlmAgent]
+        - agent_uses_hosted_tool_class: [BashTool]
+        - agent_kwarg_missing: [before_tool_callback]
+    explanation: >
+      An LlmAgent with `BashTool` in its tools= list can execute
+      arbitrary shell commands chosen by the model. ADK's
+      `before_tool_callback` is the only synchronous interception point
+      where you can inspect a tool call before it executes and
+      short-circuit it — the moral analog of an OpenAI agent's
+      `input_guardrails`. An agent with BashTool and no
+      `before_tool_callback` has no opportunity to deny a shell command
+      the model invents.
+    fix: >
+      Add a `before_tool_callback=` that inspects the tool name and
+      arguments, allow-lists known-safe commands (or denies known-bad
+      ones), and returns a refusal `Content` when the call should be
+      blocked. Returning anything non-None from the callback skips the
+      tool execution.
+
+  - id: ADK-103
+    title: Sub-agent is granted BashTool
+    scope: agent
+    severity: high
+    confidence: 0.9
+    language: python
+    applies_to: [adk_llm_agent]
+    match:
+      all:
+        - agent_is_subagent_of_any: true
+        - agent_uses_hosted_tool_class: [BashTool]
+    explanation: >
+      This LlmAgent appears in another agent's `sub_agents=[...]` tree
+      AND is granted `BashTool`. A parent agent can delegate to a
+      child without the child's tool calls being mediated by the
+      parent's `before_tool_callback`. Granting shell access to a
+      delegated sub-agent makes the parent's policy worthless: the
+      model can route around any safety hook by handing off to the
+      sub-agent and asking it to run the same command.
+    fix: >
+      Either remove `BashTool` from this sub-agent's tools= list, or
+      restructure so the shell-capable agent is the orchestrator at
+      the top of the tree (so its `before_tool_callback` actually
+      mediates every shell call).
