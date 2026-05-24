@@ -30,6 +30,7 @@ func TestHostedToolDef_JSONShape(t *testing.T) {
 
 func TestAgentDef_HostedToolRefsField(t *testing.T) {
 	a := models.AgentDef{
+		Language:       models.LanguagePython,
 		HostedToolRefs: []models.HostedToolRef{{Class: "WebSearchTool"}},
 	}
 	if len(a.HostedToolRefs) != 1 || a.HostedToolRefs[0].Class != "WebSearchTool" {
