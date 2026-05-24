@@ -726,12 +726,13 @@ internal/
 │   ├── astutil/                 Tiny tree-sitter ergonomic layer (NodeText,
 │   │                            Walk, FindAll, FunctionName, FunctionParams,
 │   │                            FunctionDocstring, FunctionHasTypedParams,
-│   │                            HasKwarg).
+│   │                            KwargValue).
 │   ├── discovery.go             Tool discovery passes.
 │   ├── adk_agents.go            ADK agent + FunctionTool discovery (DiscoverADKAgents, DiscoverADKTools).
 │   ├── adk_hosted_tools.go      ADK built-in hosted-tool class set + classifier (ADKHostedToolClasses).
 │   ├── heuristics.go            Domain helpers shared by every detector path:
-│   │                            FindFunctionNode, IsHTTPCall, IsPathishParam.
+│   │                            FindFunctionNode, IsHTTPCall, ResolveClientAliases,
+│   │                            IsHTTPCallNode, IsPathishParam.
 │   ├── scoring.go               Per-tool + overall scoring.
 │   └── detectors/               Detector interface + Registry runtime only.
 │       └── detector.go          Detector iface, Registry, New(ds), Subset, Run.
@@ -770,14 +771,22 @@ need:
 
 - `FindFunctionNode(t, pf)` — relocate a tool's `function_definition` node.
 - `IsHTTPCall(callee)` — exact-text match against the known HTTP client API
-  surface. **Limitation**: aliased session calls (`s = requests.Session();
-  s.get(...)`) are not resolved. Documented; address with an aliasing pass
-  when corpus signal demands it.
+  surface (the direct-call check).
+- `ResolveClientAliases(fn, src)` — walks a function body and maps local
+  variables bound to a client constructor (`requests.Session()`,
+  `httpx.Client()/AsyncClient()`, `aiohttp.ClientSession()`, including
+  `with ... as c:`) to their canonical module. Same-function scope only;
+  instance-attribute and cross-module aliases are not resolved.
+- `IsHTTPCallNode(call, src, aliases)` — resolves a call node to its canonical
+  HTTP callee, handling both direct calls and aliased session/client calls
+  (`s.get(...)` → `requests.get`). The timeout and dynamic-URL predicates use
+  it so a reused session/client is no longer invisible.
 - `IsPathishParam(name)` — word-boundary check against path/file/dir names so
   `editor_id` does not match `_dir`.
 
-`HasKwarg(call, src, name)` is in `astutil` because it is pure tree-sitter and
-has no domain knowledge.
+`KwargValue(call, src, name)` is in `astutil` because it is pure tree-sitter and
+has no domain knowledge. It returns a keyword argument's value text plus a
+presence flag, so callers can distinguish absent from present-but-`None`.
 
 ---
 

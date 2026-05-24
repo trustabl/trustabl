@@ -174,7 +174,11 @@ rules:
 #
 #
 #   call_without_kwarg:
-#       Fires if a call to one of `callees` is missing the named kwarg.
+#       Fires when a matching call lacks an *effective* value for the named
+#       kwarg — the kwarg is absent OR present with literal `None`. Callee
+#       matching is alias-aware: a call through a local client alias (e.g.
+#       `s = requests.Session(); s.get(...)`) matches the canonical
+#       `requests.get` callee.
 #
 #       callees: [requests.get, requests.post, ...]   REQUIRED. Exact callee text.
 #       missing: timeout                              REQUIRED. The kwarg name.
@@ -226,7 +230,8 @@ rules:
 #       Supports dotted paths for nested kwargs (model_settings.tool_choice).
 #
 #   agent_kwarg_missing: [kwarg, dotted.path, ...]
-#       Fires when ANY of the listed kwargs is absent (not provided).
+#       True when a kwarg is absent OR present with literal `None`.
+#       (Asymmetric with `agent_kwarg_present`, which tests pure presence.)
 #
 #   agent_kwarg_list_empty: [kwarg, ...]
 #       Fires when ANY of the listed list kwargs is absent or an empty list [].

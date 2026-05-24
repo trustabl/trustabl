@@ -113,6 +113,7 @@ func PredHasDynamicURLCall(t models.ToolDef, pf analysis.ParsedFile) bool {
 	if root == nil {
 		return false
 	}
+	aliases := analysis.ResolveClientAliases(root, pf.Source)
 	found := false
 	astutil.Walk(root, func(n *sitter.Node) bool {
 		if found {
@@ -121,11 +122,7 @@ func PredHasDynamicURLCall(t models.ToolDef, pf analysis.ParsedFile) bool {
 		if n.Type() != "call" {
 			return true
 		}
-		fn := n.ChildByFieldName("function")
-		if fn == nil {
-			return true
-		}
-		if !analysis.IsHTTPCall(astutil.NodeText(fn, pf.Source)) {
+		if _, ok := analysis.IsHTTPCallNode(n, pf.Source, aliases); !ok {
 			return true
 		}
 		args := n.ChildByFieldName("arguments")
@@ -220,6 +217,7 @@ func PredCallWithoutKwarg(expr CallWithoutKwargExpr, t models.ToolDef, pf analys
 	if root == nil {
 		return false
 	}
+	aliases := analysis.ResolveClientAliases(root, pf.Source)
 	calleeSet := make(map[string]struct{}, len(expr.Callees))
 	for _, c := range expr.Callees {
 		calleeSet[c] = struct{}{}
@@ -232,14 +230,24 @@ func PredCallWithoutKwarg(expr CallWithoutKwargExpr, t models.ToolDef, pf analys
 		if n.Type() != "call" {
 			return true
 		}
-		fn := n.ChildByFieldName("function")
-		if fn == nil {
+		// Resolve the canonical callee (direct or aliased). Fall back to raw
+		// callee text for non-HTTP callees so the predicate stays usable for
+		// any callee list, not only HTTP ones.
+		canonical, ok := analysis.IsHTTPCallNode(n, pf.Source, aliases)
+		if !ok {
+			fn := n.ChildByFieldName("function")
+			if fn == nil {
+				return true
+			}
+			canonical = astutil.NodeText(fn, pf.Source)
+		}
+		if _, want := calleeSet[canonical]; !want {
 			return true
 		}
-		if _, ok := calleeSet[astutil.NodeText(fn, pf.Source)]; !ok {
-			return true
-		}
-		if !astutil.HasKwarg(n, pf.Source, expr.Missing) {
+		// Fires when the kwarg is absent OR present with literal None (an
+		// explicitly-disabled value is the same hazard as a missing one).
+		value, present := astutil.KwargValue(n, pf.Source, expr.Missing)
+		if !present || value == "None" {
 			found = true
 		}
 		return !found
@@ -491,8 +499,12 @@ func PredAgentKwargPresent(paths []string, a models.AgentDef) bool {
 
 func PredAgentKwargMissing(paths []string, a models.AgentDef) bool {
 	for _, p := range paths {
-		if lookupKwarg(a, p) == nil {
-			return true
+		kw := lookupKwarg(a, p)
+		if kw == nil {
+			return true // absent
+		}
+		if kw.Value != nil && kw.Value.Kind == models.ExprLiteralNone {
+			return true // present but explicitly None — ineffective
 		}
 	}
 	return false
