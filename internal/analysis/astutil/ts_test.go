@@ -48,3 +48,31 @@ func TestParserForExtension(t *testing.T) {
 		}
 	}
 }
+
+func TestTSImportAliases(t *testing.T) {
+	src := []byte(`
+import { tool, query as q } from "@anthropic-ai/claude-agent-sdk";
+import { createSdkMcpServer as mcp } from "@anthropic-ai/claude-agent-sdk";
+import * as sdk from "@anthropic-ai/claude-agent-sdk";
+import defaultExport from "@anthropic-ai/claude-agent-sdk";
+import { z } from "zod";
+`)
+	p := astutil.NewTSParser()
+	tree, _ := p.ParseCtx(context.Background(), nil, src)
+	got := astutil.TSImportAliases(tree.RootNode(), src, "@anthropic-ai/claude-agent-sdk")
+	want := map[string]string{
+		"tool":          "tool",               // named, no rename
+		"q":             "query",              // renamed
+		"mcp":           "createSdkMcpServer", // renamed
+		"sdk":           "*",                  // namespace import — sentinel "*"
+		"defaultExport": "default",            // default import — sentinel "default"
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("alias[%q] = %q, want %q", k, got[k], v)
+		}
+	}
+	if got["z"] != "" {
+		t.Errorf("alias[z] should be empty (wrong module), got %q", got["z"])
+	}
+}
