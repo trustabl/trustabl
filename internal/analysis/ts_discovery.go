@@ -78,6 +78,18 @@ func extractTSToolFromCall(call *sitter.Node, pf ParsedFile) (models.ToolDef, bo
 		}
 		tool.HasTypedParams = len(kt.Children) > 0
 	}
+	// Handler body facts (arg 3): shells_out, http_call.
+	if len(posArgs) >= 4 {
+		facts := tsHandlerFacts(posArgs[3], pf.Source)
+		if len(facts) > 0 {
+			if tool.Facts == nil {
+				tool.Facts = map[string]string{}
+			}
+			for k, v := range facts {
+				tool.Facts[k] = v
+			}
+		}
+	}
 	return tool, true
 }
 
@@ -100,4 +112,34 @@ func tsStringLiteralText(n *sitter.Node, src []byte) string {
 		return ""
 	}
 	return raw[1 : len(raw)-1]
+}
+
+// tsHandlerFacts walks a handler node (arrow_function or function) and
+// returns facts about its body. Mirrors the Python callsShell pattern but
+// recognizes JS/TS shell + HTTP call shapes.
+func tsHandlerFacts(handler *sitter.Node, src []byte) map[string]string {
+	out := map[string]string{}
+	if handler == nil {
+		return out
+	}
+	astutil.Walk(handler, func(n *sitter.Node) bool {
+		if n.Type() != "call_expression" {
+			return true
+		}
+		fn := n.ChildByFieldName("function")
+		if fn == nil {
+			return true
+		}
+		text := astutil.NodeText(fn, src)
+		switch text {
+		case "fetch", "axios", "axios.get", "axios.post", "axios.put", "axios.delete",
+			"axios.patch", "axios.request", "got", "got.get", "got.post",
+			"undici.fetch", "undici.request":
+			out["http_call"] = "true"
+		case "execSync", "exec", "spawn", "spawnSync", "fork":
+			out["shells_out"] = "true"
+		}
+		return true
+	})
+	return out
 }

@@ -91,3 +91,38 @@ const x = sdk.tool("search", "Search", {}, async () => {});
 		t.Errorf("namespace import: got %+v", tools)
 	}
 }
+
+func TestDiscoverTSTools_HandlerFacts(t *testing.T) {
+	src := `
+import { tool } from "@anthropic-ai/claude-agent-sdk";
+
+const shellTool = tool("run", "Run", {}, async () => {
+  const { execSync } = require("child_process");
+  execSync("ls");
+});
+
+const httpTool = tool("fetch", "Fetch", {}, async () => {
+  await fetch("https://example.com");
+});
+`
+	pf := parseTSForTest(t, "src/a.ts", src)
+	tools := analysis.DiscoverTSTools([]analysis.ParsedFile{pf}, nil)
+	if len(tools) != 2 {
+		t.Fatalf("got %d tools, want 2: %+v", len(tools), tools)
+	}
+	var shell, http models.ToolDef
+	for _, x := range tools {
+		switch x.Name {
+		case "run":
+			shell = x
+		case "fetch":
+			http = x
+		}
+	}
+	if shell.Facts["shells_out"] != "true" {
+		t.Errorf("shells_out: got %q, want true", shell.Facts["shells_out"])
+	}
+	if http.Facts["http_call"] != "true" {
+		t.Errorf("http_call: got %q, want true", http.Facts["http_call"])
+	}
+}
