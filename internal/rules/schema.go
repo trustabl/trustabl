@@ -67,15 +67,16 @@ type MatchExpr struct {
 	ToolDecoratorKwargPresent []string                     `yaml:"tool_decorator_kwarg_present,omitempty"`
 
 	// Agent-scope predicates
-	AgentClass             []string             `yaml:"agent_class,omitempty"`
-	AgentKwargPresent      []string             `yaml:"agent_kwarg_present,omitempty"`
-	AgentKwargMissing      []string             `yaml:"agent_kwarg_missing,omitempty"`
-	AgentKwargListEmpty    []string             `yaml:"agent_kwarg_list_empty,omitempty"`
-	AgentKwargValue        *AgentKwargValueExpr `yaml:"agent_kwarg_value,omitempty"`
-	AgentUsesToolKind      []string             `yaml:"agent_uses_tool_kind,omitempty"`
-	AgentGrantsBuiltinTool []string             `yaml:"agent_grants_builtin_tool,omitempty"`
-	AgentHandoffToClass    []string             `yaml:"agent_handoff_to_class,omitempty"`
-	AgentUsesHostedToolClass []string           `yaml:"agent_uses_hosted_tool_class,omitempty"`
+	AgentClass               []string             `yaml:"agent_class,omitempty"`
+	AgentKwargPresent        []string             `yaml:"agent_kwarg_present,omitempty"`
+	AgentKwargMissing        []string             `yaml:"agent_kwarg_missing,omitempty"`
+	AgentKwargListEmpty      []string             `yaml:"agent_kwarg_list_empty,omitempty"`
+	AgentKwargValue          *AgentKwargValueExpr `yaml:"agent_kwarg_value,omitempty"`
+	AgentUsesToolKind        []string             `yaml:"agent_uses_tool_kind,omitempty"`
+	AgentGrantsBuiltinTool   []string             `yaml:"agent_grants_builtin_tool,omitempty"`
+	AgentHandoffToClass      []string             `yaml:"agent_handoff_to_class,omitempty"`
+	AgentUsesHostedToolClass []string             `yaml:"agent_uses_hosted_tool_class,omitempty"`
+	AgentIsSubagentOfAny     *bool                `yaml:"agent_is_subagent_of_any,omitempty"`
 
 	// Repo-scope predicates
 	RepoHasSDKDep          []string `yaml:"repo_has_sdk_dep,omitempty"`

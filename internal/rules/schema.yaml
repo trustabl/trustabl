@@ -260,6 +260,12 @@ rules:
 #       (e.g. an SDK we discovered but did not resolve back to a typed def)
 #       still counts.
 #
+#   agent_is_subagent_of_any: bool
+#       Returns true if the agent appears as a Resolved entry in any other
+#       agent's HandoffRefs in the inventory. Useful for rules that fire only
+#       on agents that participate in a delegation tree (e.g. ADK's sub_agents
+#       composition or OpenAI's handoffs= edges).
+#
 #
 # ━━━ REPO-SCOPE PREDICATES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # (used only in scope: repo rules; match runs once per scan)

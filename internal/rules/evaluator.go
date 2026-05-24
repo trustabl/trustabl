@@ -60,6 +60,9 @@ func (e MatchExpr) EvaluateAgent(a models.AgentDef, inv models.RepoInventory) bo
 	if len(e.AgentUsesHostedToolClass) > 0 && !PredAgentUsesHostedToolClass(e.AgentUsesHostedToolClass, a) {
 		return false
 	}
+	if e.AgentIsSubagentOfAny != nil && PredAgentIsSubagentOfAny(a, inv) != *e.AgentIsSubagentOfAny {
+		return false
+	}
 	return true
 }
 
