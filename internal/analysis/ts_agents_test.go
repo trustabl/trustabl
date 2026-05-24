@@ -104,3 +104,34 @@ const x: AgentDefinition = {
 		}
 	}
 }
+
+func TestDiscoverTSAgents_OpaqueWhenAgentValueIsCall(t *testing.T) {
+	src := `
+import { query } from "@anthropic-ai/claude-agent-sdk";
+
+const q = query({
+  options: {
+    agents: {
+      dynamic: makeAgent()
+    }
+  }
+});
+`
+	pf := parseTSForTest(t, "src/a.ts", src)
+	agents := analysis.DiscoverTSAgents([]analysis.ParsedFile{pf}, nil)
+	if len(agents) != 1 || !agents[0].Opaque {
+		t.Errorf("expected one opaque agent, got %+v", agents)
+	}
+}
+
+func TestDiscoverTSAgents_NoExtractionWhenOptionsIsCall(t *testing.T) {
+	src := `
+import { query } from "@anthropic-ai/claude-agent-sdk";
+const q = query(getOptions());
+`
+	pf := parseTSForTest(t, "src/a.ts", src)
+	agents := analysis.DiscoverTSAgents([]analysis.ParsedFile{pf}, nil)
+	if len(agents) != 0 {
+		t.Errorf("expected zero agents (options non-literal), got %+v", agents)
+	}
+}
