@@ -336,6 +336,28 @@ def get_weather(city: str) -> str:
     """Look up the weather."""
     return requests.get("https://api.example.com/w/" + city, timeout=10).text
 `, nil, false},
+
+	// ─── alias + None coverage (OAI-005, ADK-003) ────────────────────────────
+	{"OAI-005 fires on session-alias get without timeout", "OAI-005", models.KindOpenAITool, `
+import requests
+def fetch(url: str) -> str:
+    """Fetch."""
+    s = requests.Session()
+    return s.get(url).text
+`, nil, true},
+	{"OAI-005 fires on timeout=None", "OAI-005", models.KindOpenAITool, `
+import requests
+def fetch(url: str) -> str:
+    """Fetch."""
+    return requests.get(url, timeout=None).text
+`, nil, true},
+	{"ADK-003 fires on session-alias get without timeout", "ADK-003", models.KindADKFunctionTool, `
+import requests
+def fetch(url: str) -> str:
+    """Fetch."""
+    s = requests.Session()
+    return s.get(url).text
+`, nil, true},
 }
 
 // policyRepoRuleCases covers repo-scoped rules.
@@ -593,6 +615,21 @@ var policyAgentRuleCases = []policyAgentCase{
 			},
 		}},
 		false},
+
+	// ─── ADK-102 before_tool_callback=None counts as missing ─────────────────
+	{"ADK-102 fires when before_tool_callback is None", "ADK-102",
+		models.AgentDef{
+			SDK:            models.SDKGoogleADK,
+			Class:          "LlmAgent",
+			Name:           "root",
+			HostedToolRefs: []models.HostedToolRef{{Class: "BashTool"}},
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"name":                 {Value: &models.Expr{Kind: models.ExprLiteralString, Text: `"root"`}},
+				"before_tool_callback": {Value: &models.Expr{Kind: models.ExprLiteralNone, Text: "None"}},
+			}},
+		},
+		models.RepoInventory{},
+		true},
 }
 
 func TestPolicyAgentRules(t *testing.T) {
