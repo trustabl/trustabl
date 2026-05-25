@@ -12,8 +12,8 @@ import (
 // bug where ScanResult.HostedTools (populated by hosted-tool discovery) was
 // surfaced in the JSON output but never rendered in the human format. A
 // repo whose only tools are hosted (e.g. examples/research_bot using
-// WebSearchTool) used to show "Tools found: 0" in human mode despite the
-// JSON listing the tool.
+// WebSearchTool) used to render no hosted-tool info despite the JSON
+// listing the tool.
 func TestRender_HostedToolsVisibleInHumanFormat(t *testing.T) {
 	result := models.ScanResult{
 		Repo:      "./fixture",
@@ -40,7 +40,7 @@ func TestRender_HostedToolsVisibleInHumanFormat(t *testing.T) {
 	out := (&review.Renderer{NoColor: true}).Render(result)
 
 	for _, want := range []string{
-		"Hosted tools:   1",
+		"Hosted tools:       1",
 		"WebSearchTool",
 		"hosted tools:",
 	} {
@@ -48,10 +48,65 @@ func TestRender_HostedToolsVisibleInHumanFormat(t *testing.T) {
 			t.Errorf("human output missing %q\n---\n%s", want, out)
 		}
 	}
+}
 
-	// "Tools found" must include the hosted tool class.
-	if !strings.Contains(out, "Tools found:    1") {
-		t.Errorf("Tools found count should be 1 (the hosted WebSearchTool); got:\n%s", out)
+// TestRender_HostedToolsCountedInGrantsBucketWhenAttachedToAgent is a
+// secondary check on the broken-out tool surface: a hosted-tool ref on an
+// agent is counted under "Hosted tools" (the dedicated bucket), and does
+// not double-count into Agent grants.
+//
+// TestRender_ToolSurfaceBrokenOutClearly is the regression test for the
+// "16 vs 2 tools" presentation confusion. Previously a single conflated
+// "Tools found: 16" line led users to wonder why per-tool readiness only
+// listed 2. The renderer now breaks the tool surface into honest categories
+// so the difference between "we audit it" (defs) and "we know it's granted"
+// (grants/hosted) is obvious.
+func TestRender_ToolSurfaceBrokenOutClearly(t *testing.T) {
+	result := models.ScanResult{
+		Repo: "./fixture",
+		Tools: []models.ToolDef{
+			{Name: "search_inbox", Kind: models.KindClaudeSDKTool, Language: models.LanguageTypeScript},
+			{Name: "read_emails", Kind: models.KindClaudeSDKTool, Language: models.LanguageTypeScript},
+		},
+		Agents: []models.AgentDef{
+			{
+				SDK: models.SDKClaudeAgentSDK, Class: "QueryMainAgent",
+				Language: models.LanguageTypeScript, Name: "client.run",
+				ToolRefs: []models.ToolRef{
+					{Name: "Bash"}, {Name: "Read"}, {Name: "Edit"},
+					{Name: "mcp__email__search_inbox"},
+				},
+			},
+		},
+		// One finding is required for the readiness section to render
+		// (the renderer short-circuits with "No findings. Nothing to commit."
+		// when result.Findings is empty).
+		Findings: []models.Finding{
+			{RuleID: "META-001", Severity: models.SeverityInfo, Confidence: 1.0},
+		},
+		Readiness: []models.ToolReadiness{
+			{ToolName: "search_inbox", Score: 1.0},
+			{ToolName: "read_emails", Score: 1.0},
+		},
+	}
+
+	out := (&review.Renderer{NoColor: true}).Render(result)
+
+	// New breakdown: defs always shown; grants only when > 0.
+	for _, want := range []string{
+		"Tool definitions:   2",
+		"Agent tool grants:  4",
+		"Per-tool readiness (custom tool definitions)",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("human output missing %q\n---\n%s", want, out)
+		}
+	}
+	// The old conflated label MUST NOT reappear.
+	for _, gone := range []string{"Tools found:", "Tool defs:"} {
+		if strings.Contains(out, gone) {
+			t.Errorf("human output still has stale label %q\n---\n%s", gone, out)
+		}
 	}
 }
 
@@ -72,7 +127,7 @@ func TestRender_MCPServersVisibleInHumanFormat(t *testing.T) {
 
 	out := (&review.Renderer{NoColor: true}).Render(result)
 	for _, want := range []string{
-		"MCP servers:    1",
+		"MCP servers:        1",
 		"MCPServerStdio (stdio)",
 		"mcp servers:",
 	} {

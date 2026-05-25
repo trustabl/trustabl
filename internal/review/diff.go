@@ -42,27 +42,35 @@ func (r *Renderer) Render(result models.ScanResult) string {
 	fmt.Fprintf(&b, "  Repo:           %s\n", result.Repo)
 	fmt.Fprintf(&b, "  Languages:      %s\n", csv(result.Languages))
 	fmt.Fprintf(&b, "  SDKs:           %s\n", csv(result.SDKs))
-	fmt.Fprintf(&b, "  Tools found:    %d %s\n", repoToolCount(result),
-		styleDim.Render("(distinct, repo-wide: custom defs + built-in tools granted to agents + hosted instances)"))
-	fmt.Fprintf(&b, "  Tool defs:      %d %s\n", len(result.Tools),
-		styleDim.Render("(custom @tool / @function_tool functions analysed by tool-scope rules)"))
+	// Tool surface, broken out by where each kind enters the rule pipeline.
+	// Previously this was one conflated "Tools found: N" union which led users
+	// to wonder why only some appeared in per-tool readiness. The honest
+	// breakdown: custom tool definitions have function bodies and run through
+	// tool-scope rules; agent grants and hosted instances do not (no body to
+	// audit) but are inputs to agent-scope rules.
+	fmt.Fprintf(&b, "  Tool definitions:   %d %s\n", len(result.Tools),
+		styleDim.Render("(custom tools with function bodies — scored below)"))
+	if n := distinctAgentToolGrants(result); n > 0 {
+		fmt.Fprintf(&b, "  Agent tool grants:  %d %s\n", n,
+			styleDim.Render("(tool names the agent may call — audited by agent-scope rules)"))
+	}
 	if n := len(result.HostedTools); n > 0 {
-		fmt.Fprintf(&b, "  Hosted tools:   %d %s\n", n,
+		fmt.Fprintf(&b, "  Hosted tools:       %d %s\n", n,
 			styleDim.Render("("+hostedToolClassList(result.HostedTools)+")"))
 	}
 	if n := len(result.MCPServers); n > 0 {
-		fmt.Fprintf(&b, "  MCP servers:    %d %s\n", n,
+		fmt.Fprintf(&b, "  MCP servers:        %d %s\n", n,
 			styleDim.Render("("+mcpServerClassList(result.MCPServers)+")"))
 	}
 	if n := len(result.Subagents); n > 0 {
-		fmt.Fprintf(&b, "  Subagents:      %d %s\n", n,
+		fmt.Fprintf(&b, "  Subagents:          %d %s\n", n,
 			styleDim.Render("("+subagentNamesList(result.Subagents)+")"))
 	}
 	if n := len(result.ClaudeSettings); n > 0 {
-		fmt.Fprintf(&b, "  Claude settings: %d file(s)\n", n)
+		fmt.Fprintf(&b, "  Claude settings:    %d file(s)\n", n)
 	}
-	fmt.Fprintf(&b, "  Agents found:   %d\n", len(result.Agents))
-	fmt.Fprintf(&b, "  Findings:       %d\n", len(result.Findings))
+	fmt.Fprintf(&b, "  Agents found:       %d\n", len(result.Agents))
+	fmt.Fprintf(&b, "  Findings:           %d\n", len(result.Findings))
 	sevTag := func(s models.Severity) string {
 		switch s {
 		case models.SeverityCritical:
@@ -89,7 +97,7 @@ func (r *Renderer) Render(result models.ScanResult) string {
 		}
 	}
 
-	fmt.Fprintf(&b, "  Overall score:  %s\n\n", scoreCell(result.OverallScore))
+	fmt.Fprintf(&b, "  Overall score:      %s\n\n", scoreCell(result.OverallScore))
 
 	if len(result.Agents) > 0 {
 		b.WriteString(styleHeader.Render("Agents") + "\n")
@@ -156,8 +164,10 @@ func (r *Renderer) Render(result models.ScanResult) string {
 		return b.String()
 	}
 
-	// Per-tool readiness table.
-	b.WriteString(styleHeader.Render("Per-tool readiness") + "\n")
+	// Per-tool readiness table (only custom tool definitions appear here —
+	// agent grants and hosted instances have no function body and are scored
+	// indirectly via agent-scope rules in the Findings section).
+	b.WriteString(styleHeader.Render("Per-tool readiness (custom tool definitions)") + "\n")
 	for _, rd := range result.Readiness {
 		fmt.Fprintf(&b, "  %-32s %s  (%d findings)\n",
 			rd.ToolName, scoreCell(rd.Score), rd.FindingCount)
@@ -225,11 +235,30 @@ func csv[T ~string](items []T) string {
 	return strings.Join(parts, ", ")
 }
 
+// distinctAgentToolGrants is the count of distinct tool names that agents
+// in this repo are granted permission to call (across all agents, deduped,
+// quote-stripped). These are NOT tool definitions — they're built-in or
+// MCP-namespaced names referenced from `allowedTools` / `tools` arrays.
+// They have no function body so tool-scope rules cannot audit them; they
+// feed agent-scope rules instead ("agent X grants Bash without a callback").
+func distinctAgentToolGrants(result models.ScanResult) int {
+	seen := make(map[string]struct{})
+	for _, a := range result.Agents {
+		for _, r := range a.ToolRefs {
+			seen[strings.Trim(r.Name, `"'`)] = struct{}{}
+		}
+	}
+	return len(seen)
+}
+
 // repoToolCount is the distinct repo-wide tool surface: every custom tool
 // definition, every tool name granted to any agent (quote-stripped, deduped),
 // and every hosted-tool class. This is the honest "how many tools does this
 // repo expose" number — len(result.Tools) alone reads as 0 for repos that
 // only wire built-in tools into agents or use SDK-managed hosted tools.
+//
+// No longer used by the human renderer (the surface is now broken out per
+// category for clarity), but kept for callers that want one number.
 func repoToolCount(result models.ScanResult) int {
 	seen := make(map[string]struct{})
 	for _, t := range result.Tools {
