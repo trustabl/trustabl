@@ -21,6 +21,12 @@ func TestValidAppliesToForScope_ADKTokens(t *testing.T) {
 		{models.ScopeRepo, "google_adk", true},
 		{models.ScopeTool, "google_adk", false},        // wrong scope
 		{models.ScopeAgent, "adk_function_tool", false}, // wrong scope
+		// claude_query_main is handled by agentKindMatches (TS QueryMainAgent);
+		// the loader's scope validator must accept it too, else an SP2 rule
+		// declaring applies_to: [claude_query_main] is rejected at load time.
+		{models.ScopeAgent, "claude_query_main", true},
+		{models.ScopeSubagent, "claude_subagent", true},
+		{models.ScopeSubagent, "claude_agent_definition", false}, // wrong scope
 	}
 	for _, c := range cases {
 		got := validAppliesToForScope(c.scope, c.kind)
