@@ -65,7 +65,7 @@ configured.
 
 The binary ships with **no embedded rules**. Before the pipeline runs, Trustabl
 resolves its detection rules from a separate git repository
-([`trustabl-rules`](https://github.com/jhumel-code/trustabl-rules)) — fetching
+([`trustabl-rules`](https://github.com/trustabl/trustabl-rules)) — fetching
 the latest, caching the clone locally, and falling back to the cache when the
 network is unreachable. This decouples rule updates from binary releases: rules
 can be added or changed without rebuilding the scanner. The resolved rules

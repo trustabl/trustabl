@@ -278,7 +278,7 @@ func buildRun(sr models.ScanResult, toolVersion string) Run {
 		Tool: Tool{Driver: ToolComponent{
 			Name:            "trustabl",
 			FullName:        "Trustabl — static analyzer for agent reliability",
-			InformationURI:  "https://github.com/jhumel-code/trustabl",
+			InformationURI:  "https://github.com/trustabl/trustabl",
 			Version:         toolVersion,
 			SemanticVersion: toolVersion,
 			Rules:           rules,

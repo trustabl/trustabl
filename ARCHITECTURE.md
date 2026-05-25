@@ -69,7 +69,7 @@ Adding a new tool-discovery language requires:
 Before the pipeline runs, `cmd/trustabl` resolves the detection rules. The
 binary embeds none; `rulesource.Resolve` fetches them from the rules git
 repository (`DefaultRepoURL`, currently
-`https://github.com/jhumel-code/trustabl-rules`; overridable with
+`https://github.com/trustabl/trustabl-rules`; overridable with
 `--rules-repo` / `TRUSTABL_RULES_REPO`) via go-git and caches the clone under
 `os.UserCacheDir()/trustabl/rules/<sha>/`, with a `current` pointer file
 naming the active commit. The clone lands via a temp dir + atomic rename, and
@@ -817,7 +817,7 @@ internal/
 └── inference/                   BYOK inference router (interface + cache).
 
 The YAML rule packs themselves live in the **separate** `trustabl-rules`
-repository (`https://github.com/jhumel-code/trustabl-rules`), not in this
+repository (`https://github.com/trustabl/trustabl-rules`), not in this
 tree — that is what `trustabl scan` pulls and runs. `testdata/rules-fixture/`
 (with a `manifest.yaml` declaring `schema_version`) is an in-engine **test
 mirror** of those packs, injected via `os.DirFS` so `go test` validates rules

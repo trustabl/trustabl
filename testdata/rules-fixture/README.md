@@ -4,7 +4,7 @@ Every `.yaml` file under this directory defines one or more detection rules.
 
 > **Test mirror — not the production source.** These rule packs are **not**
 > embedded in the binary. Production rules live in the external
-> `trustabl-rules` git repository (`https://github.com/jhumel-code/trustabl-rules`)
+> `trustabl-rules` git repository (`https://github.com/trustabl/trustabl-rules`)
 > and are resolved at scan time (see `internal/rulesource/`). This
 > `testdata/rules-fixture/` directory is an **in-engine copy** of those packs,
 > injected via `os.DirFS` so `go test` can validate rules offline. **It must be

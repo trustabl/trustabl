@@ -2,7 +2,7 @@
 
 These instructions apply to any work on the detection rule packs. Production
 rules live in the external `trustabl-rules` repository
-(`https://github.com/jhumel-code/trustabl-rules`); `testdata/rules-fixture/`
+(`https://github.com/trustabl/trustabl-rules`); `testdata/rules-fixture/`
 (this directory) is an in-engine **test mirror** of those packs, and **must be
 kept in sync with the live repo** — see the "Two-repo rule model" section in
 the top-level [`CLAUDE.md`](../../CLAUDE.md) for the full change workflow. The

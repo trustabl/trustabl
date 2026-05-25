@@ -7,7 +7,7 @@
         "driver": {
           "name": "trustabl",
           "fullName": "Trustabl — static analyzer for agent reliability",
-          "informationUri": "https://github.com/jhumel-code/trustabl",
+          "informationUri": "https://github.com/trustabl/trustabl",
           "version": "0.0.0-test",
           "semanticVersion": "0.0.0-test",
           "rules": [
@@ -96,7 +96,7 @@
           ],
           "properties": {
             "rules_from_cache": false,
-            "rules_source": "https://github.com/jhumel-code/trustabl-rules",
+            "rules_source": "https://github.com/trustabl/trustabl-rules",
             "rules_version": "cb28dfbfixture"
           }
         }

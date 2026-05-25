@@ -5,7 +5,7 @@ codebase. Per-area conventions live in nested CLAUDE.md files (see
 [`testdata/rules-fixture/CLAUDE.md`](testdata/rules-fixture/CLAUDE.md)
 for rule authoring). The detection rule packs do **not** live in this repo:
 they live in the external **`trustabl-rules`** repository
-(`https://github.com/jhumel-code/trustabl-rules`), which the engine pulls at
+(`https://github.com/trustabl/trustabl-rules`), which the engine pulls at
 scan time. `testdata/rules-fixture/` is an in-engine **test mirror** of those
 packs — see [Two-repo rule model](#two-repo-rule-model-rules-vs-engine) below,
 which is required reading before touching any rule.
@@ -26,16 +26,17 @@ and internal prefixes (e.g. the clone temp-dir `trustabl-clone-*`). When in
 doubt: if a human reads it as a sentence, it's "Trustabl"; if a machine
 parses it as a token, it's `trustabl`.
 
-## Detection model: three scopes
+## Detection model: four scopes
 
-Every rule is classified into exactly one of three scopes. The `scope:`
+Every rule is classified into exactly one of four scopes. The `scope:`
 field on a rule is REQUIRED for new rules; legacy rules without it default
 to `tool` (the historical behavior).
 
 - **`tool`** — fires per tool definition.
   - **Input**: a `ToolDef` — discovery produces these from a
     `@function_tool`-decorated function (`openai_tool`), a `@tool` /
-    `@claude_tool` / `claude_agent_sdk` function (`claude_sdk_tool`), a
+    `@claude_tool` / `claude_agent_sdk` function (`claude_sdk_tool`), the
+    Claude TS SDK `tool(...)` factory call (also `claude_sdk_tool`), a
     `@server.tool` / `@mcp.tool` / `.register_tool` MCP registration
     (`mcp_tool`), or a bare shell-invoking function (`shell_invocation`) —
     plus its parsed file. (Hosted-tool instances like `WebSearchTool()` are
@@ -46,13 +47,24 @@ to `tool` (the historical behavior).
 
 - **`agent`** — fires per agent declaration.
   - **Input**: an `AgentDef` — a single `Agent(...)` /
-    `SandboxAgent(...)` / Claude `AgentDefinition(...)` call — with all
-    its kwargs captured and edges to its tools / handoffs / guardrails
-    resolved.
+    `SandboxAgent(...)` / Claude Python `AgentDefinition(...)` call, a
+    Claude TS typed-const `AgentDefinition`, a Claude TS sub-agent inline
+    in `options.agents`, or the TS `query(...)` main-thread agent
+    (`QueryMainAgent`) — with all its kwargs captured and edges to its
+    tools / handoffs / guardrails resolved.
   - **Examples**: agent has no `input_guardrails`,
     `tool_use_behavior="stop_on_first_tool"` paired with
     filesystem-touching tools, handoff to subagent that has fewer
     guardrails than the parent.
+
+- **`subagent`** — fires per `.claude/agents/*.md` declaration.
+  - **Input**: a `SubagentDef` parsed from markdown frontmatter (`name`,
+    `description`, `tools[]`, `model`). Matched at any path depth
+    (monorepo-safe). Carries no `Language` field — markdown frontmatter is
+    language-agnostic, so subagent rules carry no `language:` field either
+    and the detector does not gate on language.
+  - **Examples**: subagent granted `Bash` despite a read-only description
+    (CSDK-110), description-vs-tools mismatch, no `name`.
 
 - **`repo`** — fires once per scan against the whole repo.
   - **Input**: `RepoProfile` + `RepoInventory` (languages, declared SDK
@@ -75,7 +87,7 @@ statically configured.
 
 Before the pipeline runs, the CLI resolves detection rules from the
 external `trustabl-rules` git repository (`rulesource.DefaultRepoURL`,
-currently `https://github.com/jhumel-code/trustabl-rules`; the engine embeds
+currently `https://github.com/trustabl/trustabl-rules`; the engine embeds
 none — see `internal/rulesource/`) and hands them to `scanner.Run` as an
 `fs.FS`. The
 resolution path fetches the configured ref, caches the clone under
@@ -150,11 +162,13 @@ Rules:
 ### Step 4 — Analysis
 
 Run the selected policy packs against the inventory. Detectors are
-scope-aware (see the three-scope model below) and receive typed inputs:
+scope-aware (see the four-scope model above) and receive typed inputs:
 
 - `tool`-scoped detectors receive a `ToolDef`.
 - `agent`-scoped detectors receive an `AgentDef` with its resolved
   edges to tools, guardrails, and handoffs.
+- `subagent`-scoped detectors receive a `SubagentDef` parsed from
+  `.claude/agents/*.md` frontmatter.
 - `repo`-scoped detectors receive `RepoProfile` + `RepoInventory`.
 
 Findings carry the scope they fired at, and attribute to the right
@@ -207,7 +221,7 @@ SDK-specific. A Claude-SDK rule and an OpenAI-Agents-SDK rule that detect
 the same conceptual problem (e.g. missing timeout) are TWO separate rules
 in different policy files, each with framing that matches the target SDK.
 
-This holds at all three scopes:
+This holds at all four scopes:
 - Tool scope: `applies_to: [claude_sdk_tool]` vs `[openai_tool]`.
 - Agent scope: `applies_to: [openai_agent]` vs `[claude_agent_definition]`.
 - Repo scope: rules are organized by the SDK they target.
@@ -226,7 +240,7 @@ test-passes rules users never receive.
   binary. Owns discovery, the rule **schema** (`internal/rules/schema.go` +
   `schema.yaml`), predicates, the evaluator, the loader, scoring, and the
   per-rule test harness. Ships with **no rules embedded**.
-- **Rules repo** (`https://github.com/jhumel-code/trustabl-rules`, set as
+- **Rules repo** (`https://github.com/trustabl/trustabl-rules`, set as
   `rulesource.DefaultRepoURL`): the `.yaml` rule packs + `manifest.yaml`.
   This is what `trustabl scan` clones and runs at scan time. It is the
   **production source of rules**.
