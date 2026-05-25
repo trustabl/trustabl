@@ -193,3 +193,32 @@ func TestScanExamples_TSClaudeSDKMin_DiscoveryCounts(t *testing.T) {
 		t.Errorf("expected META-004 (SDK detected but no rule applicable) since no TS-language rules ship yet; got 0 findings with that rule")
 	}
 }
+
+func TestScanExamples_EmailAgent_SubagentDiscoveredAndAudited(t *testing.T) {
+	_, thisFile, _, _ := runtime.Caller(0)
+	target := filepath.Join(filepath.Dir(thisFile), "..", "..", "examples", "email-agent")
+	res, err := scanner.Run(scanner.Config{Target: target, RulesFS: rulesFixture(t)})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	var sawInboxSearcher bool
+	for _, s := range res.Subagents {
+		if s.Name == "inbox-searcher" {
+			sawInboxSearcher = true
+		}
+	}
+	if !sawInboxSearcher {
+		t.Errorf("expected inbox-searcher in Subagents, got %+v", res.Subagents)
+	}
+	var sawCSDK110 bool
+	var ruleIDs []string
+	for _, f := range res.Findings {
+		ruleIDs = append(ruleIDs, f.RuleID)
+		if f.RuleID == "CSDK-110" {
+			sawCSDK110 = true
+		}
+	}
+	if !sawCSDK110 {
+		t.Errorf("expected CSDK-110 to fire on inbox-searcher (grants Bash); finding rule IDs: %v", ruleIDs)
+	}
+}
