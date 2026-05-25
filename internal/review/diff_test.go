@@ -138,3 +138,84 @@ func TestRender_EmptyInventorySkipsNewLines(t *testing.T) {
 		}
 	}
 }
+
+// TestRender_NonToolFindingsAppearUnderRepoWide is the regression test for
+// the cut-off bug: when ALL findings have empty ToolName (META findings,
+// agent-scoped findings with no matching tool), the renderer printed the
+// "Findings" header and stopped — the actual findings were silently
+// dropped. Root cause was that the renderer iterated Readiness (tool-only)
+// to find findings, so any finding without a matching tool was orphaned.
+func TestRender_NonToolFindingsAppearUnderRepoWide(t *testing.T) {
+	result := models.ScanResult{
+		Repo:      "./fixture",
+		Languages: []models.Language{models.LanguageTypeScript},
+		SDKs:      []models.SDK{models.SDKClaudeAgentSDK},
+		Tools: []models.ToolDef{
+			{Name: "search", Kind: models.KindClaudeSDKTool, Language: models.LanguageTypeScript},
+		},
+		Readiness: []models.ToolReadiness{
+			{ToolName: "search", Score: 1.0},
+		},
+		Findings: []models.Finding{
+			{
+				RuleID:       "META-004",
+				Severity:     models.SeverityInfo,
+				Title:        "SDK detected but no rule was applicable",
+				Explanation:  "Trustabl detected the SDK in code but no rules applied.",
+				SuggestedFix: "Treat as uncovered.",
+				Confidence:   1.0,
+			},
+		},
+		OverallScore: 1.0,
+	}
+
+	out := (&review.Renderer{NoColor: true}).Render(result)
+
+	// The Findings header must be followed by the actual finding content.
+	if !strings.Contains(out, "META-004") {
+		t.Errorf("META-004 (non-tool finding) missing from human output\n---\n%s", out)
+	}
+	if !strings.Contains(out, "SDK detected but no rule was applicable") {
+		t.Errorf("finding title missing from human output\n---\n%s", out)
+	}
+	if !strings.Contains(out, "(repo-wide)") {
+		t.Errorf("expected a (repo-wide) group header for non-tool findings\n---\n%s", out)
+	}
+}
+
+// TestRender_AgentScopedFindingsAppearUnderAgentName covers the forward-
+// compatible case: when SP2's TS rule pack ships, agent-scoped findings
+// will carry ToolName = agent name (not blank, but not matching any tool
+// either). The renderer must group those under the agent's name.
+func TestRender_AgentScopedFindingsAppearUnderAgentName(t *testing.T) {
+	result := models.ScanResult{
+		Repo: "./fixture",
+		Tools: []models.ToolDef{
+			{Name: "search", Kind: models.KindClaudeSDKTool, Language: models.LanguageTypeScript},
+		},
+		Readiness: []models.ToolReadiness{
+			{ToolName: "search", Score: 1.0},
+		},
+		Findings: []models.Finding{
+			{
+				RuleID:       "CSDK-201",
+				ToolName:     "AIClient.queryStream",
+				Severity:     models.SeverityHigh,
+				Title:        "Main thread agent has unrestricted Bash",
+				Explanation:  "...",
+				SuggestedFix: "...",
+				Confidence:   1.0,
+				FilePath:     "ccsdk/ai-client.ts",
+				Line:         86,
+			},
+		},
+	}
+
+	out := (&review.Renderer{NoColor: true}).Render(result)
+	if !strings.Contains(out, "CSDK-201") {
+		t.Errorf("agent-scoped finding missing from human output\n---\n%s", out)
+	}
+	if !strings.Contains(out, "AIClient.queryStream") {
+		t.Errorf("agent name missing as finding group header\n---\n%s", out)
+	}
+}

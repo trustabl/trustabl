@@ -5,6 +5,7 @@ package review
 import (
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
@@ -163,18 +164,29 @@ func (r *Renderer) Render(result models.ScanResult) string {
 	}
 	b.WriteString("\n")
 
-	// Findings list, grouped by tool.
+	// Findings list, grouped by attribution. Discovered tools first (in
+	// Readiness order — already sorted worst-first). Then anything left —
+	// agent-scoped findings (ToolName = agent name, not in Readiness) and
+	// repo-wide / META findings (ToolName = "") — under their own headers,
+	// sorted alphabetically for determinism. The empty-ToolName bucket
+	// renders under "(repo-wide)" so it doesn't look like a missing label.
 	b.WriteString(styleHeader.Render("Findings") + "\n")
 	byTool := map[string][]models.Finding{}
 	for _, f := range result.Findings {
 		byTool[f.ToolName] = append(byTool[f.ToolName], f)
 	}
-	for _, ready := range result.Readiness {
-		fs := byTool[ready.ToolName]
-		if len(fs) == 0 {
-			continue
+	rendered := map[string]bool{}
+	emit := func(name string) {
+		fs := byTool[name]
+		if len(fs) == 0 || rendered[name] {
+			return
 		}
-		fmt.Fprintf(&b, "\n  %s\n", styleHeader.Render(ready.ToolName))
+		rendered[name] = true
+		header := name
+		if name == "" {
+			header = "(repo-wide)"
+		}
+		fmt.Fprintf(&b, "\n  %s\n", styleHeader.Render(header))
 		for _, f := range fs {
 			fmt.Fprintf(&b, "    [%s] %s %s  (%s:%d)\n",
 				f.RuleID, sevTag(f.Severity), f.Title,
@@ -182,6 +194,19 @@ func (r *Renderer) Render(result models.ScanResult) string {
 			fmt.Fprintf(&b, "        %s\n", styleDim.Render(wrapAt(f.Explanation, 86)))
 			fmt.Fprintf(&b, "        %s %s\n", styleDim.Render("fix:"), f.SuggestedFix)
 		}
+	}
+	for _, ready := range result.Readiness {
+		emit(ready.ToolName)
+	}
+	var rest []string
+	for name := range byTool {
+		if !rendered[name] {
+			rest = append(rest, name)
+		}
+	}
+	sort.Strings(rest)
+	for _, name := range rest {
+		emit(name)
 	}
 
 	return b.String()
