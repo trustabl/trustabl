@@ -336,11 +336,13 @@ func discoverAgentsInFile(pf ParsedFile) []models.AgentDef {
 			SDK:      imp.SDK,
 			Class:    imp.Class,
 			Language: models.LanguagePython,
-			FilePath: pf.RelPath,
-			Line:     int(n.StartPoint().Row) + 1,
-			EndLine:  int(n.EndPoint().Row) + 1,
-			Kwargs:   kwargs,
-			Opaque:   opaque,
+			Location: models.Location{
+				FilePath: pf.RelPath,
+				Line:     int(n.StartPoint().Row) + 1,
+				EndLine:  int(n.EndPoint().Row) + 1,
+			},
+			Kwargs: kwargs,
+			Opaque: opaque,
 		}
 		if kwargs != nil && kwargs.Children["name"] != nil &&
 			kwargs.Children["name"].Value != nil &&

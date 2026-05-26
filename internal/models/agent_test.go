@@ -43,9 +43,11 @@ func TestAgentDef_Language_RoundTripsThroughJSON(t *testing.T) {
 		SDK:      models.SDKClaudeAgentSDK,
 		Class:    "AgentDefinition",
 		Language: models.LanguageTypeScript,
-		FilePath: "src/agent.ts",
-		Line:     10,
-		Name:     "reviewer",
+		Location: models.Location{
+			FilePath: "src/agent.ts",
+			Line:     10,
+		},
+		Name: "reviewer",
 	}
 	data, err := json.Marshal(a)
 	if err != nil {

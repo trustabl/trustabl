@@ -64,9 +64,7 @@ type AgentDef struct {
 	SDK            SDK             `json:"sdk"`
 	Class          string          `json:"class"`    // "Agent", "SandboxAgent", "AgentDefinition", "QueryMainAgent" (TS: main thread of a query() call), or one of the ADK Class values
 	Language       Language        `json:"language"` // populated by every discovery path
-	FilePath       string          `json:"file_path"`
-	Line           int             `json:"line"`
-	EndLine        int             `json:"end_line"`
+	Location                        // file_path / line / end_line (flat in JSON via anonymous embed)
 	Name           string          `json:"name"`           // from name= kwarg literal
 	VarName        string          `json:"-"`              // assignment-target identifier (for in-file edge resolution; not serialized)
 	Kwargs         *KwargTree      `json:"kwargs"`

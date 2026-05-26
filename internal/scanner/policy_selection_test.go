@@ -57,9 +57,9 @@ func TestSelectPolicies_SilentWhenDepAndCodeBothPresent(t *testing.T) {
 
 func TestSelectPolicies_EmitsMETA003PerOpaqueAgent(t *testing.T) {
 	inv := models.RepoInventory{Agents: []models.AgentDef{
-		{Class: "Agent", Language: models.LanguagePython, FilePath: "main.py", Line: 5, Opaque: true},
-		{Class: "Agent", Language: models.LanguagePython, FilePath: "main.py", Line: 20, Opaque: false},
-		{Class: "Agent", Language: models.LanguagePython, FilePath: "main.py", Line: 30, Opaque: true},
+		{Class: "Agent", Language: models.LanguagePython, Location: models.Location{FilePath: "main.py", Line: 5}, Opaque: true},
+		{Class: "Agent", Language: models.LanguagePython, Location: models.Location{FilePath: "main.py", Line: 20}, Opaque: false},
+		{Class: "Agent", Language: models.LanguagePython, Location: models.Location{FilePath: "main.py", Line: 30}, Opaque: true},
 	}}
 	findings := scanner.SelectAndEmitMETA(models.RepoProfile{}, inv)
 	var meta003 int

@@ -70,10 +70,12 @@ func extractQueryMainAgent(call *sitter.Node, pf ParsedFile) models.AgentDef {
 		SDK:      models.SDKClaudeAgentSDK,
 		Class:    "QueryMainAgent",
 		Language: models.LanguageTypeScript,
-		FilePath: pf.RelPath,
-		Line:     int(call.StartPoint().Row) + 1,
-		Name:     name,
-		VarName:  name,
+		Location: models.Location{
+			FilePath: pf.RelPath,
+			Line:     int(call.StartPoint().Row) + 1,
+		},
+		Name:    name,
+		VarName: name,
 	}
 	args := call.ChildByFieldName("arguments")
 	if args == nil || args.NamedChildCount() < 1 {
@@ -310,11 +312,13 @@ func extractInlineAgentsFromQuery(call *sitter.Node, pf ParsedFile) []models.Age
 			}
 		}
 		agent := models.AgentDef{
-			SDK:           models.SDKClaudeAgentSDK,
-			Class:         "AgentDefinition",
-			Language:      models.LanguageTypeScript,
-			FilePath:      pf.RelPath,
-			Line:          int(prop.StartPoint().Row) + 1,
+			SDK:      models.SDKClaudeAgentSDK,
+			Class:    "AgentDefinition",
+			Language: models.LanguageTypeScript,
+			Location: models.Location{
+				FilePath: pf.RelPath,
+				Line:     int(prop.StartPoint().Row) + 1,
+			},
 			Name:          name,
 			MCPServerRefs: mcpRefs,
 		}
@@ -425,11 +429,13 @@ func extractTypedConstAgent(decl *sitter.Node, pf ParsedFile) (models.AgentDef, 
 		SDK:      models.SDKClaudeAgentSDK,
 		Class:    "AgentDefinition",
 		Language: models.LanguageTypeScript,
-		FilePath: pf.RelPath,
-		Line:     int(decl.StartPoint().Row) + 1,
-		Name:     name,
-		VarName:  name,
-		Kwargs:   astutil.TSObjectKwargs(valueNode, pf.Source),
+		Location: models.Location{
+			FilePath: pf.RelPath,
+			Line:     int(decl.StartPoint().Row) + 1,
+		},
+		Name:    name,
+		VarName: name,
+		Kwargs:  astutil.TSObjectKwargs(valueNode, pf.Source),
 	}
 	populateTSAgentToolRefs(&agent)
 	return agent, true

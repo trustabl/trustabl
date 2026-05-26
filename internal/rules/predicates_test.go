@@ -745,13 +745,13 @@ def tool(host: str) -> str:
 }
 
 func TestPredAgentIsSubagentOfAny(t *testing.T) {
-	childResolved := &models.AgentDef{Name: "child", FilePath: "main.py", Language: models.LanguagePython}
+	childResolved := &models.AgentDef{Name: "child", Location: models.Location{FilePath: "main.py"}, Language: models.LanguagePython}
 	parent := models.AgentDef{
 		SDK:      models.SDKGoogleADK,
 		Class:    "LlmAgent",
 		Language: models.LanguagePython,
+		Location: models.Location{FilePath: "main.py"},
 		Name:     "parent",
-		FilePath: "main.py",
 		HandoffRefs: []models.AgentRef{
 			{Name: "child", Resolved: childResolved},
 		},
@@ -760,10 +760,10 @@ func TestPredAgentIsSubagentOfAny(t *testing.T) {
 		SDK:      models.SDKGoogleADK,
 		Class:    "LlmAgent",
 		Language: models.LanguagePython,
+		Location: models.Location{FilePath: "main.py"},
 		Name:     "selfparent",
-		FilePath: "main.py",
 		HandoffRefs: []models.AgentRef{
-			{Name: "selfparent", Resolved: &models.AgentDef{Name: "selfparent", FilePath: "main.py", Language: models.LanguagePython}},
+			{Name: "selfparent", Resolved: &models.AgentDef{Name: "selfparent", Location: models.Location{FilePath: "main.py"}, Language: models.LanguagePython}},
 		},
 	}
 
@@ -775,25 +775,25 @@ func TestPredAgentIsSubagentOfAny(t *testing.T) {
 	}{
 		{
 			name:  "child appears in parent's HandoffRefs",
-			agent: models.AgentDef{Name: "child", FilePath: "main.py", Language: models.LanguagePython},
+			agent: models.AgentDef{Name: "child", Location: models.Location{FilePath: "main.py"}, Language: models.LanguagePython},
 			inv:   models.RepoInventory{Agents: []models.AgentDef{parent}},
 			want:  true,
 		},
 		{
 			name:  "unrelated agent is not anyone's subagent",
-			agent: models.AgentDef{Name: "unrelated", FilePath: "main.py", Language: models.LanguagePython},
+			agent: models.AgentDef{Name: "unrelated", Location: models.Location{FilePath: "main.py"}, Language: models.LanguagePython},
 			inv:   models.RepoInventory{Agents: []models.AgentDef{parent}},
 			want:  false,
 		},
 		{
 			name:  "self-handoff edge case — still true",
-			agent: models.AgentDef{Name: "selfparent", FilePath: "main.py", Language: models.LanguagePython},
+			agent: models.AgentDef{Name: "selfparent", Location: models.Location{FilePath: "main.py"}, Language: models.LanguagePython},
 			inv:   models.RepoInventory{Agents: []models.AgentDef{selfParent}},
 			want:  true,
 		},
 		{
 			name:  "empty inventory",
-			agent: models.AgentDef{Name: "child", FilePath: "main.py", Language: models.LanguagePython},
+			agent: models.AgentDef{Name: "child", Location: models.Location{FilePath: "main.py"}, Language: models.LanguagePython},
 			inv:   models.RepoInventory{},
 			want:  false,
 		},
