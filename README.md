@@ -271,9 +271,8 @@ gh attestation verify <archive> --repo trustabl/trustabl
 
 ### From source
 
-Requires `CGO_ENABLED=1` (tree-sitter is a C library). CGO is required
-because the AST parsers use tree-sitter (Python + TypeScript + TSX
-bindings):
+Requires `CGO_ENABLED=1` because the AST parsers use tree-sitter
+(Python + TypeScript + TSX bindings), which is a C library:
 
 ```bash
 # macOS / Linux
