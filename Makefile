@@ -30,9 +30,15 @@ release-check:
 	 fi; \
 	 echo ">> goreleaser check found real configuration errors (see above)."; exit 2
 
+# Local snapshot — full 5-target build. Requires running on macOS, because the
+# darwin targets need the Apple SDK (xcrun). On Linux/Windows you can still
+# validate a single-target build with: `goreleaser build --single-target --snapshot`
+# (set CC=zig cc -target ... for non-host architectures). CI runs the full
+# snapshot on a macOS runner.
 .PHONY: release-snapshot
 release-snapshot:
-	goreleaser release --snapshot --clean --skip=publish
+	@command -v xcrun >/dev/null 2>&1 || { echo "ERROR: macOS SDK required (xcrun not found). Run on macOS, or use 'goreleaser build --single-target --snapshot' for a single platform."; exit 2; }
+	SDK_PATH=$$(xcrun --show-sdk-path) goreleaser release --snapshot --clean --skip=publish
 
 .PHONY: release-clean
 release-clean:

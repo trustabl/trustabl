@@ -4,81 +4,39 @@ on:
   push:
     tags: ['v*']
 
-permissions:
-  contents: write
-  packages: write
-  id-token: write
-  attestations: write
-
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
-env:
-  CGO_ENABLED: "1"
-
 jobs:
-  build:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { os: ubuntu-latest,  goos: linux,   goarch: amd64 }
-          - { os: ubuntu-latest,  goos: linux,   goarch: arm64, cc: aarch64-linux-gnu-gcc, cxx: aarch64-linux-gnu-g++ }
-          - { os: macos-latest,   goos: darwin,  goarch: amd64 }
-          - { os: macos-latest,   goos: darwin,  goarch: arm64 }
-          - { os: windows-latest, goos: windows, goarch: amd64 }
-    runs-on: ${{ matrix.os }}
+  # All five binaries (darwin/linux/windows) are built in ONE goreleaser run on
+  # a macOS runner: darwin compiles natively against the runner SDK, while
+  # linux + windows cross-compile via zig. A single machine means no split/merge
+  # (which OSS goreleaser can't do), so goreleaser handles archives, checksums,
+  # the Homebrew formula, the Scoop manifest, and the GitHub release directly.
+  release:
+    runs-on: macos-latest
+    permissions:
+      contents: write       # create the release + upload assets
+      id-token: write        # OIDC for build provenance
+      attestations: write    # publish the attestation
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0     # goreleaser needs full history for the changelog
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
-      - if: matrix.goarch == 'arm64' && matrix.goos == 'linux'
-        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0    # pinned; matches the version validated locally
+      - name: Resolve macOS SDK path
+        run: echo "SDK_PATH=$(xcrun --show-sdk-path)" >> "$GITHUB_ENV"
       - uses: goreleaser/goreleaser-action@v6
         with:
           version: "v2.16.0"
-          args: build --single-target --clean
-        env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-          CC: ${{ matrix.cc }}
-          CXX: ${{ matrix.cxx }}
-      - uses: actions/upload-artifact@v4
-        with:
-          name: bin-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: dist/
-
-  release:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-      - uses: actions/download-artifact@v4
-        with:
-          path: dist/
-          pattern: bin-*
-          merge-multiple: true
-      - uses: docker/setup-qemu-action@v3
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: goreleaser/goreleaser-action@v6
-        with:
-          version: "v2.16.0"
-          args: release --clean --skip=build
+          args: release --clean
         env:
           GITHUB_TOKEN:              ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.TAP_PAT }}
@@ -89,3 +47,66 @@ jobs:
             dist/*.tar.gz
             dist/*.zip
             dist/checksums.txt
+
+  # Docker is built separately on Linux: macOS runners can't run Docker, and the
+  # image is linux-only anyway. This job builds the two static linux binaries
+  # with zig and assembles a multi-arch image with buildx (the Dockerfile copies
+  # the per-arch binary via $TARGETPLATFORM). Runs only after the release job so
+  # a failed release never publishes an image.
+  docker:
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+      - name: Build static linux binaries
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          COMMIT="${GITHUB_SHA}"
+          DATE="$(git show -s --format=%cI HEAD)"
+          LDFLAGS="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}"
+          for arch in amd64 arm64; do
+            case "$arch" in
+              amd64) target=x86_64-linux-musl ;;
+              arm64) target=aarch64-linux-musl ;;
+            esac
+            mkdir -p "context/linux/${arch}"
+            CGO_ENABLED=1 GOOS=linux GOARCH="${arch}" \
+              CC="zig cc -target ${target}" CXX="zig c++ -target ${target}" \
+              go build -trimpath -ldflags "${LDFLAGS}" \
+              -o "context/linux/${arch}/trustabl" ./cmd/trustabl
+          done
+          cp Dockerfile context/Dockerfile
+      - name: Compute image tags
+        id: tags
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          tags="ghcr.io/trustabl/trustabl:${VERSION}"
+          # Only move :latest for a final release, never a pre-release (vX.Y.Z-rc.N).
+          case "$GITHUB_REF_NAME" in
+            *-*) ;;
+            *) tags="${tags},ghcr.io/trustabl/trustabl:latest" ;;
+          esac
+          echo "tags=${tags}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: context
+          file: context/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}

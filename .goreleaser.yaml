@@ -9,17 +9,52 @@ builds:
   - id: trustabl
     main: ./cmd/trustabl
     binary: trustabl
-    env:
-      - CGO_ENABLED=1
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
     ignore:
       - { goos: windows, goarch: arm64 }
+    flags:
+      - -trimpath
     ldflags:
       - -s -w
       - -X main.version={{.Version}}
       - -X main.commit={{.FullCommit}}
       - -X main.date={{.CommitDate}}
+    # CGO (tree-sitter) cross-compiled from one macOS runner:
+    #   - darwin: native clang against the runner's SDK (SDK_PATH from xcrun)
+    #   - linux:  zig cc/c++ targeting musl (produces static binaries)
+    #   - windows: zig cc/c++ targeting mingw (gnu)
+    # See https://github.com/goreleaser/example-zig-cgo
+    env:
+      - CGO_ENABLED=1
+      - >-
+        {{- if eq .Os "darwin" }}SDKROOT={{ .Env.SDK_PATH }}{{- end }}
+      - >-
+        {{- if eq .Os "darwin" }}CGO_CFLAGS=-isysroot {{ .Env.SDK_PATH }}{{- end }}
+      - >-
+        {{- if eq .Os "darwin" }}CGO_CXXFLAGS=-isysroot {{ .Env.SDK_PATH }}{{- end }}
+      - >-
+        {{- if eq .Os "darwin" }}CGO_LDFLAGS=-isysroot {{ .Env.SDK_PATH }}{{- end }}
+      - >-
+        {{- if eq .Os "darwin" }}
+          {{- if eq .Arch "amd64" }}CC=clang -arch x86_64 -isysroot {{ .Env.SDK_PATH }}{{- end }}
+          {{- if eq .Arch "arm64" }}CC=clang -arch arm64 -isysroot {{ .Env.SDK_PATH }}{{- end }}
+        {{- else if eq .Os "linux" }}
+          {{- if eq .Arch "amd64" }}CC=zig cc -target x86_64-linux-musl{{- end }}
+          {{- if eq .Arch "arm64" }}CC=zig cc -target aarch64-linux-musl{{- end }}
+        {{- else if eq .Os "windows" }}
+          {{- if eq .Arch "amd64" }}CC=zig cc -target x86_64-windows-gnu{{- end }}
+        {{- end }}
+      - >-
+        {{- if eq .Os "darwin" }}
+          {{- if eq .Arch "amd64" }}CXX=clang++ -arch x86_64 -isysroot {{ .Env.SDK_PATH }}{{- end }}
+          {{- if eq .Arch "arm64" }}CXX=clang++ -arch arm64 -isysroot {{ .Env.SDK_PATH }}{{- end }}
+        {{- else if eq .Os "linux" }}
+          {{- if eq .Arch "amd64" }}CXX=zig c++ -target x86_64-linux-musl{{- end }}
+          {{- if eq .Arch "arm64" }}CXX=zig c++ -target aarch64-linux-musl{{- end }}
+        {{- else if eq .Os "windows" }}
+          {{- if eq .Arch "amd64" }}CXX=zig c++ -target x86_64-windows-gnu{{- end }}
+        {{- end }}
 
 archives:
   - id: default
@@ -68,19 +103,9 @@ scoops:
     description: "Static analyzer for agent reliability"
     license: Apache-2.0
 
-# dockers_v2 builds one multi-arch image via buildx (no per-arch entries, no
-# docker_manifests). `tags` templates are combined with every entry in `images`.
-# `:latest` is guarded so pre-releases (rc/alpha/beta) never move the latest tag.
-dockers_v2:
-  - images:
-      - "ghcr.io/trustabl/trustabl"
-    tags:
-      - "{{ .Version }}"
-      - "{{ if not .Prerelease }}latest{{ end }}"
-    platforms:
-      - linux/amd64
-      - linux/arm64
-    dockerfile: Dockerfile
+# Docker is NOT built here: this goreleaser run executes on a macOS runner
+# (for native darwin CGO), and macOS runners can't run Docker. The image is
+# built and pushed by a separate Linux job in .github/workflows/release.yml.
 
 changelog:
   use: github
