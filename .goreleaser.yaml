@@ -68,33 +68,19 @@ scoops:
     description: "Static analyzer for agent reliability"
     license: Apache-2.0
 
-dockers:
-  - image_templates:
-      - "ghcr.io/trustabl/trustabl:{{ .Version }}-amd64"
-      - "ghcr.io/trustabl/trustabl:latest-amd64"
-    use: buildx
-    goarch: amd64
-    build_flag_templates:
-      - "--platform=linux/amd64"
+# dockers_v2 builds one multi-arch image via buildx (no per-arch entries, no
+# docker_manifests). `tags` templates are combined with every entry in `images`.
+# `:latest` is guarded so pre-releases (rc/alpha/beta) never move the latest tag.
+dockers_v2:
+  - images:
+      - "ghcr.io/trustabl/trustabl"
+    tags:
+      - "{{ .Version }}"
+      - "{{ if not .Prerelease }}latest{{ end }}"
+    platforms:
+      - linux/amd64
+      - linux/arm64
     dockerfile: Dockerfile
-  - image_templates:
-      - "ghcr.io/trustabl/trustabl:{{ .Version }}-arm64"
-      - "ghcr.io/trustabl/trustabl:latest-arm64"
-    use: buildx
-    goarch: arm64
-    build_flag_templates:
-      - "--platform=linux/arm64"
-    dockerfile: Dockerfile
-
-docker_manifests:
-  - name_template: "ghcr.io/trustabl/trustabl:{{ .Version }}"
-    image_templates:
-      - "ghcr.io/trustabl/trustabl:{{ .Version }}-amd64"
-      - "ghcr.io/trustabl/trustabl:{{ .Version }}-arm64"
-  - name_template: "ghcr.io/trustabl/trustabl:latest"
-    image_templates:
-      - "ghcr.io/trustabl/trustabl:latest-amd64"
-      - "ghcr.io/trustabl/trustabl:latest-arm64"
 
 changelog:
   use: github

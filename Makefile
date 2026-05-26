@@ -14,9 +14,21 @@ help:
 	@echo "  make tag-push                         Push the most recent tag to origin"
 	@echo "  make tag-delete-local VERSION=v0.1.0  Delete a tag locally only"
 
+# `goreleaser check` exits non-zero on ANY deprecation. We intentionally keep
+# the deprecated `brews:` block (homebrew_casks is macOS-only and would drop
+# Linux brew support) until GoReleaser v3 forces the move. `build`/`release`
+# only warn on it, so the release pipeline is unaffected — but plain `check`
+# would fail. This target passes when the config is structurally valid even if
+# the only problem is a deprecation, and still fails on real schema errors.
 .PHONY: release-check
 release-check:
-	goreleaser check
+	@out=$$(goreleaser check 2>&1); status=$$?; echo "$$out"; \
+	 if [ $$status -eq 0 ]; then exit 0; fi; \
+	 if echo "$$out" | grep -q "configuration is valid"; then \
+	   echo ">> config is structurally valid; only deprecation warnings (brews kept for Linux on purpose). Release is unaffected."; \
+	   exit 0; \
+	 fi; \
+	 echo ">> goreleaser check found real configuration errors (see above)."; exit 2
 
 .PHONY: release-snapshot
 release-snapshot:
