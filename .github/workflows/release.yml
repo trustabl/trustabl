@@ -48,6 +48,11 @@ jobs:
           GITHUB_TOKEN:              ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.TAP_PAT }}
           SCOOP_BUCKET_GITHUB_TOKEN: ${{ secrets.TAP_PAT }}
+          # Force goreleaser to use the tag that triggered this workflow.
+          # Without this, goreleaser falls back to `git describe`, which can
+          # pick the wrong tag when multiple tags point at the same commit
+          # (the v0.1.0 + v0.1.0-rc.3 collision that re-published rc.3).
+          GORELEASER_CURRENT_TAG:    ${{ github.ref_name }}
       - uses: actions/attest-build-provenance@v2
         with:
           subject-path: |
