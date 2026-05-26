@@ -8,6 +8,13 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
+# Opt every JavaScript action in this workflow onto Node 24 ahead of the
+# 2026-06-02 cutoff, rather than waiting for each action's action.yml to be
+# updated by its maintainer. Documented at:
+# https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   # All five binaries (darwin/linux/windows) are built in ONE goreleaser run on
   # a macOS runner: darwin compiles natively against the runner SDK, while
