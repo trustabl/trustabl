@@ -1,10 +1,33 @@
 package main
 
 import (
+	"bytes"
+	"strings"
 	"testing"
 
 	"github.com/trustabl/trustabl/internal/models"
 )
+
+func TestVersionCommandOutput(t *testing.T) {
+	// Save and restore the package-level vars so the test is hermetic.
+	origV, origC, origD := version, commit, date
+	defer func() { version, commit, date = origV, origC, origD }()
+
+	version, commit, date = "1.2.3", "abc1234", "2026-05-26"
+
+	cmd := newVersionCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	cmd.Run(cmd, nil)
+
+	out := buf.String()
+	for _, want := range []string{"1.2.3", "abc1234", "2026-05-26"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("version output %q missing %q", out, want)
+		}
+	}
+}
 
 func TestParseCategories(t *testing.T) {
 	tests := []struct {

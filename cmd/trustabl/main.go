@@ -31,7 +31,13 @@ import (
 	"github.com/trustabl/trustabl/internal/scanner"
 )
 
-var version = "0.1.0"
+// Build metadata, injected at release time via -ldflags -X (see .goreleaser.yaml).
+// Defaults are for local `go build` — an unreleased binary truthfully reports "dev".
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
 
 // exitCodeError carries a desired process exit code through the cobra error
 // path so we can avoid calling os.Exit inside runScan (which would skip any
@@ -67,8 +73,9 @@ func newVersionCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
 		Short: "Print version",
-		Run: func(_ *cobra.Command, _ []string) {
-			fmt.Println("Trustabl", version)
+		Run: func(cmd *cobra.Command, _ []string) {
+			fmt.Fprintf(cmd.OutOrStdout(), "Trustabl %s\ncommit: %s\nbuilt:  %s\n",
+				version, commit, date)
 		},
 	}
 }
