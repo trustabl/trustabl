@@ -58,9 +58,11 @@ func classifyADKHostedToolCall(callItem models.Expr, filePath string, line int) 
 		return models.HostedToolDef{}, false
 	}
 	return models.HostedToolDef{
-		Class:    name,
-		SDK:      models.SDKGoogleADK,
-		FilePath: filePath,
-		Line:     line,
+		Class: name,
+		SDK:   models.SDKGoogleADK,
+		Location: models.Location{
+			FilePath: filePath,
+			Line:     line,
+		},
 	}, true
 }

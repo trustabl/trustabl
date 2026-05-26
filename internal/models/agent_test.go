@@ -10,11 +10,13 @@ import (
 
 func TestHostedToolDef_JSONShape(t *testing.T) {
 	h := models.HostedToolDef{
-		Class:    "WebSearchTool",
-		SDK:      models.SDKOpenAIAgents,
-		FilePath: "agents/search.py",
-		Line:     16,
-		Kwargs:   &models.KwargTree{Children: map[string]*models.KwargTree{}},
+		Class: "WebSearchTool",
+		SDK:   models.SDKOpenAIAgents,
+		Location: models.Location{
+			FilePath: "agents/search.py",
+			Line:     16,
+		},
+		Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{}},
 	}
 	b, err := json.Marshal(h)
 	if err != nil {

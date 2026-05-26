@@ -35,7 +35,7 @@ func TestRender_HostedToolsVisibleInHumanFormat(t *testing.T) {
 			},
 		},
 		HostedTools: []models.HostedToolDef{
-			{Class: "WebSearchTool", SDK: models.SDKOpenAIAgents, FilePath: "agents/search.py", Line: 12},
+			{Class: "WebSearchTool", SDK: models.SDKOpenAIAgents, Location: models.Location{FilePath: "agents/search.py", Line: 12}},
 		},
 	}
 

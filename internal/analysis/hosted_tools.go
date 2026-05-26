@@ -38,10 +38,12 @@ func classifyHostedToolCall(callItem models.Expr, filePath string, line int) (mo
 		return models.HostedToolDef{}, false
 	}
 	return models.HostedToolDef{
-		Class:    name,
-		SDK:      models.SDKOpenAIAgents,
-		FilePath: filePath,
-		Line:     line,
+		Class: name,
+		SDK:   models.SDKOpenAIAgents,
+		Location: models.Location{
+			FilePath: filePath,
+			Line:     line,
+		},
 	}, true
 }
 
