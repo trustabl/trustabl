@@ -36,3 +36,7 @@ go.work.sum
 
 # GoReleaser build output
 dist/
+
+# Zig build cache (mlugg/setup-zig points ZIG_LOCAL/GLOBAL_CACHE_DIR inside
+# the workdir on CI; without this entry goreleaser's dirty-tree guard fails).
+.zig-cache/
