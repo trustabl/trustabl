@@ -416,10 +416,10 @@ var policyRepoRuleCases = []policyRepoCase{
 // policySubagentRuleCases covers subagent-scoped rules.
 var policySubagentRuleCases = []policySubagentCase{
 	{"CSDK-110 fires when subagent grants Bash", "CSDK-110",
-		models.SubagentDef{Name: "inbox-searcher", FilePath: ".claude/agents/inbox-searcher.md",
+		models.SubagentDef{Name: "inbox-searcher", Location: models.Location{FilePath: ".claude/agents/inbox-searcher.md"},
 			Tools: []string{"Read", "Bash", "Grep"}}, models.RepoInventory{}, true},
 	{"CSDK-110 silent when no Bash", "CSDK-110",
-		models.SubagentDef{Name: "reader", FilePath: ".claude/agents/reader.md",
+		models.SubagentDef{Name: "reader", Location: models.Location{FilePath: ".claude/agents/reader.md"},
 			Tools: []string{"Read", "Grep"}}, models.RepoInventory{}, false},
 }
 

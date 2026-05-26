@@ -43,8 +43,8 @@ func DiscoverSubagents(manifest models.ScanManifest) []models.SubagentDef {
 			Name:        parsed.Name,
 			Description: parsed.Description,
 			Model:       parsed.Model,
-			FilePath:    c.Path,
 			Tools:       splitToolsField([]string(parsed.Tools)),
+			Location:    models.Location{FilePath: c.Path},
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].FilePath < out[j].FilePath })

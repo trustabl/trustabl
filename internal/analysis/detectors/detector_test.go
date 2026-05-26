@@ -124,7 +124,7 @@ func TestRegistry_RunsSubagentDetectors(t *testing.T) {
 		fakeSubagentDetector{id: "SUB-1", cat: "claude_sdk", fires: true},
 	})
 	inv := models.RepoInventory{
-		Subagents: []models.SubagentDef{{Name: "searcher", FilePath: ".claude/agents/searcher.md"}},
+		Subagents: []models.SubagentDef{{Name: "searcher", Location: models.Location{FilePath: ".claude/agents/searcher.md"}}},
 	}
 	findings := reg.Run(models.RepoProfile{}, inv, nil, nil)
 	if len(findings) != 1 || findings[0].RuleID != "SUB-1" {

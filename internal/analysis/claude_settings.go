@@ -69,7 +69,7 @@ func DiscoverClaudeSettings(manifest models.ScanManifest) []models.ClaudeSetting
 			continue
 		}
 		out = append(out, models.ClaudeSettings{
-			FilePath:        filepath.ToSlash(c.Path),
+			Location:        models.Location{FilePath: filepath.ToSlash(c.Path)},
 			Permissions:     parsePermissionsBlock(parsed.Permissions),
 			DefaultMode:     parsed.Permissions.DefaultMode,
 			AdditionalDirs:  parsed.Permissions.AdditionalDirectories,

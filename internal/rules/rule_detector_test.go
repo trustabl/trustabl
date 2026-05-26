@@ -46,7 +46,7 @@ func TestSubagentRuleDetector_AppliesAndDetects(t *testing.T) {
 		Severity:  models.SeverityHigh,
 		Match:     MatchExpr{SubagentGrantsTool: []string{"Bash"}},
 	})
-	grants := models.SubagentDef{Name: "searcher", FilePath: ".claude/agents/searcher.md",
+	grants := models.SubagentDef{Name: "searcher", Location: models.Location{FilePath: ".claude/agents/searcher.md"},
 		Tools: []string{"Read", "Bash"}}
 	if !d.Applies(grants) {
 		t.Fatal("expected Applies()=true for claude_subagent")

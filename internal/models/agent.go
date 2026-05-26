@@ -87,14 +87,12 @@ const (
 type GuardrailDef struct {
 	Name     string        `json:"name"`
 	Kind     GuardrailKind `json:"kind"`
-	FilePath string        `json:"file_path"`
-	Line     int           `json:"line"`
+	Location               // file_path / line / end_line (flat in JSON via anonymous embed)
 }
 
 type SessionUse struct {
 	Class    string `json:"class"` // "SQLiteSession", "EncryptedSession", ...
-	FilePath string `json:"file_path"`
-	Line     int    `json:"line"`
+	Location          // file_path / line / end_line (flat in JSON via anonymous embed)
 }
 
 // HostedToolDef is one OpenAI Agents SDK hosted tool instance (WebSearchTool,
@@ -146,7 +144,7 @@ type SubagentDef struct {
 	Description string   `json:"description,omitempty"`
 	Tools       []string `json:"tools,omitempty"`
 	Model       string   `json:"model,omitempty"`
-	FilePath    string   `json:"file_path"`
+	Location              // file_path / line / end_line (flat in JSON via anonymous embed)
 }
 
 // PermissionRule is one parsed entry from .claude/settings.json permissions
@@ -167,7 +165,7 @@ type ClaudePermissions struct {
 
 // ClaudeSettings is one parsed .claude/settings.json (or settings.local.json).
 type ClaudeSettings struct {
-	FilePath        string            `json:"file_path"`
+	Location                          // file_path / line / end_line (flat in JSON via anonymous embed)
 	Permissions     ClaudePermissions `json:"permissions"`
 	DefaultMode     string            `json:"default_mode,omitempty"`
 	AdditionalDirs  []string          `json:"additional_directories,omitempty"`

@@ -45,7 +45,7 @@ tools: Read, Bash, Glob, Grep, mcp__email__search_inbox
 		Name:        "inbox-searcher",
 		Description: "Email search specialist.",
 		Tools:       []string{"Read", "Bash", "Glob", "Grep", "mcp__email__search_inbox"},
-		FilePath:    ".claude/agents/inbox-searcher.md",
+		Location:    models.Location{FilePath: ".claude/agents/inbox-searcher.md"},
 	}
 	if !reflect.DeepEqual(got[0], want) {
 		t.Errorf("got  %+v\nwant %+v", got[0], want)

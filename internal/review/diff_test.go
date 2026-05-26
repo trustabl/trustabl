@@ -143,11 +143,11 @@ func TestRender_MCPServersVisibleInHumanFormat(t *testing.T) {
 func TestRender_SubagentsAndClaudeSettingsSections(t *testing.T) {
 	result := models.ScanResult{
 		Subagents: []models.SubagentDef{
-			{Name: "researcher", FilePath: ".claude/agents/researcher.md",
+			{Name: "researcher", Location: models.Location{FilePath: ".claude/agents/researcher.md"},
 				Tools: []string{"Read", "Glob", "Grep"}, Model: "haiku"},
 		},
 		ClaudeSettings: []models.ClaudeSettings{{
-			FilePath:    ".claude/settings.json",
+			Location:    models.Location{FilePath: ".claude/settings.json"},
 			DefaultMode: "acceptEdits",
 			Permissions: models.ClaudePermissions{
 				Allow: []models.PermissionRule{{Tool: "Bash", Pattern: "npm test", Raw: "Bash(npm test)"}},
