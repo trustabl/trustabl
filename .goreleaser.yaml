@@ -1,0 +1,106 @@
+version: 2
+project_name: trustabl
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: trustabl
+    main: ./cmd/trustabl
+    binary: trustabl
+    env:
+      - CGO_ENABLED=1
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ignore:
+      - { goos: windows, goarch: arm64 }
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.FullCommit}}
+      - -X main.date={{.CommitDate}}
+
+archives:
+  - id: default
+    name_template: "{{.ProjectName}}_{{.Version}}_{{.Os}}_{{.Arch}}"
+    format_overrides:
+      - { goos: windows, formats: [zip] }
+    files:
+      - LICENSE
+      - README.md
+      - COVERAGE.md
+      - CHANGELOG.md
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+release:
+  github:
+    owner: trustabl
+    name: trustabl
+  draft: false
+  prerelease: auto
+  mode: replace
+
+brews:
+  - name: trustabl
+    repository:
+      owner: trustabl
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    homepage: "https://github.com/trustabl/trustabl"
+    description: "Static analyzer for agent reliability"
+    license: "Apache-2.0"
+    install: |
+      bin.install "trustabl"
+    test: |
+      system "#{bin}/trustabl version"
+
+scoops:
+  - name: trustabl
+    repository:
+      owner: trustabl
+      name: scoop-bucket
+      token: "{{ .Env.SCOOP_BUCKET_GITHUB_TOKEN }}"
+    homepage: "https://github.com/trustabl/trustabl"
+    description: "Static analyzer for agent reliability"
+    license: Apache-2.0
+
+dockers:
+  - image_templates:
+      - "ghcr.io/trustabl/trustabl:{{ .Version }}-amd64"
+      - "ghcr.io/trustabl/trustabl:latest-amd64"
+    use: buildx
+    goarch: amd64
+    build_flag_templates:
+      - "--platform=linux/amd64"
+    dockerfile: Dockerfile
+  - image_templates:
+      - "ghcr.io/trustabl/trustabl:{{ .Version }}-arm64"
+      - "ghcr.io/trustabl/trustabl:latest-arm64"
+    use: buildx
+    goarch: arm64
+    build_flag_templates:
+      - "--platform=linux/arm64"
+    dockerfile: Dockerfile
+
+docker_manifests:
+  - name_template: "ghcr.io/trustabl/trustabl:{{ .Version }}"
+    image_templates:
+      - "ghcr.io/trustabl/trustabl:{{ .Version }}-amd64"
+      - "ghcr.io/trustabl/trustabl:{{ .Version }}-arm64"
+  - name_template: "ghcr.io/trustabl/trustabl:latest"
+    image_templates:
+      - "ghcr.io/trustabl/trustabl:latest-amd64"
+      - "ghcr.io/trustabl/trustabl:latest-arm64"
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
