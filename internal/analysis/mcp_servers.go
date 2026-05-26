@@ -49,8 +49,10 @@ func classifyMCPServerCall(callItem models.Expr, filePath string, line int) (mod
 		Transport: MCPTransportFromClass(name),
 		SDK:       models.SDKOpenAIAgents,
 		Language:  models.LanguagePython,
-		FilePath:  filePath,
-		Line:      line,
+		Location: models.Location{
+			FilePath: filePath,
+			Line:     line,
+		},
 	}, true
 }
 
@@ -129,8 +131,10 @@ func collectWithStatementMCPAliases(pf ParsedFile) map[string]models.MCPServerDe
 					Transport: MCPTransportFromClass(name),
 					SDK:       models.SDKOpenAIAgents,
 					Language:  models.LanguagePython,
-					FilePath:  pf.RelPath,
-					Line:      int(callNode.StartPoint().Row) + 1,
+					Location: models.Location{
+						FilePath: pf.RelPath,
+						Line:     int(callNode.StartPoint().Row) + 1,
+					},
 				}
 			}
 		}

@@ -44,8 +44,10 @@ func discoverTSMCPServersInFile(pf ParsedFile) []models.MCPServerDef {
 				Transport: "sdk",
 				SDK:       models.SDKClaudeAgentSDK,
 				Language:  models.LanguageTypeScript,
-				FilePath:  pf.RelPath,
-				Line:      int(n.StartPoint().Row) + 1,
+				Location: models.Location{
+					FilePath: pf.RelPath,
+					Line:     int(n.StartPoint().Row) + 1,
+				},
 			})
 		case "query":
 			out = append(out, extractMCPConfigsFromQuery(n, pf)...)
@@ -103,9 +105,11 @@ func extractMCPConfigsFromQuery(call *sitter.Node, pf ParsedFile) []models.MCPSe
 			Transport: transport,
 			SDK:       models.SDKClaudeAgentSDK,
 			Language:  models.LanguageTypeScript,
-			FilePath:  pf.RelPath,
-			Line:      int(val.StartPoint().Row) + 1,
-			Kwargs:    astutil.TSObjectKwargs(val, pf.Source),
+			Location: models.Location{
+				FilePath: pf.RelPath,
+				Line:     int(val.StartPoint().Row) + 1,
+			},
+			Kwargs: astutil.TSObjectKwargs(val, pf.Source),
 		})
 	}
 	return out

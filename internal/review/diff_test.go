@@ -116,7 +116,7 @@ func TestRender_MCPServersVisibleInHumanFormat(t *testing.T) {
 	stdio := models.MCPServerDef{
 		Class: "MCPServerStdio", Transport: "stdio", SDK: models.SDKOpenAIAgents,
 		Language: models.LanguagePython,
-		FilePath: "main.py", Line: 10,
+		Location: models.Location{FilePath: "main.py", Line: 10},
 	}
 	result := models.ScanResult{
 		Agents: []models.AgentDef{{

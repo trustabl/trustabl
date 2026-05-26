@@ -73,8 +73,10 @@ func TestMCPServerDef_Language_RoundTripsThroughJSON(t *testing.T) {
 		Transport: "stdio",
 		SDK:       models.SDKClaudeAgentSDK,
 		Language:  models.LanguageTypeScript,
-		FilePath:  "src/server.ts",
-		Line:      5,
+		Location: models.Location{
+			FilePath: "src/server.ts",
+			Line:     5,
+		},
 	}
 	data, err := json.Marshal(m)
 	if err != nil {

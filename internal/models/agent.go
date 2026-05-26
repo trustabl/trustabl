@@ -127,8 +127,7 @@ type MCPServerDef struct {
 	Transport string     `json:"transport"` // "stdio" | "sse" | "streamable_http" | "http" | "sdk"
 	SDK       SDK        `json:"sdk"`
 	Language  Language   `json:"language"` // populated by every discovery path
-	FilePath  string     `json:"file_path"`
-	Line      int        `json:"line"`
+	Location              // file_path / line / end_line (flat in JSON via anonymous embed)
 	Kwargs    *KwargTree `json:"kwargs,omitempty"`
 }
 
