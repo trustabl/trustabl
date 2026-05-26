@@ -154,6 +154,7 @@ type PermissionRule struct {
 	Tool    string `json:"tool"`              // "Bash" | "Read" | "Edit" | "WebFetch" | "MCP" | "Agent"
 	Pattern string `json:"pattern,omitempty"` // empty for bare "Bash", "npm run *" for "Bash(npm run *)"
 	Raw     string `json:"raw"`
+	Line    int    `json:"line"` // 1-indexed line of this rule's string literal in settings.json
 }
 
 // ClaudePermissions is the parsed permissions block.
