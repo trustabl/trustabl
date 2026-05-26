@@ -238,10 +238,42 @@ closed-source companion project. With no OSH rules shipped, such repos fire
 no rule and no `META` finding — OpenShell is a risk surface, not an SDK, so
 it is not flagged as "unaudited" the way an unknown SDK would be.
 
-## Build
+## Install
 
-CGO is required because the AST parsers use tree-sitter (Python +
-TypeScript + TSX bindings):
+### Homebrew (macOS, Linux)
+
+```sh
+brew install trustabl/tap/trustabl
+```
+
+### Scoop (Windows)
+
+```sh
+scoop bucket add trustabl https://github.com/trustabl/scoop-bucket
+scoop install trustabl
+```
+
+### Docker
+
+```sh
+docker run --rm -v "$PWD:/repo" ghcr.io/trustabl/trustabl:latest scan /repo
+```
+
+### Direct download
+
+Grab a prebuilt archive for your platform from the
+[Releases page](https://github.com/trustabl/trustabl/releases). Each release
+includes a `checksums.txt` and a build-provenance attestation; verify with:
+
+```sh
+gh attestation verify <archive> --repo trustabl/trustabl
+```
+
+### From source
+
+Requires `CGO_ENABLED=1` (tree-sitter is a C library). CGO is required
+because the AST parsers use tree-sitter (Python + TypeScript + TSX
+bindings):
 
 ```bash
 # macOS / Linux
