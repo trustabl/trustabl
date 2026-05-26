@@ -81,6 +81,9 @@ release:
 
 brews:
   - name: trustabl
+    # skip_upload: auto means pre-release tags (anything with a "-", e.g.
+    # v0.1.0-rc.2) do NOT update the tap. Final tags (v0.1.0) do.
+    skip_upload: auto
     repository:
       owner: trustabl
       name: homebrew-tap
@@ -95,6 +98,8 @@ brews:
 
 scoops:
   - name: trustabl
+    # skip_upload: auto — pre-release tags do not update the bucket.
+    skip_upload: auto
     repository:
       owner: trustabl
       name: scoop-bucket
