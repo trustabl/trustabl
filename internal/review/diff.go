@@ -42,6 +42,10 @@ func (r *Renderer) Render(result models.ScanResult) string {
 	fmt.Fprintf(&b, "  Repo:           %s\n", result.Repo)
 	fmt.Fprintf(&b, "  Languages:      %s\n", csv(result.Languages))
 	fmt.Fprintf(&b, "  SDKs:           %s\n", csv(result.SDKs))
+	if result.HasShellInvocations {
+		fmt.Fprintf(&b, "  Risk surfaces:  openshell %s\n",
+			styleDim.Render("(Python functions call subprocess.* / os.system / os.popen — audited by openshell repo-rules)"))
+	}
 	// Tool surface, broken out by where each kind enters the rule pipeline.
 	// Previously this was one conflated "Tools found: N" union which led users
 	// to wonder why only some appeared in per-tool readiness. The honest

@@ -28,7 +28,7 @@ Legend: ✅ full · ◐ partial · ❌ none · — N/A
 | **MCP** | TypeScript / Go / Rust | ❌ no MCP-specific recognition (file paths inventoried generically, no MCP parser or dep needles) | ❌ | ❌ |
 | **Google ADK** | Python | ✅ dep-scan (`google-adk`) + file inventory | ✅ LlmAgent (+ Agent alias), SequentialAgent, ParallelAgent, LoopAgent, LanggraphAgent; FunctionTool wrapping; 13 built-in hosted tools; sub_agents edges | ✅ ADK-001..003 (tool), ADK-101..103 (agent) |
 | **Google ADK** | TypeScript / Go / Java / Kotlin | ❌ | ❌ | ❌ |
-| **OpenShell** | Python | ✅ shell-invocation discovery + `openshell/*.yaml` policy files surfaced | ✅ `KindShellInvocation` tools | ❌ rules moved to closed-source companion project (META-001 fires instead) |
+| **OpenShell** | Python | ✅ shell-invocation discovery + `openshell/*.yaml` policy files surfaced | ✅ `KindShellInvocation` tools → `RepoInventory.HasShellInvocations` (the "openshell" risk surface; not an SDK, never in `SDKsDetected`) | ❌ rules moved to closed-source companion project (no rule fires; no META finding — openshell is not treated as an unaudited SDK) |
 
 ## What we parse exactly (per SDK)
 
@@ -104,14 +104,17 @@ identically-named class.
 
 | Construct | Recognition |
 |---|---|
-| Shell-invocation surfaces | Any bare function body calling `subprocess.*`, `os.system`, or `os.popen` → tagged `KindShellInvocation` in inventory |
+| Shell-invocation surfaces | Any bare function body calling `subprocess.*`, `os.system`, or `os.popen` → tagged `KindShellInvocation` in inventory; sets `RepoInventory.HasShellInvocations` (the "openshell" risk surface). Not an SDK — never appears in `SDKsDetected` |
 | Sandbox policy files | `openshell/*.yaml` / `*.yml` surfaced as `sandbox_policy` components |
 | Detection trigger | An `openshell/` directory, or any YAML declaring an OpenShell schema (`openshell.nvidia.com/v`). No dependency-manifest needle — OpenShell is recognized by artifact presence and shell-invocation surfaces, not by a declared dep |
 
 The OSH-001..005 detection rules previously shipped here; they moved to a
-closed-source companion project. Repos that use OpenShell now produce a
-META-001 info finding ("Trustabl does not currently audit this SDK")
-instead of firing the OSH rules.
+closed-source companion project. With no OSH rules shipped, a repo with
+shell-invocation surfaces fires **no** rule and **no** META finding — the
+human report surfaces the surface on a `Risk surfaces: openshell` line, and
+repo-scope rules with `applies_to: [openshell]` (if any are loaded) gate on
+`HasShellInvocations`. OpenShell is deliberately not treated as an unaudited
+SDK, so META-001 does not fire for it.
 
 ## Gaps and what it would take to close them
 

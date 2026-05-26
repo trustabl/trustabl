@@ -646,8 +646,15 @@ func PredRepoHasSDKDep(names []string, p models.RepoProfile) bool {
 }
 
 func PredRepoHasSDKInCode(sdks []string, inv models.RepoInventory) bool {
-	for _, s := range inv.SDKsDetected {
-		for _, want := range sdks {
+	for _, want := range sdks {
+		// "openshell" is a risk-surface label, not an SDK — see models.go.
+		if want == "openshell" {
+			if inv.HasShellInvocations {
+				return true
+			}
+			continue
+		}
+		for _, s := range inv.SDKsDetected {
 			if string(s) == want {
 				return true
 			}

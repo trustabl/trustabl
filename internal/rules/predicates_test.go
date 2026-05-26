@@ -563,6 +563,19 @@ func TestPredRepoHasSDKInCode(t *testing.T) {
 	}
 }
 
+func TestPredRepoHasSDKInCode_OpenshellRoutesToShellInvocations(t *testing.T) {
+	// "openshell" must NOT match via SDKsDetected even if a (broken) caller
+	// were to put it there — it is only true when HasShellInvocations is true.
+	noShell := models.RepoInventory{SDKsDetected: []models.SDK{models.SDKOpenAIAgents}}
+	if rules.PredRepoHasSDKInCode([]string{"openshell"}, noShell) {
+		t.Error("openshell must not match when HasShellInvocations=false")
+	}
+	withShell := models.RepoInventory{HasShellInvocations: true}
+	if !rules.PredRepoHasSDKInCode([]string{"openshell"}, withShell) {
+		t.Error("openshell must match when HasShellInvocations=true, even with empty SDKsDetected")
+	}
+}
+
 func TestPredRepoHasAgentClass(t *testing.T) {
 	inv := models.RepoInventory{Agents: []models.AgentDef{{Class: "Agent", Language: models.LanguagePython}}}
 	if !rules.PredRepoHasAgentClass([]string{"Agent"}, inv) {

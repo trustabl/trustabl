@@ -61,6 +61,14 @@ func (d repoRuleDetector) RuleID() string                    { return d.rule.ID 
 func (d repoRuleDetector) Category() models.DetectorCategory { return d.rule.Category }
 func (d repoRuleDetector) Applies(p models.RepoProfile, inv models.RepoInventory) bool {
 	for _, k := range d.rule.AppliesTo {
+		// "openshell" is a risk-surface label, not an SDK — route it to
+		// HasShellInvocations instead of looking it up in SDKsDetected.
+		if k == "openshell" {
+			if inv.HasShellInvocations {
+				return true
+			}
+			continue
+		}
 		for _, sdk := range inv.SDKsDetected {
 			if string(sdk) == k {
 				return true

@@ -7,11 +7,13 @@ import (
 )
 
 // shippedPolicySDKs lists the SDKs we have policy packs for.
+// "openshell" is intentionally absent — it is not an SDK (see the comment
+// in models.go) and never appears in SDKsDetected. The openshell pack is
+// hard-wired into rules.LoadFor; its surface is RepoInventory.HasShellInvocations.
 var shippedPolicySDKs = map[models.SDK]bool{
 	models.SDKClaudeAgentSDK: true,
 	models.SDKOpenAIAgents:   true,
 	models.SDKMCP:            true,
-	models.SDKOpenShell:      true,
 	models.SDKGoogleADK:      true,
 }
 

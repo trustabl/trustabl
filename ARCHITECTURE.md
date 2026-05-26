@@ -11,7 +11,7 @@ scoped to the Go binary in this repository.
 
 ## 1. Goal
 
-trustabl scans an agent SDK repository (Claude Agent SDK, OpenAI Agents SDK,
+Trustabl scans an agent SDK repository (Claude Agent SDK, OpenAI Agents SDK,
 Google ADK, MCP), finds reliability weaknesses in its tool and agent
 definitions, and reports them. A scan is read-only: it writes nothing into the scanned repo. The
 output is a `ScanResult` — findings (each with an explanation, suggested fix,
@@ -128,7 +128,7 @@ flowchart TD
     subgraph S2["Step 2 — Inventory (per-language AST)"]
         disc["analysis.DiscoverTools<br/>DiscoverAgents<br/>DiscoverGuardrails<br/>DiscoverSessions<br/>DiscoverSubagents<br/>DiscoverClaudeSettings<br/>DiscoverADKAgents<br/>DiscoverADKTools"]
         edges["analysis.ResolveEdges"]
-        inv[["RepoInventory<br/>Tools · Agents · Guardrails · Sessions<br/>SDKsDetected · UsesDefaultTracing"]]
+        inv[["RepoInventory<br/>Tools · Agents · Guardrails · Sessions<br/>SDKsDetected · HasShellInvocations · UsesDefaultTracing"]]
         disc --> edges --> inv
     end
 
@@ -316,10 +316,14 @@ than just text matching.
 
 2. **Bare functions that shell out.** Any `function_definition` not already
    captured above whose body calls `subprocess.*`, `os.system`, or `os.popen`
-   is a `KindShellInvocation`. These are surfaced in the inventory and feed
-   `SDKsDetected` so a META-001 finding flags the repo as using an
-   unaudited SDK. The OpenShell detection rules that previously consumed
-   these tools moved to a closed-source companion project.
+   is a `KindShellInvocation`. These set `RepoInventory.HasShellInvocations`
+   (and the mirror field on `ScanResult`); they do **not** appear in
+   `SDKsDetected`, because "openshell" is a risk-surface label, not a library
+   you import. Repo-scope rules with `applies_to: [openshell]` are gated on
+   `HasShellInvocations`; the `repo_has_sdk_in_code` predicate routes the
+   string `"openshell"` to the same field. The OpenShell detection rules
+   that previously consumed these tools moved to a closed-source companion
+   project.
 
 Each `ToolDef` carries `Language: python` (set unconditionally today —
 discovery is python-only).
@@ -511,6 +515,7 @@ classDiagram
         Guardrails
         Sessions
         SDKsDetected
+        HasShellInvocations
         UsesDefaultTracing
     }
     class ToolDef {
@@ -578,9 +583,10 @@ RepoInventory {
     MCPServers         []MCPServerDef
     Subagents          []SubagentDef
     ClaudeSettings     []ClaudeSettings
-    SDKsDetected       []SDK     // observed in code (drives the policy-selection step)
-    Manifest           ScanManifest
-    UsesDefaultTracing bool
+    SDKsDetected        []SDK     // observed in code (drives the policy-selection step)
+    HasShellInvocations bool      // any Python function calling subprocess.* / os.system / os.popen ("openshell" risk surface, not an SDK)
+    Manifest            ScanManifest
+    UsesDefaultTracing  bool
 }
 
 AgentDef {

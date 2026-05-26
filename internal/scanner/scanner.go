@@ -97,14 +97,15 @@ func Run(cfg Config) (models.ScanResult, error) {
 	mcpServers := analysis.DiscoverTSMCPServers(tsFiles, nil)
 
 	inventory := models.RepoInventory{
-		Tools:              tools,
-		Agents:             agents,
-		Guardrails:         guardrails,
-		Sessions:           sessions,
-		MCPServers:         mcpServers,
-		Manifest:           profile.Manifest,
-		SDKsDetected:       deriveSDKsDetected(tools, agents),
-		UsesDefaultTracing: computeUsesDefaultTracing(parsed),
+		Tools:               tools,
+		Agents:              agents,
+		Guardrails:          guardrails,
+		Sessions:            sessions,
+		MCPServers:          mcpServers,
+		Manifest:            profile.Manifest,
+		SDKsDetected:        deriveSDKsDetected(tools, agents),
+		HasShellInvocations: deriveHasShellInvocations(tools),
+		UsesDefaultTracing:  computeUsesDefaultTracing(parsed),
 	}
 	analysis.ResolveEdges(&inventory, append(parsed, tsFiles...))
 	inventory.Subagents = analysis.DiscoverSubagents(profile.Manifest)
@@ -140,28 +141,33 @@ func Run(cfg Config) (models.ScanResult, error) {
 	readiness, overall := analysis.Score(tools, findings)
 
 	return models.ScanResult{
-		ScanID:         scanID(repoLabel, profile.Manifest, cfg.RulesVersion),
-		Repo:           repoLabel,
-		Languages:      profile.Languages,
-		SDKs:           inventory.SDKsDetected,
-		Manifest:       profile.Manifest,
-		Tools:          tools,
-		Agents:         inventory.Agents,
-		HostedTools:    inventory.HostedTools,
-		MCPServers:     inventory.MCPServers,
-		Subagents:      inventory.Subagents,
-		ClaudeSettings: inventory.ClaudeSettings,
-		Findings:       findings,
-		Readiness:      readiness,
-		OverallScore:   overall,
-		RulesSource:    cfg.RulesSource,
-		RulesVersion:   cfg.RulesVersion,
-		RulesFromCache: cfg.RulesFromCache,
+		ScanID:              scanID(repoLabel, profile.Manifest, cfg.RulesVersion),
+		Repo:                repoLabel,
+		Languages:           profile.Languages,
+		SDKs:                inventory.SDKsDetected,
+		HasShellInvocations: inventory.HasShellInvocations,
+		Manifest:            profile.Manifest,
+		Tools:               tools,
+		Agents:              inventory.Agents,
+		HostedTools:         inventory.HostedTools,
+		MCPServers:          inventory.MCPServers,
+		Subagents:           inventory.Subagents,
+		ClaudeSettings:      inventory.ClaudeSettings,
+		Findings:            findings,
+		Readiness:           readiness,
+		OverallScore:        overall,
+		RulesSource:         cfg.RulesSource,
+		RulesVersion:        cfg.RulesVersion,
+		RulesFromCache:      cfg.RulesFromCache,
 	}, nil
 }
 
 // deriveSDKsDetected scans the inventory for tool/agent kinds that imply
 // a specific SDK is in use.
+//
+// KindShellInvocation is intentionally NOT mapped here. There is no SDK
+// called "openshell" — it is a risk-surface label for Python functions
+// that shell out, carried on RepoInventory.HasShellInvocations.
 func deriveSDKsDetected(tools []models.ToolDef, agents []models.AgentDef) []models.SDK {
 	seen := make(map[models.SDK]bool)
 	for _, t := range tools {
@@ -172,8 +178,6 @@ func deriveSDKsDetected(tools []models.ToolDef, agents []models.AgentDef) []mode
 			seen[models.SDKOpenAIAgents] = true
 		case models.KindMCPTool:
 			seen[models.SDKMCP] = true
-		case models.KindShellInvocation:
-			seen[models.SDKOpenShell] = true
 		case models.KindADKFunctionTool:
 			seen[models.SDKGoogleADK] = true
 		}
@@ -189,6 +193,19 @@ func deriveSDKsDetected(tools []models.ToolDef, agents []models.AgentDef) []mode
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
 	return out
+}
+
+// deriveHasShellInvocations is true when any discovered tool was a
+// KindShellInvocation (a Python function whose body calls subprocess.*,
+// os.system, or os.popen). This is the "openshell" risk surface — see
+// the comment on deriveSDKsDetected for why it isn't an SDK.
+func deriveHasShellInvocations(tools []models.ToolDef) bool {
+	for _, t := range tools {
+		if t.Kind == models.KindShellInvocation {
+			return true
+		}
+	}
+	return false
 }
 
 func computeUsesDefaultTracing(parsed []analysis.ParsedFile) bool {

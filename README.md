@@ -232,10 +232,11 @@ Exit codes:
   (run `trustabl rules pull`).
 
 OpenShell surfaces are still discovered (shell-invocation functions,
-`openshell/*.yaml` policies), but the OSH-* detection rules that audited
-them have moved to a closed-source companion project, so repos using
-OpenShell produce a `META-001` info finding rather than firing those
-rules.
+`openshell/*.yaml` policies) and reported on a `Risk surfaces: openshell`
+line, but the OSH-* detection rules that audited them have moved to a
+closed-source companion project. With no OSH rules shipped, such repos fire
+no rule and no `META` finding — OpenShell is a risk surface, not an SDK, so
+it is not flagged as "unaudited" the way an unknown SDK would be.
 
 ## Build
 

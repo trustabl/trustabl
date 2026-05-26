@@ -178,9 +178,16 @@ const (
 	SDKClaudeAgentSDK SDK = "claude_agent_sdk"
 	SDKOpenAIAgents   SDK = "openai_agents"
 	SDKMCP            SDK = "mcp"
-	SDKOpenShell      SDK = "openshell"
 	SDKGoogleADK      SDK = "google_adk"
 )
+
+// "openshell" is intentionally NOT in the SDK enum: it is not a library
+// you import. It is a synthesized risk-surface label for Python functions
+// that call subprocess.* / os.system / os.popen. The surface is carried
+// on RepoInventory.HasShellInvocations and on ScanResult.HasShellInvocations.
+// Rule YAML still references the literal string "openshell" in
+// `applies_to:` for repo-scope rules; repoRuleDetector.Applies and
+// PredRepoHasSDKInCode route that string to HasShellInvocations.
 
 type SDKDep struct {
 	Name       string  `json:"name"`
@@ -207,27 +214,34 @@ type RepoInventory struct {
 	Subagents          []SubagentDef    `json:"subagents"`
 	ClaudeSettings     []ClaudeSettings `json:"claude_settings"`
 	SDKsDetected       []SDK            `json:"sdks_detected"`
-	Manifest           ScanManifest     `json:"manifest"` // convenience copy for repo-scope predicates
-	UsesDefaultTracing bool             `json:"uses_default_tracing"`
+	// HasShellInvocations is true if any discovered ToolDef is a
+	// KindShellInvocation (a Python function whose body calls
+	// subprocess.* / os.system / os.popen). This is the "openshell" risk
+	// surface; it is deliberately not modeled as an SDK because there is
+	// no library to import.
+	HasShellInvocations bool             `json:"has_shell_invocations"`
+	Manifest            ScanManifest     `json:"manifest"` // convenience copy for repo-scope predicates
+	UsesDefaultTracing  bool             `json:"uses_default_tracing"`
 }
 
 // ScanResult is the top-level output. JSON-serializable for CI.
 type ScanResult struct {
-	ScanID         string           `json:"scan_id"`
-	Repo           string           `json:"repo"`
-	Languages      []Language       `json:"languages"` // detected by file extension (recon)
-	SDKs           []SDK            `json:"sdks"`      // observed in code (inventory)
-	Manifest       ScanManifest     `json:"manifest"`
-	Tools          []ToolDef        `json:"tools"`
-	Agents         []AgentDef       `json:"agents"`
-	HostedTools    []HostedToolDef  `json:"hosted_tools"`
-	MCPServers     []MCPServerDef   `json:"mcp_servers"`
-	Subagents      []SubagentDef    `json:"subagents"`
-	ClaudeSettings []ClaudeSettings `json:"claude_settings"`
-	Findings       []Finding        `json:"findings"`
-	Readiness      []ToolReadiness  `json:"readiness"`
-	OverallScore   float64          `json:"overall_score"`
-	RulesSource    string           `json:"rules_source"`     // repo the rule pack came from
-	RulesVersion   string           `json:"rules_version"`    // resolved rules commit SHA
-	RulesFromCache bool             `json:"rules_from_cache"` // true if rules came from cache (network skipped/unreachable)
+	ScanID              string           `json:"scan_id"`
+	Repo                string           `json:"repo"`
+	Languages           []Language       `json:"languages"` // detected by file extension (recon)
+	SDKs                []SDK            `json:"sdks"`      // observed in code (inventory)
+	HasShellInvocations bool             `json:"has_shell_invocations"`
+	Manifest            ScanManifest     `json:"manifest"`
+	Tools               []ToolDef        `json:"tools"`
+	Agents              []AgentDef       `json:"agents"`
+	HostedTools         []HostedToolDef  `json:"hosted_tools"`
+	MCPServers          []MCPServerDef   `json:"mcp_servers"`
+	Subagents           []SubagentDef    `json:"subagents"`
+	ClaudeSettings      []ClaudeSettings `json:"claude_settings"`
+	Findings            []Finding        `json:"findings"`
+	Readiness           []ToolReadiness  `json:"readiness"`
+	OverallScore        float64          `json:"overall_score"`
+	RulesSource         string           `json:"rules_source"`     // repo the rule pack came from
+	RulesVersion        string           `json:"rules_version"`    // resolved rules commit SHA
+	RulesFromCache      bool             `json:"rules_from_cache"` // true if rules came from cache (network skipped/unreachable)
 }

@@ -294,6 +294,9 @@ rules:
 #   repo_has_sdk_in_code: [openai_agents, claude_agent_sdk, openshell, mcp]
 #       Fires when RepoInventory.SDKsDetected contains the given SDK value.
 #       Derived from actually-observed tool/agent kinds in code (not just deps).
+#       Special case: "openshell" is NOT an SDK and never appears in
+#       SDKsDetected — it routes to RepoInventory.HasShellInvocations (true
+#       when a Python function calls subprocess.* / os.system / os.popen).
 #
 #   repo_has_agent_class: [Agent, SandboxAgent, AgentDefinition]
 #       Fires when any AgentDef in the inventory has the given class.

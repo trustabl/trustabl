@@ -19,7 +19,7 @@ func TestSelectPolicies_EmitsMETA001ForUnauditedSDK(t *testing.T) {
 func TestSelectPolicies_SilentForKnownSDKs(t *testing.T) {
 	profile := models.RepoProfile{}
 	inv := models.RepoInventory{SDKsDetected: []models.SDK{
-		models.SDKOpenAIAgents, models.SDKClaudeAgentSDK, models.SDKMCP, models.SDKOpenShell,
+		models.SDKOpenAIAgents, models.SDKClaudeAgentSDK, models.SDKMCP, models.SDKGoogleADK,
 	}}
 	findings := scanner.SelectAndEmitMETA(profile, inv)
 	for _, f := range findings {
