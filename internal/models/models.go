@@ -92,9 +92,7 @@ type ToolDef struct {
 	Name           string            `json:"name"`
 	Kind           ToolKind          `json:"kind"`
 	Language       Language          `json:"language"`
-	FilePath       string            `json:"file_path"` // relative to repo root
-	Line           int               `json:"line"`
-	EndLine        int               `json:"end_line"`
+	Location                         // file_path / line / end_line (flat in JSON via anonymous embed)
 	Description    string            `json:"description,omitempty"`
 	HasTypedParams bool              `json:"has_typed_params"`
 	ParamNames     []string          `json:"param_names,omitempty"`

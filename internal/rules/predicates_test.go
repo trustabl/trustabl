@@ -37,12 +37,14 @@ func parsePy(t *testing.T, src string, kind models.ToolKind) (models.ToolDef, an
 		}
 	}
 	tool := models.ToolDef{
-		Name:           name,
-		Kind:           kind,
-		Language:       models.LanguagePython,
-		FilePath:       pf.RelPath,
-		Line:           astutil.NodeLine(fn),
-		EndLine:        astutil.NodeEndLine(fn),
+		Name:     name,
+		Kind:     kind,
+		Language: models.LanguagePython,
+		Location: models.Location{
+			FilePath: pf.RelPath,
+			Line:     astutil.NodeLine(fn),
+			EndLine:  astutil.NodeEndLine(fn),
+		},
 		Description:    doc,
 		HasTypedParams: astutil.FunctionHasTypedParams(fn),
 		ParamNames:     filtered,

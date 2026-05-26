@@ -143,12 +143,14 @@ func discoverADKToolsInFile(pf ParsedFile) []models.ToolDef {
 		}
 		seen[name] = true
 		out = append(out, models.ToolDef{
-			Name:           name,
-			Kind:           models.KindADKFunctionTool,
-			Language:       models.LanguagePython,
-			FilePath:       pf.RelPath,
-			Line:           int(fnDef.StartPoint().Row) + 1,
-			EndLine:        int(fnDef.EndPoint().Row) + 1,
+			Name:     name,
+			Kind:     models.KindADKFunctionTool,
+			Language: models.LanguagePython,
+			Location: models.Location{
+				FilePath: pf.RelPath,
+				Line:     int(fnDef.StartPoint().Row) + 1,
+				EndLine:  int(fnDef.EndPoint().Row) + 1,
+			},
 			Description:    astutil.FunctionDocstring(fnDef, pf.Source),
 			HasTypedParams: astutil.FunctionHasTypedParams(fnDef),
 			ParamNames:     astutil.FunctionParams(fnDef, pf.Source),

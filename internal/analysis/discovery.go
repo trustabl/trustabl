@@ -211,12 +211,14 @@ func buildTool(fn *sitter.Node, pf ParsedFile, kind models.ToolKind) models.Tool
 	}
 
 	return models.ToolDef{
-		Name:           name,
-		Kind:           kind,
-		Language:       models.LanguagePython, // discovery is python-only today; widen when a TS parser lands
-		FilePath:       pf.RelPath,
-		Line:           astutil.NodeLine(fn),
-		EndLine:        astutil.NodeEndLine(fn),
+		Name:     name,
+		Kind:     kind,
+		Language: models.LanguagePython, // discovery is python-only today; widen when a TS parser lands
+		Location: models.Location{
+			FilePath: pf.RelPath,
+			Line:     astutil.NodeLine(fn),
+			EndLine:  astutil.NodeEndLine(fn),
+		},
 		Description:    astutil.FunctionDocstring(fn, pf.Source),
 		HasTypedParams: astutil.FunctionHasTypedParams(fn),
 		ParamNames:     filtered,
