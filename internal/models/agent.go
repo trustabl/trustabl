@@ -1,5 +1,19 @@
 package models
 
+// Location is the file/line attribution for a discovered inventory entity.
+// Line and EndLine are both 1-indexed and inclusive. Single-line entities
+// set EndLine == Line; that is a valid state, not a placeholder.
+//
+// Location is intended to be embedded anonymously into entity structs so
+// JSON serialization stays flat (entity.file_path, entity.line,
+// entity.end_line). Consumers that read entity.file_path / entity.line
+// today are unaffected; entity.end_line is additive.
+type Location struct {
+	FilePath string `json:"file_path"`
+	Line     int    `json:"line"`
+	EndLine  int    `json:"end_line"`
+}
+
 // KwargTree represents a kwarg value as either a leaf (Value) or a nested
 // tree (Children, e.g. for model_settings.tool_choice).
 type KwargTree struct {
