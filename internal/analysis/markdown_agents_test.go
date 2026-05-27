@@ -43,3 +43,17 @@ func TestParseToolGrants(t *testing.T) {
 		t.Errorf("parseToolGrants =\n %+v\nwant\n %+v", got, want)
 	}
 }
+
+// TestParseToolGrants_FallbackKeepsRaw covers the path where a token does not
+// match the permission grammar (ParsePermissionRule returns Tool==""): the raw
+// token must be kept as the Tool name so nothing is silently dropped.
+func TestParseToolGrants_FallbackKeepsRaw(t *testing.T) {
+	got := parseToolGrants([]string{"lowercaseunknown"})
+	want := []models.ToolGrant{{Tool: "lowercaseunknown", Pattern: "", Raw: "lowercaseunknown"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("parseToolGrants fallback =\n %+v\nwant\n %+v", got, want)
+	}
+	if parseToolGrants(nil) != nil {
+		t.Errorf("parseToolGrants(nil) should be nil")
+	}
+}
