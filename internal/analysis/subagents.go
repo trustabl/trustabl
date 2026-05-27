@@ -5,61 +5,116 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 
 	"github.com/trustabl/trustabl/internal/models"
 )
 
-// DiscoverSubagents reads every ComponentSubagent in the manifest, parses the
-// YAML frontmatter between the leading `---` markers, and returns one
-// SubagentDef per file with frontmatter. Files without frontmatter are
-// skipped silently (a subagent without frontmatter is just markdown
-// documentation — it has no name/tools to act on).
+// DiscoverSubagents returns one SubagentDef per discovered subagent file.
+// It runs two passes:
+//
+//  1. Canonical pass — every ComponentSubagent in manifest.Components is
+//     treated as a confirmed subagent regardless of frontmatter shape (a
+//     .claude/agents/ file with no tools/model inherits the parent's grants).
+//
+//  2. Shape fallback — each path in manifest.MarkdownFiles that was not already
+//     emitted in pass 1 is tested against a tight shape gate
+//     (name + tools|model) to catch flat collections such as
+//     categories/<NN>/*.md (VoltAgent layout). Generic docs with frontmatter
+//     but no subagent fields are silently excluded.
+//
+// Dedup is by relative path; the final slice is sorted by FilePath.
 func DiscoverSubagents(manifest models.ScanManifest) []models.SubagentDef {
 	var out []models.SubagentDef
+	seen := make(map[string]bool) // relative paths already emitted
+
+	// Pass 1: canonical .claude/agents/ files tagged by the normalizer.
 	for _, c := range manifest.Components {
-		if c.Kind != models.ComponentSubagent {
+		if c.Kind != models.ComponentSubagent || seen[c.Path] {
 			continue
 		}
-		full := filepath.Join(manifest.RepoRoot, c.Path)
-		raw, err := os.ReadFile(full)
-		if err != nil {
-			continue
+		if def, ok := parseSubagentFile(manifest.RepoRoot, c.Path); ok {
+			out = append(out, def)
+			seen[c.Path] = true
 		}
-		fm, startLine, endLine, ok := extractFrontmatter(raw)
-		if !ok {
-			continue
-		}
-		var parsed subagentFrontmatter
-		if err := yaml.Unmarshal(fm, &parsed); err != nil {
-			continue
-		}
-		if parsed.Name == "" {
-			continue
-		}
-		tokens := splitToolsTokens([]string(parsed.Tools))
-		out = append(out, models.SubagentDef{
-			Name:            parsed.Name,
-			Description:     parsed.Description,
-			Tools:           tokens,
-			ToolGrants:      parseToolGrants(tokens),
-			DisallowedTools: splitToolsTokens([]string(parsed.DisallowedTools)),
-			Model:           parsed.Model,
-			PermissionMode:  parsed.PermissionMode,
-			MCPServers:      splitToolsTokens([]string(parsed.MCPServers)),
-			Skills:          splitToolsTokens([]string(parsed.Skills)),
-			HasHooks:        parsed.Hooks.Kind == yaml.MappingNode && len(parsed.Hooks.Content) > 0,
-			Isolation:       parsed.Isolation,
-			Location: models.Location{
-				FilePath: c.Path,
-				Line:     startLine,
-				EndLine:  endLine,
-			},
-		})
 	}
+
+	// Pass 2: shape fallback for flat collections (e.g. categories/*.md). A
+	// markdown file with subagent-shaped frontmatter (name + tools|model) that
+	// is not a SKILL.md and not under .claude/commands/ is treated as a subagent.
+	for _, p := range manifest.MarkdownFiles {
+		if seen[p] || !isSubagentCandidatePath(p) {
+			continue
+		}
+		if def, ok := parseSubagentFile(manifest.RepoRoot, p); ok && subagentShapeOK(def) {
+			out = append(out, def)
+			seen[p] = true
+		}
+	}
+
 	sort.Slice(out, func(i, j int) bool { return out[i].FilePath < out[j].FilePath })
 	return out
+}
+
+// parseSubagentFile reads one markdown file and parses its frontmatter into a
+// SubagentDef. ok is false if the file is missing, has no frontmatter, has
+// malformed YAML, or has no name.
+func parseSubagentFile(repoRoot, relPath string) (models.SubagentDef, bool) {
+	raw, err := os.ReadFile(filepath.Join(repoRoot, relPath))
+	if err != nil {
+		return models.SubagentDef{}, false
+	}
+	fm, startLine, endLine, ok := extractFrontmatter(raw)
+	if !ok {
+		return models.SubagentDef{}, false
+	}
+	var parsed subagentFrontmatter
+	if err := yaml.Unmarshal(fm, &parsed); err != nil {
+		return models.SubagentDef{}, false
+	}
+	if parsed.Name == "" {
+		return models.SubagentDef{}, false
+	}
+	tokens := splitToolsTokens([]string(parsed.Tools))
+	return models.SubagentDef{
+		Name:            parsed.Name,
+		Description:     parsed.Description,
+		Tools:           tokens,
+		ToolGrants:      parseToolGrants(tokens),
+		DisallowedTools: splitToolsTokens([]string(parsed.DisallowedTools)),
+		Model:           parsed.Model,
+		PermissionMode:  parsed.PermissionMode,
+		MCPServers:      splitToolsTokens([]string(parsed.MCPServers)),
+		Skills:          splitToolsTokens([]string(parsed.Skills)),
+		HasHooks:        parsed.Hooks.Kind == yaml.MappingNode && len(parsed.Hooks.Content) > 0,
+		Isolation:       parsed.Isolation,
+		Location: models.Location{
+			FilePath: relPath,
+			Line:     startLine,
+			EndLine:  endLine,
+		},
+	}, true
+}
+
+// isSubagentCandidatePath excludes paths that belong to other artifact kinds so
+// the shape fallback does not double-claim a skill or slash command.
+func isSubagentCandidatePath(p string) bool {
+	if filepath.Base(p) == "SKILL.md" {
+		return false
+	}
+	if strings.HasPrefix(p, ".claude/commands/") || strings.Contains(p, "/.claude/commands/") {
+		return false
+	}
+	return true
+}
+
+// subagentShapeOK is the tight false-positive gate for the flat-collection
+// fallback: require a name AND at least one of tools/model. name+description
+// alone matches too many generic docs.
+func subagentShapeOK(d models.SubagentDef) bool {
+	return d.Name != "" && (len(d.Tools) > 0 || d.Model != "")
 }
 
 // stringOrList unmarshals a YAML value that may be either a scalar string or

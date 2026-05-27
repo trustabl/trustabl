@@ -247,6 +247,64 @@ func TestSubagents_CRLFLineEndings(t *testing.T) {
 	}
 }
 
+func TestSubagents_FlatCollectionByShape(t *testing.T) {
+	dir := t.TempDir()
+	// VoltAgent layout: subagent markdown under categories/, NOT .claude/agents/.
+	writeFixture(t, dir, "categories/01-core/api-designer.md",
+		"---\nname: api-designer\ndescription: D\ntools: Read, Write, Bash\nmodel: sonnet\n---\n\nBody\n")
+	// A generic doc with frontmatter but no subagent shape must NOT be picked up.
+	writeFixture(t, dir, "docs/post.md",
+		"---\ntitle: Hello\ndate: 2026-01-01\n---\n\n# Post\n")
+	// A plain README (no frontmatter) must NOT be picked up.
+	writeFixture(t, dir, "categories/01-core/README.md", "# Index\n")
+
+	manifest := models.ScanManifest{
+		RepoRoot: dir,
+		MarkdownFiles: []string{
+			"categories/01-core/api-designer.md",
+			"docs/post.md",
+			"categories/01-core/README.md",
+		},
+	}
+	got := analysis.DiscoverSubagents(manifest)
+	if len(got) != 1 {
+		t.Fatalf("got %d subagents, want 1 (only api-designer)", len(got))
+	}
+	if got[0].Name != "api-designer" {
+		t.Errorf("Name = %q, want api-designer", got[0].Name)
+	}
+}
+
+func TestSubagents_NoDoubleCountCanonicalAndMarkdown(t *testing.T) {
+	dir := t.TempDir()
+	writeFixture(t, dir, ".claude/agents/a.md", "---\nname: a\ndescription: D\ntools: Read\n---\n")
+	// Same file appears in BOTH Components (canonical) and MarkdownFiles (walk).
+	manifest := models.ScanManifest{
+		RepoRoot:      dir,
+		Components:    []models.AgentComponent{{Kind: models.ComponentSubagent, Path: ".claude/agents/a.md"}},
+		MarkdownFiles: []string{".claude/agents/a.md"},
+	}
+	got := analysis.DiscoverSubagents(manifest)
+	if len(got) != 1 {
+		t.Fatalf("got %d subagents, want 1 (no double count)", len(got))
+	}
+}
+
+func TestSubagents_CanonicalWithoutToolsStillDiscovered(t *testing.T) {
+	dir := t.TempDir()
+	// A canonical .claude/agents file with no tools/model (inherits all) is still
+	// a real subagent — the shape gate must NOT apply to canonical-path files.
+	writeFixture(t, dir, ".claude/agents/inheritor.md", "---\nname: inheritor\ndescription: D\n---\n")
+	manifest := models.ScanManifest{
+		RepoRoot:   dir,
+		Components: []models.AgentComponent{{Kind: models.ComponentSubagent, Path: ".claude/agents/inheritor.md"}},
+	}
+	got := analysis.DiscoverSubagents(manifest)
+	if len(got) != 1 || got[0].Name != "inheritor" {
+		t.Fatalf("canonical tool-less subagent not discovered: %+v", got)
+	}
+}
+
 func TestSubagentDef_LocationLineRange(t *testing.T) {
 	// Fixture:
 	//   line 1: ---
