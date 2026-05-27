@@ -150,11 +150,11 @@ func ResolveEdges(inv *models.RepoInventory, parsed []ParsedFile) {
 				}
 				// Alias from `async with MCPServer*(...) as srv:`. The def now
 				// carries the MCP server's own definition line (the with-statement
-				// call line + end), taken from aliasDef.Location. The post-sort
-				// re-resolution loop is keyed on (FilePath, Class) with a
-				// consumed-by-index map, matching the same pattern used for
-				// HostedToolRef re-resolution. v1 simplification: one alias
-				// referenced by N agents yields N MCPServerDef entries, one per agent.
+				// call line + end), taken from aliasDef.Location. Each ref records
+				// its def's pre-sort index (DefIndex); the post-sort remap re-points
+				// .Resolved via the sort permutation, so refs resolve to distinct
+				// defs even when N agents share one alias. v1 simplification: one
+				// alias referenced by N agents yields N MCPServerDef entries, one per agent.
 				// TODO(v2): alias resolution is same-file only — an alias imported from
 				// another module is not resolved and falls through to External.
 				if item.Kind == models.ExprNameRef {
