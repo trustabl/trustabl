@@ -188,6 +188,23 @@ type SlashCommandDef struct {
 	Location                           // file_path = command .md path
 }
 
+// PluginManifest is one parsed .claude-plugin manifest: a plugin.json (single
+// plugin) or a marketplace.json (a catalog of plugins each pointing at a source
+// directory). Kind distinguishes the two. Plugins lists the catalog entries
+// (empty for a plain plugin.json).
+type PluginManifest struct {
+	Kind     string        `json:"kind"` // "plugin" | "marketplace"
+	Name     string        `json:"name,omitempty"`
+	Plugins  []PluginEntry `json:"plugins,omitempty"`
+	Location               // file_path = the .json path
+}
+
+// PluginEntry is one entry in a marketplace.json plugins[] array.
+type PluginEntry struct {
+	Name   string `json:"name"`
+	Source string `json:"source,omitempty"`
+}
+
 // PermissionRule is one parsed entry from .claude/settings.json permissions
 // lists. Raw preserves the original string for finding attribution; Tool and
 // Pattern carry the parsed grammar.
