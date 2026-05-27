@@ -224,7 +224,7 @@ func ResolveEdges(inv *models.RepoInventory, parsed []ParsedFile) {
 	// Re-resolve HostedToolRef pointers after sorting. The append-and-take-address
 	// pattern in the loop above leaves stale pointers when sort moves elements;
 	// also, append itself can realloc the backing array. For each agent, walk
-	// inv.HostedTools to find matches by (FilePath, Line, Class), consuming each
+	// inv.HostedTools to find matches by (FilePath, Class), consuming each
 	// match at most once so duplicate classes in the same agent (e.g.
 	// tools=[WebSearchTool(), WebSearchTool()]) resolve to distinct entries.
 	for i := range inv.Agents {
