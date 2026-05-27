@@ -848,4 +848,15 @@ func TestPredSubagentGrantsTool(t *testing.T) {
 	if !rules.PredSubagentGrantsTool(noBash, []string{"Bash", "Grep"}) {
 		t.Errorf("expected true: Tools contains Grep (one of the listed)")
 	}
+
+	// A parametered grant ("Bash(npm run *)") must match the name "Bash" via the
+	// parsed ToolGrants, even though the raw Tools token is not exactly "Bash".
+	parametered := models.SubagentDef{
+		Name:       "p",
+		Tools:      []string{"Bash(npm run *)"},
+		ToolGrants: []models.ToolGrant{{Tool: "Bash", Pattern: "npm run *", Raw: "Bash(npm run *)"}},
+	}
+	if !rules.PredSubagentGrantsTool(parametered, []string{"Bash"}) {
+		t.Errorf("expected true: Bash(npm run *) grants Bash via ToolGrants")
+	}
 }
