@@ -19,9 +19,11 @@ type pluginManifestJSON struct {
 }
 
 // DiscoverPlugins parses .claude-plugin/plugin.json and marketplace.json files.
-// A file with a non-empty plugins[] array is a marketplace; otherwise it is a
-// plain plugin. Malformed JSON is skipped silently. Line/EndLine are not
-// tracked for JSON manifests (Line=1, EndLine=line count).
+// Unlike DiscoverSlashCommands (which reads pre-tagged Components), this filters
+// manifest.JSONFiles directly by path + basename. A file with a non-empty
+// plugins[] array is a marketplace; otherwise it is a plain plugin. Malformed
+// JSON is skipped silently. Line/EndLine are not tracked for JSON manifests
+// (Line=1, EndLine=line count).
 func DiscoverPlugins(manifest models.ScanManifest) []models.PluginManifest {
 	var out []models.PluginManifest
 	for _, p := range manifest.JSONFiles {

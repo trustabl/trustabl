@@ -30,14 +30,16 @@ func DiscoverSubagents(manifest models.ScanManifest) []models.SubagentDef {
 	var out []models.SubagentDef
 	seen := make(map[string]bool) // relative paths already emitted
 
-	// Pass 1: canonical .claude/agents/ files tagged by the normalizer.
+	// Pass 1: canonical .claude/agents/ files tagged by the normalizer. A
+	// canonical path is owned by this pass — mark it seen before parsing so a
+	// file that fails to parse here is never re-read by the pass-2 fallback.
 	for _, c := range manifest.Components {
 		if c.Kind != models.ComponentSubagent || seen[c.Path] {
 			continue
 		}
+		seen[c.Path] = true
 		if def, ok := parseSubagentFile(manifest.RepoRoot, c.Path); ok {
 			out = append(out, def)
-			seen[c.Path] = true
 		}
 	}
 

@@ -103,7 +103,8 @@ func Run(cfg Config) (models.ScanResult, error) {
 		Sessions:            sessions,
 		MCPServers:          mcpServers,
 		Manifest:            profile.Manifest,
-		SDKsDetected:        deriveSDKsDetected(tools, agents, nil),
+		// SDKsDetected is set once below, after subagent discovery, since
+		// markdown subagent presence contributes to it.
 		HasShellInvocations: deriveHasShellInvocations(tools),
 		UsesDefaultTracing:  computeUsesDefaultTracing(parsed),
 	}
