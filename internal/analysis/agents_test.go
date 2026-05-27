@@ -200,6 +200,88 @@ session = SQLiteSession("convo")
 	}
 }
 
+// ─── EndLine attribution ─────────────────────────────────────────────────────
+
+func TestGuardrailDef_EndLine(t *testing.T) {
+	// Line 1:  (empty — leading newline)
+	// Line 2:  from agents import input_guardrail
+	// Line 3:  (empty)
+	// Line 4:  @input_guardrail
+	// Line 5:  def my_guard(
+	// Line 6:      ctx,
+	// Line 7:      agent,
+	// Line 8:      inp,
+	// Line 9:  ):
+	// Line 10:     return True
+	src := `
+from agents import input_guardrail
+
+@input_guardrail
+def my_guard(
+    ctx,
+    agent,
+    inp,
+):
+    return True
+`
+	pf := parsePyFile(t, "g.py", src)
+	gs := analysis.DiscoverGuardrails([]analysis.ParsedFile{pf})
+	if len(gs) != 1 {
+		t.Fatalf("expected 1 guardrail, got %d", len(gs))
+	}
+	g := gs[0]
+	if g.EndLine == 0 {
+		t.Fatalf("EndLine is 0 — not populated")
+	}
+	if g.EndLine <= g.Line {
+		t.Errorf("EndLine (%d) must be > Line (%d) for a multi-line function", g.EndLine, g.Line)
+	}
+	// def starts on line 5, last line of function body is line 10
+	if g.Line != 5 {
+		t.Errorf("Line = %d, want 5", g.Line)
+	}
+	if g.EndLine != 10 {
+		t.Errorf("EndLine = %d, want 10", g.EndLine)
+	}
+}
+
+func TestSessionUse_EndLine(t *testing.T) {
+	// Line 1:  (empty — leading newline)
+	// Line 2:  from agents import SQLiteSession
+	// Line 3:  (empty)
+	// Line 4:  session = SQLiteSession(
+	// Line 5:      "conv-123",
+	// Line 6:      "sessions.db",
+	// Line 7:  )
+	src := `
+from agents import SQLiteSession
+
+session = SQLiteSession(
+    "conv-123",
+    "sessions.db",
+)
+`
+	pf := parsePyFile(t, "s.py", src)
+	ss := analysis.DiscoverSessions([]analysis.ParsedFile{pf})
+	if len(ss) != 1 {
+		t.Fatalf("expected 1 session, got %d", len(ss))
+	}
+	s := ss[0]
+	if s.EndLine == 0 {
+		t.Fatalf("EndLine is 0 — not populated")
+	}
+	if s.EndLine <= s.Line {
+		t.Errorf("EndLine (%d) must be > Line (%d) for a multi-line call", s.EndLine, s.Line)
+	}
+	// call starts on line 4, closing ) is on line 7
+	if s.Line != 4 {
+		t.Errorf("Line = %d, want 4", s.Line)
+	}
+	if s.EndLine != 7 {
+		t.Errorf("EndLine = %d, want 7", s.EndLine)
+	}
+}
+
 // ─── Decorator kwargs capture ─────────────────────────────────────────────────
 
 func TestDiscoverTools_CapturesDecoratorKwargs(t *testing.T) {

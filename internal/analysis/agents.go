@@ -449,7 +449,7 @@ func discoverGuardrailsInFile(pf ParsedFile) []models.GuardrailDef {
 		out = append(out, models.GuardrailDef{
 			Name:     name,
 			Kind:     kind,
-			Location: models.Location{FilePath: pf.RelPath, Line: int(def.StartPoint().Row) + 1},
+			Location: models.Location{FilePath: pf.RelPath, Line: int(def.StartPoint().Row) + 1, EndLine: int(def.EndPoint().Row) + 1},
 		})
 		return true
 	})
@@ -511,7 +511,7 @@ func discoverSessionsInFile(pf ParsedFile) []models.SessionUse {
 		if imported[funcName] {
 			out = append(out, models.SessionUse{
 				Class:    funcName,
-				Location: models.Location{FilePath: pf.RelPath, Line: int(n.StartPoint().Row) + 1},
+				Location: models.Location{FilePath: pf.RelPath, Line: int(n.StartPoint().Row) + 1, EndLine: int(n.EndPoint().Row) + 1},
 			})
 		}
 		return true
