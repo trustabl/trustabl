@@ -135,6 +135,34 @@ func TestClaudeSettings_SandboxBlockDetected(t *testing.T) {
 	}
 }
 
+func TestClaudeSettings_LocationLineRange(t *testing.T) {
+	// Fixture: 5 lines, trailing newline.
+	//   line 1: {
+	//   line 2:   "permissions": {
+	//   line 3:     "allow": ["Bash", "Read"]
+	//   line 4:   }
+	//   line 5: }
+	const body = "{\n  \"permissions\": {\n    \"allow\": [\"Bash\", \"Read\"]\n  }\n}\n"
+	dir := t.TempDir()
+	writeFixture(t, dir, ".claude/settings.json", body)
+	manifest := models.ScanManifest{
+		RepoRoot: dir,
+		Components: []models.AgentComponent{
+			{Kind: models.ComponentClaudeSettings, Path: ".claude/settings.json"},
+		},
+	}
+	got := analysis.DiscoverClaudeSettings(manifest)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 settings file, got %d", len(got))
+	}
+	if got[0].Line != 1 {
+		t.Errorf("Line = %d, want 1", got[0].Line)
+	}
+	if got[0].EndLine != 5 {
+		t.Errorf("EndLine = %d, want 5", got[0].EndLine)
+	}
+}
+
 func TestParsePermissionRule_EdgeCases(t *testing.T) {
 	cases := []struct {
 		raw, tool, pattern string

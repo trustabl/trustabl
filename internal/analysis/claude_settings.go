@@ -1,6 +1,7 @@
 package analysis
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -64,12 +65,27 @@ func DiscoverClaudeSettings(manifest models.ScanManifest) []models.ClaudeSetting
 		if err != nil {
 			continue
 		}
+		// EndLine = number of lines in the file. Count '\n' bytes, then +1 if the
+		// last line has no trailing newline (so a 5-line file with trailing \n has
+		// 5 \n's → 5 lines; a 5-line file without trailing \n has 4 \n's → still 5).
+		// Empty file is treated as 1 line.
+		endLine := bytes.Count(raw, []byte{'\n'})
+		if len(raw) > 0 && raw[len(raw)-1] != '\n' {
+			endLine++
+		}
+		if endLine == 0 {
+			endLine = 1
+		}
 		var parsed claudeSettingsFile
 		if err := json.Unmarshal(raw, &parsed); err != nil {
 			continue
 		}
 		out = append(out, models.ClaudeSettings{
-			Location:        models.Location{FilePath: filepath.ToSlash(c.Path)},
+			Location: models.Location{
+				FilePath: filepath.ToSlash(c.Path),
+				Line:     1,
+				EndLine:  endLine,
+			},
 			Permissions:     parsePermissionsBlock(parsed.Permissions),
 			DefaultMode:     parsed.Permissions.DefaultMode,
 			AdditionalDirs:  parsed.Permissions.AdditionalDirectories,
