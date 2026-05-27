@@ -1,0 +1,38 @@
+# Trustabl
+
+> Trustabl is a single-binary, read-only static analyzer for agent-SDK
+> repositories. It discovers a repo's agent/tool inventory via tree-sitter,
+> runs YAML-defined detection rules against it, and reports reliability and
+> safety weaknesses as a human summary, JSON, or SARIF. A scan writes nothing
+> into the scanned repo.
+
+Key facts an LLM should know before reasoning about this project:
+
+- **Scope.** CLI only — no web app, no API server, no artifact generation or
+  remediation. It detects and reports; it does not modify the scanned repo.
+- **SDK/language coverage.** Claude Agent SDK (Python + TypeScript), OpenAI
+  Agents SDK (Python), Google ADK (Python), MCP (Python tool registrations),
+  and an OpenShell shell-invocation risk surface. TypeScript discovery is wired
+  for the Claude SDK; no TS-language rules ship yet.
+- **Detection model.** Every rule fires at exactly one of four scopes —
+  `tool`, `agent`, `subagent`, or `repo` — and receives a typed input.
+  Agent-scoped findings attribute to a specific agent, not the whole repo.
+- **Rules are not embedded in the binary.** They live in a separate git
+  repository (`trustabl-rules`) and are resolved at scan time, cached locally
+  with offline fallback and a schema-version gate.
+- **Determinism is a contract.** Identical inputs produce an identical scan ID
+  (which folds in the resolved rules SHA) and a byte-stable report.
+- **Build constraint.** tree-sitter is a C library, so `CGO_ENABLED=1` is
+  required to build.
+
+## Docs
+
+- [README](https://raw.githubusercontent.com/trustabl/trustabl/main/README.md): external-facing intro — what it does, install, usage, CLI flags, exit codes, output formats.
+- [ARCHITECTURE](https://raw.githubusercontent.com/trustabl/trustabl/main/ARCHITECTURE.md): the implementer's reference — package layout, the scan pipeline (recon → inventory → policy selection → analysis → scoring → review), the data model, the rules engine, and the determinism contract.
+- [COVERAGE](https://raw.githubusercontent.com/trustabl/trustabl/main/COVERAGE.md): at-a-glance matrix of which SDKs and languages are scanned, analysed, and detected against, plus what is parsed per SDK and the known gaps.
+- [CHANGELOG](https://raw.githubusercontent.com/trustabl/trustabl/main/CHANGELOG.md): notable changes per release (Keep a Changelog format).
+
+## Optional
+
+- [Rules repository](https://github.com/trustabl/trustabl-rules): the external YAML rule packs the engine pulls at scan time — the production source of detection rules.
+- [LICENSE](https://raw.githubusercontent.com/trustabl/trustabl/main/LICENSE): Apache-2.0.
