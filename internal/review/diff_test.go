@@ -195,6 +195,35 @@ func TestRender_SubagentsAndClaudeSettingsSections(t *testing.T) {
 	}
 }
 
+func TestRender_RiskSurfacesOpenshellWordingDoesNotOverpromise(t *testing.T) {
+	// The line is printed whenever HasShellInvocations is true, but no openshell
+	// rule pack ships in the in-repo fixture or the live trustabl-rules repo
+	// today (OSH-* moved to a closed-source project). The old wording —
+	// "audited by openshell repo-rules" — implied an audit that does not
+	// happen and read like a rule had flagged the repo. The renderer cannot
+	// know whether a private pack with openshell rules is loaded, so the
+	// wording must surface the risk without claiming an audit.
+	result := models.ScanResult{Repo: "./x", HasShellInvocations: true}
+	out := (&review.Renderer{NoColor: true}).Render(result)
+	if !strings.Contains(out, "Risk surfaces:  openshell") {
+		t.Fatalf("expected risk-surfaces line\n---\n%s", out)
+	}
+	if strings.Contains(out, "audited by") {
+		t.Errorf("risk-surfaces line must not claim an audit; got\n---\n%s", out)
+	}
+	if !strings.Contains(out, "no rule fires on this surface in the shipped pack") {
+		t.Errorf("risk-surfaces line should make the unaudited status explicit; got\n---\n%s", out)
+	}
+}
+
+func TestRender_RiskSurfacesOmittedWhenNoShellInvocations(t *testing.T) {
+	result := models.ScanResult{Repo: "./x", HasShellInvocations: false}
+	out := (&review.Renderer{NoColor: true}).Render(result)
+	if strings.Contains(out, "Risk surfaces:") {
+		t.Errorf("risk-surfaces line must be omitted when HasShellInvocations is false; got\n---\n%s", out)
+	}
+}
+
 func TestRender_EmptyInventorySkipsNewLines(t *testing.T) {
 	// Sanity: a repo with no hosted tools / MCP / subagents / settings must
 	// not print the new summary lines. We don't want clutter on simple repos.

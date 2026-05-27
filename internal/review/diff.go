@@ -43,8 +43,12 @@ func (r *Renderer) Render(result models.ScanResult) string {
 	fmt.Fprintf(&b, "  Languages:      %s\n", csv(result.Languages))
 	fmt.Fprintf(&b, "  SDKs:           %s\n", csv(result.SDKs))
 	if result.HasShellInvocations {
+		// Surface the risk honestly. The shipped rule pack contains no
+		// openshell rules today (OSH-* moved to a closed-source project), so
+		// the renderer must not imply an audit happened here. Findings speak
+		// for audit status on their own.
 		fmt.Fprintf(&b, "  Risk surfaces:  openshell %s\n",
-			styleDim.Render("(Python functions call subprocess.* / os.system / os.popen — audited by openshell repo-rules)"))
+			styleDim.Render("(Python functions call subprocess.* / os.system / os.popen — no rule fires on this surface in the shipped pack)"))
 	}
 	// Tool surface, broken out by where each kind enters the rule pipeline.
 	// Previously this was one conflated "Tools found: N" union which led users
