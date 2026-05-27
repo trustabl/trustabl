@@ -176,3 +176,40 @@ func TestNormalize_NestedClaudeAgentsClassified(t *testing.T) {
 		t.Errorf("notes.txt should not be classified, got kind %q", k)
 	}
 }
+
+func TestNormalize_SkillAndPluginClassified(t *testing.T) {
+	dir := t.TempDir()
+	mustWrite := func(rel, content string) {
+		t.Helper()
+		full := filepath.Join(dir, rel)
+		if err := os.MkdirAll(filepath.Dir(full), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mustWrite(".claude/skills/deploy/SKILL.md", "---\nname: deploy\n---\n")
+	mustWrite(".claude-plugin/marketplace.json", `{"name":"m","plugins":[]}`)
+	mustWrite(".claude-plugin/plugin.json", `{"name":"p"}`)
+
+	src := &Source{RootPath: dir}
+	m, err := Normalize(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kindsByPath := map[string]models.ComponentKind{}
+	for _, c := range m.Components {
+		kindsByPath[c.Path] = c.Kind
+	}
+	want := map[string]models.ComponentKind{
+		".claude/skills/deploy/SKILL.md":   models.ComponentSkill,
+		".claude-plugin/marketplace.json":  models.ComponentPluginManifest,
+		".claude-plugin/plugin.json":       models.ComponentPluginManifest,
+	}
+	for path, wantKind := range want {
+		if got := kindsByPath[path]; got != wantKind {
+			t.Errorf("path %q: got kind %q, want %q", path, got, wantKind)
+		}
+	}
+}

@@ -140,6 +140,26 @@ func TestRender_MCPServersVisibleInHumanFormat(t *testing.T) {
 	}
 }
 
+func TestRender_SkillsCommandsPluginsVisible(t *testing.T) {
+	result := models.ScanResult{
+		Subagents:       []models.SubagentDef{{Name: "a", Location: models.Location{FilePath: ".claude/agents/a.md", Line: 1}}},
+		Skills:          []models.SkillDef{{Name: "deploy", Location: models.Location{FilePath: ".claude/skills/deploy/SKILL.md", Line: 1}}},
+		SlashCommands:   []models.SlashCommandDef{{Name: "ship", Location: models.Location{FilePath: ".claude/commands/ship.md", Line: 1}}},
+		PluginManifests: []models.PluginManifest{{Kind: "marketplace", Name: "m", Location: models.Location{FilePath: ".claude-plugin/marketplace.json", Line: 1}}},
+	}
+	out := (&review.Renderer{NoColor: true}).Render(result)
+	for _, want := range []string{
+		"Skills:             1",
+		"deploy",
+		"Slash commands:     1",
+		"Plugin manifests:   1",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("human output missing %q\n---\n%s", want, out)
+		}
+	}
+}
+
 func TestRender_SubagentsAndClaudeSettingsSections(t *testing.T) {
 	result := models.ScanResult{
 		Subagents: []models.SubagentDef{

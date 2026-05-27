@@ -117,6 +117,8 @@ const (
 	ComponentSystemPrompt          ComponentKind = "system_prompt"
 	ComponentDependencyManifest    ComponentKind = "dependency_manifest"
 	ComponentClaudeAgentDefinition ComponentKind = "claude_agent_definition" // Python file using AgentDefinition
+	ComponentSkill                 ComponentKind = "skill"
+	ComponentPluginManifest        ComponentKind = "plugin_manifest"
 )
 
 // AgentComponent is a non-tool agent-related artifact discovered during
@@ -209,9 +211,12 @@ type RepoInventory struct {
 	Sessions           []SessionUse     `json:"sessions"`
 	HostedTools        []HostedToolDef  `json:"hosted_tools"`
 	MCPServers         []MCPServerDef   `json:"mcp_servers"`
-	Subagents          []SubagentDef    `json:"subagents"`
-	ClaudeSettings     []ClaudeSettings `json:"claude_settings"`
-	SDKsDetected       []SDK            `json:"sdks_detected"`
+	Subagents          []SubagentDef     `json:"subagents"`
+	Skills             []SkillDef        `json:"skills"`
+	SlashCommands      []SlashCommandDef `json:"slash_commands"`
+	PluginManifests    []PluginManifest  `json:"plugin_manifests"`
+	ClaudeSettings     []ClaudeSettings  `json:"claude_settings"`
+	SDKsDetected       []SDK             `json:"sdks_detected"`
 	// HasShellInvocations is true if any discovered ToolDef is a
 	// KindShellInvocation (a Python function whose body calls
 	// subprocess.* / os.system / os.popen). This is the "openshell" risk
@@ -234,9 +239,12 @@ type ScanResult struct {
 	Agents              []AgentDef       `json:"agents"`
 	HostedTools         []HostedToolDef  `json:"hosted_tools"`
 	MCPServers          []MCPServerDef   `json:"mcp_servers"`
-	Subagents           []SubagentDef    `json:"subagents"`
-	ClaudeSettings      []ClaudeSettings `json:"claude_settings"`
-	Findings            []Finding        `json:"findings"`
+	Subagents           []SubagentDef     `json:"subagents"`
+	Skills              []SkillDef        `json:"skills"`
+	SlashCommands       []SlashCommandDef `json:"slash_commands"`
+	PluginManifests     []PluginManifest  `json:"plugin_manifests"`
+	ClaudeSettings      []ClaudeSettings  `json:"claude_settings"`
+	Findings            []Finding         `json:"findings"`
 	Readiness           []ToolReadiness  `json:"readiness"`
 	OverallScore        float64          `json:"overall_score"`
 	RulesSource         string           `json:"rules_source"`     // repo the rule pack came from

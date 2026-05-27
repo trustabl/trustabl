@@ -140,15 +140,69 @@ type MCPServerRef struct {
 	DefIndex int           `json:"-"` // pre-sort index into inv.MCPServers; remapped after sort. -1 = external / TS / not resolvable.
 }
 
-// SubagentDef is one parsed `.claude/agents/*.md` definition. The tools field
-// is the comma-separated list from frontmatter; both built-in tool names
-// ("Read", "Bash") and MCP-tool names ("mcp__server__tool") appear here.
+// SubagentDef is one parsed Claude Code subagent markdown definition (a
+// `.claude/agents/*.md` file, or a flat-collection .md matched by frontmatter
+// shape). Tools keeps the raw frontmatter tokens verbatim (both built-in names
+// like "Read" and MCP refs like "mcp__server__tool"); ToolGrants carries the
+// same tokens parsed through the permission grammar.
 type SubagentDef struct {
-	Name        string   `json:"name"`
-	Description string   `json:"description,omitempty"`
-	Tools       []string `json:"tools,omitempty"`
-	Model       string   `json:"model,omitempty"`
-	Location              // file_path / line / end_line (flat in JSON via anonymous embed)
+	Name            string      `json:"name"`
+	Description     string      `json:"description,omitempty"`
+	Tools           []string    `json:"tools,omitempty"`
+	ToolGrants      []ToolGrant `json:"tool_grants,omitempty"`
+	DisallowedTools []string    `json:"disallowed_tools,omitempty"`
+	Model           string      `json:"model,omitempty"`
+	PermissionMode  string      `json:"permission_mode,omitempty"`
+	MCPServers      []string    `json:"mcp_servers,omitempty"`
+	Skills          []string    `json:"skills,omitempty"`
+	HasHooks        bool        `json:"has_hooks,omitempty"`
+	Isolation       string      `json:"isolation,omitempty"`
+	Location                    // file_path / line / end_line (flat in JSON via anonymous embed)
+}
+
+// SkillDef is one parsed Claude Code skill (a SKILL.md file). allowed-tools may
+// be space-separated or a YAML list; AllowedTools keeps the verbatim tokens and
+// ToolGrants the parsed grammar. DisableModelInvocation mirrors the frontmatter
+// flag (manual-only skills).
+type SkillDef struct {
+	Name                   string      `json:"name"`
+	Description            string      `json:"description,omitempty"`
+	AllowedTools           []string    `json:"allowed_tools,omitempty"`
+	ToolGrants             []ToolGrant `json:"tool_grants,omitempty"`
+	ArgumentHint           string      `json:"argument_hint,omitempty"`
+	DisableModelInvocation bool        `json:"disable_model_invocation,omitempty"`
+	Location                           // file_path = SKILL.md path
+}
+
+// SlashCommandDef is one parsed .claude/commands/*.md slash command. The command
+// name is the file basename without extension (Claude Code derives the command
+// from the path, not frontmatter). allowed-tools follows the skill grammar.
+type SlashCommandDef struct {
+	Name                   string      `json:"name"`
+	Description            string      `json:"description,omitempty"`
+	AllowedTools           []string    `json:"allowed_tools,omitempty"`
+	ToolGrants             []ToolGrant `json:"tool_grants,omitempty"`
+	Model                  string      `json:"model,omitempty"`
+	ArgumentHint           string      `json:"argument_hint,omitempty"`
+	DisableModelInvocation bool        `json:"disable_model_invocation,omitempty"`
+	Location                           // file_path = command .md path
+}
+
+// PluginManifest is one parsed .claude-plugin manifest: a plugin.json (single
+// plugin) or a marketplace.json (a catalog of plugins each pointing at a source
+// directory). Kind distinguishes the two. Plugins lists the catalog entries
+// (empty for a plain plugin.json).
+type PluginManifest struct {
+	Kind     string        `json:"kind"` // "plugin" | "marketplace"
+	Name     string        `json:"name,omitempty"`
+	Plugins  []PluginEntry `json:"plugins,omitempty"`
+	Location               // file_path = the .json path
+}
+
+// PluginEntry is one entry in a marketplace.json plugins[] array.
+type PluginEntry struct {
+	Name   string `json:"name"`
+	Source string `json:"source,omitempty"`
 }
 
 // PermissionRule is one parsed entry from .claude/settings.json permissions
@@ -159,6 +213,18 @@ type PermissionRule struct {
 	Pattern string `json:"pattern,omitempty"` // empty for bare "Bash", "npm run *" for "Bash(npm run *)"
 	Raw     string `json:"raw"`
 	Line    int    `json:"line"` // 1-indexed line of this rule's string literal in settings.json
+}
+
+// ToolGrant is one parsed entry from a markdown agent's `tools:` or
+// `allowed-tools:` frontmatter list. It reuses the settings.json permission
+// grammar (see ParsePermissionRule): a bare tool ("Read"), a parametered tool
+// ("Bash(npm run *)", "Agent(worker, researcher)"), or an MCP tool reference
+// ("mcp__server__tool", parsed as Tool="MCP"). Raw preserves the original
+// token verbatim for attribution.
+type ToolGrant struct {
+	Tool    string `json:"tool"`
+	Pattern string `json:"pattern,omitempty"`
+	Raw     string `json:"raw"`
 }
 
 // ClaudePermissions is the parsed permissions block.

@@ -618,15 +618,24 @@ func PredAgentIsSubagentOfAny(a models.AgentDef, inv models.RepoInventory) bool 
 
 // ─── subagent predicates ──────────────────────────────────────────────────────
 
-// PredSubagentGrantsTool reports whether the subagent's tools list contains
-// any of names. Case-sensitive: Claude Code tool names are canonical
-// ("Bash", "Read", "WebFetch", ...).
+// PredSubagentGrantsTool reports whether the subagent grants any of names.
+// It matches against the parsed ToolGrants first (so a parametered grant like
+// "Bash(npm run *)" matches the name "Bash") and falls back to the raw Tools
+// tokens (so hand-built SubagentDefs that set only Tools still match).
+// Case-sensitive: Claude Code tool names are canonical ("Bash", "Read", ...).
 func PredSubagentGrantsTool(s models.SubagentDef, names []string) bool {
+	want := make(map[string]bool, len(names))
+	for _, n := range names {
+		want[n] = true
+	}
+	for _, g := range s.ToolGrants {
+		if want[g.Tool] {
+			return true
+		}
+	}
 	for _, granted := range s.Tools {
-		for _, want := range names {
-			if granted == want {
-				return true
-			}
+		if want[granted] {
+			return true
 		}
 	}
 	return false

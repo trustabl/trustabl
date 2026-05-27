@@ -176,8 +176,10 @@ func shouldSkipDir(name string) bool {
 	case ".git", ".venv", "venv", "node_modules", "__pycache__",
 		"dist", "build", ".tox", ".mypy_cache", ".pytest_cache":
 		return true
-	case ".claude":
-		// Agent-config directory — deliberately descend into it.
+	case ".claude", ".claude-plugin":
+		// Agent-config directories — deliberately descend into them
+		// (.claude/ holds agents/skills/commands/settings; .claude-plugin/
+		// holds plugin.json / marketplace.json).
 		return false
 	}
 	// Skip other dot-prefixed dirs (build caches, editor metadata, etc.).
@@ -284,10 +286,23 @@ func discoverComponents(root string, m models.ScanManifest) []models.AgentCompon
 	}
 	for _, p := range m.MarkdownFiles {
 		switch {
+		case filepath.Base(p) == "SKILL.md":
+			// Skills: SKILL.md at any depth (.claude/skills/<name>/SKILL.md,
+			// plugin skills/, nested monorepo skills). Identified by basename.
+			out = append(out, models.AgentComponent{Kind: models.ComponentSkill, Path: p})
 		case hasClaudeSegment(p, "agents/"):
 			out = append(out, models.AgentComponent{Kind: models.ComponentSubagent, Path: p})
 		case hasClaudeSegment(p, "commands/"):
 			out = append(out, models.AgentComponent{Kind: models.ComponentSlashCommand, Path: p})
+		}
+	}
+
+	// Plugin manifests under .claude-plugin/ (plugin.json or marketplace.json).
+	for _, p := range m.JSONFiles {
+		base := filepath.Base(p)
+		if (base == "plugin.json" || base == "marketplace.json") &&
+			(strings.HasPrefix(p, ".claude-plugin/") || strings.Contains(p, "/.claude-plugin/")) {
+			out = append(out, models.AgentComponent{Kind: models.ComponentPluginManifest, Path: p})
 		}
 	}
 

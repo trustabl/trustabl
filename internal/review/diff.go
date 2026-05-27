@@ -70,6 +70,16 @@ func (r *Renderer) Render(result models.ScanResult) string {
 		fmt.Fprintf(&b, "  Subagents:          %d %s\n", n,
 			styleDim.Render("("+subagentNamesList(result.Subagents)+")"))
 	}
+	if n := len(result.Skills); n > 0 {
+		fmt.Fprintf(&b, "  Skills:             %d %s\n", n,
+			styleDim.Render("("+skillNamesList(result.Skills)+")"))
+	}
+	if n := len(result.SlashCommands); n > 0 {
+		fmt.Fprintf(&b, "  Slash commands:     %d\n", n)
+	}
+	if n := len(result.PluginManifests); n > 0 {
+		fmt.Fprintf(&b, "  Plugin manifests:   %d\n", n)
+	}
 	if n := len(result.ClaudeSettings); n > 0 {
 		fmt.Fprintf(&b, "  Claude settings:    %d file(s)\n", n)
 	}
@@ -390,6 +400,19 @@ func subagentNamesList(subs []models.SubagentDef) string {
 	}
 	parts := make([]string, len(subs))
 	for i, s := range subs {
+		parts[i] = s.Name
+	}
+	return strings.Join(parts, ", ")
+}
+
+// skillNamesList renders the discovered skill names for the scan summary
+// one-liner.
+func skillNamesList(skills []models.SkillDef) string {
+	if len(skills) == 0 {
+		return ""
+	}
+	parts := make([]string, len(skills))
+	for i, s := range skills {
 		parts[i] = s.Name
 	}
 	return strings.Join(parts, ", ")

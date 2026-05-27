@@ -103,13 +103,21 @@ func Run(cfg Config) (models.ScanResult, error) {
 		Sessions:            sessions,
 		MCPServers:          mcpServers,
 		Manifest:            profile.Manifest,
-		SDKsDetected:        deriveSDKsDetected(tools, agents),
+		// SDKsDetected is set once below, after subagent discovery, since
+		// markdown subagent presence contributes to it.
 		HasShellInvocations: deriveHasShellInvocations(tools),
 		UsesDefaultTracing:  computeUsesDefaultTracing(parsed),
 	}
 	analysis.ResolveEdges(&inventory, append(parsed, tsFiles...))
 	inventory.Subagents = analysis.DiscoverSubagents(profile.Manifest)
+	inventory.Skills = analysis.DiscoverSkills(profile.Manifest)
+	inventory.SlashCommands = analysis.DiscoverSlashCommands(profile.Manifest)
+	inventory.PluginManifests = analysis.DiscoverPlugins(profile.Manifest)
 	inventory.ClaudeSettings = analysis.DiscoverClaudeSettings(profile.Manifest)
+	// Markdown subagents are an independent Claude Agent SDK signal: a repo can
+	// ship .claude/agents/*.md (or a flat collection) with no Claude SDK code.
+	// Fold them into SDKsDetected so LoadFor loads the claude_sdk pack (CSDK-110).
+	inventory.SDKsDetected = deriveSDKsDetected(tools, agents, inventory.Subagents)
 	rep.EndPhase(fmt.Sprintf("%d tools · %d agents", len(tools), len(agents)))
 
 	// Step 3: policy selection
@@ -152,6 +160,9 @@ func Run(cfg Config) (models.ScanResult, error) {
 		HostedTools:         inventory.HostedTools,
 		MCPServers:          inventory.MCPServers,
 		Subagents:           inventory.Subagents,
+		Skills:              inventory.Skills,
+		SlashCommands:       inventory.SlashCommands,
+		PluginManifests:     inventory.PluginManifests,
 		ClaudeSettings:      inventory.ClaudeSettings,
 		Findings:            findings,
 		Readiness:           readiness,
@@ -168,7 +179,7 @@ func Run(cfg Config) (models.ScanResult, error) {
 // KindShellInvocation is intentionally NOT mapped here. There is no SDK
 // called "openshell" — it is a risk-surface label for Python functions
 // that shell out, carried on RepoInventory.HasShellInvocations.
-func deriveSDKsDetected(tools []models.ToolDef, agents []models.AgentDef) []models.SDK {
+func deriveSDKsDetected(tools []models.ToolDef, agents []models.AgentDef, subagents []models.SubagentDef) []models.SDK {
 	seen := make(map[models.SDK]bool)
 	for _, t := range tools {
 		switch t.Kind {
@@ -186,6 +197,12 @@ func deriveSDKsDetected(tools []models.ToolDef, agents []models.AgentDef) []mode
 		if a.SDK != "" {
 			seen[a.SDK] = true
 		}
+	}
+	// Markdown subagents (.claude/agents/*.md or a flat collection) are Claude
+	// Code configuration — a Claude Agent SDK surface even when no SDK code is
+	// present. Their presence is what makes the claude_sdk pack load.
+	if len(subagents) > 0 {
+		seen[models.SDKClaudeAgentSDK] = true
 	}
 	var out []models.SDK
 	for s := range seen {

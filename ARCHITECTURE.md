@@ -126,7 +126,7 @@ flowchart TD
     end
 
     subgraph S2["Step 2 — Inventory (per-language AST)"]
-        disc["analysis.DiscoverTools<br/>DiscoverAgents<br/>DiscoverGuardrails<br/>DiscoverSessions<br/>DiscoverSubagents<br/>DiscoverClaudeSettings<br/>DiscoverADKAgents<br/>DiscoverADKTools"]
+        disc["analysis.DiscoverTools<br/>DiscoverAgents<br/>DiscoverGuardrails<br/>DiscoverSessions<br/>DiscoverSubagents<br/>DiscoverSkills<br/>DiscoverSlashCommands<br/>DiscoverPlugins<br/>DiscoverClaudeSettings<br/>DiscoverADKAgents<br/>DiscoverADKTools"]
         edges["analysis.ResolveEdges"]
         inv[["RepoInventory<br/>Tools · Agents · Guardrails · Sessions<br/>SDKsDetected · HasShellInvocations · UsesDefaultTracing"]]
         disc --> edges --> inv
@@ -215,15 +215,45 @@ For each language recon cleared, do the AST work and produce a `RepoInventory`:
   decorated functions.
 - **DiscoverSessions** — finds construction sites for `*Session` classes from
   the agents SDK.
-- **DiscoverSubagents** (`subagents.go`) — reads every `.claude/agents/*.md`
-  component file in the manifest (matched at any path depth — monorepos that
-  nest agent projects under `agent/.claude/agents/` or
-  `packages/x/.claude/agents/` are handled), parses YAML frontmatter (the
-  block between leading `---` markers), and emits one `SubagentDef` per file
-  with frontmatter. Files without frontmatter or with malformed YAML are
-  skipped silently. The `tools:` field accepts both the comma-separated scalar
-  form (`tools: Read, Bash`) and the YAML-list form
-  (`tools:\n - Read\n - Bash`).
+- **DiscoverSubagents** (`subagents.go`) — **hybrid** discovery in two passes.
+  Pass 1 reads every `.claude/agents/*.md` component (matched at any path depth
+  — monorepos that nest agent projects under `agent/.claude/agents/` or
+  `packages/x/.claude/agents/` are handled). Pass 2 is a **frontmatter-shape
+  fallback** over every `manifest.MarkdownFiles` entry not already emitted: a
+  markdown file that is not a `SKILL.md` and not under `.claude/commands/`, with
+  frontmatter carrying a `name` and at least one of `tools`/`model`, is treated
+  as a subagent. This catches flat collections (e.g.
+  `VoltAgent/awesome-claude-code-subagents` stores 150+ subagents under
+  `categories/<NN>/*.md`, never `.claude/agents/`). The shape gate is
+  deliberately tight to avoid mislabelling generic docs; canonical-path files
+  (pass 1) skip the gate, since a `.claude/agents/` file with no tools/model
+  still inherits the parent's grants. Each emitted `SubagentDef` captures the
+  security-relevant frontmatter: `tools` (verbatim) + `ToolGrants` (parsed via
+  the permission grammar — bare, parametered `Bash(...)`, or `mcp__server__tool`
+  forms), `disallowedTools`, `permissionMode` (incl. `bypassPermissions`),
+  `mcpServers`, `skills`, `isolation`, and `HasHooks` (true only when `hooks:`
+  is a non-empty mapping). Files without frontmatter, with malformed YAML, or
+  with no `name` are skipped silently. The `tools:` field accepts both the
+  comma/space-separated scalar form and the YAML-list form.
+- **DiscoverSkills** (`skills.go`) — emits one `SkillDef` per `SKILL.md`
+  (identified by basename at any depth: `.claude/skills/<name>/SKILL.md`,
+  plugin `skills/`, nested monorepo skills). Captures `name`, `description`,
+  `allowed-tools` (space-separated or YAML-list, parsed into `ToolGrants`),
+  `argument-hint`, and `disable-model-invocation`. No frontmatter or no `name`
+  → skipped.
+- **DiscoverSlashCommands** (`slash_commands.go`) — emits one
+  `SlashCommandDef` per `ComponentSlashCommand` (`.claude/commands/*.md`). The
+  command name is the file basename without extension (Claude Code derives the
+  command from the path, not frontmatter). Frontmatter (`description`,
+  `allowed-tools`, `model`, `argument-hint`, `disable-model-invocation`) is
+  parsed when present; a command **without** frontmatter is still emitted (its
+  body is the prompt — only name + location populated).
+- **DiscoverPlugins** (`plugins.go`) — JSON-parses `.claude-plugin/plugin.json`
+  and `marketplace.json` into `PluginManifest` records. A file with a non-empty
+  `plugins[]` array is a `marketplace` (its entries carry `name` + `source`
+  dir); otherwise a plain `plugin`. Malformed JSON is skipped. (The recon walk
+  descends into `.claude-plugin/` — it is whitelisted alongside `.claude/`
+  against the dot-prefixed-dir skip.)
 - **DiscoverClaudeSettings** (`claude_settings.go`) — JSON-parses every
   `.claude/settings.json` (and `settings.local.json`) component into a typed
   `ClaudeSettings`. The `permissions` block's allow/deny/ask lists are
@@ -274,7 +304,9 @@ tools. Component kinds:
 | `claude_md`           | `CLAUDE.md` / `claude.md` at any depth                         |
 | `claude_settings`     | `.claude/settings.json`, `.claude/settings.local.json`         |
 | `subagent`            | `.claude/agents/*.md` at any path depth                        |
+| `skill`               | `SKILL.md` at any depth (`.claude/skills/`, plugin `skills/`, nested) |
 | `slash_command`       | `.claude/commands/*.md`                                        |
+| `plugin_manifest`     | `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json` |
 | `hook_script`         | `hooks/*.{py,ts,js,jsx,mjs}`                                   |
 | `sandbox_policy`      | `openshell/*.yaml` / `openshell/*.yml`                         |
 | `system_prompt`       | `prompts/*.md`, `system_prompt.md`, `system_prompt.txt` (root) |
@@ -287,8 +319,10 @@ configs / prompts).
 
 **Directory skip rules.** Skips `.git`, `.venv`, `venv`, `node_modules`,
 `__pycache__`, `dist`, `build`, `.tox`, `.mypy_cache`, `.pytest_cache`, and
-any other dot-prefixed directory — **except `.claude/`**, which is a
-deliberately-included agent-config directory.
+any other dot-prefixed directory — **except `.claude/` and `.claude-plugin/`**,
+both deliberately-included agent-config directories (`.claude/` holds
+agents/skills/commands/settings; `.claude-plugin/` holds plugin/marketplace
+manifests). See `shouldSkipDir` in `normalizer.go`.
 
 Manifest fields are emitted as JSON in `ScanResult.manifest` for CI consumers;
 the Go pipeline does not currently branch on them.
@@ -582,12 +616,22 @@ RepoInventory {
     HostedTools        []HostedToolDef
     MCPServers         []MCPServerDef
     Subagents          []SubagentDef
+    Skills             []SkillDef
+    SlashCommands      []SlashCommandDef
+    PluginManifests    []PluginManifest
     ClaudeSettings     []ClaudeSettings
-    SDKsDetected        []SDK     // observed in code (drives the policy-selection step)
+    SDKsDetected        []SDK     // observed in code, PLUS claude_agent_sdk when any markdown subagent is present (drives the policy-selection step)
     HasShellInvocations bool      // any Python function calling subprocess.* / os.system / os.popen ("openshell" risk surface, not an SDK)
     Manifest            ScanManifest
     UsesDefaultTracing  bool
 }
+
+// deriveSDKsDetected (internal/scanner/scanner.go) folds markdown subagent
+// presence into SDKsDetected: a repo that ships .claude/agents/*.md (or a flat
+// collection) with NO Claude SDK code still reports SDKClaudeAgentSDK, so
+// rules.LoadFor loads the claude_sdk pack and subagent-scope rules (CSDK-110)
+// fire. Without this, a pure-markdown subagent repo would scan as a false
+// "clean" — no SDK in code meant no pack loaded.
 
 // Location is embedded anonymously into every inventory entity so JSON
 // stays flat (entity.file_path, entity.line, entity.end_line). Line and
@@ -678,12 +722,52 @@ MCPServerRef {
 }
 
 SubagentDef {
-    Name        string
-    Description string
-    Tools       []string   // parsed from frontmatter tools: field
-    Model       string
-    Location               // file_path = path to .md; Line = opening "---"; EndLine = closing "---"
+    Name            string
+    Description     string
+    Tools           []string    // verbatim tokens from frontmatter tools: field (incl. mcp__ refs)
+    ToolGrants      []ToolGrant  // Tools parsed via the permission grammar
+    DisallowedTools []string
+    Model           string
+    PermissionMode  string      // "default" | "acceptEdits" | "bypassPermissions" | "plan" | ...
+    MCPServers      []string
+    Skills          []string
+    HasHooks        bool        // true only when hooks: is a non-empty mapping
+    Isolation       string      // "" | "worktree"
+    Location                    // file_path = path to .md; Line = opening "---"; EndLine = closing "---"
 }
+
+// ToolGrant is one parsed entry from a markdown agent's tools: / allowed-tools:
+// list, reusing the settings.json permission grammar (see ParsePermissionRule).
+ToolGrant { Tool, Pattern, Raw string }
+
+SkillDef {
+    Name                   string
+    Description            string
+    AllowedTools           []string    // verbatim (space-separated or YAML-list)
+    ToolGrants             []ToolGrant
+    ArgumentHint           string
+    DisableModelInvocation bool
+    Location                           // file_path = SKILL.md path
+}
+
+SlashCommandDef {
+    Name                   string      // file basename without .md (Claude Code derives the command from the path)
+    Description            string
+    AllowedTools           []string
+    ToolGrants             []ToolGrant
+    Model                  string
+    ArgumentHint           string
+    DisableModelInvocation bool
+    Location                           // file_path = command .md path
+}
+
+PluginManifest {
+    Kind     string         // "plugin" | "marketplace"
+    Name     string
+    Plugins  []PluginEntry  // catalog entries (marketplace.json); empty for a plain plugin.json
+    Location                // file_path = the .json path
+}
+PluginEntry { Name, Source string }
 
 PermissionRule {
     Tool    string  // "Bash" | "Read" | "Edit" | "WebFetch" | "MCP" | "Agent" | ...
@@ -720,6 +804,9 @@ ScanResult {
     HostedTools        []HostedToolDef
     MCPServers         []MCPServerDef
     Subagents          []SubagentDef
+    Skills             []SkillDef
+    SlashCommands      []SlashCommandDef
+    PluginManifests    []PluginManifest
     ClaudeSettings     []ClaudeSettings
     Findings           []Finding
     Readiness          []ToolReadiness
@@ -807,7 +894,13 @@ internal/
 │   │                            ClaudePermissionMode, etc.).
 │   ├── claude_settings.go       .claude/settings.json parser (DiscoverClaudeSettings,
 │   │                            ParsePermissionRule).
-│   ├── subagents.go             .claude/agents/*.md frontmatter parser (DiscoverSubagents).
+│   ├── subagents.go             .claude/agents/*.md frontmatter parser + flat-collection
+│   │                            shape fallback (DiscoverSubagents, parseSubagentFile).
+│   ├── markdown_agents.go       Shared tool-grant parser (splitToolGrants, parseToolGrants)
+│   │                            reused by subagent/skill/command discovery.
+│   ├── skills.go                SKILL.md frontmatter parser (DiscoverSkills).
+│   ├── slash_commands.go        .claude/commands/*.md frontmatter parser (DiscoverSlashCommands).
+│   ├── plugins.go               .claude-plugin/{plugin,marketplace}.json parser (DiscoverPlugins).
 │   ├── hosted_tools.go          OpenAI hosted-tool class set (HostedToolClasses, 11 classes).
 │   ├── mcp_servers.go           OpenAI MCP server class set (MCPServerClasses, 3 transports)
 │   │                            + with-statement alias resolver.
@@ -1060,9 +1153,10 @@ Two invariants are load-bearing for the user-facing experience:
    honest about which rules were applied, not just which code was scanned.
 2. **Same inputs → byte-stable report.** Findings are sorted by
    `(RuleID, FilePath, Line)`; the inventory slices (`HostedTools`,
-   `MCPServers`, `Subagents`, `ClaudeSettings`) and `Components` (by
-   `(Kind, Path)`) are sorted before marshaling. The JSON output is therefore
-   diff-stable across runs.
+   `MCPServers`, `Subagents`, `Skills`, `SlashCommands`, `PluginManifests`,
+   `ClaudeSettings`) and `Components` (by `(Kind, Path)`) are sorted by
+   `FilePath` before marshaling. The JSON output is therefore diff-stable
+   across runs.
 
 This matters because CI consumers diff scan output. A non-deterministic scan
 means spurious diffs on every run, which trains users to ignore the diff
