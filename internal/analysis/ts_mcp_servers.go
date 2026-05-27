@@ -47,6 +47,7 @@ func discoverTSMCPServersInFile(pf ParsedFile) []models.MCPServerDef {
 				Location: models.Location{
 					FilePath: pf.RelPath,
 					Line:     int(n.StartPoint().Row) + 1,
+					EndLine:  int(n.EndPoint().Row) + 1,
 				},
 			})
 		case "query":
@@ -108,6 +109,7 @@ func extractMCPConfigsFromQuery(call *sitter.Node, pf ParsedFile) []models.MCPSe
 			Location: models.Location{
 				FilePath: pf.RelPath,
 				Line:     int(val.StartPoint().Row) + 1,
+				EndLine:  int(val.EndPoint().Row) + 1,
 			},
 			Kwargs: astutil.TSObjectKwargs(val, pf.Source),
 		})

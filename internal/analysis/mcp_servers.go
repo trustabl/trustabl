@@ -32,7 +32,7 @@ func MCPTransportFromClass(className string) string {
 // classifyMCPServerCall inspects an ExprCall item from an mcp_servers=[...]
 // list and returns an MCPServerDef + true if the callee names a known class.
 // Mirrors hosted_tools.classifyHostedToolCall.
-func classifyMCPServerCall(callItem models.Expr, filePath string, line int) (models.MCPServerDef, bool) {
+func classifyMCPServerCall(callItem models.Expr, filePath string) (models.MCPServerDef, bool) {
 	if callItem.Kind != models.ExprCall {
 		return models.MCPServerDef{}, false
 	}
@@ -51,7 +51,8 @@ func classifyMCPServerCall(callItem models.Expr, filePath string, line int) (mod
 		Language:  models.LanguagePython,
 		Location: models.Location{
 			FilePath: filePath,
-			Line:     line,
+			Line:     callItem.Line,
+			EndLine:  callItem.EndLine,
 		},
 	}, true
 }
@@ -134,6 +135,7 @@ func collectWithStatementMCPAliases(pf ParsedFile) map[string]models.MCPServerDe
 					Location: models.Location{
 						FilePath: pf.RelPath,
 						Line:     int(callNode.StartPoint().Row) + 1,
+						EndLine:  int(callNode.EndPoint().Row) + 1,
 					},
 				}
 			}

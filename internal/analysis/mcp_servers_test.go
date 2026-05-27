@@ -221,3 +221,94 @@ async def main():
 		t.Fatalf("expected exactly one MCPServerStdio (the open() with must be ignored), got %+v", inv.MCPServers)
 	}
 }
+
+// TestMCPServers_InlineMultiLine verifies that an inline MCPServerStdio(...)
+// call that spans multiple lines carries its OWN start line (not the agent's
+// line) and that EndLine > Line.
+//
+// Source line map (1-based):
+//
+//	1: (blank)
+//	2: from agents import Agent
+//	3: from agents.mcp import MCPServerStdio
+//	4: (blank)
+//	5: agent = Agent(
+//	6:     name="a",
+//	7:     mcp_servers=[
+//	8:         MCPServerStdio(
+//	9:             params={"command": "uvx"},
+//	10:         ),
+//	11:     ],
+//	12: )
+func TestMCPServers_InlineMultiLine(t *testing.T) {
+	src := `
+from agents import Agent
+from agents.mcp import MCPServerStdio
+
+agent = Agent(
+    name="a",
+    mcp_servers=[
+        MCPServerStdio(
+            params={"command": "uvx"},
+        ),
+    ],
+)
+`
+	pf := parsePyFile(t, "main.py", src)
+	inv := &models.RepoInventory{Agents: analysis.DiscoverAgents([]analysis.ParsedFile{pf})}
+	analysis.ResolveEdges(inv, []analysis.ParsedFile{pf})
+
+	if len(inv.MCPServers) != 1 {
+		t.Fatalf("expected 1 MCP server, got %d: %+v", len(inv.MCPServers), inv.MCPServers)
+	}
+	m := inv.MCPServers[0]
+	const wantLine = 8 // MCPServerStdio( is on line 8
+	if m.Line != wantLine {
+		t.Errorf("MCPServerDef.Line = %d, want %d (server's own line, not the agent's line 5)", m.Line, wantLine)
+	}
+	if m.EndLine <= m.Line {
+		t.Errorf("MCPServerDef.EndLine = %d, want > %d", m.EndLine, m.Line)
+	}
+}
+
+// TestMCPServers_WithAliasEndLine verifies that the MCPServerDef produced via
+// with-statement alias carries EndLine > Line.
+//
+// Source line map:
+//
+//	1: (blank)
+//	2: from agents import Agent
+//	3: from agents.mcp import MCPServerStdio
+//	4: (blank)
+//	5: async def main():
+//	6:     async with MCPServerStdio(
+//	7:         params={"command": "npx"},
+//	8:     ) as fs:
+//	9:         agent = Agent(name="a", mcp_servers=[fs])
+func TestMCPServers_WithAliasEndLine(t *testing.T) {
+	src := `
+from agents import Agent
+from agents.mcp import MCPServerStdio
+
+async def main():
+    async with MCPServerStdio(
+        params={"command": "npx"},
+    ) as fs:
+        agent = Agent(name="a", mcp_servers=[fs])
+`
+	pf := parsePyFile(t, "main.py", src)
+	inv := &models.RepoInventory{Agents: analysis.DiscoverAgents([]analysis.ParsedFile{pf})}
+	analysis.ResolveEdges(inv, []analysis.ParsedFile{pf})
+
+	if len(inv.MCPServers) != 1 {
+		t.Fatalf("expected 1 MCP server, got %d: %+v", len(inv.MCPServers), inv.MCPServers)
+	}
+	m := inv.MCPServers[0]
+	const wantLine = 6 // MCPServerStdio( is on line 6
+	if m.Line != wantLine {
+		t.Errorf("MCPServerDef.Line = %d, want %d (server's own line, not the agent's line 9)", m.Line, wantLine)
+	}
+	if m.EndLine <= m.Line {
+		t.Errorf("MCPServerDef.EndLine = %d, want > %d", m.EndLine, m.Line)
+	}
+}

@@ -139,17 +139,18 @@ func ResolveEdges(inv *models.RepoInventory, parsed []ParsedFile) {
 		mcpKwarg := agentKwarg(a, "mcp_servers")
 		if mcpKwarg != nil && mcpKwarg.Value != nil && mcpKwarg.Value.Kind == models.ExprList {
 			for _, item := range mcpKwarg.Value.List {
-				if m, ok := classifyMCPServerCall(item, a.FilePath, a.Line); ok {
+				if m, ok := classifyMCPServerCall(item, a.FilePath); ok {
 					inv.MCPServers = append(inv.MCPServers, m)
 					a.MCPServerRefs = append(a.MCPServerRefs, models.MCPServerRef{Class: m.Class})
 					continue
 				}
-				// Alias from `async with MCPServer*(...) as srv:`. The def is
-				// attributed to the AGENT's line (not the with-statement line)
-				// so the post-sort re-resolution loop — keyed on
-				// (agent.FilePath, agent.Line, Class) — matches it uniformly
-				// with inline servers. v1 simplification: one alias referenced
-				// by N agents yields N MCPServerDef entries, one per agent.
+				// Alias from `async with MCPServer*(...) as srv:`. The def now
+				// carries the MCP server's own definition line (the with-statement
+				// call line + end), taken from aliasDef.Location. The post-sort
+				// re-resolution loop is keyed on (FilePath, Class) with a
+				// consumed-by-index map, matching the same pattern used for
+				// HostedToolRef re-resolution. v1 simplification: one alias
+				// referenced by N agents yields N MCPServerDef entries, one per agent.
 				// TODO(v2): alias resolution is same-file only — an alias imported from
 				// another module is not resolved and falls through to External.
 				if item.Kind == models.ExprNameRef {
@@ -159,10 +160,7 @@ func ResolveEdges(inv *models.RepoInventory, parsed []ParsedFile) {
 							Transport: aliasDef.Transport,
 							SDK:       models.SDKOpenAIAgents,
 							Language:  models.LanguagePython,
-							Location: models.Location{
-								FilePath: a.FilePath,
-								Line:     a.Line,
-							},
+							Location:  aliasDef.Location,
 						})
 						a.MCPServerRefs = append(a.MCPServerRefs, models.MCPServerRef{Class: aliasDef.Class})
 						continue
@@ -249,9 +247,13 @@ func ResolveEdges(inv *models.RepoInventory, parsed []ParsedFile) {
 		}
 	}
 
-	// Re-resolve MCPServerRef pointers after sorting (same rationale as
-	// HostedToolRef re-resolution above — append + sort can invalidate
-	// the inline pointers).
+	// Re-resolve MCPServerRef pointers after sorting. The append-and-take-address
+	// pattern in the loop above leaves stale pointers when sort moves elements;
+	// also, append itself can realloc the backing array. For each agent, walk
+	// inv.MCPServers to find matches by (FilePath, Class), consuming each match
+	// at most once so duplicate classes in one agent (e.g.
+	// mcp_servers=[MCPServerStdio(...), MCPServerStdio(...)]) resolve to distinct
+	// entries.
 	for i := range inv.Agents {
 		a := &inv.Agents[i]
 		if len(a.MCPServerRefs) == 0 {
@@ -268,7 +270,7 @@ func ResolveEdges(inv *models.RepoInventory, parsed []ParsedFile) {
 					continue
 				}
 				m := &inv.MCPServers[k]
-				if m.FilePath == a.FilePath && m.Line == a.Line && m.Class == ref.Class {
+				if m.FilePath == a.FilePath && m.Class == ref.Class {
 					ref.Resolved = m
 					consumed[k] = true
 					break
