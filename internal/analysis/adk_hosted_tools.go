@@ -49,7 +49,8 @@ func IsADKHostedToolClass(className string) bool { return ADKHostedToolClasses[c
 // classifyADKHostedToolCall inspects an ExprCall item from an ADK agent's
 // tools=[...] list and returns a HostedToolDef + true if the callee names an
 // ADK built-in tool class.
-func classifyADKHostedToolCall(callItem models.Expr, filePath string, line int) (models.HostedToolDef, bool) {
+// Line and EndLine are read from callItem's own position, not the agent's line.
+func classifyADKHostedToolCall(callItem models.Expr, filePath string) (models.HostedToolDef, bool) {
 	if callItem.Kind != models.ExprCall {
 		return models.HostedToolDef{}, false
 	}
@@ -62,7 +63,8 @@ func classifyADKHostedToolCall(callItem models.Expr, filePath string, line int) 
 		SDK:   models.SDKGoogleADK,
 		Location: models.Location{
 			FilePath: filePath,
-			Line:     line,
+			Line:     callItem.Line,
+			EndLine:  callItem.EndLine,
 		},
 	}, true
 }

@@ -34,8 +34,8 @@ func TestIsADKHostedToolClass(t *testing.T) {
 }
 
 func TestClassifyADKHostedToolCall(t *testing.T) {
-	item := models.Expr{Kind: models.ExprCall, Text: "BashTool()"}
-	h, ok := classifyADKHostedToolCall(item, "main.py", 42)
+	item := models.Expr{Kind: models.ExprCall, Text: "BashTool()", Line: 5, EndLine: 5}
+	h, ok := classifyADKHostedToolCall(item, "main.py")
 	if !ok {
 		t.Fatal("classifyADKHostedToolCall: ok = false, want true")
 	}
@@ -45,12 +45,15 @@ func TestClassifyADKHostedToolCall(t *testing.T) {
 	if h.SDK != models.SDKGoogleADK {
 		t.Errorf("SDK: got %q, want google_adk", h.SDK)
 	}
-	if h.FilePath != "main.py" || h.Line != 42 {
-		t.Errorf("attribution: got %s:%d, want main.py:42", h.FilePath, h.Line)
+	if h.FilePath != "main.py" || h.Line != 5 {
+		t.Errorf("attribution: got %s:%d, want main.py:5", h.FilePath, h.Line)
+	}
+	if h.EndLine != 5 {
+		t.Errorf("EndLine: got %d, want 5", h.EndLine)
 	}
 
 	nonCall := models.Expr{Kind: models.ExprNameRef, Text: "BashTool"}
-	if _, ok := classifyADKHostedToolCall(nonCall, "main.py", 42); ok {
+	if _, ok := classifyADKHostedToolCall(nonCall, "main.py"); ok {
 		t.Error("non-call item: ok = true, want false")
 	}
 }

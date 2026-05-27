@@ -23,9 +23,11 @@ type KwargTree struct {
 
 // Expr is a typed wrapper around a parsed AST node.
 type Expr struct {
-	Kind ExprKind `json:"kind"`
-	Text string   `json:"text"`           // raw source text
-	List []Expr   `json:"list,omitempty"` // populated when Kind == ExprList
+	Kind    ExprKind `json:"kind"`
+	Text    string   `json:"text"`           // raw source text
+	List    []Expr   `json:"list,omitempty"` // populated when Kind == ExprList
+	Line    int      `json:"-"`              // 1-indexed start line; in-memory carrier, not serialized
+	EndLine int      `json:"-"`              // 1-indexed end line; in-memory carrier, not serialized
 }
 
 type ExprKind string

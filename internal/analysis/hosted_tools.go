@@ -29,7 +29,8 @@ func IsHostedToolClass(className string) bool { return HostedToolClasses[classNa
 
 // classifyHostedToolCall inspects an ExprCall item from a tools=[...] list
 // and returns a HostedToolDef + true if the callee names a hosted-tool class.
-func classifyHostedToolCall(callItem models.Expr, filePath string, line int) (models.HostedToolDef, bool) {
+// Line and EndLine are read from callItem's own position, not the agent's line.
+func classifyHostedToolCall(callItem models.Expr, filePath string) (models.HostedToolDef, bool) {
 	if callItem.Kind != models.ExprCall {
 		return models.HostedToolDef{}, false
 	}
@@ -42,7 +43,8 @@ func classifyHostedToolCall(callItem models.Expr, filePath string, line int) (mo
 		SDK:   models.SDKOpenAIAgents,
 		Location: models.Location{
 			FilePath: filePath,
-			Line:     line,
+			Line:     callItem.Line,
+			EndLine:  callItem.EndLine,
 		},
 	}, true
 }

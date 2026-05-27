@@ -91,9 +91,9 @@ func ResolveEdges(inv *models.RepoInventory, parsed []ParsedFile) {
 				)
 				switch a.SDK {
 				case models.SDKGoogleADK:
-					h, isHT = classifyADKHostedToolCall(item, a.FilePath, a.Line)
+					h, isHT = classifyADKHostedToolCall(item, a.FilePath)
 				default:
-					h, isHT = classifyHostedToolCall(item, a.FilePath, a.Line)
+					h, isHT = classifyHostedToolCall(item, a.FilePath)
 				}
 				if isHT {
 					inv.HostedTools = append(inv.HostedTools, h)
@@ -240,7 +240,7 @@ func ResolveEdges(inv *models.RepoInventory, parsed []ParsedFile) {
 					continue
 				}
 				h := &inv.HostedTools[k]
-				if h.FilePath == a.FilePath && h.Line == a.Line && h.Class == ref.Class {
+				if h.FilePath == a.FilePath && h.Class == ref.Class {
 					ref.Resolved = h
 					consumed[k] = true
 					break
@@ -406,6 +406,8 @@ func exprFromNode(n *sitter.Node, src []byte) *models.KwargTree {
 		return nil
 	}
 	e := &models.Expr{Text: astutil.NodeText(n, src)}
+	e.Line = int(n.StartPoint().Row) + 1
+	e.EndLine = int(n.EndPoint().Row) + 1
 	switch n.Type() {
 	case "string":
 		e.Kind = models.ExprLiteralString

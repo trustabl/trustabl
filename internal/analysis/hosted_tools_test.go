@@ -138,6 +138,69 @@ agent = Agent(name="x", tools=[WebSearchTool(), WebSearchTool()])
 	}
 }
 
+// TestHostedTools_LineAttribution_MultiLine asserts that HostedToolDef.Line
+// carries the tool call's OWN start line (not the enclosing agent's line) and
+// that EndLine is populated and reflects the closing line of a multi-line call.
+func TestHostedTools_LineAttribution_MultiLine(t *testing.T) {
+	src := `
+from agents import Agent, WebSearchTool
+
+agent = Agent(
+    name="researcher",
+    tools=[
+        WebSearchTool(
+            search_context_size="high",
+        ),
+    ],
+)
+`
+	// Line counts (1-indexed):
+	//  1: ""
+	//  2: "from agents import Agent, WebSearchTool"
+	//  3: ""
+	//  4: "agent = Agent("          <- agent start line
+	//  5: "    name=\"researcher\","
+	//  6: "    tools=["
+	//  7: "        WebSearchTool("  <- tool call start line
+	//  8: "            search_context_size=\"high\","
+	//  9: "        ),"              <- tool call end line
+	// 10: "    ],"
+	// 11: ")"
+	const wantLine    = 7
+	const wantEndLine = 9
+
+	pf := parsePyFile(t, "main.py", src)
+	inv := &models.RepoInventory{
+		Agents: analysis.DiscoverAgents([]analysis.ParsedFile{pf}),
+	}
+	analysis.ResolveEdges(inv, []analysis.ParsedFile{pf})
+
+	if len(inv.HostedTools) != 1 {
+		t.Fatalf("expected 1 hosted tool, got %d: %+v", len(inv.HostedTools), inv.HostedTools)
+	}
+	h := inv.HostedTools[0]
+
+	if h.Line != wantLine {
+		t.Errorf("HostedToolDef.Line = %d, want %d (tool's own line, not agent's line %d)",
+			h.Line, wantLine, inv.Agents[0].Line)
+	}
+	if h.EndLine < wantEndLine {
+		t.Errorf("HostedToolDef.EndLine = %d, want >= %d (multi-line call must have real EndLine)",
+			h.EndLine, wantEndLine)
+	}
+	if h.EndLine < h.Line {
+		t.Errorf("HostedToolDef.EndLine (%d) < Line (%d): invalid range", h.EndLine, h.Line)
+	}
+
+	// Ref must still resolve after the line-value change.
+	if len(inv.Agents[0].HostedToolRefs) != 1 {
+		t.Fatalf("expected 1 hosted tool ref on agent, got %d", len(inv.Agents[0].HostedToolRefs))
+	}
+	if ref := inv.Agents[0].HostedToolRefs[0]; ref.Resolved == nil {
+		t.Errorf("HostedToolRef.Resolved is nil after line attribution fix")
+	}
+}
+
 func TestHostedTools_AllKnownClasses_CrossReferencesMap(t *testing.T) {
 	expected := []string{
 		"WebSearchTool", "FileSearchTool", "ComputerTool", "HostedMCPTool",
