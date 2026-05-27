@@ -97,9 +97,10 @@ func ResolveEdges(inv *models.RepoInventory, parsed []ParsedFile) {
 				}
 				if isHT {
 					inv.HostedTools = append(inv.HostedTools, h)
-					ref := models.HostedToolRef{Class: h.Class}
-					ref.Resolved = &inv.HostedTools[len(inv.HostedTools)-1]
-					a.HostedToolRefs = append(a.HostedToolRefs, ref)
+					a.HostedToolRefs = append(a.HostedToolRefs, models.HostedToolRef{
+						Class:    h.Class,
+						DefIndex: len(inv.HostedTools) - 1,
+					})
 					continue
 				}
 				// ADK wraps user functions as FunctionTool(symbol); the
@@ -141,7 +142,10 @@ func ResolveEdges(inv *models.RepoInventory, parsed []ParsedFile) {
 			for _, item := range mcpKwarg.Value.List {
 				if m, ok := classifyMCPServerCall(item, a.FilePath); ok {
 					inv.MCPServers = append(inv.MCPServers, m)
-					a.MCPServerRefs = append(a.MCPServerRefs, models.MCPServerRef{Class: m.Class})
+					a.MCPServerRefs = append(a.MCPServerRefs, models.MCPServerRef{
+						Class:    m.Class,
+						DefIndex: len(inv.MCPServers) - 1,
+					})
 					continue
 				}
 				// Alias from `async with MCPServer*(...) as srv:`. The def now
@@ -162,13 +166,17 @@ func ResolveEdges(inv *models.RepoInventory, parsed []ParsedFile) {
 							Language:  models.LanguagePython,
 							Location:  aliasDef.Location,
 						})
-						a.MCPServerRefs = append(a.MCPServerRefs, models.MCPServerRef{Class: aliasDef.Class})
+						a.MCPServerRefs = append(a.MCPServerRefs, models.MCPServerRef{
+							Class:    aliasDef.Class,
+							DefIndex: len(inv.MCPServers) - 1,
+						})
 						continue
 					}
 				}
 				a.MCPServerRefs = append(a.MCPServerRefs, models.MCPServerRef{
 					Class:    item.Text,
 					External: true,
+					DefIndex: -1,
 				})
 			}
 		} else if mcpKwarg != nil {
@@ -216,66 +224,30 @@ func ResolveEdges(inv *models.RepoInventory, parsed []ParsedFile) {
 		resolveGuardKwarg(a, "output_guardrails", &a.OutputGuards, guardsByFileSym[a.FilePath])
 	}
 
-	sortHostedTools(inv.HostedTools)
-	sortMCPServers(inv.MCPServers)
+	hostedRemap := sortHostedTools(inv.HostedTools)
+	mcpRemap := sortMCPServers(inv.MCPServers)
 
-	// Re-resolve HostedToolRef pointers after sorting. The append-and-take-address
-	// pattern in the loop above leaves stale pointers when sort moves elements;
-	// also, append itself can realloc the backing array. For each agent, walk
-	// inv.HostedTools to find matches by (FilePath, Class), consuming each
-	// match at most once so duplicate classes in the same agent (e.g.
-	// tools=[WebSearchTool(), WebSearchTool()]) resolve to distinct entries.
+	// Re-point ref.Resolved after sorting. Each ref recorded the pre-sort index
+	// of its def at append time (DefIndex); the sort permutation maps it to the
+	// post-sort slot. DefIndex < 0 means the ref is external or TS (TS MCP ref
+	// resolution is out of scope for SP1) — left unresolved. This index-based
+	// remap is unambiguous even when two agents in one file share a class or an
+	// MCP alias (the content-matching it replaces was not).
 	for i := range inv.Agents {
 		a := &inv.Agents[i]
-		if len(a.HostedToolRefs) == 0 {
-			continue
-		}
-		consumed := make(map[int]bool, len(a.HostedToolRefs))
 		for j := range a.HostedToolRefs {
 			ref := &a.HostedToolRefs[j]
-			for k := range inv.HostedTools {
-				if consumed[k] {
-					continue
-				}
-				h := &inv.HostedTools[k]
-				if h.FilePath == a.FilePath && h.Class == ref.Class {
-					ref.Resolved = h
-					consumed[k] = true
-					break
-				}
-			}
-		}
-	}
-
-	// Re-resolve MCPServerRef pointers after sorting. The append-and-take-address
-	// pattern in the loop above leaves stale pointers when sort moves elements;
-	// also, append itself can realloc the backing array. For each agent, walk
-	// inv.MCPServers to find matches by (FilePath, Class), consuming each match
-	// at most once so duplicate classes in one agent (e.g.
-	// mcp_servers=[MCPServerStdio(...), MCPServerStdio(...)]) resolve to distinct
-	// entries.
-	for i := range inv.Agents {
-		a := &inv.Agents[i]
-		if len(a.MCPServerRefs) == 0 {
-			continue
-		}
-		consumed := make(map[int]bool, len(a.MCPServerRefs))
-		for j := range a.MCPServerRefs {
-			ref := &a.MCPServerRefs[j]
-			if ref.External {
+			if ref.DefIndex < 0 || ref.DefIndex >= len(hostedRemap) {
 				continue
 			}
-			for k := range inv.MCPServers {
-				if consumed[k] {
-					continue
-				}
-				m := &inv.MCPServers[k]
-				if m.FilePath == a.FilePath && m.Class == ref.Class {
-					ref.Resolved = m
-					consumed[k] = true
-					break
-				}
+			ref.Resolved = &inv.HostedTools[hostedRemap[ref.DefIndex]]
+		}
+		for j := range a.MCPServerRefs {
+			ref := &a.MCPServerRefs[j]
+			if ref.External || ref.DefIndex < 0 || ref.DefIndex >= len(mcpRemap) {
+				continue
 			}
+			ref.Resolved = &inv.MCPServers[mcpRemap[ref.DefIndex]]
 		}
 	}
 }

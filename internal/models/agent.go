@@ -112,6 +112,7 @@ type HostedToolDef struct {
 type HostedToolRef struct {
 	Class    string         `json:"class"`
 	Resolved *HostedToolDef `json:"-"`
+	DefIndex int            `json:"-"` // pre-sort index into inv.HostedTools; remapped after sort. -1 = not resolvable via inventory remap.
 }
 
 // MCPServerDef is one discovered MCP server. Source of truth for class
@@ -136,6 +137,7 @@ type MCPServerRef struct {
 	Class    string        `json:"class"`
 	Resolved *MCPServerDef `json:"-"`
 	External bool          `json:"external"`
+	DefIndex int           `json:"-"` // pre-sort index into inv.MCPServers; remapped after sort. -1 = external / TS / not resolvable.
 }
 
 // SubagentDef is one parsed `.claude/agents/*.md` definition. The tools field

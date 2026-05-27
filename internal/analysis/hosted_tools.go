@@ -58,15 +58,33 @@ func calleeName(callText string) string {
 	return callText
 }
 
-// sortHostedTools sorts by (FilePath, Line, Class) for deterministic output.
-func sortHostedTools(hs []models.HostedToolDef) {
-	sort.Slice(hs, func(i, j int) bool {
-		if hs[i].FilePath != hs[j].FilePath {
-			return hs[i].FilePath < hs[j].FilePath
+// sortHostedTools sorts hs in-place by (FilePath, Line, Class) and returns a
+// permutation slice where oldToNew[oldIndex] = newIndex. The caller uses this
+// to remap pre-sort DefIndex values on HostedToolRef after the sort. Uses
+// SliceStable so equal elements keep a deterministic relative order.
+func sortHostedTools(hs []models.HostedToolDef) []int {
+	type indexed struct {
+		def models.HostedToolDef
+		old int
+	}
+	tmp := make([]indexed, len(hs))
+	for i, h := range hs {
+		tmp[i] = indexed{def: h, old: i}
+	}
+	sort.SliceStable(tmp, func(i, j int) bool {
+		a, b := tmp[i].def, tmp[j].def
+		if a.FilePath != b.FilePath {
+			return a.FilePath < b.FilePath
 		}
-		if hs[i].Line != hs[j].Line {
-			return hs[i].Line < hs[j].Line
+		if a.Line != b.Line {
+			return a.Line < b.Line
 		}
-		return hs[i].Class < hs[j].Class
+		return a.Class < b.Class
 	})
+	oldToNew := make([]int, len(hs))
+	for newIdx, it := range tmp {
+		hs[newIdx] = it.def
+		oldToNew[it.old] = newIdx
+	}
+	return oldToNew
 }

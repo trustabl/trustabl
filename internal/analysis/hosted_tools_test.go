@@ -201,6 +201,76 @@ agent = Agent(
 	}
 }
 
+// TestHostedTools_TwoAgentsSameFileSameClass verifies that when two agents in
+// the same file each reference the same hosted-tool class (e.g. WebSearchTool),
+// both refs resolve to non-nil, DISTINCT pointers, and each pointer's Line
+// matches the tool call on that agent's own line (correct attribution, not
+// swapped).
+func TestHostedTools_TwoAgentsSameFileSameClass(t *testing.T) {
+	src := `
+from agents import Agent, WebSearchTool
+
+a = Agent(name="a", tools=[WebSearchTool()])
+b = Agent(name="b", tools=[WebSearchTool()])
+`
+	// Line counts (1-indexed):
+	//  1: (blank)
+	//  2: from agents import Agent, WebSearchTool
+	//  3: (blank)
+	//  4: a = Agent(name="a", tools=[WebSearchTool()])   <- WebSearchTool for agent a on line 4
+	//  5: b = Agent(name="b", tools=[WebSearchTool()])   <- WebSearchTool for agent b on line 5
+	const lineA = 4
+	const lineB = 5
+
+	pf := parsePyFile(t, "main.py", src)
+	inv := &models.RepoInventory{Agents: analysis.DiscoverAgents([]analysis.ParsedFile{pf})}
+	analysis.ResolveEdges(inv, []analysis.ParsedFile{pf})
+
+	if len(inv.HostedTools) != 2 {
+		t.Fatalf("expected 2 hosted tools (one per agent), got %d: %+v", len(inv.HostedTools), inv.HostedTools)
+	}
+	if len(inv.Agents) != 2 {
+		t.Fatalf("expected 2 agents, got %d", len(inv.Agents))
+	}
+
+	// Find agent a and agent b by name.
+	var agentA, agentB *models.AgentDef
+	for i := range inv.Agents {
+		switch inv.Agents[i].Name {
+		case "a":
+			agentA = &inv.Agents[i]
+		case "b":
+			agentB = &inv.Agents[i]
+		}
+	}
+	if agentA == nil || agentB == nil {
+		t.Fatalf("could not find agents a and b in %+v", inv.Agents)
+	}
+
+	if len(agentA.HostedToolRefs) != 1 || len(agentB.HostedToolRefs) != 1 {
+		t.Fatalf("expected 1 ref per agent; a=%d b=%d", len(agentA.HostedToolRefs), len(agentB.HostedToolRefs))
+	}
+
+	refA := agentA.HostedToolRefs[0]
+	refB := agentB.HostedToolRefs[0]
+
+	if refA.Resolved == nil {
+		t.Fatalf("agent a: HostedToolRef.Resolved is nil")
+	}
+	if refB.Resolved == nil {
+		t.Fatalf("agent b: HostedToolRef.Resolved is nil")
+	}
+	if refA.Resolved == refB.Resolved {
+		t.Errorf("agents a and b share the same HostedToolDef pointer %p; expected distinct entries", refA.Resolved)
+	}
+	if refA.Resolved.Line != lineA {
+		t.Errorf("agent a: Resolved.Line = %d, want %d (tool call on agent a's line)", refA.Resolved.Line, lineA)
+	}
+	if refB.Resolved.Line != lineB {
+		t.Errorf("agent b: Resolved.Line = %d, want %d (tool call on agent b's line)", refB.Resolved.Line, lineB)
+	}
+}
+
 func TestHostedTools_AllKnownClasses_CrossReferencesMap(t *testing.T) {
 	expected := []string{
 		"WebSearchTool", "FileSearchTool", "ComputerTool", "HostedMCPTool",

@@ -168,6 +168,17 @@ async def main():
 			t.Errorf("agent %q: expected one resolved ref, got %+v", a.Name, a.MCPServerRefs)
 		}
 	}
+	// Pointer-distinctness: the two agents must resolve to DISTINCT MCPServerDef
+	// entries even though they reference the same alias and class. The
+	// content-matching re-resolution (pre-fix) fails here because both agents'
+	// fresh consumed maps both grab inv.MCPServers[0].
+	if len(inv.Agents) == 2 {
+		p0 := inv.Agents[0].MCPServerRefs[0].Resolved
+		p1 := inv.Agents[1].MCPServerRefs[0].Resolved
+		if p0 != nil && p1 != nil && p0 == p1 {
+			t.Errorf("shared-alias: both agents' MCPServerRef.Resolved point to the same entry %p; expected distinct pointers", p0)
+		}
+	}
 }
 
 func TestMCPServers_MultiItemWith(t *testing.T) {

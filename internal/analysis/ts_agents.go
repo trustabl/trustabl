@@ -368,9 +368,9 @@ func extractTSMCPServerRefs(options *sitter.Node, pf ParsedFile) []models.MCPSer
 			if class == "" {
 				continue
 			}
-			refs = append(refs, models.MCPServerRef{Class: class})
+			refs = append(refs, models.MCPServerRef{Class: class, DefIndex: -1})
 		case "identifier":
-			refs = append(refs, models.MCPServerRef{Class: "createSdkMcpServer"})
+			refs = append(refs, models.MCPServerRef{Class: "createSdkMcpServer", DefIndex: -1})
 		}
 	}
 	return refs

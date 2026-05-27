@@ -57,16 +57,35 @@ func classifyMCPServerCall(callItem models.Expr, filePath string) (models.MCPSer
 	}, true
 }
 
-func sortMCPServers(ms []models.MCPServerDef) {
-	sort.Slice(ms, func(i, j int) bool {
-		if ms[i].FilePath != ms[j].FilePath {
-			return ms[i].FilePath < ms[j].FilePath
+// sortMCPServers sorts ms in-place by (FilePath, Line, Class) and returns a
+// permutation slice where oldToNew[oldIndex] = newIndex. The caller uses this
+// to remap pre-sort DefIndex values on MCPServerRef after the sort. Uses
+// SliceStable so equal elements keep a deterministic relative order.
+func sortMCPServers(ms []models.MCPServerDef) []int {
+	type indexed struct {
+		def models.MCPServerDef
+		old int
+	}
+	tmp := make([]indexed, len(ms))
+	for i, m := range ms {
+		tmp[i] = indexed{def: m, old: i}
+	}
+	sort.SliceStable(tmp, func(i, j int) bool {
+		a, b := tmp[i].def, tmp[j].def
+		if a.FilePath != b.FilePath {
+			return a.FilePath < b.FilePath
 		}
-		if ms[i].Line != ms[j].Line {
-			return ms[i].Line < ms[j].Line
+		if a.Line != b.Line {
+			return a.Line < b.Line
 		}
-		return ms[i].Class < ms[j].Class
+		return a.Class < b.Class
 	})
+	oldToNew := make([]int, len(ms))
+	for newIdx, it := range tmp {
+		ms[newIdx] = it.def
+		oldToNew[it.old] = newIdx
+	}
+	return oldToNew
 }
 
 // collectWithStatementMCPAliases walks a parsed file and returns a map from
