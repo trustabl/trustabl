@@ -275,6 +275,28 @@ func TestSubagents_FlatCollectionByShape(t *testing.T) {
 	}
 }
 
+func TestSubagents_FallbackExcludesSkillAndCommand(t *testing.T) {
+	dir := t.TempDir()
+	// Both look subagent-shaped (name + tools) but belong to other artifact
+	// kinds; the fallback must NOT claim them.
+	writeFixture(t, dir, "skills/deploy/SKILL.md", "---\nname: deploy\ntools: Bash\n---\n")
+	writeFixture(t, dir, ".claude/commands/review.md", "---\nname: review\ntools: Read, Bash\n---\n")
+	// A genuine flat-collection subagent that SHOULD be picked up.
+	writeFixture(t, dir, "agents/api.md", "---\nname: api\ntools: Read\n---\n")
+	manifest := models.ScanManifest{
+		RepoRoot: dir,
+		MarkdownFiles: []string{
+			"skills/deploy/SKILL.md",
+			".claude/commands/review.md",
+			"agents/api.md",
+		},
+	}
+	got := analysis.DiscoverSubagents(manifest)
+	if len(got) != 1 || got[0].Name != "api" {
+		t.Fatalf("fallback should exclude SKILL.md and .claude/commands/; got %+v", got)
+	}
+}
+
 func TestSubagents_NoDoubleCountCanonicalAndMarkdown(t *testing.T) {
 	dir := t.TempDir()
 	writeFixture(t, dir, ".claude/agents/a.md", "---\nname: a\ndescription: D\ntools: Read\n---\n")
