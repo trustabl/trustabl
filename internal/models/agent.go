@@ -161,6 +161,18 @@ type PermissionRule struct {
 	Line    int    `json:"line"` // 1-indexed line of this rule's string literal in settings.json
 }
 
+// ToolGrant is one parsed entry from a markdown agent's `tools:` or
+// `allowed-tools:` frontmatter list. It reuses the settings.json permission
+// grammar (see ParsePermissionRule): a bare tool ("Read"), a parametered tool
+// ("Bash(npm run *)", "Agent(worker, researcher)"), or an MCP tool reference
+// ("mcp__server__tool", parsed as Tool="MCP"). Raw preserves the original
+// token verbatim for attribution.
+type ToolGrant struct {
+	Tool    string `json:"tool"`
+	Pattern string `json:"pattern,omitempty"`
+	Raw     string `json:"raw"`
+}
+
 // ClaudePermissions is the parsed permissions block.
 type ClaudePermissions struct {
 	Allow []PermissionRule `json:"allow,omitempty"`
