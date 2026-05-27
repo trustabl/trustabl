@@ -117,6 +117,8 @@ const (
 	ComponentSystemPrompt          ComponentKind = "system_prompt"
 	ComponentDependencyManifest    ComponentKind = "dependency_manifest"
 	ComponentClaudeAgentDefinition ComponentKind = "claude_agent_definition" // Python file using AgentDefinition
+	ComponentSkill                 ComponentKind = "skill"
+	ComponentPluginManifest        ComponentKind = "plugin_manifest"
 )
 
 // AgentComponent is a non-tool agent-related artifact discovered during

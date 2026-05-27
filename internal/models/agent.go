@@ -160,6 +160,20 @@ type SubagentDef struct {
 	Location                    // file_path / line / end_line (flat in JSON via anonymous embed)
 }
 
+// SkillDef is one parsed Claude Code skill (a SKILL.md file). allowed-tools may
+// be space-separated or a YAML list; AllowedTools keeps the verbatim tokens and
+// ToolGrants the parsed grammar. DisableModelInvocation mirrors the frontmatter
+// flag (manual-only skills).
+type SkillDef struct {
+	Name                   string      `json:"name"`
+	Description            string      `json:"description,omitempty"`
+	AllowedTools           []string    `json:"allowed_tools,omitempty"`
+	ToolGrants             []ToolGrant `json:"tool_grants,omitempty"`
+	ArgumentHint           string      `json:"argument_hint,omitempty"`
+	DisableModelInvocation bool        `json:"disable_model_invocation,omitempty"`
+	Location                           // file_path = SKILL.md path
+}
+
 // PermissionRule is one parsed entry from .claude/settings.json permissions
 // lists. Raw preserves the original string for finding attribution; Tool and
 // Pattern carry the parsed grammar.
