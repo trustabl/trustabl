@@ -242,18 +242,35 @@ For each language recon cleared, do the AST work and produce a `RepoInventory`:
   `argument-hint`, and `disable-model-invocation`. No frontmatter or no `name`
   → skipped.
 - **DiscoverSlashCommands** (`slash_commands.go`) — emits one
-  `SlashCommandDef` per `ComponentSlashCommand` (`.claude/commands/*.md`). The
-  command name is the file basename without extension (Claude Code derives the
-  command from the path, not frontmatter). Frontmatter (`description`,
-  `allowed-tools`, `model`, `argument-hint`, `disable-model-invocation`) is
-  parsed when present; a command **without** frontmatter is still emitted (its
-  body is the prompt — only name + location populated).
+  `SlashCommandDef` per `ComponentSlashCommand` component. Recon tags those
+  at two path shapes: the canonical `.claude/commands/*.md` (any depth) AND
+  `<plugin-root>/commands/*.md` whenever `<plugin-root>` has a sibling
+  `.claude-plugin/plugin.json` (the layout used by plugin-distribution repos
+  such as `wshobson/agents`). The candidate-plugin-root set is derived once
+  in `discoverComponents` via `pluginRootSet`; `isPluginSlashCommand` gates
+  on it so a `commands/` directory without a sibling plugin manifest is NOT
+  swept up. The command name is the file basename without extension (Claude
+  Code derives the command from the path, not frontmatter). Frontmatter
+  (`description`, `allowed-tools`, `model`, `argument-hint`,
+  `disable-model-invocation`) is parsed when present; a command **without**
+  frontmatter is still emitted (its body is the prompt — only name + location
+  populated).
 - **DiscoverPlugins** (`plugins.go`) — JSON-parses `.claude-plugin/plugin.json`
   and `marketplace.json` into `PluginManifest` records. A file with a non-empty
-  `plugins[]` array is a `marketplace` (its entries carry `name` + `source`
-  dir); otherwise a plain `plugin`. Malformed JSON is skipped. (The recon walk
-  descends into `.claude-plugin/` — it is whitelisted alongside `.claude/`
-  against the dot-prefixed-dir skip.)
+  `plugins[]` array is a `marketplace` (its entries carry `name` + `source`);
+  otherwise a plain `plugin`. Each plugin entry's `source` field is captured
+  as `json.RawMessage` because real-world marketplaces use *both* the string
+  form (`"./local-path"`) and an object form
+  (`{"source":"git-subdir","url":"…","path":"…"}` for external git refs).
+  `normalizePluginSource` collapses each value into a single human-readable
+  string preserved on `PluginEntry.Source`: a plain string stays as-is; a
+  recognized object becomes `<source>:<url>#<path>` (so the trust category
+  survives the round-trip); any other shape falls back to raw JSON so nothing
+  is silently dropped. A typed `string` field here previously failed
+  `json.Unmarshal` on the object form and silently dropped the entire
+  manifest. Malformed JSON is still skipped silently. (The recon walk descends
+  into `.claude-plugin/` — it is whitelisted alongside `.claude/` against the
+  dot-prefixed-dir skip.)
 - **DiscoverClaudeSettings** (`claude_settings.go`) — JSON-parses every
   `.claude/settings.json` (and `settings.local.json`) component into a typed
   `ClaudeSettings`. The `permissions` block's allow/deny/ask lists are
@@ -305,7 +322,7 @@ tools. Component kinds:
 | `claude_settings`     | `.claude/settings.json`, `.claude/settings.local.json`         |
 | `subagent`            | `.claude/agents/*.md` at any path depth                        |
 | `skill`               | `SKILL.md` at any depth (`.claude/skills/`, plugin `skills/`, nested) |
-| `slash_command`       | `.claude/commands/*.md`                                        |
+| `slash_command`       | `.claude/commands/*.md`, plus `<plugin-root>/commands/*.md` when `<plugin-root>` has a sibling `.claude-plugin/plugin.json` |
 | `plugin_manifest`     | `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json` |
 | `hook_script`         | `hooks/*.{py,ts,js,jsx,mjs}`                                   |
 | `sandbox_policy`      | `openshell/*.yaml` / `openshell/*.yml`                         |
@@ -501,7 +518,16 @@ anything into the scanned repo.
 - `Renderer.Render` ([diff.go](internal/review/diff.go)) — produces the human
   scan summary printed to stdout for `--format human`: per-tool readiness, the
   overall score, the discovered inventory, and the findings list. Color via
-  lipgloss, disabled with `--no-color`.
+  lipgloss, disabled with `--no-color`. When `ScanResult.HasShellInvocations`
+  is true the summary prints a `Risk surfaces: openshell` block: the count of
+  shell-invoking functions, the first three file:line locations
+  (deterministically sorted), a `why:` line stating the threat model
+  (prompt-injected agent → arbitrary commands), and a `fix:` line with
+  concrete remediations (sandbox, allowlist, drop `shell=True`, keep shell
+  logic out of agent-callable code). The renderer deliberately does NOT
+  claim an audit happened — no openshell rule pack ships today (OSH-* moved
+  to a closed-source project), and the renderer has no signal for "was an
+  openshell rule loaded."
 - `--format json` marshals the `ScanResult` directly (in `cmd/trustabl`), for
   CI consumers.
 
@@ -767,6 +793,11 @@ PluginManifest {
     Plugins  []PluginEntry  // catalog entries (marketplace.json); empty for a plain plugin.json
     Location                // file_path = the .json path
 }
+// PluginEntry.Source is a normalized human-readable string. A plain string
+// source in the JSON ("./local-path") survives verbatim; a recognized object
+// source ({"source":"git-subdir","url":"…","path":"…"}) is formatted as
+// "<source>:<url>#<path>"; any unrecognized object shape falls back to its
+// raw JSON. See normalizePluginSource in internal/analysis/plugins.go.
 PluginEntry { Name, Source string }
 
 PermissionRule {
@@ -846,7 +877,9 @@ Discipline rules:
   set `EndLine == Line` — that is a valid state, not a placeholder. The
   contract is `EndLine >= Line >= 1` for any populated entity; `EndLine == 0`
   is legacy/uninitialized and the human renderer collapses such records to
-  `file:N` form.
+  `file:N` form. Rule detectors that emit a `Finding` MUST propagate the
+  entity's `Line` to `Finding.Line` so jump-to-source works from a finding —
+  this is currently done for all four scopes (tool, agent, subagent, repo).
 - **No source-text storage.** The inventory is a structured *index of
   locations*; consumers fetch source by reading the file at
   `(FilePath, Line, EndLine)`. `RawSource` is deliberately **not** included
@@ -899,7 +932,8 @@ internal/
 │   ├── markdown_agents.go       Shared tool-grant parser (splitToolGrants, parseToolGrants)
 │   │                            reused by subagent/skill/command discovery.
 │   ├── skills.go                SKILL.md frontmatter parser (DiscoverSkills).
-│   ├── slash_commands.go        .claude/commands/*.md frontmatter parser (DiscoverSlashCommands).
+│   ├── slash_commands.go        .claude/commands/*.md AND <plugin-root>/commands/*.md
+│   │                            frontmatter parser (DiscoverSlashCommands).
 │   ├── plugins.go               .claude-plugin/{plugin,marketplace}.json parser (DiscoverPlugins).
 │   ├── hosted_tools.go          OpenAI hosted-tool class set (HostedToolClasses, 11 classes).
 │   ├── mcp_servers.go           OpenAI MCP server class set (MCPServerClasses, 3 transports)

@@ -43,8 +43,8 @@ Discovery sources: `internal/analysis/discovery.go`, `agents.go`, `subagents.go`
 | Agents | `AgentDefinition(...)` constructor calls. Captures every kwarg into a typed `KwargTree`: `name`, `description`, `prompt`, `tools`, `disallowedTools`, `permissionMode`, `mcpServers`, `skills`, `memory`, `maxTurns`, `background`, `effort`, `initialPrompt`. Typed accessors expose `tools`/`disallowedTools`/`permissionMode`/`mcpServers` without reaching into the tree |
 | Subagents | **Hybrid** discovery: canonical `.claude/agents/*.md` (any path depth, monorepo-safe) PLUS a frontmatter-shape fallback over all markdown files (gate: `name` + `tools`/`model`, excluding `SKILL.md` and `.claude/commands/`) that catches flat collections like `VoltAgent/awesome-claude-code-subagents` (subagents under `categories/<NN>/*.md`). Captures `name`, `description`, `tools` (verbatim) + `ToolGrants` (parsed grammar: bare / `Bash(...)` / `mcp__server__tool`), `disallowedTools`, `model`, `permissionMode`, `mcpServers`, `skills`, `isolation`, `HasHooks`. Files without frontmatter or without a `name:` are skipped. Audited by subagent-scope rules — CSDK-110 ("Subagent granted the built-in Bash tool") is the shipped rule; predicate `subagent_grants_tool: [Bash]` now matches parsed grants (so `Bash(...)` matches `Bash`). Subagent presence alone marks the repo as `claude_agent_sdk` (no SDK code required), so the pack loads and CSDK-110 fires on pure-markdown collections. Subagent rules carry no `language:` field (markdown frontmatter, language-agnostic) |
 | Skills | `SKILL.md` (basename, any depth: `.claude/skills/<name>/SKILL.md`, plugin `skills/`, nested). Parses `name`, `description`, `allowed-tools` (space-separated or YAML-list → `ToolGrants`), `argument-hint`, `disable-model-invocation`. No rules target skills yet — surfaced in inventory/JSON |
-| Slash commands | `.claude/commands/*.md`. Command name = file basename. Parses frontmatter `description`, `allowed-tools`, `model`, `argument-hint`, `disable-model-invocation`; a command without frontmatter is still emitted (body is the prompt). No rules yet — surfaced in inventory/JSON |
-| Plugin manifests | `.claude-plugin/plugin.json` and `marketplace.json` JSON-parsed into `PluginManifest` (`kind` plugin/marketplace, `name`, catalog `plugins[]` with `source` dirs). The recon walk descends into `.claude-plugin/`. No rules yet — surfaced in inventory/JSON |
+| Slash commands | **Two path shapes**: canonical `.claude/commands/*.md` AND `<plugin-root>/commands/*.md` whenever `<plugin-root>` has a sibling `.claude-plugin/plugin.json` (the layout used by plugin-distribution repos like `wshobson/agents` — `plugins/<x>/commands/*.md`). Command name = file basename. Parses frontmatter `description`, `allowed-tools`, `model`, `argument-hint`, `disable-model-invocation`; a command without frontmatter is still emitted (body is the prompt). No rules yet — surfaced in inventory/JSON |
+| Plugin manifests | `.claude-plugin/plugin.json` and `marketplace.json` JSON-parsed into `PluginManifest` (`kind` plugin/marketplace, `name`, catalog `plugins[]` with `name` + normalized `source`). The `source` field accepts both forms in the wild: a plain string (`"./local-foo"`) or an object (`{"source":"git-subdir","url":"…","path":"…"}` for external git refs); object forms are normalized to `<source>:<url>#<path>` so the trust category survives the round-trip, unknown shapes fall back to raw JSON. A previous typed-string parser dropped the entire manifest on the object form. The recon walk descends into `.claude-plugin/`. No rules yet — surfaced in inventory/JSON |
 | Settings | `.claude/settings.json` and `settings.local.json` JSON-parsed: `permissions.allow`/`deny`/`ask` decomposed via the grammar `<Tool>` \| `<Tool>(<pattern>)` plus `mcp__<server>__<tool>`; `defaultMode`, `additionalDirectories`, presence flags for `env`/`hooks`/`sandbox` |
 | Components surfaced (path-only) | `CLAUDE.md`, `hooks/*.{py,ts,js,jsx,mjs}`, MCP configs (`mcp.json`, `mcp_servers.json`, `claude_desktop_config.json`) |
 
@@ -113,11 +113,18 @@ identically-named class.
 
 The OSH-001..005 detection rules previously shipped here; they moved to a
 closed-source companion project. With no OSH rules shipped, a repo with
-shell-invocation surfaces fires **no** rule and **no** META finding — the
-human report surfaces the surface on a `Risk surfaces: openshell` line, and
-repo-scope rules with `applies_to: [openshell]` (if any are loaded) gate on
-`HasShellInvocations`. OpenShell is deliberately not treated as an unaudited
-SDK, so META-001 does not fire for it.
+shell-invocation surfaces fires **no** rule and **no** META finding — but
+the human report still surfaces it usefully. The `Risk surfaces: openshell`
+block reports the count of shell-invoking functions, the first three
+file:line locations (deterministically sorted), a `why:` line stating the
+threat model (a prompt-injected agent that exposes one of these as a tool
+can run arbitrary commands), and a `fix:` line with concrete remediations
+(sandbox, allowlist, drop `shell=True`, keep shell logic out of
+agent-callable code). The renderer does NOT claim an audit happened, since
+no openshell rule pack ships. Repo-scope rules with `applies_to: [openshell]`
+(if any are loaded from a private pack) gate on `HasShellInvocations`.
+OpenShell is deliberately not treated as an unaudited SDK, so META-001 does
+not fire for it.
 
 ## Gaps and what it would take to close them
 
