@@ -174,6 +174,20 @@ type SkillDef struct {
 	Location                           // file_path = SKILL.md path
 }
 
+// SlashCommandDef is one parsed .claude/commands/*.md slash command. The command
+// name is the file basename without extension (Claude Code derives the command
+// from the path, not frontmatter). allowed-tools follows the skill grammar.
+type SlashCommandDef struct {
+	Name                   string      `json:"name"`
+	Description            string      `json:"description,omitempty"`
+	AllowedTools           []string    `json:"allowed_tools,omitempty"`
+	ToolGrants             []ToolGrant `json:"tool_grants,omitempty"`
+	Model                  string      `json:"model,omitempty"`
+	ArgumentHint           string      `json:"argument_hint,omitempty"`
+	DisableModelInvocation bool        `json:"disable_model_invocation,omitempty"`
+	Location                           // file_path = command .md path
+}
+
 // PermissionRule is one parsed entry from .claude/settings.json permissions
 // lists. Raw preserves the original string for finding attribution; Tool and
 // Pattern carry the parsed grammar.
