@@ -135,3 +135,29 @@ func parseRules(raw []string) []models.PermissionRule {
 	}
 	return out
 }
+
+// computeNewlineOffsets returns the byte offsets of every '\n' in raw, in
+// ascending order. Used together with lineForOffset for byte→line lookups
+// in source files (e.g. attaching JSON-token positions to a 1-indexed line).
+func computeNewlineOffsets(raw []byte) []int {
+	var nls []int
+	for i, b := range raw {
+		if b == '\n' {
+			nls = append(nls, i)
+		}
+	}
+	return nls
+}
+
+// lineForOffset returns the 1-indexed line number that contains the byte at
+// the given offset. nls is the slice returned by computeNewlineOffsets.
+// Convention: a '\n' character itself belongs to the line it terminates,
+// so a newline at offset N is on the same line as the bytes preceding it.
+func lineForOffset(off int64, nls []int) int {
+	// sort.SearchInts returns the smallest index i where nls[i] >= off.
+	// That is the count of newlines strictly before off, except when nls[i]
+	// == off (the byte IS the newline), in which case it's also the count of
+	// newlines preceding it — and the byte itself sits on line i+1.
+	i := sort.SearchInts(nls, int(off))
+	return i + 1
+}
