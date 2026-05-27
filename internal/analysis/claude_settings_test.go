@@ -41,15 +41,15 @@ func TestClaudeSettings_ParsesPermissions(t *testing.T) {
 		t.Errorf("DefaultMode = %v", s.DefaultMode)
 	}
 	wantAllow := []models.PermissionRule{
-		{Tool: "Bash", Pattern: "npm run *", Raw: "Bash(npm run *)"},
-		{Tool: "Read", Pattern: "./.env", Raw: "Read(./.env)"},
+		{Tool: "Bash", Pattern: "npm run *", Raw: "Bash(npm run *)", Line: 3},
+		{Tool: "Read", Pattern: "./.env", Raw: "Read(./.env)", Line: 3},
 	}
 	if !reflect.DeepEqual(s.Permissions.Allow, wantAllow) {
 		t.Errorf("Allow = %+v\nwant %+v", s.Permissions.Allow, wantAllow)
 	}
 	wantDeny := []models.PermissionRule{
-		{Tool: "Bash", Pattern: "curl *", Raw: "Bash(curl *)"},
-		{Tool: "WebFetch", Raw: "WebFetch"},
+		{Tool: "Bash", Pattern: "curl *", Raw: "Bash(curl *)", Line: 4},
+		{Tool: "WebFetch", Raw: "WebFetch", Line: 4},
 	}
 	if !reflect.DeepEqual(s.Permissions.Deny, wantDeny) {
 		t.Errorf("Deny = %+v\nwant %+v", s.Permissions.Deny, wantDeny)
@@ -160,6 +160,58 @@ func TestClaudeSettings_LocationLineRange(t *testing.T) {
 	}
 	if got[0].EndLine != 5 {
 		t.Errorf("EndLine = %d, want 5", got[0].EndLine)
+	}
+}
+
+func TestDiscoverClaudeSettings_PerRuleLines(t *testing.T) {
+	// Fixture lines:
+	//   1: {
+	//   2:   "permissions": {
+	//   3:     "allow": [
+	//   4:       "Bash",
+	//   5:       "Read(./*)"
+	//   6:     ],
+	//   7:     "deny": ["Write"]
+	//   8:   }
+	//   9: }
+	const body = `{
+  "permissions": {
+    "allow": [
+      "Bash",
+      "Read(./*)"
+    ],
+    "deny": ["Write"]
+  }
+}
+`
+	dir := t.TempDir()
+	writeFixture(t, dir, ".claude/settings.json", body)
+	manifest := models.ScanManifest{
+		RepoRoot: dir,
+		Components: []models.AgentComponent{
+			{Kind: models.ComponentClaudeSettings, Path: ".claude/settings.json"},
+		},
+	}
+	got := analysis.DiscoverClaudeSettings(manifest)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 settings file, got %d", len(got))
+	}
+	allow := got[0].Permissions.Allow
+	if len(allow) != 2 {
+		t.Fatalf("allow len = %d, want 2", len(allow))
+	}
+	if allow[0].Line != 4 {
+		t.Errorf("allow[0] (Bash) Line = %d, want 4", allow[0].Line)
+	}
+	if allow[1].Line != 5 {
+		t.Errorf("allow[1] (Read(./*)) Line = %d, want 5", allow[1].Line)
+	}
+	deny := got[0].Permissions.Deny
+	if len(deny) != 1 {
+		t.Fatalf("deny len = %d, want 1", len(deny))
+	}
+	if deny[0].Line != 7 {
+		t.Errorf("deny[0] (Write) Line = %d, want 7", deny[0].Line)
 	}
 }
 

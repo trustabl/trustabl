@@ -81,13 +81,26 @@ func DiscoverClaudeSettings(manifest models.ScanManifest) []models.ClaudeSetting
 		if err := json.Unmarshal(raw, &parsed); err != nil {
 			continue
 		}
+		// Per-rule line numbers via positional walk. Failure is non-fatal:
+		// if the walker errors (which would mean the file is structurally
+		// malformed in a way json.Unmarshal didn't catch — very unlikely),
+		// we still emit the rules without line numbers. The unmarshal pass
+		// above is the authoritative correctness check.
+		allowLines, denyLines, askLines, lineErr := extractPermissionLines(raw)
+
+		perms := parsePermissionsBlock(parsed.Permissions)
+		if lineErr == nil {
+			zipLines(perms.Allow, allowLines)
+			zipLines(perms.Deny, denyLines)
+			zipLines(perms.Ask, askLines)
+		}
 		out = append(out, models.ClaudeSettings{
 			Location: models.Location{
 				FilePath: filepath.ToSlash(c.Path),
 				Line:     1,
 				EndLine:  endLine,
 			},
-			Permissions:     parsePermissionsBlock(parsed.Permissions),
+			Permissions:     perms,
 			DefaultMode:     parsed.Permissions.DefaultMode,
 			AdditionalDirs:  parsed.Permissions.AdditionalDirectories,
 			HasEnvBlock:     rawPresent(parsed.Env),
@@ -273,6 +286,19 @@ func readStringArrayLines(dec *json.Decoder, nls []int) ([]int, error) {
 		return nil, err
 	}
 	return lines, nil
+}
+
+// zipLines copies up to len(rules) line numbers from lines into each rule's
+// Line field. If lines is shorter than rules (shouldn't happen for valid
+// JSON that round-tripped through json.Unmarshal AND extractPermissionLines),
+// the trailing rules keep Line=0.
+func zipLines(rules []models.PermissionRule, lines []int) {
+	for i := range rules {
+		if i >= len(lines) {
+			break
+		}
+		rules[i].Line = lines[i]
+	}
 }
 
 // extractPermissionLines does a streaming token walk over raw JSON to find
