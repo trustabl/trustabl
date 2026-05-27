@@ -247,6 +247,15 @@ func readStringArrayLines(dec *json.Decoder, nls []int) ([]int, error) {
 			// InputOffset() after reading a string token points to the byte
 			// after the closing '"'. The JSON-encoded form is len(`"` + escaped + `"`)
 			// bytes. Subtract that length to get the offset of the opening '"'.
+			//
+			// Caveat: json.Marshal HTML-escapes '<', '>', '&' by default
+			// (e.g. '<' → <, 6 bytes), so if the source file contains
+			// any of those literally in a permission rule the recovered
+			// startOff is off and the line attribution may shift to a
+			// nearby rule. Claude permission rules in practice are ASCII
+			// identifiers + ()*/_-:., none of which trigger HTML-escape,
+			// so this is a latent edge case rather than a defect on real
+			// settings.json inputs.
 			endOff := dec.InputOffset()
 			encoded, _ := json.Marshal(s)
 			startOff := endOff - int64(len(encoded))
