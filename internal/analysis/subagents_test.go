@@ -45,7 +45,14 @@ tools: Read, Bash, Glob, Grep, mcp__email__search_inbox
 		Name:        "inbox-searcher",
 		Description: "Email search specialist.",
 		Tools:       []string{"Read", "Bash", "Glob", "Grep", "mcp__email__search_inbox"},
-		Location:    models.Location{FilePath: ".claude/agents/inbox-searcher.md", Line: 1, EndLine: 5},
+		ToolGrants: []models.ToolGrant{
+			{Tool: "Read", Raw: "Read"},
+			{Tool: "Bash", Raw: "Bash"},
+			{Tool: "Glob", Raw: "Glob"},
+			{Tool: "Grep", Raw: "Grep"},
+			{Tool: "MCP", Pattern: "email__search_inbox", Raw: "mcp__email__search_inbox"},
+		},
+		Location: models.Location{FilePath: ".claude/agents/inbox-searcher.md", Line: 1, EndLine: 5},
 	}
 	if !reflect.DeepEqual(got[0], want) {
 		t.Errorf("got  %+v\nwant %+v", got[0], want)
@@ -127,6 +134,57 @@ func TestSubagents_FrontmatterWithoutNameSkipped(t *testing.T) {
 	}
 	if got := analysis.DiscoverSubagents(manifest); len(got) != 0 {
 		t.Errorf("expected zero subagents (frontmatter with no name must be skipped), got %+v", got)
+	}
+}
+
+func TestSubagents_CapturesSecurityFields(t *testing.T) {
+	dir := t.TempDir()
+	writeFixture(t, dir, ".claude/agents/risky.md",
+		"---\n"+
+			"name: risky\n"+
+			"description: D\n"+
+			"tools: Read, Bash(npm run *), mcp__email__search_inbox\n"+
+			"disallowedTools: Write, Edit\n"+
+			"model: opus\n"+
+			"permissionMode: bypassPermissions\n"+
+			"mcpServers: slack, github\n"+
+			"isolation: worktree\n"+
+			"hooks:\n  PreToolUse: ./x.sh\n"+
+			"---\n\nBody\n")
+	manifest := models.ScanManifest{
+		RepoRoot: dir,
+		Components: []models.AgentComponent{
+			{Kind: models.ComponentSubagent, Path: ".claude/agents/risky.md"},
+		},
+	}
+	got := analysis.DiscoverSubagents(manifest)
+	if len(got) != 1 {
+		t.Fatalf("got %d subagents, want 1", len(got))
+	}
+	s := got[0]
+	if !reflect.DeepEqual(s.Tools, []string{"Read", "Bash(npm run *)", "mcp__email__search_inbox"}) {
+		t.Errorf("Tools = %v", s.Tools)
+	}
+	if len(s.ToolGrants) != 3 || s.ToolGrants[1].Tool != "Bash" || s.ToolGrants[1].Pattern != "npm run *" {
+		t.Errorf("ToolGrants = %+v", s.ToolGrants)
+	}
+	if s.ToolGrants[2].Tool != "MCP" {
+		t.Errorf("mcp grant Tool = %q, want MCP", s.ToolGrants[2].Tool)
+	}
+	if !reflect.DeepEqual(s.DisallowedTools, []string{"Write", "Edit"}) {
+		t.Errorf("DisallowedTools = %v", s.DisallowedTools)
+	}
+	if s.PermissionMode != "bypassPermissions" {
+		t.Errorf("PermissionMode = %q", s.PermissionMode)
+	}
+	if !reflect.DeepEqual(s.MCPServers, []string{"slack", "github"}) {
+		t.Errorf("MCPServers = %v", s.MCPServers)
+	}
+	if s.Isolation != "worktree" {
+		t.Errorf("Isolation = %q", s.Isolation)
+	}
+	if !s.HasHooks {
+		t.Errorf("HasHooks = false, want true")
 	}
 }
 

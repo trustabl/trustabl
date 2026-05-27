@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 
 	"gopkg.in/yaml.v3"
 
@@ -39,11 +38,19 @@ func DiscoverSubagents(manifest models.ScanManifest) []models.SubagentDef {
 		if parsed.Name == "" {
 			continue
 		}
+		tokens := splitToolsTokens([]string(parsed.Tools))
 		out = append(out, models.SubagentDef{
-			Name:        parsed.Name,
-			Description: parsed.Description,
-			Model:       parsed.Model,
-			Tools:       splitToolsField([]string(parsed.Tools)),
+			Name:            parsed.Name,
+			Description:     parsed.Description,
+			Tools:           tokens,
+			ToolGrants:      parseToolGrants(tokens),
+			DisallowedTools: splitToolsTokens([]string(parsed.DisallowedTools)),
+			Model:           parsed.Model,
+			PermissionMode:  parsed.PermissionMode,
+			MCPServers:      splitToolsTokens([]string(parsed.MCPServers)),
+			Skills:          splitToolsTokens([]string(parsed.Skills)),
+			HasHooks:        !parsed.Hooks.IsZero(),
+			Isolation:       parsed.Isolation,
 			Location: models.Location{
 				FilePath: c.Path,
 				Line:     startLine,
@@ -74,10 +81,16 @@ func (s *stringOrList) UnmarshalYAML(value *yaml.Node) error {
 }
 
 type subagentFrontmatter struct {
-	Name        string       `yaml:"name"`
-	Description string       `yaml:"description"`
-	Tools       stringOrList `yaml:"tools"`
-	Model       string       `yaml:"model"`
+	Name            string       `yaml:"name"`
+	Description     string       `yaml:"description"`
+	Tools           stringOrList `yaml:"tools"`
+	DisallowedTools stringOrList `yaml:"disallowedTools"`
+	Model           string       `yaml:"model"`
+	PermissionMode  string       `yaml:"permissionMode"`
+	MCPServers      stringOrList `yaml:"mcpServers"`
+	Skills          stringOrList `yaml:"skills"`
+	Hooks           yaml.Node    `yaml:"hooks"`
+	Isolation       string       `yaml:"isolation"`
 }
 
 // extractFrontmatter pulls the YAML block between leading "---\n" (or
@@ -116,17 +129,14 @@ func extractFrontmatter(raw []byte) (block []byte, startLine, endLine int, ok bo
 	return rest[:end], 1, endLine, true
 }
 
-// splitToolsField normalizes the frontmatter tools entries into a flat slice.
-// Each entry is comma-split so the scalar form ("Read, Bash, Grep") expands;
-// YAML-list entries (no comma) pass through unchanged. Returns nil when empty.
-func splitToolsField(raw []string) []string {
+// splitToolsTokens normalizes frontmatter list entries (scalar comma/space form
+// or YAML-list form) into flat, verbatim tokens. Each entry is run through
+// splitToolGrants so a parametered grant ("Agent(a, b)") is preserved as one
+// token. Returns nil when empty.
+func splitToolsTokens(raw []string) []string {
 	var out []string
 	for _, entry := range raw {
-		for _, p := range strings.Split(entry, ",") {
-			if t := strings.TrimSpace(p); t != "" {
-				out = append(out, t)
-			}
-		}
+		out = append(out, splitToolGrants(entry)...)
 	}
 	return out
 }

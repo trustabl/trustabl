@@ -140,15 +140,24 @@ type MCPServerRef struct {
 	DefIndex int           `json:"-"` // pre-sort index into inv.MCPServers; remapped after sort. -1 = external / TS / not resolvable.
 }
 
-// SubagentDef is one parsed `.claude/agents/*.md` definition. The tools field
-// is the comma-separated list from frontmatter; both built-in tool names
-// ("Read", "Bash") and MCP-tool names ("mcp__server__tool") appear here.
+// SubagentDef is one parsed Claude Code subagent markdown definition (a
+// `.claude/agents/*.md` file, or a flat-collection .md matched by frontmatter
+// shape). Tools keeps the raw frontmatter tokens verbatim (both built-in names
+// like "Read" and MCP refs like "mcp__server__tool"); ToolGrants carries the
+// same tokens parsed through the permission grammar.
 type SubagentDef struct {
-	Name        string   `json:"name"`
-	Description string   `json:"description,omitempty"`
-	Tools       []string `json:"tools,omitempty"`
-	Model       string   `json:"model,omitempty"`
-	Location              // file_path / line / end_line (flat in JSON via anonymous embed)
+	Name            string      `json:"name"`
+	Description     string      `json:"description,omitempty"`
+	Tools           []string    `json:"tools,omitempty"`
+	ToolGrants      []ToolGrant `json:"tool_grants,omitempty"`
+	DisallowedTools []string    `json:"disallowed_tools,omitempty"`
+	Model           string      `json:"model,omitempty"`
+	PermissionMode  string      `json:"permission_mode,omitempty"`
+	MCPServers      []string    `json:"mcp_servers,omitempty"`
+	Skills          []string    `json:"skills,omitempty"`
+	HasHooks        bool        `json:"has_hooks,omitempty"`
+	Isolation       string      `json:"isolation,omitempty"`
+	Location                    // file_path / line / end_line (flat in JSON via anonymous embed)
 }
 
 // PermissionRule is one parsed entry from .claude/settings.json permissions
