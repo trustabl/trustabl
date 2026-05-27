@@ -13,9 +13,51 @@ import (
 type pluginManifestJSON struct {
 	Name    string `json:"name"`
 	Plugins []struct {
-		Name   string `json:"name"`
-		Source string `json:"source"`
+		Name string `json:"name"`
+		// Source is captured as RawMessage because marketplace.json entries
+		// use either a string ("./local-path") OR an object
+		// ({"source":"git-subdir","url":"…","path":"…"}). A typed string here
+		// would fail json.Unmarshal on the object form and silently drop the
+		// entire marketplace.
+		Source json.RawMessage `json:"source"`
 	} `json:"plugins"`
+}
+
+// normalizePluginSource collapses a marketplace plugins[].source value
+// (RawMessage) into a human-readable string preserved on PluginEntry.Source.
+// Recognized shapes:
+//
+//   - JSON string ("./local-foo" or "https://…") → returned as-is.
+//   - Object with a known shape ({"source":"git-subdir","url":"…","path":"…"})
+//     → formatted as "<source>:<url>#<path>" so downstream consumers can still
+//     distinguish trust categories (local vs git-subdir vs git) at a glance.
+//   - Anything else → raw JSON, so nothing is silently dropped.
+//
+// Returns "" when the raw value is empty.
+func normalizePluginSource(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return s
+	}
+	var obj struct {
+		Source string `json:"source"`
+		URL    string `json:"url"`
+		Path   string `json:"path"`
+	}
+	if err := json.Unmarshal(raw, &obj); err == nil && obj.Source != "" {
+		out := obj.Source
+		if obj.URL != "" {
+			out += ":" + obj.URL
+		}
+		if obj.Path != "" {
+			out += "#" + obj.Path
+		}
+		return out
+	}
+	return string(raw)
 }
 
 // DiscoverPlugins parses .claude-plugin/plugin.json and marketplace.json files.
@@ -48,7 +90,7 @@ func DiscoverPlugins(manifest models.ScanManifest) []models.PluginManifest {
 		}
 		entries := make([]models.PluginEntry, 0, len(parsed.Plugins))
 		for _, e := range parsed.Plugins {
-			entries = append(entries, models.PluginEntry{Name: e.Name, Source: e.Source})
+			entries = append(entries, models.PluginEntry{Name: e.Name, Source: normalizePluginSource(e.Source)})
 		}
 		out = append(out, models.PluginManifest{
 			Kind:     kind,

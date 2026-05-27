@@ -1,6 +1,7 @@
 package analysis_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/trustabl/trustabl/internal/analysis"
@@ -54,6 +55,43 @@ func TestPlugins_IgnoresNonPluginJSON(t *testing.T) {
 	got := analysis.DiscoverPlugins(manifestWithJSON(dir, "config/plugin.json", ".claude-plugin/other.json"))
 	if len(got) != 0 {
 		t.Fatalf("got %+v, want 0", got)
+	}
+}
+
+// TestPlugins_AcceptsSourceAsObject verifies the marketplace.json parser
+// handles plugin entries where `source` is an object (e.g. {"source":"git-subdir",
+// "url":"…","path":"…"}) instead of a string. Real-world marketplaces
+// (wshobson/agents) mix the two forms; the old struct-with-Source-string
+// failed the whole json.Unmarshal and silently dropped the entire manifest.
+func TestPlugins_AcceptsSourceAsObject(t *testing.T) {
+	dir := t.TempDir()
+	writeFixture(t, dir, ".claude-plugin/marketplace.json", `{
+	  "name": "m",
+	  "plugins": [
+	    {"name":"a","source":"./local-foo"},
+	    {"name":"b","source":{"source":"git-subdir","url":"https://github.com/x/y.git","path":"integrations/z"}},
+	    {"name":"c","source":{"unknown":"shape"}}
+	  ]
+	}`)
+	got := analysis.DiscoverPlugins(manifestWithJSON(dir, ".claude-plugin/marketplace.json"))
+	if len(got) != 1 {
+		t.Fatalf("got %d manifests, want 1 (parse must not fail on object source)", len(got))
+	}
+	m := got[0]
+	if m.Kind != "marketplace" || m.Name != "m" || len(m.Plugins) != 3 {
+		t.Fatalf("manifest mis-parsed: %+v", m)
+	}
+	if m.Plugins[0].Source != "./local-foo" {
+		t.Errorf("plain string source mangled: %q", m.Plugins[0].Source)
+	}
+	gitSrc := m.Plugins[1].Source
+	for _, want := range []string{"git-subdir", "github.com/x/y", "integrations/z"} {
+		if !strings.Contains(gitSrc, want) {
+			t.Errorf("git-subdir source missing %q: got %q", want, gitSrc)
+		}
+	}
+	if m.Plugins[2].Source == "" {
+		t.Errorf("unknown-shape source should be a non-empty fallback, not silently dropped")
 	}
 }
 
