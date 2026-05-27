@@ -213,3 +213,59 @@ func TestNormalize_SkillAndPluginClassified(t *testing.T) {
 		}
 	}
 }
+
+// TestNormalize_PluginSlashCommandsClassified verifies the path-gate for
+// slash commands is broad enough to catch plugin layouts (e.g.
+// wshobson/agents stores commands at plugins/<x>/commands/*.md, not
+// .claude/commands/). A markdown file under <root>/commands/ where <root>
+// has a sibling .claude-plugin/plugin.json must be tagged as a slash command.
+// A commands/ directory NOT adjacent to a plugin manifest must NOT be tagged.
+func TestNormalize_PluginSlashCommandsClassified(t *testing.T) {
+	dir := t.TempDir()
+	mustWrite := func(rel, content string) {
+		t.Helper()
+		full := filepath.Join(dir, rel)
+		if err := os.MkdirAll(filepath.Dir(full), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Plugin root with a real manifest — commands beneath it are slash commands.
+	mustWrite("plugins/foo/.claude-plugin/plugin.json", `{"name":"foo"}`)
+	mustWrite("plugins/foo/commands/run.md", "Run the thing.\n")
+	mustWrite("plugins/foo/commands/check.md", "---\ndescription: Check\n---\n")
+	// Sibling .md not in commands/ — must NOT be tagged.
+	mustWrite("plugins/foo/README.md", "# Foo\n")
+	// A commands/ dir without a sibling plugin manifest — must NOT be tagged.
+	mustWrite("docs/commands/notes.md", "# Just docs\n")
+	// Existing canonical path must still work (regression guard).
+	mustWrite(".claude/commands/legacy.md", "Legacy\n")
+
+	src := &Source{RootPath: dir}
+	m, err := Normalize(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kinds := map[string]models.ComponentKind{}
+	for _, c := range m.Components {
+		kinds[c.Path] = c.Kind
+	}
+
+	want := map[string]models.ComponentKind{
+		"plugins/foo/commands/run.md":   models.ComponentSlashCommand,
+		"plugins/foo/commands/check.md": models.ComponentSlashCommand,
+		".claude/commands/legacy.md":    models.ComponentSlashCommand,
+	}
+	for path, wantKind := range want {
+		if got := kinds[path]; got != wantKind {
+			t.Errorf("path %q: got kind %q, want %q", path, got, wantKind)
+		}
+	}
+	for _, p := range []string{"plugins/foo/README.md", "docs/commands/notes.md"} {
+		if k := kinds[p]; k == models.ComponentSlashCommand {
+			t.Errorf("path %q should not be a slash_command, got %q", p, k)
+		}
+	}
+}
