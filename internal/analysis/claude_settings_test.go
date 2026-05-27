@@ -215,6 +215,70 @@ func TestDiscoverClaudeSettings_PerRuleLines(t *testing.T) {
 	}
 }
 
+// TestDiscoverClaudeSettings_NoTrailingNewline covers the EndLine branch that
+// adds 1 when the file does not end in '\n'. A 3-line file written without a
+// final newline must still report EndLine == 3.
+func TestDiscoverClaudeSettings_NoTrailingNewline(t *testing.T) {
+	const body = "{\n  \"permissions\": {}\n}" // 3 lines, no trailing newline
+	dir := t.TempDir()
+	writeFixture(t, dir, ".claude/settings.json", body)
+	manifest := models.ScanManifest{
+		RepoRoot: dir,
+		Components: []models.AgentComponent{
+			{Kind: models.ComponentClaudeSettings, Path: ".claude/settings.json"},
+		},
+	}
+	got := analysis.DiscoverClaudeSettings(manifest)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 settings file, got %d", len(got))
+	}
+	if got[0].Line != 1 {
+		t.Errorf("Line = %d, want 1", got[0].Line)
+	}
+	if got[0].EndLine != 3 {
+		t.Errorf("EndLine = %d, want 3 (no trailing newline must still count the last line)", got[0].EndLine)
+	}
+}
+
+// TestDiscoverClaudeSettings_SameLineRules verifies that multiple rules packed
+// onto one source line all receive that same line number through the full
+// parse+zip path (not just the extractPermissionLines helper in isolation).
+func TestDiscoverClaudeSettings_SameLineRules(t *testing.T) {
+	// Layout:
+	//   1: {
+	//   2:   "permissions": {
+	//   3:     "allow": ["Bash", "Read", "Grep"]
+	//   4:   }
+	//   5: }
+	const body = `{
+  "permissions": {
+    "allow": ["Bash", "Read", "Grep"]
+  }
+}
+`
+	dir := t.TempDir()
+	writeFixture(t, dir, ".claude/settings.json", body)
+	manifest := models.ScanManifest{
+		RepoRoot: dir,
+		Components: []models.AgentComponent{
+			{Kind: models.ComponentClaudeSettings, Path: ".claude/settings.json"},
+		},
+	}
+	got := analysis.DiscoverClaudeSettings(manifest)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 settings file, got %d", len(got))
+	}
+	allow := got[0].Permissions.Allow
+	if len(allow) != 3 {
+		t.Fatalf("allow len = %d, want 3", len(allow))
+	}
+	for i, r := range allow {
+		if r.Line != 3 {
+			t.Errorf("allow[%d] (%s) Line = %d, want 3 (all three rules share line 3)", i, r.Raw, r.Line)
+		}
+	}
+}
+
 func TestParsePermissionRule_EdgeCases(t *testing.T) {
 	cases := []struct {
 		raw, tool, pattern string
