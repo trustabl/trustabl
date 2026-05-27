@@ -66,3 +66,30 @@ func TestSubagentRuleDetector_AppliesAndDetects(t *testing.T) {
 		t.Errorf("expected Applies()=false for non-claude_subagent appliesTo")
 	}
 }
+
+// TestSubagentRuleDetector_PropagatesSubagentLine guards against the regression
+// where subagent findings emitted line=0 even though SubagentDef carries a real
+// Line (1 = opening `---`, EndLine = closing `---`). Tools and agents already
+// propagated their lines; subagents were stuck on a hardcoded 0 from when
+// SubagentDef genuinely had no Location embed.
+func TestSubagentRuleDetector_PropagatesSubagentLine(t *testing.T) {
+	d := NewSubagentRuleDetector(RuleDef{
+		ID:        "TEST-LINE",
+		Scope:     models.ScopeSubagent,
+		AppliesTo: []string{"claude_subagent"},
+		Severity:  models.SeverityHigh,
+		Match:     MatchExpr{SubagentGrantsTool: []string{"Bash"}},
+	})
+	sub := models.SubagentDef{
+		Name:     "shelly",
+		Tools:    []string{"Bash"},
+		Location: models.Location{FilePath: "plugins/p/agents/shelly.md", Line: 1, EndLine: 7},
+	}
+	findings := d.Detect(sub, models.RepoInventory{})
+	if len(findings) != 1 {
+		t.Fatalf("expected one finding, got %d", len(findings))
+	}
+	if findings[0].Line != 1 {
+		t.Errorf("finding Line = %d, want 1 (propagated from SubagentDef.Line)", findings[0].Line)
+	}
+}
