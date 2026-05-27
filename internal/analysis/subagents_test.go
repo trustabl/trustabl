@@ -148,6 +148,7 @@ func TestSubagents_CapturesSecurityFields(t *testing.T) {
 			"model: opus\n"+
 			"permissionMode: bypassPermissions\n"+
 			"mcpServers: slack, github\n"+
+			"skills: deploy, summarize\n"+
 			"isolation: worktree\n"+
 			"hooks:\n  PreToolUse: ./x.sh\n"+
 			"---\n\nBody\n")
@@ -180,11 +181,51 @@ func TestSubagents_CapturesSecurityFields(t *testing.T) {
 	if !reflect.DeepEqual(s.MCPServers, []string{"slack", "github"}) {
 		t.Errorf("MCPServers = %v", s.MCPServers)
 	}
+	if !reflect.DeepEqual(s.Skills, []string{"deploy", "summarize"}) {
+		t.Errorf("Skills = %v", s.Skills)
+	}
 	if s.Isolation != "worktree" {
 		t.Errorf("Isolation = %q", s.Isolation)
 	}
 	if !s.HasHooks {
 		t.Errorf("HasHooks = false, want true")
+	}
+}
+
+// TestSubagents_HasHooksOnlyForRealHandlers guards the HasHooks predicate: it
+// must be true only when hooks: carries an actual mapping of handlers, and
+// false when the key is absent, null, or an empty map. A bare yaml.Node.IsZero()
+// check is wrong because an explicit null populates the node.
+func TestSubagents_HasHooksOnlyForRealHandlers(t *testing.T) {
+	cases := []struct {
+		name string
+		fm   string
+		want bool
+	}{
+		{"absent", "---\nname: a\ndescription: D\n---\n", false},
+		{"null", "---\nname: a\ndescription: D\nhooks:\n---\n", false},
+		{"tilde null", "---\nname: a\ndescription: D\nhooks: ~\n---\n", false},
+		{"empty map", "---\nname: a\ndescription: D\nhooks: {}\n---\n", false},
+		{"real handler", "---\nname: a\ndescription: D\nhooks:\n  PreToolUse: ./x.sh\n---\n", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeFixture(t, dir, ".claude/agents/h.md", tc.fm)
+			manifest := models.ScanManifest{
+				RepoRoot: dir,
+				Components: []models.AgentComponent{
+					{Kind: models.ComponentSubagent, Path: ".claude/agents/h.md"},
+				},
+			}
+			got := analysis.DiscoverSubagents(manifest)
+			if len(got) != 1 {
+				t.Fatalf("got %d subagents, want 1", len(got))
+			}
+			if got[0].HasHooks != tc.want {
+				t.Errorf("HasHooks = %v, want %v", got[0].HasHooks, tc.want)
+			}
+		})
 	}
 }
 

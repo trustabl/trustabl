@@ -49,7 +49,7 @@ func DiscoverSubagents(manifest models.ScanManifest) []models.SubagentDef {
 			PermissionMode:  parsed.PermissionMode,
 			MCPServers:      splitToolsTokens([]string(parsed.MCPServers)),
 			Skills:          splitToolsTokens([]string(parsed.Skills)),
-			HasHooks:        !parsed.Hooks.IsZero(),
+			HasHooks:        parsed.Hooks.Kind == yaml.MappingNode && len(parsed.Hooks.Content) > 0,
 			Isolation:       parsed.Isolation,
 			Location: models.Location{
 				FilePath: c.Path,
