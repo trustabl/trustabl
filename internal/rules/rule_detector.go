@@ -127,8 +127,11 @@ func (d subagentRuleDetector) Detect(s models.SubagentDef, inv models.RepoInvent
 	if !d.rule.Match.EvaluateSubagent(s, inv) {
 		return nil
 	}
-	// SubagentDef carries no line; attribute to the file.
-	return []models.Finding{findingFromRule(d.rule, s.FilePath, 0, s.Name)}
+	// SubagentDef embeds Location: Line = the opening "---" of the frontmatter
+	// (usually 1), EndLine = the closing "---". Attribute to the opening so
+	// the user lands at the start of the declaration when jumping from a
+	// finding.
+	return []models.Finding{findingFromRule(d.rule, s.FilePath, s.Line, s.Name)}
 }
 
 // NewToolRuleDetector wraps a RuleDef as a ToolDetector. Exported for test packages.
