@@ -1,6 +1,7 @@
 package scanner_test
 
 import (
+	"encoding/json"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -221,4 +222,159 @@ func TestScanExamples_EmailAgent_SubagentDiscoveredAndAudited(t *testing.T) {
 	if !sawCSDK110 {
 		t.Errorf("expected CSDK-110 to fire on inbox-searcher (grants Bash); finding rule IDs: %v", ruleIDs)
 	}
+}
+
+// TestScanResult_JSONLineRangeFields asserts that every new JSON field path
+// added by the inventory line-attribution work is present in --format json
+// output. This is a "the JSON shape is what we promised" contract test: it
+// calls scanner.Run, marshals/unmarshals to a generic map, then walks the
+// expected field paths.
+//
+// Field paths asserted:
+//
+//	agents[].line, agents[].end_line, agents[].file_path
+//	hosted_tools[].line, hosted_tools[].end_line
+//	mcp_servers[].line, mcp_servers[].end_line
+//	subagents[].line, subagents[].end_line
+//	claude_settings[].line, claude_settings[].end_line
+//	claude_settings[].permissions.allow[].line
+func TestScanResult_JSONLineRangeFields(t *testing.T) {
+	// Build a tiny fixture that exercises every new JSON field path:
+	//   - agent.py: Python AgentDef with a WebSearchTool (hosted tool) and
+	//               MCPServerStdio — exercises agents, hosted_tools, mcp_servers.
+	//   - .claude/agents/helper.md: subagent markdown — exercises subagents.
+	//   - .claude/settings.json: permission rules — exercises claude_settings
+	//     and permissions.allow[].line.
+	dir := t.TempDir()
+	writeFile := func(rel, body string) {
+		t.Helper()
+		full := filepath.Join(dir, rel)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	writeFile("pyproject.toml", "[project]\nname = \"f\"\ndependencies = [\"openai-agents\"]\n")
+	writeFile("agent.py", `from agents import Agent, WebSearchTool
+from agents.mcp import MCPServerStdio
+
+agent = Agent(
+    name="researcher",
+    tools=[
+        WebSearchTool(
+            search_context_size="high",
+        ),
+    ],
+    mcp_servers=[
+        MCPServerStdio(
+            params={"command": "uvx"},
+        ),
+    ],
+)
+`)
+	writeFile(".claude/agents/helper.md", `---
+name: helper
+description: a helper
+tools: Read, Bash
+---
+
+Body.
+`)
+	writeFile(".claude/settings.json", `{
+  "permissions": {
+    "allow": [
+      "Bash",
+      "Read(./*)"
+    ]
+  }
+}
+`)
+
+	cfg := scanner.Config{Target: dir, RulesFS: rulesFixture(t)}
+	res, err := scanner.Run(cfg)
+	if err != nil {
+		t.Fatalf("scanner.Run: %v", err)
+	}
+
+	js, err := json.Marshal(res)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	var generic map[string]any
+	if err := json.Unmarshal(js, &generic); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+
+	// mustHaveKey fails the test when key is absent from m.
+	mustHaveKey := func(m map[string]any, key, path string) {
+		t.Helper()
+		if _, ok := m[key]; !ok {
+			t.Errorf("missing JSON field %q at %s", key, path)
+		}
+	}
+	// mustList asserts v is a non-empty JSON array and returns it.
+	mustList := func(v any, path string) []any {
+		t.Helper()
+		l, ok := v.([]any)
+		if !ok || len(l) == 0 {
+			t.Fatalf("expected non-empty list at %s, got %T (%v)", path, v, v)
+		}
+		return l
+	}
+	// mustObject asserts v is a JSON object and returns it.
+	mustObject := func(v any, path string) map[string]any {
+		t.Helper()
+		m, ok := v.(map[string]any)
+		if !ok {
+			t.Fatalf("expected object at %s, got %T (%v)", path, v, v)
+		}
+		return m
+	}
+
+	// agents[].line, agents[].end_line, agents[].file_path
+	agents := mustList(generic["agents"], "agents")
+	a0 := mustObject(agents[0], "agents[0]")
+	mustHaveKey(a0, "line", "agents[0]")
+	mustHaveKey(a0, "end_line", "agents[0]")
+	mustHaveKey(a0, "file_path", "agents[0]")
+
+	// hosted_tools[].line, hosted_tools[].end_line
+	if ht, ok := generic["hosted_tools"]; ok {
+		hosted := mustList(ht, "hosted_tools")
+		h0 := mustObject(hosted[0], "hosted_tools[0]")
+		mustHaveKey(h0, "line", "hosted_tools[0]")
+		mustHaveKey(h0, "end_line", "hosted_tools[0]")
+	} else {
+		t.Errorf("hosted_tools missing from JSON (fixture has WebSearchTool)")
+	}
+
+	// mcp_servers[].line, mcp_servers[].end_line
+	if ms, ok := generic["mcp_servers"]; ok {
+		mcps := mustList(ms, "mcp_servers")
+		m0 := mustObject(mcps[0], "mcp_servers[0]")
+		mustHaveKey(m0, "line", "mcp_servers[0]")
+		mustHaveKey(m0, "end_line", "mcp_servers[0]")
+	} else {
+		t.Errorf("mcp_servers missing from JSON (fixture has MCPServerStdio)")
+	}
+
+	// subagents[].line, subagents[].end_line
+	subs := mustList(generic["subagents"], "subagents")
+	s0 := mustObject(subs[0], "subagents[0]")
+	mustHaveKey(s0, "line", "subagents[0]")
+	mustHaveKey(s0, "end_line", "subagents[0]")
+
+	// claude_settings[].line, claude_settings[].end_line,
+	// claude_settings[].permissions.allow[].line
+	cs := mustList(generic["claude_settings"], "claude_settings")
+	c0 := mustObject(cs[0], "claude_settings[0]")
+	mustHaveKey(c0, "line", "claude_settings[0]")
+	mustHaveKey(c0, "end_line", "claude_settings[0]")
+	perms := mustObject(c0["permissions"], "claude_settings[0].permissions")
+	allow := mustList(perms["allow"], "claude_settings[0].permissions.allow")
+	rule0 := mustObject(allow[0], "claude_settings[0].permissions.allow[0]")
+	mustHaveKey(rule0, "line", "claude_settings[0].permissions.allow[0]")
 }
