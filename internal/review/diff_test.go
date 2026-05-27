@@ -195,24 +195,62 @@ func TestRender_SubagentsAndClaudeSettingsSections(t *testing.T) {
 	}
 }
 
-func TestRender_RiskSurfacesOpenshellWordingDoesNotOverpromise(t *testing.T) {
-	// The line is printed whenever HasShellInvocations is true, but no openshell
-	// rule pack ships in the in-repo fixture or the live trustabl-rules repo
-	// today (OSH-* moved to a closed-source project). The old wording —
-	// "audited by openshell repo-rules" — implied an audit that does not
-	// happen and read like a rule had flagged the repo. The renderer cannot
-	// know whether a private pack with openshell rules is loaded, so the
-	// wording must surface the risk without claiming an audit.
-	result := models.ScanResult{Repo: "./x", HasShellInvocations: true}
+func TestRender_RiskSurfacesShowsWhyAndFix(t *testing.T) {
+	// The risk-surfaces line must (a) report the count, (b) name the first few
+	// offending file:line locations so the user can jump straight in, (c)
+	// explain WHY this is a risk (the prompt-injection threat model), and
+	// (d) prescribe a concrete FIX. It must NOT claim an audit happened (no
+	// openshell rule pack ships today — see the fix in the previous commit).
+	tools := []models.ToolDef{
+		{Kind: models.KindShellInvocation, Name: "a", Language: models.LanguagePython, Location: models.Location{FilePath: "a/b.py", Line: 12}},
+		{Kind: models.KindShellInvocation, Name: "b", Language: models.LanguagePython, Location: models.Location{FilePath: "c/d.py", Line: 34}},
+		{Kind: models.KindShellInvocation, Name: "c", Language: models.LanguagePython, Location: models.Location{FilePath: "e/f.py", Line: 56}},
+		{Kind: models.KindShellInvocation, Name: "d", Language: models.LanguagePython, Location: models.Location{FilePath: "g/h.py", Line: 78}},
+		{Kind: models.KindShellInvocation, Name: "e", Language: models.LanguagePython, Location: models.Location{FilePath: "i/j.py", Line: 90}},
+		// A non-shell tool must NOT be counted or shown as an example.
+		{Kind: models.KindOpenAITool, Name: "ignored", Language: models.LanguagePython, Location: models.Location{FilePath: "z.py", Line: 1}},
+	}
+	result := models.ScanResult{Repo: "./x", HasShellInvocations: true, Tools: tools}
 	out := (&review.Renderer{NoColor: true}).Render(result)
-	if !strings.Contains(out, "Risk surfaces:  openshell") {
-		t.Fatalf("expected risk-surfaces line\n---\n%s", out)
+
+	for _, want := range []string{
+		"Risk surfaces:  openshell",
+		"5 functions call subprocess",
+		"a/b.py:12", // first example, deterministically sorted
+		"2 more",    // overflow indicator (5 total, 3 shown)
+		"why:",
+		"prompt-injected",
+		"fix:",
+		"sandbox",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q\n---\n%s", want, out)
+		}
 	}
-	if strings.Contains(out, "audited by") {
-		t.Errorf("risk-surfaces line must not claim an audit; got\n---\n%s", out)
+	for _, gone := range []string{
+		"audited by", // honesty guarantee — must never claim an audit
+		"z.py",       // non-shell tool must not leak into examples
+	} {
+		if strings.Contains(out, gone) {
+			t.Errorf("output unexpectedly contains %q\n---\n%s", gone, out)
+		}
 	}
-	if !strings.Contains(out, "no rule fires on this surface in the shipped pack") {
-		t.Errorf("risk-surfaces line should make the unaudited status explicit; got\n---\n%s", out)
+}
+
+func TestRender_RiskSurfacesSingularForOneFunction(t *testing.T) {
+	result := models.ScanResult{
+		Repo:                "./x",
+		HasShellInvocations: true,
+		Tools: []models.ToolDef{
+			{Kind: models.KindShellInvocation, Name: "lone", Language: models.LanguagePython, Location: models.Location{FilePath: "x.py", Line: 1}},
+		},
+	}
+	out := (&review.Renderer{NoColor: true}).Render(result)
+	if !strings.Contains(out, "1 function calls") {
+		t.Errorf("expected singular '1 function calls'; got\n---\n%s", out)
+	}
+	if strings.Contains(out, " more") {
+		t.Errorf("no 'more' suffix expected for a single example; got\n---\n%s", out)
 	}
 }
 

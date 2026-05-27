@@ -43,12 +43,39 @@ func (r *Renderer) Render(result models.ScanResult) string {
 	fmt.Fprintf(&b, "  Languages:      %s\n", csv(result.Languages))
 	fmt.Fprintf(&b, "  SDKs:           %s\n", csv(result.SDKs))
 	if result.HasShellInvocations {
-		// Surface the risk honestly. The shipped rule pack contains no
-		// openshell rules today (OSH-* moved to a closed-source project), so
-		// the renderer must not imply an audit happened here. Findings speak
-		// for audit status on their own.
+		// Surface the risk honestly: report what we saw, where to look first,
+		// the threat model, and a concrete fix. No openshell rule pack ships
+		// today, so we must not imply an audit happened — but a one-line
+		// "unaudited surface" label is useless to a user trying to act on it.
+		shells := shellInvocationLocations(result.Tools)
+		noun, verb := "functions", "call"
+		if len(shells) == 1 {
+			noun, verb = "function", "calls"
+		}
 		fmt.Fprintf(&b, "  Risk surfaces:  openshell %s\n",
-			styleDim.Render("(Python functions call subprocess.* / os.system / os.popen — no rule fires on this surface in the shipped pack)"))
+			styleDim.Render(fmt.Sprintf("(%d %s %s subprocess.* / os.system / os.popen)", len(shells), noun, verb)))
+		if len(shells) > 0 {
+			const sample = 3
+			end := len(shells)
+			if end > sample {
+				end = sample
+			}
+			parts := make([]string, end)
+			for i := 0; i < end; i++ {
+				parts[i] = fmt.Sprintf("%s:%d", shells[i].FilePath, shells[i].Line)
+			}
+			line := strings.Join(parts, ", ")
+			if len(shells) > sample {
+				line += fmt.Sprintf(" — %d more", len(shells)-sample)
+			}
+			fmt.Fprintf(&b, "      %s %s\n", styleDim.Render("e.g."), styleDim.Render(line))
+		}
+		fmt.Fprintf(&b, "      %s %s\n",
+			styleDim.Render("why:"),
+			styleDim.Render("an agent that exposes any of these as a callable tool can be prompt-injected into running arbitrary commands."))
+		fmt.Fprintf(&b, "      %s %s\n",
+			styleDim.Render("fix:"),
+			styleDim.Render("sandbox the call (NVIDIA OpenShell or equivalent), validate args against a strict allowlist, avoid shell=True, and keep shell logic out of agent-callable code paths."))
 	}
 	// Tool surface, broken out by where each kind enters the rule pipeline.
 	// Previously this was one conflated "Tools found: N" union which led users
@@ -407,6 +434,25 @@ func subagentNamesList(subs []models.SubagentDef) string {
 		parts[i] = s.Name
 	}
 	return strings.Join(parts, ", ")
+}
+
+// shellInvocationLocations returns the shell-invocation tools sorted
+// deterministically by (FilePath, Line) so the "first few" examples on the
+// risk-surfaces line are stable across runs.
+func shellInvocationLocations(tools []models.ToolDef) []models.ToolDef {
+	var out []models.ToolDef
+	for _, t := range tools {
+		if t.Kind == models.KindShellInvocation {
+			out = append(out, t)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].FilePath != out[j].FilePath {
+			return out[i].FilePath < out[j].FilePath
+		}
+		return out[i].Line < out[j].Line
+	})
+	return out
 }
 
 // skillNamesList renders the discovered skill names for the scan summary
