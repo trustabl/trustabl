@@ -589,8 +589,14 @@ RepoInventory {
     UsesDefaultTracing  bool
 }
 
+// Location is embedded anonymously into every inventory entity so JSON
+// stays flat (entity.file_path, entity.line, entity.end_line). Line and
+// EndLine are 1-indexed inclusive; single-line entities set EndLine == Line.
+Location { FilePath string; Line, EndLine int }
+
 AgentDef {
-    SDK, Class, FilePath string; Line, EndLine int
+    SDK, Class string
+    Location               // file_path, line, end_line (flat in JSON)
     // Class values: "Agent" / "SandboxAgent" (OpenAI),
     //   "AgentDefinition" (Claude Python constructor + Claude TS sub-agents),
     //   "QueryMainAgent" (Claude TS: main thread of a query() call — the TS
@@ -618,8 +624,7 @@ ToolDef {
     Name           string
     Kind           ToolKind   // claude_sdk_tool | openai_tool | mcp_tool | shell_invocation | unknown | adk_function_tool
     Language       Language   // python | typescript | javascript | go
-    FilePath       string
-    Line, EndLine  int
+    Location                   // file_path, line, end_line (flat in JSON)
     Description    string
     HasTypedParams bool
     ParamNames     []string
@@ -645,14 +650,14 @@ AgentComponent {
 HostedToolDef {
     Class    string     // "WebSearchTool" | "FileSearchTool" | "ComputerTool" | ...
     SDK      SDK
-    FilePath string
-    Line     int
+    Location              // file_path, line, end_line (flat in JSON)
     Kwargs   *KwargTree
 }
 
 HostedToolRef {
     Class    string         // matches HostedToolDef.Class
     Resolved *HostedToolDef // nil if not resolved
+    DefIndex int            // pre-sort index into inv.HostedTools; remapped by sort permutation. -1 = not resolvable.
 }
 
 MCPServerDef {
@@ -661,8 +666,7 @@ MCPServerDef {
     Transport string     // "stdio" | "sse" | "streamable_http" | "sdk"
     Language  Language   // python | typescript
     SDK       SDK
-    FilePath  string
-    Line      int
+    Location              // file_path, line, end_line (flat in JSON)
     Kwargs    *KwargTree
 }
 
@@ -670,6 +674,7 @@ MCPServerRef {
     Class    string        // matches MCPServerDef.Class
     Resolved *MCPServerDef // nil if not resolved
     External bool
+    DefIndex int           // pre-sort index into inv.MCPServers; remapped by sort permutation. -1 = external / TS / not resolvable.
 }
 
 SubagentDef {
@@ -677,13 +682,14 @@ SubagentDef {
     Description string
     Tools       []string   // parsed from frontmatter tools: field
     Model       string
-    FilePath    string
+    Location               // file_path = path to .md; Line = opening "---"; EndLine = closing "---"
 }
 
 PermissionRule {
     Tool    string  // "Bash" | "Read" | "Edit" | "WebFetch" | "MCP" | "Agent" | ...
     Pattern string  // empty for bare tool; "npm run *" for "Bash(npm run *)"
     Raw     string  // original string from JSON for attribution
+    Line    int     // 1-indexed line of this rule's string literal in settings.json
 }
 
 ClaudePermissions {
@@ -693,7 +699,7 @@ ClaudePermissions {
 }
 
 ClaudeSettings {
-    FilePath        string
+    Location                          // whole-file: Line = 1, EndLine = line count
     Permissions     ClaudePermissions
     DefaultMode     string
     AdditionalDirs  []string
@@ -744,9 +750,22 @@ needs to gate on hosted-tool language would require adding the field to
 
 Discipline rules:
 
-- `RawSource` was deliberately **not** included on `ToolDef`. Carrying full
-  function bodies in memory and then in JSON is wasteful, and the LLM
-  enrichment path that would consume them is not yet wired.
+- **`Location` embed.** `ToolDef`, `AgentDef`, `HostedToolDef`, `MCPServerDef`,
+  `SubagentDef`, `GuardrailDef`, `SessionUse`, and `ClaudeSettings` all embed
+  a shared `Location{FilePath, Line, EndLine}` struct anonymously, so JSON
+  stays flat (`entity.file_path`, `entity.line`, `entity.end_line`). Consumers
+  that read those flat paths today are unaffected; `end_line` is additive.
+  `Line` and `EndLine` are both 1-indexed and inclusive. Single-line entities
+  set `EndLine == Line` — that is a valid state, not a placeholder. The
+  contract is `EndLine >= Line >= 1` for any populated entity; `EndLine == 0`
+  is legacy/uninitialized and the human renderer collapses such records to
+  `file:N` form.
+- **No source-text storage.** The inventory is a structured *index of
+  locations*; consumers fetch source by reading the file at
+  `(FilePath, Line, EndLine)`. `RawSource` is deliberately **not** included
+  on `ToolDef` — carrying full function bodies in memory and then in JSON is
+  wasteful, and the LLM enrichment path that would consume them is not yet
+  wired.
 - `ToolDef.Config` carries decorator kwargs (`strict_mode`, `failure_error_function`,
   hosted-tool args) captured at discovery time. Detectors read these fields
   instead of re-parsing the decorator from inside a rule.
