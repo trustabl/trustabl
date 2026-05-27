@@ -4,8 +4,6 @@ All notable changes to Trustabl are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project aims
 to follow Semantic Versioning once it reaches 1.0.
 
-## [Unreleased]
-
 ## [0.1.0] - 2026-05-26
 
 First tagged release. A single-binary, read-only static analyzer for agent-SDK
