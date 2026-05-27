@@ -110,7 +110,7 @@ func (r *Renderer) Render(result models.ScanResult) string {
 			if a.Name != "" {
 				label += " " + a.Name
 			}
-			loc := fmt.Sprintf("%s:%d", a.FilePath, a.Line)
+			loc := formatLocation(a.Location)
 			if a.Opaque {
 				loc += " " + styleDim.Render("(opaque — rules cannot evaluate)")
 			}
@@ -131,7 +131,7 @@ func (r *Renderer) Render(result models.ScanResult) string {
 	if len(result.Subagents) > 0 {
 		b.WriteString(styleHeader.Render("Subagents") + "\n")
 		for _, s := range result.Subagents {
-			fmt.Fprintf(&b, "  %-32s %s\n", s.Name, styleDim.Render(s.FilePath))
+			fmt.Fprintf(&b, "  %-32s %s\n", s.Name, styleDim.Render(formatLocation(s.Location)))
 			meta := []string{}
 			if len(s.Tools) > 0 {
 				meta = append(meta, "tools: "+strings.Join(s.Tools, ", "))
@@ -158,7 +158,7 @@ func (r *Renderer) Render(result models.ScanResult) string {
 				fmt.Sprintf("deny:%d", len(s.Permissions.Deny)),
 				fmt.Sprintf("ask:%d", len(s.Permissions.Ask)),
 			)
-			fmt.Fprintf(&b, "  %-32s %s\n", s.FilePath, styleDim.Render(strings.Join(meta, "  ")))
+			fmt.Fprintf(&b, "  %-32s %s\n", formatLocation(s.Location), styleDim.Render(strings.Join(meta, "  ")))
 		}
 		b.WriteString("\n")
 	}
@@ -224,6 +224,15 @@ func (r *Renderer) Render(result models.ScanResult) string {
 	}
 
 	return b.String()
+}
+
+// formatLocation renders a Location as "path:line" if EndLine == Line or
+// EndLine == 0 (legacy/uninitialized data), else "path:line-endline".
+func formatLocation(loc models.Location) string {
+	if loc.EndLine == 0 || loc.EndLine == loc.Line {
+		return fmt.Sprintf("%s:%d", loc.FilePath, loc.Line)
+	}
+	return fmt.Sprintf("%s:%d-%d", loc.FilePath, loc.Line, loc.EndLine)
 }
 
 // csv joins a list of string-like values for the summary header, or "(none)"

@@ -241,6 +241,60 @@ func TestRender_NonToolFindingsAppearUnderRepoWide(t *testing.T) {
 	}
 }
 
+// TestRenderer_PrintsLineRange verifies that multi-line inventory entities
+// (agents, subagents, ClaudeSettings) render as "file:start-end" in the human
+// output, and that single-line entities (EndLine == Line) collapse to "file:N"
+// without the redundant "-N" suffix.
+func TestRenderer_PrintsLineRange(t *testing.T) {
+	result := models.ScanResult{
+		Agents: []models.AgentDef{
+			{
+				SDK:      models.SDKClaudeAgentSDK,
+				Class:    "AgentDefinition",
+				Language: models.LanguagePython,
+				Name:     "multi",
+				Location: models.Location{FilePath: "f.py", Line: 10, EndLine: 20},
+			},
+			{
+				SDK:      models.SDKClaudeAgentSDK,
+				Class:    "AgentDefinition",
+				Language: models.LanguagePython,
+				Name:     "single",
+				Location: models.Location{FilePath: "g.py", Line: 5, EndLine: 5},
+			},
+		},
+		Subagents: []models.SubagentDef{
+			{
+				Name:     "sub",
+				Location: models.Location{FilePath: ".claude/agents/sub.md", Line: 1, EndLine: 7},
+			},
+		},
+		ClaudeSettings: []models.ClaudeSettings{
+			{
+				Location: models.Location{FilePath: ".claude/settings.json", Line: 1, EndLine: 12},
+			},
+		},
+	}
+
+	out := (&review.Renderer{NoColor: true}).Render(result)
+
+	if !strings.Contains(out, "f.py:10-20") {
+		t.Errorf("multi-line agent: expected 'f.py:10-20' in output, got:\n%s", out)
+	}
+	if !strings.Contains(out, "g.py:5") {
+		t.Errorf("single-line agent: expected 'g.py:5' in output, got:\n%s", out)
+	}
+	if strings.Contains(out, "g.py:5-5") {
+		t.Errorf("single-line agent: 'g.py:5-5' must NOT appear (Line==EndLine should collapse), got:\n%s", out)
+	}
+	if !strings.Contains(out, ".claude/agents/sub.md:1-7") {
+		t.Errorf("subagent: expected '.claude/agents/sub.md:1-7' in output, got:\n%s", out)
+	}
+	if !strings.Contains(out, ".claude/settings.json:1-12") {
+		t.Errorf("settings: expected '.claude/settings.json:1-12' in output, got:\n%s", out)
+	}
+}
+
 // TestRender_AgentScopedFindingsAppearUnderAgentName covers the forward-
 // compatible case: when SP2's TS rule pack ships, agent-scoped findings
 // will carry ToolName = agent name (not blank, but not matching any tool
