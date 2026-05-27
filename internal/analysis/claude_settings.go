@@ -3,6 +3,7 @@ package analysis
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -160,4 +161,166 @@ func lineForOffset(off int64, nls []int) int {
 	// newlines preceding it — and the byte itself sits on line i+1.
 	i := sort.SearchInts(nls, int(off))
 	return i + 1
+}
+
+// expectDelim reads the next token and asserts it is the given delimiter.
+func expectDelim(dec *json.Decoder, want json.Delim) error {
+	tok, err := dec.Token()
+	if err != nil {
+		return err
+	}
+	d, ok := tok.(json.Delim)
+	if !ok || d != want {
+		return fmt.Errorf("expected delim %q, got %v", want, tok)
+	}
+	return nil
+}
+
+// readKey reads the next token and asserts it is a string (object key).
+func readKey(dec *json.Decoder) (string, error) {
+	tok, err := dec.Token()
+	if err != nil {
+		return "", err
+	}
+	s, ok := tok.(string)
+	if !ok {
+		return "", fmt.Errorf("expected key string, got %T", tok)
+	}
+	return s, nil
+}
+
+// skipToCloser consumes tokens until the matching closing delim of an
+// already-consumed opening delim `opened` ('{' or '['). Handles nested
+// objects/arrays. Object keys must be consumed as part of the walk.
+func skipToCloser(dec *json.Decoder, opened json.Delim) error {
+	closer := json.Delim('}')
+	if opened == '[' {
+		closer = ']'
+	}
+	for dec.More() {
+		if opened == '{' {
+			if _, err := dec.Token(); err != nil { // key
+				return err
+			}
+		}
+		if err := skipValue(dec); err != nil {
+			return err
+		}
+	}
+	tok, err := dec.Token()
+	if err != nil {
+		return err
+	}
+	if d, ok := tok.(json.Delim); !ok || d != closer {
+		return fmt.Errorf("expected closer %q, got %v", closer, tok)
+	}
+	return nil
+}
+
+// skipValue consumes one complete JSON value from the decoder, regardless
+// of shape. Used to advance past values whose content is irrelevant.
+func skipValue(dec *json.Decoder) error {
+	tok, err := dec.Token()
+	if err != nil {
+		return err
+	}
+	if d, ok := tok.(json.Delim); ok {
+		return skipToCloser(dec, d)
+	}
+	return nil
+}
+
+// readStringArrayLines walks an array, recording the line of each string
+// item's opening quote. The decoder must be positioned at the opening '['.
+// Non-string items (objects, arrays, numbers) are skipped without recording.
+func readStringArrayLines(dec *json.Decoder, nls []int) ([]int, error) {
+	if err := expectDelim(dec, '['); err != nil {
+		return nil, err
+	}
+	var lines []int
+	for dec.More() {
+		tok, err := dec.Token()
+		if err != nil {
+			return nil, err
+		}
+		if s, ok := tok.(string); ok {
+			// InputOffset() after reading a string token points to the byte
+			// after the closing '"'. The JSON-encoded form is len(`"` + escaped + `"`)
+			// bytes. Subtract that length to get the offset of the opening '"'.
+			endOff := dec.InputOffset()
+			encoded, _ := json.Marshal(s)
+			startOff := endOff - int64(len(encoded))
+			lines = append(lines, lineForOffset(startOff, nls))
+			continue
+		}
+		// Non-string item: if it was a delim, drain until the matching close.
+		if d, ok := tok.(json.Delim); ok {
+			if err := skipToCloser(dec, d); err != nil {
+				return nil, err
+			}
+		}
+	}
+	if _, err := dec.Token(); err != nil { // consume closing ']'
+		return nil, err
+	}
+	return lines, nil
+}
+
+// extractPermissionLines does a streaming token walk over raw JSON to find
+// the line of each string literal inside permissions.{allow,deny,ask}. It
+// returns three slices in the same order as the array entries. Any JSON
+// parse failure is returned so the caller can fall back to emitting rules
+// without line numbers; the standard json.Unmarshal pass elsewhere is the
+// authoritative correctness check for the file's structure.
+func extractPermissionLines(raw []byte) (allow, deny, ask []int, err error) {
+	nls := computeNewlineOffsets(raw)
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	if err = expectDelim(dec, '{'); err != nil {
+		return nil, nil, nil, err
+	}
+	for dec.More() {
+		key, kerr := readKey(dec)
+		if kerr != nil {
+			return nil, nil, nil, kerr
+		}
+		if key != "permissions" {
+			if serr := skipValue(dec); serr != nil {
+				return nil, nil, nil, serr
+			}
+			continue
+		}
+		if err = expectDelim(dec, '{'); err != nil {
+			return nil, nil, nil, err
+		}
+		for dec.More() {
+			subKey, kerr := readKey(dec)
+			if kerr != nil {
+				return nil, nil, nil, kerr
+			}
+			var lines []int
+			var perr error
+			switch subKey {
+			case "allow":
+				lines, perr = readStringArrayLines(dec, nls)
+				allow = lines
+			case "deny":
+				lines, perr = readStringArrayLines(dec, nls)
+				deny = lines
+			case "ask":
+				lines, perr = readStringArrayLines(dec, nls)
+				ask = lines
+			default:
+				perr = skipValue(dec)
+			}
+			if perr != nil {
+				return nil, nil, nil, perr
+			}
+		}
+		// consume closing '}' of permissions; we don't need to walk further.
+		if _, err = dec.Token(); err != nil {
+			return nil, nil, nil, err
+		}
+		return allow, deny, ask, nil
+	}
+	return nil, nil, nil, nil
 }
