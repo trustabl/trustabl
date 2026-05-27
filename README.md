@@ -4,8 +4,8 @@
 
 Trustabl is a static analyzer for agent reliability. It parses an agent-SDK
 repository (Claude Agent SDK, OpenAI Agents SDK, Google ADK, MCP), models the
-tools, agents, and subagents it declares, and checks them against a catalog
-of reliability and safety rules. It reports the weaknesses it finds — each
+tools, agents, subagents, skills, slash commands, and plugin manifests it
+declares, and checks them against a catalog of reliability and safety rules. It reports the weaknesses it finds — each
 with an explanation, a suggested fix, and a confidence score — as a
 human-readable summary, JSON, or SARIF 2.1.0, plus a per-tool reliability
 score and a CI-friendly exit code. It ships as a single Go binary; there is
@@ -40,11 +40,19 @@ a different typed input:
   shell tools and no `input_guardrails`,
   `tool_use_behavior="stop_on_first_tool"` paired with filesystem-touching
   tools, or a main-thread agent with unrestricted `allowedTools`.
-- **`subagent`** — fires once per `.claude/agents/*.md` declaration
-  (matched at any path depth, monorepo-safe). Input: a `SubagentDef`
-  parsed from markdown frontmatter (`name`, `description`, `tools[]`,
-  `model`). Catches a subagent granted the built-in `Bash` tool despite
-  a read-only description (CSDK-110).
+- **`subagent`** — fires once per Claude Code subagent markdown
+  declaration. Discovery is **hybrid**: canonical `.claude/agents/*.md`
+  (any path depth, monorepo-safe) PLUS a frontmatter-shape fallback over
+  all markdown files (gated on `name` + `tools`/`model`) that catches
+  flat-collection repos which ship subagents under `categories/*.md`,
+  `plugins/<x>/agents/*.md`, or similar layouts. Input: a `SubagentDef`
+  parsed from frontmatter — `name`, `description`, `tools[]` (verbatim) +
+  `ToolGrants[]` (parsed permission grammar), `disallowedTools`, `model`,
+  `permissionMode` (incl. `bypassPermissions`), `mcpServers`, `skills`,
+  `isolation`, `hasHooks`. Catches a subagent granted the built-in `Bash`
+  tool despite a read-only description (CSDK-110). Subagent presence alone
+  contributes `claude_agent_sdk` to `SDKsDetected`, so the Claude pack
+  loads and CSDK-110 fires on pure-markdown subagent collections.
 - **`repo`** — fires once per scan against the whole inventory. Catches
   project-wide gaps such as the OpenAI Agents SDK being present with no
   custom trace processor configured.
@@ -108,12 +116,16 @@ flowchart LR
    `claude-agent-sdk` / `@anthropic-ai/claude-agent-sdk` / `openai-agents` /
    `@openai/agents` / `google-adk` needles), the file inventory, and
    discovered agent components (MCP configs, hook scripts, `CLAUDE.md`,
-   `.claude/agents/*.md` subagents at any depth, sandbox policies). No
+   `.claude/agents/*.md` subagents at any depth, `SKILL.md` skills,
+   slash commands at both `.claude/commands/*.md` and
+   `<plugin-root>/commands/*.md`, `.claude-plugin/{plugin,marketplace}.json`
+   manifests, sandbox policies). No
    tree-sitter parses happen here — this step decides whether the
    expensive AST work is even worth attempting.
 2. **Inventory** — for each language Recon cleared, do the AST work and
    extract a typed inventory: `ToolDef`s with their config and body facts,
-   `AgentDef`s with all kwargs captured, `SubagentDef`s from markdown
+   `AgentDef`s with all kwargs captured, `SubagentDef`s / `SkillDef`s /
+   `SlashCommandDef`s / `PluginManifest`s parsed from markdown and JSON
    frontmatter, `MCPServerDef`s, guardrails, sessions, and the resolved
    edges between agents and the tools/guardrails they reference. Detectors
    read fields off these structs — they never re-parse raw source.
@@ -189,8 +201,8 @@ files in the scanned repo. Each run produces a `ScanResult` containing:
   minimum across tools — an agent is only as reliable as its weakest
   surface).
 - **The discovered inventory** — tools, agents, hosted tools, MCP
-  servers, subagents, and Claude settings — surfaced at the top level
-  for CI consumers.
+  servers, subagents, skills, slash commands, plugin manifests, and
+  Claude settings — surfaced at the top level for CI consumers.
 
 ### The summary's tool surface, broken out
 
@@ -233,10 +245,17 @@ Exit codes:
 
 OpenShell surfaces are still discovered (shell-invocation functions,
 `openshell/*.yaml` policies) and reported on a `Risk surfaces: openshell`
-line, but the OSH-* detection rules that audited them have moved to a
-closed-source companion project. With no OSH rules shipped, such repos fire
-no rule and no `META` finding — OpenShell is a risk surface, not an SDK, so
-it is not flagged as "unaudited" the way an unknown SDK would be.
+block in the human format: the count of shell-invoking functions, the first
+three file:line locations (deterministically sorted), a `why:` line stating
+the threat model (a prompt-injected agent that exposes one of these as a
+callable tool can run arbitrary commands), and a `fix:` line with concrete
+remediations (sandbox, allowlist, drop `shell=True`, keep shell logic out
+of agent-callable code). The OSH-* detection rules that audited these
+surfaces have moved to a closed-source companion project; with no OSH rules
+shipped, such repos fire no rule and no `META` finding — the block makes
+the unaudited risk legible without claiming an audit happened. OpenShell is
+a risk surface, not an SDK, so it is not flagged as "unaudited" the way an
+unknown SDK would be.
 
 ## Install
 
@@ -341,7 +360,7 @@ fails.
 | ------------------ | ---------------------------------------- |
 | Importer           | `internal/ingestion/importer.go`         |
 | Normalizer (recon) | `internal/ingestion/normalizer.go`       |
-| Python discovery   | `internal/analysis/discovery.go`, `agents.go`, `hosted_tools.go`, `mcp_servers.go`, `subagents.go`, `claude_settings.go`, `adk_agents.go` |
+| Discovery (Python AST + markdown/JSON) | `internal/analysis/discovery.go`, `agents.go`, `hosted_tools.go`, `mcp_servers.go`, `adk_agents.go` (Python AST); `subagents.go`, `markdown_agents.go`, `skills.go`, `slash_commands.go` (markdown frontmatter); `plugins.go`, `claude_settings.go` (JSON) |
 | TypeScript discovery | `internal/analysis/ts_discovery.go`, `ts_agents.go`, `ts_mcp_servers.go`, `astutil/ts.go` |
 | Detector runtime   | `internal/analysis/detectors/`           |
 | Rule source        | `internal/rulesource/` (git fetch + cache + schema-version gate) |
