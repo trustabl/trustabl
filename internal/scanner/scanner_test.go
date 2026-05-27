@@ -71,10 +71,10 @@ func rulesFixture(t *testing.T) fs.FS {
 }
 
 // TestScanExamples_NoCrash sweeps every immediate subdirectory under
-// examples/ and asserts the scanner completes without error.
+// testdata/corpus/ and asserts the scanner completes without error.
 //
 // This is NOT a correctness test — it does NOT assert specific findings,
-// because the examples are real-world agents (or close to it) and shouldn't
+// because the corpus repos are real-world agents (or close to it) and shouldn't
 // reliably trigger every rule. The point is regression coverage: if
 // discovery starts panicking on weird code shapes, this catches it before
 // the scanner ships broken to a real user.
@@ -83,11 +83,11 @@ func rulesFixture(t *testing.T) fs.FS {
 // internal/rules/policies_test.go, which uses focused snippets.
 func TestScanExamples_NoCrash(t *testing.T) {
 	_, thisFile, _, _ := runtime.Caller(0)
-	examplesDir := filepath.Join(filepath.Dir(thisFile), "..", "..", "examples")
+	corpusDir := filepath.Join(filepath.Dir(thisFile), "..", "..", "testdata", "corpus")
 
-	entries, err := os.ReadDir(examplesDir)
+	entries, err := os.ReadDir(corpusDir)
 	if err != nil {
-		t.Skipf("no examples/ dir at %s: %v", examplesDir, err)
+		t.Skipf("no testdata/corpus/ dir at %s: %v", corpusDir, err)
 	}
 
 	scanned := 0
@@ -95,14 +95,15 @@ func TestScanExamples_NoCrash(t *testing.T) {
 		if !e.IsDir() {
 			continue
 		}
-		// Skip very large dataset directories that are not real agents and
-		// would slow the test pointlessly. Add to this list as needed.
+		// Skip entries that are not agent repos: large datasets that would
+		// slow the test pointlessly (ToolBench) and the shared license-text
+		// directory (LICENSES). Add to this list as needed.
 		switch e.Name() {
-		case "ToolBench":
+		case "ToolBench", "LICENSES":
 			continue
 		}
 
-		target := filepath.Join(examplesDir, e.Name())
+		target := filepath.Join(corpusDir, e.Name())
 		t.Run(e.Name(), func(t *testing.T) {
 			result, err := scanner.Run(scanner.Config{Target: target, RulesFS: rulesFixture(t)})
 			if err != nil {
@@ -117,13 +118,13 @@ func TestScanExamples_NoCrash(t *testing.T) {
 		scanned++
 	}
 	if scanned == 0 {
-		t.Skip("examples/ has no scannable subdirectories")
+		t.Skip("testdata/corpus/ has no scannable subdirectories")
 	}
 }
 
 func TestScan_GoogleADKDemoFiresExpectedRules(t *testing.T) {
 	_, thisFile, _, _ := runtime.Caller(0)
-	target := filepath.Join(filepath.Dir(thisFile), "..", "..", "examples", "google-adk-demo")
+	target := filepath.Join(filepath.Dir(thisFile), "..", "..", "testdata", "corpus", "google-adk-demo")
 	res, err := scanner.Run(scanner.Config{Target: target, RulesFS: rulesFixture(t)})
 	if err != nil {
 		t.Fatalf("scan: %v", err)
@@ -152,7 +153,7 @@ func TestScan_GoogleADKDemoFiresExpectedRules(t *testing.T) {
 
 func TestScan_SurfacesNewInventoryFields(t *testing.T) {
 	_, thisFile, _, _ := runtime.Caller(0)
-	target := filepath.Join(filepath.Dir(thisFile), "..", "..", "examples", "financial_research_agent")
+	target := filepath.Join(filepath.Dir(thisFile), "..", "..", "testdata", "corpus", "financial_research_agent")
 	res, err := scanner.Run(scanner.Config{Target: target, RulesFS: rulesFixture(t)})
 	if err != nil {
 		t.Fatalf("scan: %v", err)
@@ -170,7 +171,7 @@ func TestScan_SurfacesNewInventoryFields(t *testing.T) {
 
 func TestScanExamples_TSClaudeSDKMin_DiscoveryCounts(t *testing.T) {
 	_, thisFile, _, _ := runtime.Caller(0)
-	target := filepath.Join(filepath.Dir(thisFile), "..", "..", "examples", "ts-claude-sdk-min")
+	target := filepath.Join(filepath.Dir(thisFile), "..", "..", "testdata", "corpus", "ts-claude-sdk-min")
 	res, err := scanner.Run(scanner.Config{Target: target, RulesFS: rulesFixture(t)})
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -197,7 +198,7 @@ func TestScanExamples_TSClaudeSDKMin_DiscoveryCounts(t *testing.T) {
 
 func TestScanExamples_EmailAgent_SubagentDiscoveredAndAudited(t *testing.T) {
 	_, thisFile, _, _ := runtime.Caller(0)
-	target := filepath.Join(filepath.Dir(thisFile), "..", "..", "examples", "email-agent")
+	target := filepath.Join(filepath.Dir(thisFile), "..", "..", "testdata", "corpus", "email-agent")
 	res, err := scanner.Run(scanner.Config{Target: target, RulesFS: rulesFixture(t)})
 	if err != nil {
 		t.Fatalf("Run: %v", err)

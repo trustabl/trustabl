@@ -348,8 +348,8 @@ Repo-wide hard rules that span the whole codebase:
   and must never write to stdout or influence `ScanResult` — the report stays
   byte-stable regardless of progress mode.
 - **Never commit secrets, credentials, or example repos under
-  `examples/`** without confirming the source is public and
-  unencumbered. The examples corpus is part of the test contract — it
+  `testdata/corpus/`** without confirming the source is public and
+  unencumbered. The corpus is part of the test contract — it
   is read by `scanner_test.go` on every test run.
 - **Don't bypass discovery.** Detectors operate on `ToolDef` /
   `AgentDef` produced by `internal/analysis/discovery.go`. Do not

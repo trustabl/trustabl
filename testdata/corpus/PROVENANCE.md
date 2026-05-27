@@ -1,4 +1,4 @@
-# Provenance and licensing — `examples/`
+# Provenance and licensing — `testdata/corpus/`
 
 These subdirectories are the corpus Trustabl scans during testing (see
 `internal/scanner/scanner_test.go::TestScanExamples_NoCrash`). The corpus

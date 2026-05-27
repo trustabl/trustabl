@@ -363,10 +363,10 @@ recognition detail.
 
 ## Testing
 
-`examples/` holds real-world agent code (Claude SDK demos, OpenAI Agents
+`testdata/corpus/` holds real-world agent code (Claude SDK demos, OpenAI Agents
 SDK demos, Google ADK demos, a TS Claude SDK fixture) — a corpus, not a
 controlled fixture, so well-written agents won't trigger most rules and
-that's correct. See [`examples/PROVENANCE.md`](examples/PROVENANCE.md)
+that's correct. See [`testdata/corpus/PROVENANCE.md`](testdata/corpus/PROVENANCE.md)
 for upstream sources and licenses of each example. Per-rule fire/silent
 correctness lives in `internal/rules/policies_test.go`; the end-to-end
 sweep in `internal/scanner/scanner_test.go` only asserts the scanner

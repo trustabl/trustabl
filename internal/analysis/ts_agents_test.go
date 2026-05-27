@@ -211,7 +211,7 @@ const q = query({
 // === Framing-1 main-thread-agent tests (new in this fix) ===
 
 func TestDiscoverTSAgents_QueryMainAgent_OpaqueWhenOptionsIsIdentifier(t *testing.T) {
-	// Real-world shape from examples/email-agent/ccsdk/ai-client.ts:
+	// Real-world shape from testdata/corpus/email-agent/ccsdk/ai-client.ts:
 	// options is a computed variable, not an inline object.
 	src := `
 import { query } from "@anthropic-ai/claude-agent-sdk";
@@ -311,7 +311,7 @@ async function run() {
 }
 
 func TestDiscoverTSAgents_QueryMainAgent_NameFromClassMethod(t *testing.T) {
-	// Real-world shape from examples/email-agent/ccsdk/ai-client.ts:
+	// Real-world shape from testdata/corpus/email-agent/ccsdk/ai-client.ts:
 	// query() is inside a method of a class. Name should be Class.method.
 	src := `
 import { query } from "@anthropic-ai/claude-agent-sdk";

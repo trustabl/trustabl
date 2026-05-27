@@ -143,8 +143,8 @@ Default sequence:
    appear in this table.
 6. Run `go test ./...`.
 
-The `examples/` directory is a real-agent corpus, not a controlled
-fixture. The scanner sweep over `examples/*` only asserts no crash — it
+The `testdata/corpus/` directory is a real-agent corpus, not a controlled
+fixture. The scanner sweep over `testdata/corpus/*` only asserts no crash — it
 does NOT assert that any specific rule fires there. Per-rule fire/silent
 correctness is the job of `policies_test.go`.
 
@@ -175,7 +175,7 @@ table for every shipped rule. Two failure modes and what they mean:
    as missing — you added a rule but no entry in `policyRuleCases`. Fix
    by adding at least one fire case and one silent case for that rule ID.
 
-The examples sweep in
+The corpus sweep in
 [`../../scanner/scanner_test.go`](../../scanner/scanner_test.go) only
 checks the scanner doesn't crash; it does not assert findings. Don't
 expect rule failures to surface there.

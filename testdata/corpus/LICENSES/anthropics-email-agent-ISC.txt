@@ -1,4 +1,4 @@
-The `examples/email-agent/` directory is a copy of the Anthropic-published
+The `testdata/corpus/email-agent/` directory is a copy of the Anthropic-published
 "Email Agent Demo" (upstream: github.com/anthropics/email-agent or the
 equivalent demo distribution). Its package.json declares:
 

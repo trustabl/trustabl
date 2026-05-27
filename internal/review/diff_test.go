@@ -11,7 +11,7 @@ import (
 // TestRender_HostedToolsVisibleInHumanFormat is the regression test for the
 // bug where ScanResult.HostedTools (populated by hosted-tool discovery) was
 // surfaced in the JSON output but never rendered in the human format. A
-// repo whose only tools are hosted (e.g. examples/research_bot using
+// repo whose only tools are hosted (e.g. testdata/corpus/research_bot using
 // WebSearchTool) used to render no hosted-tool info despite the JSON
 // listing the tool.
 func TestRender_HostedToolsVisibleInHumanFormat(t *testing.T) {

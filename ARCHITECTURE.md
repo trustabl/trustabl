@@ -1035,7 +1035,7 @@ Coverage is split across three layers, each with a focused contract:
    entry — adding a rule without test cases is therefore a build failure.
 3. **End-to-end sweep** ([scanner_test.go](internal/scanner/scanner_test.go)).
    `TestScanExamples_NoCrash` walks every immediate subdirectory of
-   `examples/` (skipping the `ToolBench` dataset) and runs `scanner.Run`
+   `testdata/corpus/` (skipping the `ToolBench` dataset) and runs `scanner.Run`
    on each. It asserts no error and a populated manifest — *not* specific
    findings. The point is regression coverage: weird real-world code
    shouldn't panic the discovery pass.
@@ -1045,7 +1045,7 @@ Coverage is split across three layers, each with a focused contract:
    across both runs. This enforces the §7 contract mechanically so a
    non-deterministic scan is a build failure, not a latent bug.
 
-Real-world examples in `examples/` are NOT a controlled fixture and are
+Real-world examples in `testdata/corpus/` are NOT a controlled fixture and are
 not expected to trigger every rule. Per-rule correctness lives in
 `policies_test.go`.
 
