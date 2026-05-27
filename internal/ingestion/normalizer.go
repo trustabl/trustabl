@@ -284,6 +284,11 @@ func discoverComponents(root string, m models.ScanManifest) []models.AgentCompon
 			out = append(out, models.AgentComponent{Kind: models.ComponentClaudeSettings, Path: p})
 		}
 	}
+	// Plugin roots are the directories containing a .claude-plugin/plugin.json.
+	// Used by the markdown switch below to recognize plugin-distributed commands
+	// at <root>/commands/*.md (the layout used by, e.g., wshobson/agents).
+	pluginRoots := pluginRootSet(m.JSONFiles)
+
 	for _, p := range m.MarkdownFiles {
 		switch {
 		case filepath.Base(p) == "SKILL.md":
@@ -293,6 +298,11 @@ func discoverComponents(root string, m models.ScanManifest) []models.AgentCompon
 		case hasClaudeSegment(p, "agents/"):
 			out = append(out, models.AgentComponent{Kind: models.ComponentSubagent, Path: p})
 		case hasClaudeSegment(p, "commands/"):
+			out = append(out, models.AgentComponent{Kind: models.ComponentSlashCommand, Path: p})
+		case isPluginSlashCommand(p, pluginRoots):
+			// Plugin layouts (e.g. wshobson/agents) place commands at
+			// <plugin-root>/commands/*.md, not .claude/commands/. Tag them when
+			// the parent directory has a sibling .claude-plugin/plugin.json.
 			out = append(out, models.AgentComponent{Kind: models.ComponentSlashCommand, Path: p})
 		}
 	}
@@ -390,6 +400,47 @@ func discoverComponents(root string, m models.ScanManifest) []models.AgentCompon
 func exists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+// pluginRootSet derives the set of plugin-root directories from the JSON
+// file list. A plugin root is the directory containing a
+// .claude-plugin/plugin.json file (NOT marketplace.json — that's a catalog,
+// not a plugin). Root-level plugin manifests yield the empty string as the
+// root. All paths are forward-slash by manifest convention.
+func pluginRootSet(jsonFiles []string) map[string]bool {
+	roots := make(map[string]bool)
+	for _, p := range jsonFiles {
+		switch {
+		case p == ".claude-plugin/plugin.json":
+			roots[""] = true
+		case strings.HasSuffix(p, "/.claude-plugin/plugin.json"):
+			roots[strings.TrimSuffix(p, "/.claude-plugin/plugin.json")] = true
+		}
+	}
+	return roots
+}
+
+// isPluginSlashCommand reports whether forward-slash path p is a direct child
+// of a <plugin-root>/commands/ directory. The file must be exactly one level
+// below commands/ (no nested subdirectories) so we don't sweep up e.g. shared
+// fragments in commands/_partials/.
+func isPluginSlashCommand(p string, roots map[string]bool) bool {
+	const seg = "/commands/"
+	idx := strings.LastIndex(p, seg)
+	if idx < 0 {
+		// Could still be a root-level "commands/<file>.md" when the plugin
+		// manifest sits at the repo root.
+		if roots[""] && strings.HasPrefix(p, "commands/") {
+			return !strings.Contains(p[len("commands/"):], "/")
+		}
+		return false
+	}
+	root := p[:idx]
+	if !roots[root] {
+		return false
+	}
+	rest := p[idx+len(seg):]
+	return !strings.Contains(rest, "/")
 }
 
 // hasClaudeSegment reports whether forward-slash path p contains a
