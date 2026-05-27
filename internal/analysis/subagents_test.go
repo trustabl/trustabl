@@ -45,7 +45,7 @@ tools: Read, Bash, Glob, Grep, mcp__email__search_inbox
 		Name:        "inbox-searcher",
 		Description: "Email search specialist.",
 		Tools:       []string{"Read", "Bash", "Glob", "Grep", "mcp__email__search_inbox"},
-		Location:    models.Location{FilePath: ".claude/agents/inbox-searcher.md"},
+		Location:    models.Location{FilePath: ".claude/agents/inbox-searcher.md", Line: 1, EndLine: 5},
 	}
 	if !reflect.DeepEqual(got[0], want) {
 		t.Errorf("got  %+v\nwant %+v", got[0], want)
@@ -145,5 +145,34 @@ func TestSubagents_CRLFLineEndings(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got[0].Tools, []string{"Read", "Bash"}) {
 		t.Errorf("Tools = %v, want [Read Bash]", got[0].Tools)
+	}
+}
+
+func TestSubagentDef_LocationLineRange(t *testing.T) {
+	// Fixture:
+	//   line 1: ---
+	//   line 2: name: foo
+	//   line 3: description: a foo
+	//   line 4: tools: Read, Grep
+	//   line 5: ---
+	//   line 6: (blank)
+	//   line 7: Body content.
+	dir := t.TempDir()
+	writeFixture(t, dir, ".claude/agents/foo.md", "---\nname: foo\ndescription: a foo\ntools: Read, Grep\n---\n\nBody content.\n")
+	manifest := models.ScanManifest{
+		RepoRoot: dir,
+		Components: []models.AgentComponent{
+			{Kind: models.ComponentSubagent, Path: ".claude/agents/foo.md"},
+		},
+	}
+	got := analysis.DiscoverSubagents(manifest)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 subagent, got %d", len(got))
+	}
+	if got[0].Line != 1 {
+		t.Errorf("Line = %d, want 1", got[0].Line)
+	}
+	if got[0].EndLine != 5 {
+		t.Errorf("EndLine = %d, want 5", got[0].EndLine)
 	}
 }

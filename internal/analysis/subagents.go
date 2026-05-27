@@ -28,7 +28,7 @@ func DiscoverSubagents(manifest models.ScanManifest) []models.SubagentDef {
 		if err != nil {
 			continue
 		}
-		fm, ok := extractFrontmatter(raw)
+		fm, startLine, endLine, ok := extractFrontmatter(raw)
 		if !ok {
 			continue
 		}
@@ -44,7 +44,11 @@ func DiscoverSubagents(manifest models.ScanManifest) []models.SubagentDef {
 			Description: parsed.Description,
 			Model:       parsed.Model,
 			Tools:       splitToolsField([]string(parsed.Tools)),
-			Location:    models.Location{FilePath: c.Path},
+			Location: models.Location{
+				FilePath: c.Path,
+				Line:     startLine,
+				EndLine:  endLine,
+			},
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].FilePath < out[j].FilePath })
@@ -77,28 +81,39 @@ type subagentFrontmatter struct {
 }
 
 // extractFrontmatter pulls the YAML block between leading "---\n" (or
-// "---\r\n") and the next line beginning with "---". Returns (block, true) on
-// success, (nil, false) if the file does not start with "---".
+// "---\r\n") and the next line beginning with "---". On success it returns
+// (block, startLine, endLine, true) where startLine is the line of the
+// opening "---" marker (always 1) and endLine is the line of the closing
+// "---" marker. Returns (nil, 0, 0, false) if the file does not start with
+// "---".
 //
 // Known v1 limitations: a line beginning with "---" inside the frontmatter
 // body (e.g. a YAML document separator in a block scalar) truncates the block
 // early; and on CRLF files a trailing "\r" is left on the last block line,
 // which yaml.v3 tolerates.
-func extractFrontmatter(raw []byte) ([]byte, bool) {
+func extractFrontmatter(raw []byte) (block []byte, startLine, endLine int, ok bool) {
 	hasLF := bytes.HasPrefix(raw, []byte("---\n"))
 	hasCRLF := bytes.HasPrefix(raw, []byte("---\r\n"))
 	if !hasLF && !hasCRLF {
-		return nil, false
+		return nil, 0, 0, false
 	}
-	rest := raw[4:]
+	headerLen := 4
 	if hasCRLF {
-		rest = raw[5:]
+		headerLen = 5
 	}
+	rest := raw[headerLen:]
 	end := bytes.Index(rest, []byte("\n---"))
 	if end < 0 {
-		return nil, false
+		return nil, 0, 0, false
 	}
-	return rest[:end], true
+	// The closing "\n---" begins at byte offset (headerLen + end) within raw.
+	// The newline at that index terminates the last frontmatter-body line;
+	// the "---" marker sits on the next line. Counting newlines in raw up to
+	// and INCLUDING that terminating newline gives the marker's 1-indexed
+	// line number directly.
+	markerNewlineOffset := headerLen + end
+	endLine = bytes.Count(raw[:markerNewlineOffset+1], []byte{'\n'}) + 1
+	return rest[:end], 1, endLine, true
 }
 
 // splitToolsField normalizes the frontmatter tools entries into a flat slice.
