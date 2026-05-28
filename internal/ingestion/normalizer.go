@@ -70,6 +70,8 @@ func detectSDKDeps(root string) []models.SDKDep {
 		// why this MUST NOT be combined with the Python "claude-agent-sdk" needle.
 		{Name: "claude-agent-sdk", Pattern: "@anthropic-ai/claude-agent-sdk",
 			Manifests: []string{"package.json"}},
+		{Name: "google-adk", Pattern: "@google/adk",
+			Manifests: []string{"package.json"}},
 	}
 	seen := make(map[string]bool)
 	var out []models.SDKDep
