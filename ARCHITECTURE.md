@@ -927,10 +927,12 @@ ScanResult {
 record, and both output formats render from it (the human summary lists
 findings and readiness; `--format json` marshals the struct directly).
 
-`ScanID` is derived deterministically from the repo label, the sorted
-Python file list, and the resolved rules version, so identical inputs produce
-diff-comparable JSON across runs — and a different rule pack yields a distinct,
-honest ID.
+`ScanID` is derived deterministically from the repo label, every inventoried
+file list (Python, TypeScript, JavaScript, YAML, JSON, Markdown — each sorted
+independently and folded in with a label so OS-walk order never leaks and a
+TS-only or markdown-only repo gets an honest ID), and the resolved rules
+version, so identical inputs produce diff-comparable JSON across runs — and a
+different rule pack yields a distinct, honest ID.
 
 **Language-field discipline**: `ToolDef`, `AgentDef`, and `MCPServerDef`
 carry a `Language` field populated by every discovery path and consulted
@@ -1266,27 +1268,43 @@ not expected to trigger every rule. Per-rule correctness lives in
 
 Two invariants are load-bearing for the user-facing experience:
 
-1. **Same inputs → same `ScanID`.** Derived from the repo label, a sorted
-   file list, and the resolved rules version, so file ordering from the OS
-   walk does not leak into the ID. Because the rules version is folded in, a
-   scan run against a different rule pack produces a distinct ID — the ID is
-   honest about which rules were applied, not just which code was scanned.
+1. **Same inputs → same `ScanID`.** Derived from the repo label, every
+   inventoried file list (Python, TypeScript, JavaScript, YAML, JSON, Markdown —
+   each sorted independently and folded in under a label), and the resolved
+   rules version, so file ordering from the OS walk does not leak into the ID.
+   Folding all file lists — not just Python — keeps the ID honest for TS-only
+   and markdown-only repos, where a Python-only ID would collide across
+   materially different scans. Because the rules version is folded in, a scan
+   run against a different rule pack produces a distinct ID — the ID is honest
+   about which rules were applied, not just which code was scanned.
 2. **Same inputs → byte-stable report.** Findings are sorted by
    `(RuleID, FilePath, Line)`; the inventory slices (`HostedTools`,
    `MCPServers`, `Subagents`, `Skills`, `SlashCommands`, `PluginManifests`,
    `ClaudeSettings`) and `Components` (by `(Kind, Path)`) are sorted by
-   `FilePath` before marshaling. The JSON output is therefore diff-stable
-   across runs.
+   `FilePath` before marshaling. Ordered fields *within* an entity are sorted
+   too — e.g. `ToolDef.ParamNames` is sorted in every discovery path, since the
+   TS paths build it by ranging a Go map whose iteration order is random. The
+   JSON output is therefore diff-stable across runs.
 
 This matters because CI consumers diff scan output. A non-deterministic scan
 means spurious diffs on every run, which trains users to ignore the diff
 entirely.
 
-The contract is enforced by `TestScanDeterministic` in
-[internal/scanner/determinism_test.go](internal/scanner/determinism_test.go):
-two consecutive `scanner.Run` calls over `testdata/deterministic-fixture` must
-produce identical `ScanID` values. A change that violates this is a build
-failure.
+The contract is enforced in
+[internal/scanner/determinism_test.go](internal/scanner/determinism_test.go) and
+[internal/scanner/scanid_test.go](internal/scanner/scanid_test.go):
+
+- `TestScanDeterministic` — two `scanner.Run` calls over
+  `testdata/deterministic-fixture` produce identical `ScanID` values, and a
+  different rules version changes it.
+- `TestScanDeterministic_TSReportByteStable` — repeated runs over the TS fixture
+  marshal to byte-identical JSON (catches ordered-field nondeterminism like an
+  unsorted `ParamNames`, which `ScanID` alone cannot see).
+- `TestScanID_FoldsAllFileLists` / `TestScanID_StableUnderReordering` — the
+  `ScanID` changes when any inventoried file list (TS/JS/Markdown/JSON/YAML, not
+  just Python) changes, yet is invariant under file-walk reordering.
+
+A change that violates any of these is a build failure.
 
 New ordered output MUST be sorted deterministically before emitting. No
 timestamp, no map iteration order, no goroutine scheduling may influence output.

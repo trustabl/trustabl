@@ -4,7 +4,7 @@ import { webSearchTool } from "@openai/agents-openai";
 const computeSum = tool({
   name: "sum",
   description: "Add",
-  parameters: { a: 0, b: 0 },
+  parameters: { zulu: 0, alpha: 0, mike: 0, bravo: 0, yankee: 0, charlie: 0 },
   execute: async () => "",
 });
 

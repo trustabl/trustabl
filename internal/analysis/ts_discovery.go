@@ -1,6 +1,8 @@
 package analysis
 
 import (
+	"sort"
+
 	sitter "github.com/smacker/go-tree-sitter"
 
 	"github.com/trustabl/trustabl/internal/analysis/astutil"
@@ -78,6 +80,7 @@ func extractTSToolFromCall(call *sitter.Node, pf ParsedFile) (models.ToolDef, bo
 		for k := range kt.Children {
 			tool.ParamNames = append(tool.ParamNames, k)
 		}
+		sort.Strings(tool.ParamNames) // map iteration order is nondeterministic; ParamNames is serialized
 		tool.HasTypedParams = len(kt.Children) > 0
 	}
 	// Handler body facts (arg 3): shells_out, http_call.

@@ -299,12 +299,33 @@ func parseTSFiles(paths []string, root string, onFile func(string)) []analysis.P
 // the rules version, so the same inputs always produce the same ID. Including
 // the rules version means a different rule pack yields a distinct, honest ID.
 func scanID(repoLabel string, manifest models.ScanManifest, rulesVersion string) string {
-	files := make([]string, len(manifest.PythonFiles))
-	copy(files, manifest.PythonFiles)
-	sort.Strings(files)
 	h := sha256.New()
 	h.Write([]byte(repoLabel))
-	h.Write([]byte(strings.Join(files, "\n")))
+	// Fold every inventoried file list so the ID is honest about all scanned
+	// inputs, not just Python — the engine now does first-class TypeScript /
+	// JavaScript discovery and markdown / JSON / YAML config scanning. Each list
+	// is sorted independently so OS-walk order does not leak, and each is labeled
+	// with a NUL-delimited tag so list membership is preserved in the digest.
+	fileLists := []struct {
+		label string
+		files []string
+	}{
+		{"py", manifest.PythonFiles},
+		{"ts", manifest.TypeScriptFiles},
+		{"js", manifest.JavaScriptFiles},
+		{"yaml", manifest.YAMLFiles},
+		{"json", manifest.JSONFiles},
+		{"md", manifest.MarkdownFiles},
+	}
+	for _, fl := range fileLists {
+		files := make([]string, len(fl.files))
+		copy(files, fl.files)
+		sort.Strings(files)
+		h.Write([]byte(fl.label))
+		h.Write([]byte{0})
+		h.Write([]byte(strings.Join(files, "\n")))
+		h.Write([]byte{0})
+	}
 	h.Write([]byte(rulesVersion))
 	return "scan_" + hex.EncodeToString(h.Sum(nil)[:8])
 }

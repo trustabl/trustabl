@@ -1,6 +1,8 @@
 package scanner_test
 
 import (
+	"bytes"
+	"encoding/json"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -137,5 +139,41 @@ func TestScanDeterministic_TSFixture(t *testing.T) {
 	}
 	if r1.ScanID != r2.ScanID {
 		t.Errorf("non-deterministic ScanID: %q vs %q", r1.ScanID, r2.ScanID)
+	}
+}
+
+// TestScanDeterministic_TSReportByteStable asserts the FULL marshaled report is
+// byte-identical across repeated runs over a TS fixture — the half of the §7
+// contract ("same inputs → byte-stable report") that the ScanID-only checks
+// above cannot see. The OpenAI tool in the fixture has 6 parameters; if any
+// discovery path builds an ordered slice (e.g. ToolDef.ParamNames) by ranging a
+// Go map, the marshaled bytes drift across runs and this fails. Looping defeats
+// the chance that two runs happen to coincide on a map-iteration order.
+func TestScanDeterministic_TSReportByteStable(t *testing.T) {
+	_, thisFile, _, _ := runtime.Caller(0)
+	fixture := filepath.Join(filepath.Dir(thisFile), "..", "..", "testdata", "deterministic-ts-fixture")
+
+	cfg := scanner.Config{Target: fixture, RulesFS: rulesFixtureFS(t), RulesVersion: "fixedsha"}
+	first, err := scanner.Run(cfg)
+	if err != nil {
+		t.Fatalf("first run: %v", err)
+	}
+	want, err := json.Marshal(first)
+	if err != nil {
+		t.Fatalf("marshal first: %v", err)
+	}
+
+	for i := 0; i < 8; i++ {
+		got, err := scanner.Run(cfg)
+		if err != nil {
+			t.Fatalf("run %d: %v", i, err)
+		}
+		gotJSON, err := json.Marshal(got)
+		if err != nil {
+			t.Fatalf("marshal run %d: %v", i, err)
+		}
+		if !bytes.Equal(want, gotJSON) {
+			t.Fatalf("report not byte-stable on run %d:\n want=%s\n got =%s", i, want, gotJSON)
+		}
 	}
 }
