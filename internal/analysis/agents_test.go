@@ -605,3 +605,32 @@ func TestResolveEdges_TSHostedToolAppendedToInventory(t *testing.T) {
 		t.Errorf("HostedToolRef should be resolved after edges")
 	}
 }
+
+func TestResolveEdges_TSHostedToolNoDoubleEmit(t *testing.T) {
+	// Regression: TS OpenAI agents must not have their hosted-tool call
+	// items re-emitted as External ToolRefs by the Python tools-kwarg block.
+	// Discovery pre-populates HostedToolRefs from `tools: [webSearchTool()]`;
+	// ResolveEdges must not also emit a ToolRef{Name: "webSearchTool({...})"}.
+	inv := &models.RepoInventory{
+		Agents: []models.AgentDef{{
+			SDK:      models.SDKOpenAIAgents,
+			Class:    "Agent",
+			Language: models.LanguageTypeScript,
+			Location: models.Location{FilePath: "src/a.ts", Line: 10},
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"tools": {Value: &models.Expr{Kind: models.ExprList, List: []models.Expr{
+					{Kind: models.ExprCall, Text: "webSearchTool()"},
+				}}},
+			}},
+			HostedToolRefs: []models.HostedToolRef{{Class: "webSearchTool", DefIndex: -1}},
+		}},
+	}
+	analysis.ResolveEdges(inv, nil)
+	if len(inv.Agents[0].ToolRefs) != 0 {
+		t.Errorf("ToolRefs should be empty (hosted tool already in HostedToolRefs), got %+v",
+			inv.Agents[0].ToolRefs)
+	}
+	if len(inv.Agents[0].HostedToolRefs) != 1 {
+		t.Errorf("HostedToolRefs should have 1 entry, got %+v", inv.Agents[0].HostedToolRefs)
+	}
+}

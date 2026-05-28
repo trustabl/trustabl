@@ -111,65 +111,71 @@ func ResolveEdges(inv *models.RepoInventory, parsed []ParsedFile) {
 			continue
 		}
 
-		toolsKwarg := agentKwarg(a, "tools")
-		if toolsKwarg != nil && toolsKwarg.Value != nil && toolsKwarg.Value.Kind == models.ExprList {
-			for _, item := range toolsKwarg.Value.List {
-				// Hosted-tool call (e.g. WebSearchTool(), BashTool()) — emit a
-				// HostedToolDef and a HostedToolRef. These never resolve to a
-				// ToolDef. Classification is dispatched by the agent's SDK: each
-				// SDK has its own closed class list (HostedToolClasses for OpenAI,
-				// ADKHostedToolClasses for Google ADK), consulted only against its
-				// own agents.
-				var (
-					h    models.HostedToolDef
-					isHT bool
-				)
-				switch a.SDK {
-				case models.SDKGoogleADK:
-					h, isHT = classifyADKHostedToolCall(item, a.FilePath)
-				default:
-					h, isHT = classifyHostedToolCall(item, a.FilePath)
-				}
-				if isHT {
-					inv.HostedTools = append(inv.HostedTools, h)
-					a.HostedToolRefs = append(a.HostedToolRefs, models.HostedToolRef{
-						Class:    h.Class,
-						DefIndex: len(inv.HostedTools) - 1,
-					})
-					continue
-				}
-				// ADK wraps user functions as FunctionTool(symbol); the
-				// registered ToolDef is keyed by the inner symbol, so unwrap
-				// before symbol resolution.
-				lookupName := item.Text
-				if a.SDK == models.SDKGoogleADK {
-					if inner, ok := adkFunctionToolArg(item.Text); ok {
-						lookupName = inner
+		// Python-shape tools= kwarg processing. TS OpenAI agents have their
+		// ToolRefs and HostedToolRefs pre-populated by populateTSOpenAIToolRefs
+		// at discovery (the call_expression items in Kwargs.tools would otherwise
+		// fall through to External ToolRef emission here, double-emitting).
+		if a.Language != models.LanguageTypeScript {
+			toolsKwarg := agentKwarg(a, "tools")
+			if toolsKwarg != nil && toolsKwarg.Value != nil && toolsKwarg.Value.Kind == models.ExprList {
+				for _, item := range toolsKwarg.Value.List {
+					// Hosted-tool call (e.g. WebSearchTool(), BashTool()) — emit a
+					// HostedToolDef and a HostedToolRef. These never resolve to a
+					// ToolDef. Classification is dispatched by the agent's SDK: each
+					// SDK has its own closed class list (HostedToolClasses for OpenAI,
+					// ADKHostedToolClasses for Google ADK), consulted only against its
+					// own agents.
+					var (
+						h    models.HostedToolDef
+						isHT bool
+					)
+					switch a.SDK {
+					case models.SDKGoogleADK:
+						h, isHT = classifyADKHostedToolCall(item, a.FilePath)
+					default:
+						h, isHT = classifyHostedToolCall(item, a.FilePath)
 					}
-				}
-				ref := models.ToolRef{Name: lookupName}
-				var td *models.ToolDef
-				if t := toolsByFileSym[a.FilePath][lookupName]; t != nil {
-					td = t
-				} else if imp, ok := importsByFile[a.FilePath][lookupName]; ok {
-					for _, candidateFile := range parsed {
-						if matchesModule(candidateFile.RelPath, imp.module) {
-							if cand := toolsByFileSym[candidateFile.RelPath][imp.name]; cand != nil {
-								td = cand
-								break
+					if isHT {
+						inv.HostedTools = append(inv.HostedTools, h)
+						a.HostedToolRefs = append(a.HostedToolRefs, models.HostedToolRef{
+							Class:    h.Class,
+							DefIndex: len(inv.HostedTools) - 1,
+						})
+						continue
+					}
+					// ADK wraps user functions as FunctionTool(symbol); the
+					// registered ToolDef is keyed by the inner symbol, so unwrap
+					// before symbol resolution.
+					lookupName := item.Text
+					if a.SDK == models.SDKGoogleADK {
+						if inner, ok := adkFunctionToolArg(item.Text); ok {
+							lookupName = inner
+						}
+					}
+					ref := models.ToolRef{Name: lookupName}
+					var td *models.ToolDef
+					if t := toolsByFileSym[a.FilePath][lookupName]; t != nil {
+						td = t
+					} else if imp, ok := importsByFile[a.FilePath][lookupName]; ok {
+						for _, candidateFile := range parsed {
+							if matchesModule(candidateFile.RelPath, imp.module) {
+								if cand := toolsByFileSym[candidateFile.RelPath][imp.name]; cand != nil {
+									td = cand
+									break
+								}
 							}
 						}
 					}
+					if td != nil {
+						ref.Resolved = td
+					} else {
+						ref.External = true
+					}
+					a.ToolRefs = append(a.ToolRefs, ref)
 				}
-				if td != nil {
-					ref.Resolved = td
-				} else {
-					ref.External = true
-				}
-				a.ToolRefs = append(a.ToolRefs, ref)
+			} else if toolsKwarg != nil {
+				a.Opaque = true
 			}
-		} else if toolsKwarg != nil {
-			a.Opaque = true
 		}
 
 		mcpKwarg := agentKwarg(a, "mcp_servers")
