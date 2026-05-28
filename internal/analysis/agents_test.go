@@ -476,3 +476,132 @@ agent = Agent(name="x", tools=[shared])
 		t.Errorf("expected resolved to a.py, got %+v", inv.Agents[0].ToolRefs[0].Resolved)
 	}
 }
+
+// ─── ResolveEdges — TS OpenAI VarName resolution ──────────────────────────────
+
+func TestResolveEdges_TSToolByVarName(t *testing.T) {
+	inv := &models.RepoInventory{
+		Tools: []models.ToolDef{{
+			Name:     "sum",
+			VarName:  "computeSum",
+			Kind:     models.KindOpenAITool,
+			Language: models.LanguageTypeScript,
+			Location: models.Location{FilePath: "src/a.ts", Line: 1},
+		}},
+		Agents: []models.AgentDef{{
+			SDK:      models.SDKOpenAIAgents,
+			Class:    "Agent",
+			Language: models.LanguageTypeScript,
+			Location: models.Location{FilePath: "src/a.ts", Line: 10},
+			ToolRefs: []models.ToolRef{{Name: "computeSum"}},
+		}},
+	}
+	analysis.ResolveEdges(inv, nil)
+	got := inv.Agents[0].ToolRefs[0]
+	if got.Resolved == nil {
+		t.Errorf("expected ToolRef to resolve via VarName, got External=%v", got.External)
+	} else if got.Resolved.Name != "sum" {
+		t.Errorf("resolved to wrong tool: %+v", got.Resolved)
+	}
+}
+
+func TestResolveEdges_PythonToolByName_BackwardCompat(t *testing.T) {
+	inv := &models.RepoInventory{
+		Tools: []models.ToolDef{{
+			Name:     "myTool",
+			Kind:     models.KindOpenAITool,
+			Language: models.LanguagePython,
+			Location: models.Location{FilePath: "src/a.py", Line: 1},
+		}},
+		Agents: []models.AgentDef{{
+			SDK:      models.SDKOpenAIAgents,
+			Class:    "Agent",
+			Language: models.LanguagePython,
+			Location: models.Location{FilePath: "src/a.py", Line: 10},
+			ToolRefs: []models.ToolRef{{Name: "myTool"}},
+		}},
+	}
+	analysis.ResolveEdges(inv, nil)
+	if inv.Agents[0].ToolRefs[0].Resolved == nil {
+		t.Errorf("Python case should still resolve by Name")
+	}
+}
+
+func TestResolveEdges_TSMCPByVarName(t *testing.T) {
+	inv := &models.RepoInventory{
+		MCPServers: []models.MCPServerDef{{
+			Class:     "MCPServerStdio",
+			VarName:   "fsServer",
+			Transport: "stdio",
+			SDK:       models.SDKOpenAIAgents,
+			Language:  models.LanguageTypeScript,
+			Location:  models.Location{FilePath: "src/a.ts", Line: 1},
+		}},
+		Agents: []models.AgentDef{{
+			SDK:           models.SDKOpenAIAgents,
+			Class:         "Agent",
+			Language:      models.LanguageTypeScript,
+			Location:      models.Location{FilePath: "src/a.ts", Line: 10},
+			MCPServerRefs: []models.MCPServerRef{{Class: "fsServer", DefIndex: -1}},
+		}},
+	}
+	analysis.ResolveEdges(inv, nil)
+	got := inv.Agents[0].MCPServerRefs[0]
+	if got.External || got.Resolved == nil {
+		t.Errorf("expected MCPServerRef to resolve via VarName, got %+v", got)
+	}
+	if got.Resolved.Class != "MCPServerStdio" {
+		t.Errorf("wrong class: %q", got.Resolved.Class)
+	}
+}
+
+func TestResolveEdges_TSGuardrailByVarName(t *testing.T) {
+	inv := &models.RepoInventory{
+		Guardrails: []models.GuardrailDef{{
+			Name:     "block_pii",
+			VarName:  "blockPII",
+			Kind:     "input",
+			Location: models.Location{FilePath: "src/a.ts", Line: 1},
+		}},
+		Agents: []models.AgentDef{{
+			SDK:         models.SDKOpenAIAgents,
+			Class:       "Agent",
+			Language:    models.LanguageTypeScript,
+			Location:    models.Location{FilePath: "src/a.ts", Line: 10},
+			InputGuards: []models.GuardrailRef{{Name: "blockPII"}},
+		}},
+	}
+	analysis.ResolveEdges(inv, nil)
+	got := inv.Agents[0].InputGuards[0]
+	if got.External || got.Resolved == nil {
+		t.Errorf("expected GuardrailRef to resolve via VarName, got %+v", got)
+	}
+}
+
+func TestResolveEdges_TSHostedToolAppendedToInventory(t *testing.T) {
+	// AgentDef carries a HostedToolRef from discovery; ResolveEdges should
+	// append a corresponding HostedToolDef to inv.HostedTools and update
+	// DefIndex via the sort permutation.
+	inv := &models.RepoInventory{
+		Agents: []models.AgentDef{{
+			SDK:            models.SDKOpenAIAgents,
+			Class:          "Agent",
+			Language:       models.LanguageTypeScript,
+			Location:       models.Location{FilePath: "src/a.ts", Line: 10},
+			HostedToolRefs: []models.HostedToolRef{{Class: "webSearchTool", DefIndex: -1}},
+		}},
+	}
+	analysis.ResolveEdges(inv, nil)
+	if len(inv.HostedTools) != 1 {
+		t.Fatalf("expected 1 HostedToolDef in inventory, got %d", len(inv.HostedTools))
+	}
+	if inv.HostedTools[0].Class != "webSearchTool" {
+		t.Errorf("wrong hosted-tool class: %q", inv.HostedTools[0].Class)
+	}
+	if inv.HostedTools[0].SDK != models.SDKOpenAIAgents {
+		t.Errorf("wrong SDK: %q", inv.HostedTools[0].SDK)
+	}
+	if inv.Agents[0].HostedToolRefs[0].Resolved == nil {
+		t.Errorf("HostedToolRef should be resolved after edges")
+	}
+}

@@ -53,6 +53,12 @@ func ResolveEdges(inv *models.RepoInventory, parsed []ParsedFile) {
 			toolsByFileSym[t.FilePath] = make(map[string]*models.ToolDef)
 		}
 		toolsByFileSym[t.FilePath][t.Name] = t
+		// TS tools register a distinct const-binding name (VarName); also
+		// index by it so `tools: [computeSum]` resolves when the registered
+		// tool name is "sum". For Python tools VarName is empty — no-op.
+		if t.VarName != "" && t.VarName != t.Name {
+			toolsByFileSym[t.FilePath][t.VarName] = t
+		}
 	}
 	guardsByFileSym := make(map[string]map[string]*models.GuardrailDef)
 	for i := range inv.Guardrails {
@@ -61,6 +67,35 @@ func ResolveEdges(inv *models.RepoInventory, parsed []ParsedFile) {
 			guardsByFileSym[g.FilePath] = make(map[string]*models.GuardrailDef)
 		}
 		guardsByFileSym[g.FilePath][g.Name] = g
+		// TS guardrails register a distinct const-binding name (VarName); also
+		// index by it so `inputGuardrails: [blockPII]` resolves when the
+		// registered guardrail name is "block_pii". For Python guardrails
+		// VarName is empty — no-op.
+		if g.VarName != "" && g.VarName != g.Name {
+			guardsByFileSym[g.FilePath][g.VarName] = g
+		}
+	}
+	// mcpByFileSym indexes pre-existing MCPServerDefs by (file, VarName) and
+	// stores the ORIGINAL slice index (not a pointer). Storing the index
+	// instead of a pointer is deliberate: the Python mcp_servers= block below
+	// appends to inv.MCPServers inside the per-agent loop, which may
+	// reallocate the backing array and invalidate any cached pointers. The
+	// index stays valid because the original entries are never moved or
+	// removed, only new entries are appended after them.
+	mcpByFileSym := make(map[string]map[string]int)
+	for i := range inv.MCPServers {
+		m := &inv.MCPServers[i]
+		// Python MCPServerDefs typically have VarName empty (the with-statement
+		// alias path uses mcpAliasesByFile, not this index). TS ones carry
+		// VarName from `const x = new MCPServerStdio(...)` — index by it so
+		// `mcpServers: [x]` from a TS agent resolves to the same-file def.
+		if m.VarName == "" {
+			continue
+		}
+		if mcpByFileSym[m.FilePath] == nil {
+			mcpByFileSym[m.FilePath] = make(map[string]int)
+		}
+		mcpByFileSym[m.FilePath][m.VarName] = i
 	}
 
 	importsByFile := buildImportsByFile(parsed)
@@ -222,6 +257,98 @@ func ResolveEdges(inv *models.RepoInventory, parsed []ParsedFile) {
 
 		resolveGuardKwarg(a, "input_guardrails", &a.InputGuards, guardsByFileSym[a.FilePath])
 		resolveGuardKwarg(a, "output_guardrails", &a.OutputGuards, guardsByFileSym[a.FilePath])
+
+		// Resolve pre-populated refs by same-file (VarName or Name) lookup.
+		// TS OpenAI discovery pre-populates ToolRefs, MCPServerRefs,
+		// InputGuards, OutputGuards, and HostedToolRefs at discovery time —
+		// the Python loop bodies above are keyed off snake_case Kwargs
+		// (tools/mcp_servers/input_guardrails/output_guardrails) and the TS
+		// Kwargs use camelCase, so they no-op for TS agents. These passes
+		// resolve those pre-populated refs.
+		//
+		// The Tool/Guardrail/MCP passes are intentionally language-agnostic:
+		// they only act on refs with Resolved==nil && External==false (or
+		// MCP DefIndex<0 && !External), which the Python blocks above never
+		// leave behind (they always set one or the other). So real Python
+		// flows are unaffected — only direct test setups or future SDKs
+		// that pre-populate refs hit these passes.
+		toolLookup := toolsByFileSym[a.FilePath]
+		for j := range a.ToolRefs {
+			ref := &a.ToolRefs[j]
+			if ref.Resolved != nil || ref.External {
+				continue
+			}
+			if td, ok := toolLookup[ref.Name]; ok {
+				ref.Resolved = td
+			} else {
+				ref.External = true
+			}
+		}
+
+		guardLookup := guardsByFileSym[a.FilePath]
+		resolveGuardRefs := func(refs []models.GuardrailRef) {
+			for j := range refs {
+				ref := &refs[j]
+				if ref.Resolved != nil || ref.External {
+					continue
+				}
+				if gd, ok := guardLookup[ref.Name]; ok {
+					ref.Resolved = gd
+				} else {
+					ref.External = true
+				}
+			}
+		}
+		resolveGuardRefs(a.InputGuards)
+		resolveGuardRefs(a.OutputGuards)
+
+		// MCPServerRefs — discovery sets Class=identifier text and
+		// DefIndex=-1. Resolve via same-file VarName lookup; on success
+		// replace Class with the canonical MCP class name and set
+		// DefIndex to the original slice index. The post-sort remap
+		// below re-points .Resolved via the sort permutation.
+		mcpLookup := mcpByFileSym[a.FilePath]
+		for j := range a.MCPServerRefs {
+			ref := &a.MCPServerRefs[j]
+			if ref.DefIndex >= 0 || ref.External {
+				continue
+			}
+			if idx, ok := mcpLookup[ref.Class]; ok {
+				ref.Class = inv.MCPServers[idx].Class
+				ref.DefIndex = idx
+			} else {
+				ref.External = true
+			}
+		}
+
+		// HostedToolRefs — TS OpenAI discovery sets Class to the canonical
+		// factory name (e.g. "webSearchTool") and DefIndex=-1. Materialize
+		// a matching HostedToolDef in inv.HostedTools so downstream
+		// consumers see a complete hosted-tool inventory. Gated to the
+		// TS OpenAI factory set so Python hosted-tool refs (handled by
+		// the classify block above) don't double-append. The Location
+		// is approximated to the agent's call site — the precise
+		// factory-call line is not currently carried on HostedToolRef.
+		// DefIndex set here is the pre-sort index; the post-sort
+		// remap below re-points .Resolved via the sort permutation.
+		for j := range a.HostedToolRefs {
+			ref := &a.HostedToolRefs[j]
+			if ref.DefIndex >= 0 {
+				continue
+			}
+			if !IsTSOpenAIHostedToolFactory(ref.Class) {
+				continue
+			}
+			inv.HostedTools = append(inv.HostedTools, models.HostedToolDef{
+				Class: ref.Class,
+				SDK:   models.SDKOpenAIAgents,
+				Location: models.Location{
+					FilePath: a.FilePath,
+					Line:     a.Line,
+				},
+			})
+			ref.DefIndex = len(inv.HostedTools) - 1
+		}
 	}
 
 	hostedRemap := sortHostedTools(inv.HostedTools)
@@ -229,10 +356,10 @@ func ResolveEdges(inv *models.RepoInventory, parsed []ParsedFile) {
 
 	// Re-point ref.Resolved after sorting. Each ref recorded the pre-sort index
 	// of its def at append time (DefIndex); the sort permutation maps it to the
-	// post-sort slot. DefIndex < 0 means the ref is external or TS (TS MCP ref
-	// resolution is out of scope for SP1) — left unresolved. This index-based
-	// remap is unambiguous even when two agents in one file share a class or an
-	// MCP alias (the content-matching it replaces was not).
+	// post-sort slot. DefIndex < 0 means the ref is external or could not be
+	// resolved — left unresolved. This index-based remap is unambiguous even
+	// when two agents in one file share a class or an MCP alias (the
+	// content-matching it replaces was not).
 	for i := range inv.Agents {
 		a := &inv.Agents[i]
 		for j := range a.HostedToolRefs {
