@@ -1,6 +1,7 @@
 package models_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -35,5 +36,63 @@ func TestScanResult_RulesProvenanceFieldsSerialize(t *testing.T) {
 		if !strings.Contains(string(b), want) {
 			t.Errorf("JSON missing %s\ngot: %s", want, b)
 		}
+	}
+}
+
+func TestToolDef_VarName_OmitEmpty(t *testing.T) {
+	td := models.ToolDef{Name: "x", Kind: models.KindOpenAITool, Language: models.LanguagePython}
+	b, err := json.Marshal(td)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if bytes.Contains(b, []byte(`"var_name"`)) {
+		t.Errorf("var_name should be omitted when empty, got: %s", b)
+	}
+	td.VarName = "myTool"
+	b, err = json.Marshal(td)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !bytes.Contains(b, []byte(`"var_name":"myTool"`)) {
+		t.Errorf("var_name should be present when set, got: %s", b)
+	}
+}
+
+func TestMCPServerDef_VarName_OmitEmpty(t *testing.T) {
+	m := models.MCPServerDef{Class: "MCPServerStdio", Transport: "stdio",
+		SDK: models.SDKOpenAIAgents, Language: models.LanguageTypeScript}
+	b, err := json.Marshal(m)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if bytes.Contains(b, []byte(`"var_name"`)) {
+		t.Errorf("var_name should be omitted when empty, got: %s", b)
+	}
+	m.VarName = "fsServer"
+	b, err = json.Marshal(m)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !bytes.Contains(b, []byte(`"var_name":"fsServer"`)) {
+		t.Errorf("var_name should be present when set, got: %s", b)
+	}
+}
+
+func TestGuardrailDef_VarName_OmitEmpty(t *testing.T) {
+	g := models.GuardrailDef{Name: "x", Kind: "input"}
+	b, err := json.Marshal(g)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if bytes.Contains(b, []byte(`"var_name"`)) {
+		t.Errorf("var_name should be omitted when empty, got: %s", b)
+	}
+	g.VarName = "blockPII"
+	b, err = json.Marshal(g)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !bytes.Contains(b, []byte(`"var_name":"blockPII"`)) {
+		t.Errorf("var_name should be present when set, got: %s", b)
 	}
 }

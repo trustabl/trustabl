@@ -90,6 +90,7 @@ const (
 // Mirrors the Tool Discovery node in architecture §2.
 type ToolDef struct {
 	Name           string            `json:"name"`
+	VarName        string            `json:"var_name,omitempty"` // const-binding name (TS); empty for Python where Name and binding name coincide
 	Kind           ToolKind          `json:"kind"`
 	Language       Language          `json:"language"`
 	Location                         // file_path / line / end_line (flat in JSON via anonymous embed)

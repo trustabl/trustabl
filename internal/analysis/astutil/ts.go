@@ -125,6 +125,22 @@ func collectImportSpec(n *sitter.Node, src []byte, out map[string]string) {
 	}
 }
 
+// TSImportAliasesAny returns the union of TSImportAliases across modules.
+// Used when a single discovery pass needs to recognize imports from any of
+// several related packages (e.g. @openai/agents + @openai/agents-core +
+// @openai/agents-openai). On a same-local-name collision across modules,
+// last-write wins — which never happens in practice because the meta package
+// re-exports the others. An empty modules slice returns an empty map.
+func TSImportAliasesAny(root *sitter.Node, src []byte, modules []string) map[string]string {
+	out := make(map[string]string)
+	for _, mod := range modules {
+		for k, v := range TSImportAliases(root, src, mod) {
+			out[k] = v
+		}
+	}
+	return out
+}
+
 // TSObjectKwargs converts a tree-sitter "object" node (object literal) into
 // a KwargTree. Each property becomes a child keyed by the property name.
 // Leaf values are typed via classifyTSExpr (string/int/bool/null literals,

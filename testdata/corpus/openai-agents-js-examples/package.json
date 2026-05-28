@@ -1,0 +1,11 @@
+{
+  "name": "openai-agents-js-examples",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@openai/agents": "^0.1.0",
+    "@openai/agents-core": "^0.1.0",
+    "@openai/agents-openai": "^0.1.0",
+    "zod": "^3.22.0"
+  }
+}

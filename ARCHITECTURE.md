@@ -34,12 +34,17 @@ Trustabl ships with **Python and TypeScript tool/agent discovery** wired
 in. Python covers the OpenAI Agents SDK, Google ADK, and Claude Agent SDK
 (via decorators). TypeScript covers the Claude Agent SDK (via `tool()` /
 `query()` / `createSdkMcpServer()` / typed-const `AgentDefinition` shapes
-in `.ts`/`.tsx`/`.mts`/`.cts`). No TS-language rules ship yet (SP2) —
-TS Claude SDK repos produce a META-004 info finding for now (the SDK is
-detected and the policy pack loads, but no rule is applicable to TS
-inputs). The scanner can also recognize JavaScript and Go *files* (they
-appear in `manifest.typescript_files` and friends) but has no AST parser
-for them.
+in `.ts`/`.tsx`/`.mts`/`.cts`) and the OpenAI Agents SDK (via `tool({...})`
+/ `new Agent({...})` / `Agent.create({...})` / 9 hosted-tool factories
+/ MCP server classes / `defineX` guardrail factories / `MemorySession` /
+`OpenAIConversationsSession` / `OpenAIResponsesCompactionSession` in the
+same TS file extensions, gated on imports from `@openai/agents`,
+`@openai/agents-core`, or `@openai/agents-openai`). No TS-language rules
+ship yet (SP2) — TS Claude SDK repos produce a META-004 info finding for
+now (the SDK is detected and the policy pack loads, but no rule is
+applicable to TS inputs), and TS OpenAI repos do the same. The scanner
+can also recognize JavaScript and Go *files* (they appear in
+`manifest.typescript_files` and friends) but has no AST parser for them.
 
 The rule schema's `language:` field gates per-language rule sets. Existing
 rules declare `language: python` explicitly and the loader rejects any
@@ -290,6 +295,49 @@ For each language recon cleared, do the AST work and produce a `RepoInventory`:
   and resolves the argument to a same-file top-level function definition. Each
   resolved match emits a `ToolDef` with `Kind=adk_function_tool`. Cross-module
   resolution is out of scope.
+- **DiscoverTSTools** (`ts_discovery.go`) — TS Claude SDK `tool(name,
+  description, zodSchema, handler, extras?)` factory calls. Captures `Name`
+  (arg 0), `Description` (arg 1), `ParamNames` from the Zod schema top-level
+  keys, handler body facts via shared `tsHandlerFacts`, and extras flattened
+  into `Config`. Sets `VarName` from the enclosing `const x = tool(...)`
+  binding.
+- **DiscoverTSAgents** (`ts_agents.go`) — TS Claude SDK agent shapes:
+  one `AgentDef` per `query({...})` call (`Class="QueryMainAgent"`), each
+  property under `options.agents` (`Class="AgentDefinition"`), and each
+  typed-const `const x: AgentDefinition = {...}` binding. Captures kwargs
+  into `KwargTree`; sets `Opaque=true` when `options` is a computed
+  identifier.
+- **DiscoverTSMCPServers** (`ts_mcp_servers.go`) — TS Claude SDK MCP
+  servers: `createSdkMcpServer({...})` calls plus object literals in
+  `options.mcpServers` discriminated by `type:` into
+  `McpStdioServerConfig` / `McpSSEServerConfig` / `McpHttpServerConfig` /
+  `McpSdkServerConfigWithInstance`.
+- **DiscoverTSOpenAITools** (`ts_openai_tools.go`) — `tool({...})` factory calls
+  from `@openai/agents` / `-core` / `-openai`. Captures `name`/`description`
+  (registered name), `parameters` top-level keys as `ParamNames`, handler body
+  facts via shared `tsHandlerFacts`, and option fields (`strict`, `needsApproval`,
+  `timeoutMs`, etc.) into `Config`. Sets `VarName` from the enclosing
+  `const x = tool({...})` binding.
+- **DiscoverTSOpenAIAgents** (`ts_openai_agents.go`) — `new Agent({...})` and
+  `Agent.create({...})`. Captures all option-object kwargs into a typed
+  `KwargTree`; sets `Opaque=true` for non-object arg or `...spread` inside
+  options. Walks `tools: [...]` at discovery to pre-resolve hosted-tool
+  factory calls (the alias map is local to this pass); leaves identifier-valued
+  refs in `tools`/`handoffs`/`inputGuardrails`/`outputGuardrails`/`mcpServers`
+  for `ResolveEdges` to wire by binding name.
+- **DiscoverTSOpenAIMCPServers** (`ts_openai_mcp_servers.go`) —
+  `new MCPServerStdio({...})` / `MCPServerSSE` / `MCPServerStreamableHttp` /
+  `MCPServers`. Emits `MCPServerDef` with `Transport` ∈ `stdio`/`sse`/
+  `streamable_http`/`multi` and `VarName` from the enclosing `const`.
+- **DiscoverTSOpenAIGuardrails** (`ts_openai_guardrails.go`) —
+  `defineInputGuardrail` / `defineOutputGuardrail` / `defineToolInputGuardrail`
+  / `defineToolOutputGuardrail` factory calls. Emits `GuardrailDef` with
+  `Kind` ∈ `input`/`output`/`tool_input`/`tool_output` and `VarName` from
+  the enclosing `const`.
+- **DiscoverTSOpenAISessions** (`ts_openai_sessions.go`) — `new MemorySession()`
+  / `new OpenAIConversationsSession()` / `new OpenAIResponsesCompactionSession()`
+  / `startOpenAIConversationsSession()`. Emits `SessionUse` with `Class` set
+  to the canonical name.
 - **ResolveEdges** — links agent `tools=`, `handoffs=`, `input_guardrails=`
   references to discovered definitions in the same repo; cross-module resolution
   uses import statements; unresolvable references are flagged `External=true`.
@@ -307,7 +355,9 @@ For each language recon cleared, do the AST work and produce a `RepoInventory`:
   `MCPServerRefs`. After all agents are processed, `inv.HostedTools` and
   `inv.MCPServers` are sorted by `(FilePath, Line, Class)` and
   `HostedToolRefs`/`MCPServerRefs.Resolved` pointers are re-resolved to the
-  post-sort positions.
+  post-sort positions. TS OpenAI tool/MCP/guardrail refs use a Name+VarName
+  double-indexed lookup so `tools: [computeSum]` resolves when
+  `const computeSum = tool({name: "sum", ...})`.
 
 **Discovered agent components** (`Components []AgentComponent`).
 
@@ -732,8 +782,9 @@ HostedToolRef {
 
 MCPServerDef {
     Class     string     // Python: "MCPServerStdio" | "MCPServerSse" | "MCPServerStreamableHttp"
-                         // TS: "McpStdioServerConfig" | "McpSSEServerConfig" | "McpHttpServerConfig" | "McpSdkServerConfigWithInstance" | "createSdkMcpServer"
-    Transport string     // "stdio" | "sse" | "streamable_http" | "sdk"
+                         // TS (Claude SDK): "McpStdioServerConfig" | "McpSSEServerConfig" | "McpHttpServerConfig" | "McpSdkServerConfigWithInstance" | "createSdkMcpServer"
+                         // TS (OpenAI):     "MCPServerStdio" | "MCPServerSSE" | "MCPServerStreamableHttp" | "MCPServers"
+    Transport string     // "stdio" | "sse" | "streamable_http" | "sdk" | "multi"
     Language  Language   // python | typescript
     SDK       SDK
     Location              // file_path, line, end_line (flat in JSON)
@@ -916,7 +967,8 @@ internal/
 │   │                            FunctionDocstring, FunctionHasTypedParams,
 │   │                            KwargValue). TS helpers: NewTSParser,
 │   │                            NewTSXParser, ParserKindForExtension,
-│   │                            TSImportAliases, TSObjectKwargs, TSCalleeText.
+│   │                            TSImportAliases, TSImportAliasesAny,
+│   │                            TSObjectKwargs, TSCalleeText.
 │   ├── discovery.go             Python tool discovery passes (DiscoverTools,
 │   │                            kindFromDecorators, decorator-kwarg capture).
 │   ├── agents.go                Python agent / guardrail / session discovery and
@@ -942,7 +994,14 @@ internal/
 │   ├── adk_hosted_tools.go      ADK built-in hosted-tool class set + classifier (ADKHostedToolClasses).
 │   ├── ts_discovery.go         TS Claude SDK tool() factory discovery (DiscoverTSTools).
 │   ├── ts_agents.go            TS AgentDef discovery (inline-in-query + typed-const).
+│   ├── ts_handler_facts.go      tsHandlerFacts (shared by Claude TS and OpenAI TS tool discovery).
 │   ├── ts_mcp_servers.go       TS MCP server discovery (createSdkMcpServer + 4 config literals).
+│   ├── ts_openai_agents.go      OpenAI TS agent discovery (new Agent + Agent.create).
+│   ├── ts_openai_guardrails.go  OpenAI TS guardrail factory discovery (4 defineX factories).
+│   ├── ts_openai_hosted_tools.go OpenAI TS hosted-tool factory set (9 factories) + classifier.
+│   ├── ts_openai_mcp_servers.go OpenAI TS MCP server discovery (3 transports + MCPServers wrapper).
+│   ├── ts_openai_sessions.go    OpenAI TS session discovery (3 classes + 1 factory).
+│   ├── ts_openai_tools.go       OpenAI TS tool discovery (tool({...}) factory).
 │   ├── heuristics.go            Domain helpers shared by every detector path:
 │   │                            FindFunctionNode, IsHTTPCall, ResolveClientAliases,
 │   │                            IsHTTPCallNode, IsPathishParam.

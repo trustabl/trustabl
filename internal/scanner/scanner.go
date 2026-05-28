@@ -88,13 +88,21 @@ func Run(cfg Config) (models.ScanResult, error) {
 	guardrails := analysis.DiscoverGuardrails(parsed)
 	sessions := analysis.DiscoverSessions(parsed)
 
-	// TS block: parse TypeScript files, then run TS-specific discovery.
+	// TS block: parse TypeScript files, then run TS-specific discovery
+	// (Claude SDK + OpenAI Agents).
 	tsFiles := parseTSFiles(profile.Manifest.TypeScriptFiles, profile.Manifest.RepoRoot, func(path string) {
 		rep.Advance(path)
 	})
+	// Claude TS
 	tools = append(tools, analysis.DiscoverTSTools(tsFiles, nil)...)
 	agents = append(agents, analysis.DiscoverTSAgents(tsFiles, nil)...)
 	mcpServers := analysis.DiscoverTSMCPServers(tsFiles, nil)
+	// OpenAI TS
+	tools = append(tools, analysis.DiscoverTSOpenAITools(tsFiles, nil)...)
+	agents = append(agents, analysis.DiscoverTSOpenAIAgents(tsFiles, nil)...)
+	mcpServers = append(mcpServers, analysis.DiscoverTSOpenAIMCPServers(tsFiles, nil)...)
+	guardrails = append(guardrails, analysis.DiscoverTSOpenAIGuardrails(tsFiles, nil)...)
+	sessions = append(sessions, analysis.DiscoverTSOpenAISessions(tsFiles, nil)...)
 
 	inventory := models.RepoInventory{
 		Tools:               tools,

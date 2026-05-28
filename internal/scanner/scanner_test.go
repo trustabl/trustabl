@@ -196,6 +196,109 @@ func TestScanExamples_TSClaudeSDKMin_DiscoveryCounts(t *testing.T) {
 	}
 }
 
+// TestScanExamples_OpenAIAgentsJS_DiscoveryCounts asserts the full inventory
+// shape produced by scanning the vendored openai-agents-js examples corpus.
+// This is the integration counterpart to the per-discovery unit tests in
+// internal/analysis/ts_openai_*_test.go — those test each discoverer in
+// isolation; this exercises the whole pipeline end-to-end (parse → discover
+// → resolve edges → score) and would have caught the T11 double-emit bug
+// and the T-followup Opaque-spread bug at integration time rather than via
+// smoke check.
+func TestScanExamples_OpenAIAgentsJS_DiscoveryCounts(t *testing.T) {
+	_, thisFile, _, _ := runtime.Caller(0)
+	target := filepath.Join(filepath.Dir(thisFile), "..", "..", "testdata", "corpus", "openai-agents-js-examples")
+	res, err := scanner.Run(scanner.Config{Target: target, RulesFS: rulesFixture(t)})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	// SDK detection: openai_agents must be observed in code.
+	var sawOpenAI bool
+	for _, s := range res.SDKs {
+		if s == "openai_agents" {
+			sawOpenAI = true
+		}
+	}
+	if !sawOpenAI {
+		t.Errorf("expected openai_agents in SDKs, got %v", res.SDKs)
+	}
+
+	// Inventory counts — exact, so a regression in any of the 6 discoverers
+	// (tools, agents, hosted tools, MCP servers, plus the guardrails/sessions
+	// that don't appear in ScanResult JSON but are exercised at runtime) is
+	// caught here.
+	if got, want := len(res.Tools), 1; got != want {
+		t.Errorf("Tools: got %d, want %d (computeSum from basic.ts)", got, want)
+	}
+	if got, want := len(res.Agents), 4; got != want {
+		t.Errorf("Agents: got %d, want %d (calculator + researcher + integrated + safe)", got, want)
+	}
+	if got, want := len(res.HostedTools), 3; got != want {
+		t.Errorf("HostedTools: got %d, want %d (webSearchTool + fileSearchTool + shellTool)", got, want)
+	}
+	if got, want := len(res.MCPServers), 2; got != want {
+		t.Errorf("MCPServers: got %d, want %d (MCPServerStdio + MCPServerSSE)", got, want)
+	}
+
+	// Regression guard for the T11 double-emit bug: the researcher agent's
+	// tools=[webSearchTool(...), fileSearchTool(), shellTool()] must produce
+	// HostedToolRefs only — NO External ToolRefs with the raw call text as
+	// Name. (Pre-fix the count was 3 External ToolRefs per call_expression
+	// item; post-fix it's 0.)
+	for _, a := range res.Agents {
+		if a.Name != "researcher" {
+			continue
+		}
+		if len(a.HostedToolRefs) != 3 {
+			t.Errorf("researcher: expected 3 HostedToolRefs, got %d: %+v", len(a.HostedToolRefs), a.HostedToolRefs)
+		}
+		for _, ref := range a.ToolRefs {
+			if ref.External {
+				t.Errorf("researcher: ToolRef %q should not be External (hosted-tool call was double-emitted)", ref.Name)
+			}
+		}
+	}
+
+	// Verify the new var_name → MCP class resolution path. The integrated
+	// agent declares `mcpServers: [fs, events]` where `fs` and `events` are
+	// const-bound MCPServerStdio/SSE constructions. After ResolveEdges, the
+	// agent's MCPServerRefs should be resolved (Class = canonical class
+	// name, not the identifier text, and Resolved is non-nil).
+	for _, a := range res.Agents {
+		if a.Name != "integrated" {
+			continue
+		}
+		if len(a.MCPServerRefs) != 2 {
+			t.Errorf("integrated: expected 2 MCPServerRefs, got %d", len(a.MCPServerRefs))
+		}
+		for _, ref := range a.MCPServerRefs {
+			if ref.External {
+				t.Errorf("integrated: MCPServerRef should resolve by VarName, got External (class=%q)", ref.Class)
+			}
+			if ref.Class != "MCPServerStdio" && ref.Class != "MCPServerSSE" {
+				t.Errorf("integrated: MCPServerRef.Class should be canonical class name, got %q", ref.Class)
+			}
+		}
+	}
+
+	// At least one OAI-* rule should fire (currently OAI-201 — repo-scope,
+	// language-agnostic, audits trace-processor config). If a future change
+	// makes META-004 fire instead (e.g. tighter language gating on repo-scope
+	// rules, or the fixture gains a trace processor), that's also acceptable —
+	// the assertion is "the engine produced SOME audit signal", not the
+	// specific rule. This intentionally tolerates the next round of rule
+	// triage without breaking the integration test.
+	var sawAudit bool
+	for _, f := range res.Findings {
+		if f.RuleID == "OAI-201" || f.RuleID == "META-004" {
+			sawAudit = true
+		}
+	}
+	if !sawAudit {
+		t.Errorf("expected at least one of OAI-201 or META-004 to fire on TS OpenAI repo; got findings=%v", res.Findings)
+	}
+}
+
 func TestScanExamples_EmailAgent_SubagentDiscoveredAndAudited(t *testing.T) {
 	_, thisFile, _, _ := runtime.Caller(0)
 	target := filepath.Join(filepath.Dir(thisFile), "..", "..", "testdata", "corpus", "email-agent")
