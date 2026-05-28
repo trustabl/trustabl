@@ -172,3 +172,29 @@ const r = new Agent({ name: "fake" });
 		t.Errorf("no-SDK-import should yield zero, got %+v", got)
 	}
 }
+
+func TestDiscoverTSOpenAIAgents_OpaqueSpread_StillExtractsName(t *testing.T) {
+	src := `
+import { Agent } from "@openai/agents";
+const r = new Agent({
+  ...baseConfig,
+  name: "researcher",
+  instructions: "Do research",
+});
+`
+	pf := parseTSForTest(t, "src/a.ts", src)
+	got := analysis.DiscoverTSOpenAIAgents([]analysis.ParsedFile{pf}, nil)
+	if len(got) != 1 {
+		t.Fatalf("got %d, want 1", len(got))
+	}
+	a := got[0]
+	if !a.Opaque {
+		t.Errorf("spread inside opts should set Opaque=true, got false")
+	}
+	if a.Name != "researcher" {
+		t.Errorf("Name should still be extracted (not gated on Opaque), got %q", a.Name)
+	}
+	if a.Kwargs == nil {
+		t.Errorf("Kwargs should still be populated (TSObjectKwargs skips spread but extracts other pairs)")
+	}
+}
