@@ -182,3 +182,50 @@ func findFirstCallExpression(n *sitter.Node) *sitter.Node {
 	})
 	return out
 }
+
+func TestTSImportAliasesAny(t *testing.T) {
+	src := []byte(`
+import { tool, Agent } from "@openai/agents";
+import { webSearchTool } from "@openai/agents-openai";
+import { MCPServerStdio as mcp } from "@openai/agents-core";
+import { z } from "zod";
+`)
+	p := astutil.NewTSParser()
+	tree, _ := p.ParseCtx(context.Background(), nil, src)
+	got := astutil.TSImportAliasesAny(tree.RootNode(), src, []string{
+		"@openai/agents", "@openai/agents-core", "@openai/agents-openai",
+	})
+	want := map[string]string{
+		"tool":          "tool",
+		"Agent":         "Agent",
+		"webSearchTool": "webSearchTool",
+		"mcp":           "MCPServerStdio",
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("alias[%q] = %q, want %q", k, got[k], v)
+		}
+	}
+	if got["z"] != "" {
+		t.Errorf("alias[z] should be empty (not in module list), got %q", got["z"])
+	}
+}
+
+func TestTSImportAliasesAny_EmptyModuleList(t *testing.T) {
+	p := astutil.NewTSParser()
+	tree, _ := p.ParseCtx(context.Background(), nil, []byte(`import { x } from "y";`))
+	got := astutil.TSImportAliasesAny(tree.RootNode(), []byte{}, nil)
+	if len(got) != 0 {
+		t.Errorf("empty module list should return empty map, got %v", got)
+	}
+}
+
+func TestTSImportAliasesAny_NoMatchingImports(t *testing.T) {
+	src := []byte(`import { x } from "some-other-package";`)
+	p := astutil.NewTSParser()
+	tree, _ := p.ParseCtx(context.Background(), nil, src)
+	got := astutil.TSImportAliasesAny(tree.RootNode(), src, []string{"@openai/agents"})
+	if len(got) != 0 {
+		t.Errorf("non-matching imports should return empty map, got %v", got)
+	}
+}
