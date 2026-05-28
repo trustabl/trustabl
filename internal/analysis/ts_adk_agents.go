@@ -134,11 +134,9 @@ func populateTSADKToolRefs(a *models.AgentDef, opts *sitter.Node, pf ParsedFile,
 		item := tools.NamedChild(i)
 		switch item.Type() {
 		case "new_expression":
-			if _, ok := classifyTSADKHostedNewExpression(item, aliases, pf.Source, pf.RelPath); ok {
-				ctor := item.ChildByFieldName("constructor")
-				canon := aliases[astutil.NodeText(ctor, pf.Source)]
+			if def, ok := classifyTSADKHostedNewExpression(item, aliases, pf.Source, pf.RelPath); ok {
 				a.HostedToolRefs = append(a.HostedToolRefs, models.HostedToolRef{
-					Class:    canon,
+					Class:    def.Class,
 					DefIndex: -1, // appended to inv.HostedTools by ResolveEdges
 				})
 			}

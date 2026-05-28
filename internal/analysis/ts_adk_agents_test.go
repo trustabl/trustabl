@@ -79,8 +79,21 @@ const r = new LlmAgent(getConfig());
 	if len(got) != 1 {
 		t.Fatalf("got %d, want 1", len(got))
 	}
-	if !got[0].Opaque {
+	a := got[0]
+	if !a.Opaque {
 		t.Errorf("non-object arg should set Opaque=true")
+	}
+	// Contract: opaque-early-return must not populate any refs. Guards
+	// against a future refactor that accidentally calls populateTSADKToolRefs
+	// or populateTSADKIdentifierList before the type check.
+	if len(a.ToolRefs) != 0 {
+		t.Errorf("opaque non-object agent should have no ToolRefs, got %+v", a.ToolRefs)
+	}
+	if len(a.HostedToolRefs) != 0 {
+		t.Errorf("opaque non-object agent should have no HostedToolRefs, got %+v", a.HostedToolRefs)
+	}
+	if len(a.HandoffRefs) != 0 {
+		t.Errorf("opaque non-object agent should have no HandoffRefs, got %+v", a.HandoffRefs)
 	}
 }
 
