@@ -2,6 +2,7 @@
   "name": "det-ts",
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^1.0.0",
+    "@google/adk": "^1.1.0",
     "@openai/agents": "^0.1.0"
   }
 }
