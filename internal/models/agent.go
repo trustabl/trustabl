@@ -82,8 +82,10 @@ type AgentDef struct {
 type GuardrailKind string
 
 const (
-	GuardrailInput  GuardrailKind = "input"
-	GuardrailOutput GuardrailKind = "output"
+	GuardrailInput      GuardrailKind = "input"
+	GuardrailOutput     GuardrailKind = "output"
+	GuardrailToolInput  GuardrailKind = "tool_input"
+	GuardrailToolOutput GuardrailKind = "tool_output"
 )
 
 type GuardrailDef struct {

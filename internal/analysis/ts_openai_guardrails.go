@@ -11,10 +11,10 @@ import (
 // name to its GuardrailKind. Source of truth: packages/agents-core/src/
 // {guardrail.ts, toolGuardrail.ts} in openai/openai-agents-js.
 var tsOpenAIGuardrailFactories = map[string]models.GuardrailKind{
-	"defineInputGuardrail":      "input",
-	"defineOutputGuardrail":     "output",
-	"defineToolInputGuardrail":  "tool_input",
-	"defineToolOutputGuardrail": "tool_output",
+	"defineInputGuardrail":      models.GuardrailInput,
+	"defineOutputGuardrail":     models.GuardrailOutput,
+	"defineToolInputGuardrail":  models.GuardrailToolInput,
+	"defineToolOutputGuardrail": models.GuardrailToolOutput,
 }
 
 // DiscoverTSOpenAIGuardrails walks each parsed TS file and emits a

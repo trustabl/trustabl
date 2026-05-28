@@ -45,10 +45,10 @@ const toolOut = defineToolOutputGuardrail({
 		varName string
 		name    string
 	}{
-		{"input", "blockPII", "block_pii"},
-		{"output", "sanitize", "sanitize"},
-		{"tool_input", "toolIn", "tool_in"},
-		{"tool_output", "toolOut", "tool_out"},
+		{models.GuardrailInput, "blockPII", "block_pii"},
+		{models.GuardrailOutput, "sanitize", "sanitize"},
+		{models.GuardrailToolInput, "toolIn", "tool_in"},
+		{models.GuardrailToolOutput, "toolOut", "tool_out"},
 	}
 	for _, c := range cases {
 		g, ok := byKind[c.kind]
