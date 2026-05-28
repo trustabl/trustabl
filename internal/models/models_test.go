@@ -61,12 +61,18 @@ func TestToolDef_VarName_OmitEmpty(t *testing.T) {
 func TestMCPServerDef_VarName_OmitEmpty(t *testing.T) {
 	m := models.MCPServerDef{Class: "MCPServerStdio", Transport: "stdio",
 		SDK: models.SDKOpenAIAgents, Language: models.LanguageTypeScript}
-	b, _ := json.Marshal(m)
+	b, err := json.Marshal(m)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
 	if bytes.Contains(b, []byte(`"var_name"`)) {
 		t.Errorf("var_name should be omitted when empty, got: %s", b)
 	}
 	m.VarName = "fsServer"
-	b, _ = json.Marshal(m)
+	b, err = json.Marshal(m)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
 	if !bytes.Contains(b, []byte(`"var_name":"fsServer"`)) {
 		t.Errorf("var_name should be present when set, got: %s", b)
 	}
@@ -74,12 +80,18 @@ func TestMCPServerDef_VarName_OmitEmpty(t *testing.T) {
 
 func TestGuardrailDef_VarName_OmitEmpty(t *testing.T) {
 	g := models.GuardrailDef{Name: "x", Kind: "input"}
-	b, _ := json.Marshal(g)
+	b, err := json.Marshal(g)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
 	if bytes.Contains(b, []byte(`"var_name"`)) {
 		t.Errorf("var_name should be omitted when empty, got: %s", b)
 	}
 	g.VarName = "blockPII"
-	b, _ = json.Marshal(g)
+	b, err = json.Marshal(g)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
 	if !bytes.Contains(b, []byte(`"var_name":"blockPII"`)) {
 		t.Errorf("var_name should be present when set, got: %s", b)
 	}
