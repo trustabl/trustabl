@@ -45,6 +45,10 @@ func discoverTSOpenAIMCPServersInFile(pf ParsedFile) []models.MCPServerDef {
 			return true
 		}
 		ctor := n.ChildByFieldName("constructor")
+		// v1 limitation: only bare-identifier constructors are recognized.
+		// Namespace-import constructors like `new oai.MCPServerStdio({...})`
+		// (a member_expression) are not handled — extend if that pattern
+		// becomes common in real-world @openai/agents code.
 		if ctor == nil || ctor.Type() != "identifier" {
 			return true
 		}
@@ -69,7 +73,10 @@ func discoverTSOpenAIMCPServersInFile(pf ParsedFile) []models.MCPServerDef {
 			},
 			VarName: directAssignmentName(n, pf.Source),
 		}
-		// Capture kwargs only when arg 0 is an object literal.
+		// Capture kwargs only when arg 0 is an object literal. The MCPServers
+		// wrapper takes an array (`new MCPServers([stdio, sse])`); Kwargs is
+		// intentionally left nil for that shape — there's nothing useful to
+		// extract from a flat list of identifier refs.
 		if args := n.ChildByFieldName("arguments"); args != nil && args.NamedChildCount() > 0 {
 			if arg0 := args.NamedChild(0); arg0.Type() == "object" {
 				def.Kwargs = astutil.TSObjectKwargs(arg0, pf.Source)
