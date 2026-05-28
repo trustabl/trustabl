@@ -88,6 +88,7 @@ const (
 
 type GuardrailDef struct {
 	Name     string        `json:"name"`
+	VarName  string        `json:"var_name,omitempty"` // const-binding name (TS); empty for Python decorator-defined guardrails
 	Kind     GuardrailKind `json:"kind"`
 	Location               // file_path / line / end_line (flat in JSON via anonymous embed)
 }
@@ -125,6 +126,7 @@ type HostedToolRef struct {
 //      "createSdkMcpServer")
 type MCPServerDef struct {
 	Class     string     `json:"class"`
+	VarName   string     `json:"var_name,omitempty"` // const-binding name (TS); empty for Python
 	Transport string     `json:"transport"` // "stdio" | "sse" | "streamable_http" | "http" | "sdk"
 	SDK       SDK        `json:"sdk"`
 	Language  Language   `json:"language"` // populated by every discovery path
