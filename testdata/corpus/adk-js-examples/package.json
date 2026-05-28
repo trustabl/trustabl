@@ -1,0 +1,8 @@
+{
+  "name": "adk-js-examples",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@google/adk": "^1.1.0"
+  }
+}

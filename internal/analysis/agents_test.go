@@ -692,3 +692,82 @@ func TestResolveEdges_TSOpaqueAgent_StillResolvesPrePopulatedRefs(t *testing.T) 
 			a.MCPServerRefs[0])
 	}
 }
+
+func TestResolveEdges_TSADKSubAgentsCamelCase(t *testing.T) {
+	// Regression: TS ADK discovery pre-populates HandoffRefs from camelCase
+	// subAgents at parse time (ts_adk_agents.go). ResolveEdges must wire
+	// those pre-populated refs via same-file Name/VarName lookup — and must
+	// NOT re-walk the kwarg to append again (that would double-emit; the
+	// scanner_test.go ADK integration test catches that regression).
+	inv := &models.RepoInventory{
+		Agents: []models.AgentDef{
+			{
+				SDK:      models.SDKGoogleADK,
+				Class:    "LlmAgent",
+				Language: models.LanguageTypeScript,
+				Location: models.Location{FilePath: "src/a.ts", Line: 5},
+				Name:     "writer",
+				VarName:  "writer",
+			},
+			{
+				SDK:         models.SDKGoogleADK,
+				Class:       "LlmAgent",
+				Language:    models.LanguageTypeScript,
+				Location:    models.Location{FilePath: "src/a.ts", Line: 12},
+				Name:        "researcher",
+				VarName:     "researcher",
+				HandoffRefs: []models.AgentRef{{Name: "writer"}},
+				Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+					"subAgents": {Value: &models.Expr{Kind: models.ExprList, List: []models.Expr{
+						{Kind: models.ExprNameRef, Text: "writer"},
+					}}},
+				}},
+			},
+		},
+	}
+	analysis.ResolveEdges(inv, nil)
+	researcher := inv.Agents[1]
+	if len(researcher.HandoffRefs) != 1 {
+		t.Fatalf("expected 1 HandoffRef from subAgents (pre-populated, not re-appended), got %d", len(researcher.HandoffRefs))
+	}
+	ref := researcher.HandoffRefs[0]
+	if ref.External || ref.Resolved == nil {
+		t.Errorf("HandoffRef should resolve to same-file writer, got %+v", ref)
+	}
+	if ref.Resolved.Name != "writer" {
+		t.Errorf("HandoffRef resolved to wrong agent: %+v", ref.Resolved)
+	}
+}
+
+func TestResolveEdges_TSADKHostedToolAppendedToInventory(t *testing.T) {
+	// TS ADK agent carries a HostedToolRef from discovery; ResolveEdges
+	// should append a HostedToolDef{SDK: SDKGoogleADK} to inv.HostedTools
+	// (not SDKOpenAIAgents — verifies the SDK is set from whichever set
+	// matched, not hardcoded to OpenAI).
+	inv := &models.RepoInventory{
+		Agents: []models.AgentDef{{
+			SDK:      models.SDKGoogleADK,
+			Class:    "LlmAgent",
+			Language: models.LanguageTypeScript,
+			Location: models.Location{FilePath: "src/a.ts", Line: 10},
+			HostedToolRefs: []models.HostedToolRef{
+				{Class: "GoogleSearchTool", DefIndex: -1},
+			},
+		}},
+	}
+	analysis.ResolveEdges(inv, nil)
+	if len(inv.HostedTools) != 1 {
+		t.Fatalf("expected 1 HostedToolDef in inventory, got %d", len(inv.HostedTools))
+	}
+	got := inv.HostedTools[0]
+	if got.Class != "GoogleSearchTool" {
+		t.Errorf("wrong class: %q", got.Class)
+	}
+	if got.SDK != models.SDKGoogleADK {
+		t.Errorf("wrong SDK: %q, want %q (ADK class must stamp ADK SDK, not OpenAI)",
+			got.SDK, models.SDKGoogleADK)
+	}
+	if inv.Agents[0].HostedToolRefs[0].Resolved == nil {
+		t.Errorf("HostedToolRef should be resolved after edges")
+	}
+}

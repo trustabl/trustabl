@@ -269,3 +269,27 @@ func TestNormalize_PluginSlashCommandsClassified(t *testing.T) {
 		}
 	}
 }
+
+func TestDetectSDKDeps_TSGoogleADKFromPackageJSON(t *testing.T) {
+	dir := t.TempDir()
+	pkg := `{
+  "name": "demo",
+  "dependencies": {
+    "@google/adk": "^1.1.0"
+  }
+}`
+	if err := os.WriteFile(filepath.Join(dir, "package.json"), []byte(pkg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	deps := detectSDKDeps(dir)
+	var found bool
+	for _, d := range deps {
+		if d.Name == "google-adk" && d.Source == "package.json" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected google-adk@package.json in deps, got %+v", deps)
+	}
+}

@@ -240,7 +240,11 @@ func ResolveEdges(inv *models.RepoInventory, parsed []ParsedFile) {
 
 		// sub_agents= (ADK delegation tree). Resolves same-file agent name refs
 		// into HandoffRefs for predicate uniformity with OpenAI's handoffs=.
-		if a.SDK == models.SDKGoogleADK {
+		// Python-only: TS ADK discovery pre-populates HandoffRefs from
+		// camelCase subAgents at parse time (ts_adk_agents.go), and the
+		// language-agnostic resolve pass below wires them — re-walking the
+		// kwarg here for TS would double-emit.
+		if a.SDK == models.SDKGoogleADK && a.Language != models.LanguageTypeScript {
 			subKwarg := agentKwarg(a, "sub_agents")
 			if subKwarg != nil && subKwarg.Value != nil && subKwarg.Value.Kind == models.ExprList {
 				agentsByName := map[string]*models.AgentDef{}
@@ -300,6 +304,37 @@ func ResolveEdges(inv *models.RepoInventory, parsed []ParsedFile) {
 			}
 		}
 
+		// HandoffRefs — TS ADK discovery pre-populates these from camelCase
+		// subAgents= at parse time. Resolve same-file refs by Name or VarName;
+		// the Python sub_agents= block above does both append and resolve in
+		// one pass (and never leaves Resolved==nil && External==false), so
+		// this language-agnostic pass only fires for pre-populated refs.
+		if len(a.HandoffRefs) > 0 {
+			agentsByName := map[string]*models.AgentDef{}
+			for j := range inv.Agents {
+				if inv.Agents[j].FilePath != a.FilePath {
+					continue
+				}
+				if n := inv.Agents[j].Name; n != "" {
+					agentsByName[n] = &inv.Agents[j]
+				}
+				if v := inv.Agents[j].VarName; v != "" {
+					agentsByName[v] = &inv.Agents[j]
+				}
+			}
+			for j := range a.HandoffRefs {
+				ref := &a.HandoffRefs[j]
+				if ref.Resolved != nil || ref.External {
+					continue
+				}
+				if target, ok := agentsByName[ref.Name]; ok {
+					ref.Resolved = target
+				} else {
+					ref.External = true
+				}
+			}
+		}
+
 		guardLookup := guardsByFileSym[a.FilePath]
 		resolveGuardRefs := func(refs []models.GuardrailRef) {
 			for j := range refs {
@@ -336,27 +371,38 @@ func ResolveEdges(inv *models.RepoInventory, parsed []ParsedFile) {
 			}
 		}
 
-		// HostedToolRefs — TS OpenAI discovery sets Class to the canonical
-		// factory name (e.g. "webSearchTool") and DefIndex=-1. Materialize
-		// a matching HostedToolDef in inv.HostedTools so downstream
-		// consumers see a complete hosted-tool inventory. Gated to the
-		// TS OpenAI factory set so Python hosted-tool refs (handled by
-		// the classify block above) don't double-append. The Location
-		// is approximated to the agent's call site — the precise
+		// HostedToolRefs — TS discovery (OpenAI and ADK) sets Class to the
+		// canonical hosted-tool class name and DefIndex=-1. Materialize a
+		// matching HostedToolDef in inv.HostedTools so downstream consumers
+		// see a complete hosted-tool inventory. The SDK is stamped from
+		// whichever closed set matched the class name — TSOpenAIHostedToolFactories
+		// → SDKOpenAIAgents, TSADKHostedToolClasses → SDKGoogleADK. Python
+		// hosted-tool refs (handled by the classify block above) carry a
+		// valid DefIndex already and are skipped by the first guard. The
+		// Location is approximated to the agent's call site — the precise
 		// factory-call line is not currently carried on HostedToolRef.
-		// DefIndex set here is the pre-sort index; the post-sort
-		// remap below re-points .Resolved via the sort permutation.
+		// DefIndex set here is the pre-sort index; the post-sort remap
+		// below re-points .Resolved via the sort permutation.
 		for j := range a.HostedToolRefs {
 			ref := &a.HostedToolRefs[j]
 			if ref.DefIndex >= 0 {
 				continue
 			}
-			if !IsTSOpenAIHostedToolFactory(ref.Class) {
+			// Recognize either TS OpenAI factories or TS ADK hosted classes.
+			// SDK is stamped from whichever set matched so the inventory
+			// attributes the def to the correct SDK.
+			var sdk models.SDK
+			switch {
+			case IsTSOpenAIHostedToolFactory(ref.Class):
+				sdk = models.SDKOpenAIAgents
+			case IsTSADKHostedToolClass(ref.Class):
+				sdk = models.SDKGoogleADK
+			default:
 				continue
 			}
 			inv.HostedTools = append(inv.HostedTools, models.HostedToolDef{
 				Class: ref.Class,
-				SDK:   models.SDKOpenAIAgents,
+				SDK:   sdk,
 				Location: models.Location{
 					FilePath: a.FilePath,
 					Line:     a.Line,

@@ -39,10 +39,14 @@ in `.ts`/`.tsx`/`.mts`/`.cts`) and the OpenAI Agents SDK (via `tool({...})`
 / MCP server classes / `defineX` guardrail factories / `MemorySession` /
 `OpenAIConversationsSession` / `OpenAIResponsesCompactionSession` in the
 same TS file extensions, gated on imports from `@openai/agents`,
-`@openai/agents-core`, or `@openai/agents-openai`). No TS-language rules
+`@openai/agents-core`, or `@openai/agents-openai`), and the Google ADK
+(via `new LlmAgent({...})` / `SequentialAgent` / `ParallelAgent` /
+`LoopAgent` / `RoutedAgent` / `new FunctionTool({...})` / 13 hosted-tool
+classes / `subAgents` edges in the same TS file extensions, gated on
+imports from `@google/adk`). No TS-language rules
 ship yet (SP2) — TS Claude SDK repos produce a META-004 info finding for
 now (the SDK is detected and the policy pack loads, but no rule is
-applicable to TS inputs), and TS OpenAI repos do the same. The scanner
+applicable to TS inputs), and TS OpenAI and TS ADK repos do the same. The scanner
 can also recognize JavaScript and Go *files* (they appear in
 `manifest.typescript_files` and friends) but has no AST parser for them.
 
@@ -338,6 +342,22 @@ For each language recon cleared, do the AST work and produce a `RepoInventory`:
   / `new OpenAIConversationsSession()` / `new OpenAIResponsesCompactionSession()`
   / `startOpenAIConversationsSession()`. Emits `SessionUse` with `Class` set
   to the canonical name.
+- **DiscoverTSADKTools** (`ts_adk_tools.go`) — `new FunctionTool({...})` constructor
+  calls from `@google/adk`. Captures `name`/`description` from options string
+  literals, `parameters` top-level keys as `ParamNames`, handler body facts
+  via shared `tsHandlerFacts`, and other leaf option fields (`isLongRunning`,
+  etc.) into `Config`. Sets `VarName` from the enclosing
+  `const x = new FunctionTool({...})` binding. Reuses the existing
+  `KindADKFunctionTool` kind — language field distinguishes the JS
+  options-object shape from Python's function-wrapper shape.
+- **DiscoverTSADKAgents** (`ts_adk_agents.go`) — `new LlmAgent({...})` /
+  `SequentialAgent` / `ParallelAgent` / `LoopAgent` / `RoutedAgent` (5
+  classes; no `Agent` alias unlike Python ADK). Captures option-object
+  kwargs into a typed `KwargTree`; sets `Opaque=true` for non-object arg or
+  `...spread` inside options. Walks `tools: [...]` at discovery to
+  pre-resolve hosted-tool class instantiations against
+  `TSADKHostedToolClasses` (13 entries); leaves identifier-valued refs in
+  `tools` / `subAgents` for `ResolveEdges` to wire by binding name.
 - **ResolveEdges** — links agent `tools=`, `handoffs=`, `input_guardrails=`
   references to discovered definitions in the same repo; cross-module resolution
   uses import statements; unresolvable references are flagged `External=true`.
@@ -357,7 +377,11 @@ For each language recon cleared, do the AST work and produce a `RepoInventory`:
   `HostedToolRefs`/`MCPServerRefs.Resolved` pointers are re-resolved to the
   post-sort positions. TS OpenAI tool/MCP/guardrail refs use a Name+VarName
   double-indexed lookup so `tools: [computeSum]` resolves when
-  `const computeSum = tool({name: "sum", ...})`.
+  `const computeSum = tool({name: "sum", ...})`. The same block recognizes
+  TS ADK `subAgents` (camelCase) when the agent's Language is TypeScript,
+  and the TS HostedTool-materialization step stamps `SDKGoogleADK` for
+  classes in `TSADKHostedToolClasses`. HandoffRefs are resolved by a
+  language-agnostic pass (mirrors the existing ToolRefs/MCP/guards passes).
 
 **Discovered agent components** (`Components []AgentComponent`).
 
@@ -996,6 +1020,9 @@ internal/
 │   ├── ts_agents.go            TS AgentDef discovery (inline-in-query + typed-const).
 │   ├── ts_handler_facts.go      tsHandlerFacts (shared by Claude TS and OpenAI TS tool discovery).
 │   ├── ts_mcp_servers.go       TS MCP server discovery (createSdkMcpServer + 4 config literals).
+│   ├── ts_adk_agents.go         Google ADK TS agent discovery (5 constructors).
+│   ├── ts_adk_hosted_tools.go   Google ADK TS hosted-tool class set (13 classes) + classifier.
+│   ├── ts_adk_tools.go          Google ADK TS tool discovery (new FunctionTool({...})).
 │   ├── ts_openai_agents.go      OpenAI TS agent discovery (new Agent + Agent.create).
 │   ├── ts_openai_guardrails.go  OpenAI TS guardrail factory discovery (4 defineX factories).
 │   ├── ts_openai_hosted_tools.go OpenAI TS hosted-tool factory set (9 factories) + classifier.

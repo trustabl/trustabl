@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/trustabl/trustabl/internal/models"
@@ -486,4 +487,91 @@ Body.
 	allow := mustList(perms["allow"], "claude_settings[0].permissions.allow")
 	rule0 := mustObject(allow[0], "claude_settings[0].permissions.allow[0]")
 	mustHaveKey(rule0, "line", "claude_settings[0].permissions.allow[0]")
+}
+
+// TestScanExamples_ADKJS_DiscoveryCounts asserts the full inventory shape
+// produced by scanning the vendored adk-js examples corpus. End-to-end
+// integration: parse → discover → resolve edges → score. Catches any
+// regression in the cross-cutting ResolveEdges extensions (subAgents
+// language branch, HostedTool ADK class recognition with correct SDK).
+func TestScanExamples_ADKJS_DiscoveryCounts(t *testing.T) {
+	_, thisFile, _, _ := runtime.Caller(0)
+	target := filepath.Join(filepath.Dir(thisFile), "..", "..", "testdata", "corpus", "adk-js-examples")
+	res, err := scanner.Run(scanner.Config{Target: target, RulesFS: rulesFixture(t)})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	// SDK detection: google_adk must be observed in code (via discovered
+	// agents). dep-needle alone is NOT what feeds SDKsDetected — it's the
+	// agent SDK fields populated by discovery.
+	var sawADK bool
+	for _, s := range res.SDKs {
+		if s == "google_adk" {
+			sawADK = true
+		}
+	}
+	if !sawADK {
+		t.Errorf("expected google_adk in SDKs, got %v", res.SDKs)
+	}
+
+	// Exact inventory counts from the fixture: basic.ts (1 agent, 1 tool,
+	// 1 hosted tool) + multi_agent.ts (3 agents, 1 hosted tool).
+	if got, want := len(res.Tools), 1; got != want {
+		t.Errorf("Tools: got %d, want %d (summarize from basic.ts)", got, want)
+	}
+	if got, want := len(res.Agents), 4; got != want {
+		t.Errorf("Agents: got %d, want %d (researcher + drafter + reviewer + pipeline)", got, want)
+	}
+	if got, want := len(res.HostedTools), 2; got != want {
+		t.Errorf("HostedTools: got %d, want %d (GoogleSearchTool + AgentTool)", got, want)
+	}
+
+	// Hosted tools must carry SDK=google_adk (regression guard: the
+	// extended HostedTool block stamps the right SDK from the class set).
+	for _, h := range res.HostedTools {
+		if h.SDK != "google_adk" {
+			t.Errorf("HostedTool %q: SDK = %q, want google_adk (regression in ADK class → SDK stamping)",
+				h.Class, h.SDK)
+		}
+	}
+
+	// subAgents edge resolution (regression guard: the camelCase branch in
+	// the sub_agents block). The `pipeline` SequentialAgent has subAgents:
+	// [drafter, reviewer] — both must resolve, neither External.
+	for _, a := range res.Agents {
+		if a.Name != "pipeline" {
+			continue
+		}
+		if len(a.HandoffRefs) != 2 {
+			t.Errorf("pipeline: expected 2 HandoffRefs from subAgents, got %d", len(a.HandoffRefs))
+		}
+		for _, ref := range a.HandoffRefs {
+			if ref.External {
+				t.Errorf("pipeline HandoffRef %q: should resolve to same-file agent, got External",
+					ref.Name)
+			}
+		}
+	}
+
+	// META-004 must fire: google_adk SDK detected, but no shipped ADK rule
+	// applies — the tool/agent ADK rules declare language: python and so
+	// are skipped against TS entities, and there's no repo-scope ADK rule
+	// currently. No ADK-* rule should fire on this TS-only repo.
+	var sawMETA004 bool
+	var firedADKRules []string
+	for _, f := range res.Findings {
+		switch {
+		case f.RuleID == "META-004":
+			sawMETA004 = true
+		case strings.HasPrefix(f.RuleID, "ADK-"):
+			firedADKRules = append(firedADKRules, f.RuleID)
+		}
+	}
+	if !sawMETA004 {
+		t.Errorf("expected META-004 to fire on TS-only ADK repo (audited SDK, no applicable rule); got findings=%v", res.Findings)
+	}
+	if len(firedADKRules) > 0 {
+		t.Errorf("no ADK-* rule should fire on TS-only repo (rules are language: python and engine repo-scope gate prevents leak); fired: %v", firedADKRules)
+	}
 }
