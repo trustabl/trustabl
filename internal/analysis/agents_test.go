@@ -694,9 +694,11 @@ func TestResolveEdges_TSOpaqueAgent_StillResolvesPrePopulatedRefs(t *testing.T) 
 }
 
 func TestResolveEdges_TSADKSubAgentsCamelCase(t *testing.T) {
-	// Regression: TS ADK agents use `subAgents` (camelCase) where Python
-	// uses `sub_agents` (snake_case). The existing sub_agents block in
-	// ResolveEdges must branch on Language to look up the right key.
+	// Regression: TS ADK discovery pre-populates HandoffRefs from camelCase
+	// subAgents at parse time (ts_adk_agents.go). ResolveEdges must wire
+	// those pre-populated refs via same-file Name/VarName lookup — and must
+	// NOT re-walk the kwarg to append again (that would double-emit; the
+	// scanner_test.go ADK integration test catches that regression).
 	inv := &models.RepoInventory{
 		Agents: []models.AgentDef{
 			{
@@ -708,12 +710,13 @@ func TestResolveEdges_TSADKSubAgentsCamelCase(t *testing.T) {
 				VarName:  "writer",
 			},
 			{
-				SDK:      models.SDKGoogleADK,
-				Class:    "LlmAgent",
-				Language: models.LanguageTypeScript,
-				Location: models.Location{FilePath: "src/a.ts", Line: 12},
-				Name:     "researcher",
-				VarName:  "researcher",
+				SDK:         models.SDKGoogleADK,
+				Class:       "LlmAgent",
+				Language:    models.LanguageTypeScript,
+				Location:    models.Location{FilePath: "src/a.ts", Line: 12},
+				Name:        "researcher",
+				VarName:     "researcher",
+				HandoffRefs: []models.AgentRef{{Name: "writer"}},
 				Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
 					"subAgents": {Value: &models.Expr{Kind: models.ExprList, List: []models.Expr{
 						{Kind: models.ExprNameRef, Text: "writer"},
@@ -725,7 +728,7 @@ func TestResolveEdges_TSADKSubAgentsCamelCase(t *testing.T) {
 	analysis.ResolveEdges(inv, nil)
 	researcher := inv.Agents[1]
 	if len(researcher.HandoffRefs) != 1 {
-		t.Fatalf("expected 1 HandoffRef from subAgents, got %d", len(researcher.HandoffRefs))
+		t.Fatalf("expected 1 HandoffRef from subAgents (pre-populated, not re-appended), got %d", len(researcher.HandoffRefs))
 	}
 	ref := researcher.HandoffRefs[0]
 	if ref.External || ref.Resolved == nil {

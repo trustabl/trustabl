@@ -240,14 +240,12 @@ func ResolveEdges(inv *models.RepoInventory, parsed []ParsedFile) {
 
 		// sub_agents= (ADK delegation tree). Resolves same-file agent name refs
 		// into HandoffRefs for predicate uniformity with OpenAI's handoffs=.
-		if a.SDK == models.SDKGoogleADK {
-			// Python ADK uses snake_case sub_agents; TS ADK uses camelCase
-			// subAgents. Pick the right key based on the agent's language.
-			subKwargKey := "sub_agents"
-			if a.Language == models.LanguageTypeScript {
-				subKwargKey = "subAgents"
-			}
-			subKwarg := agentKwarg(a, subKwargKey)
+		// Python-only: TS ADK discovery pre-populates HandoffRefs from
+		// camelCase subAgents at parse time (ts_adk_agents.go), and the
+		// language-agnostic resolve pass below wires them — re-walking the
+		// kwarg here for TS would double-emit.
+		if a.SDK == models.SDKGoogleADK && a.Language != models.LanguageTypeScript {
+			subKwarg := agentKwarg(a, "sub_agents")
 			if subKwarg != nil && subKwarg.Value != nil && subKwarg.Value.Kind == models.ExprList {
 				agentsByName := map[string]*models.AgentDef{}
 				for j := range inv.Agents {
@@ -303,6 +301,37 @@ func ResolveEdges(inv *models.RepoInventory, parsed []ParsedFile) {
 				ref.Resolved = td
 			} else {
 				ref.External = true
+			}
+		}
+
+		// HandoffRefs — TS ADK discovery pre-populates these from camelCase
+		// subAgents= at parse time. Resolve same-file refs by Name or VarName;
+		// the Python sub_agents= block above does both append and resolve in
+		// one pass (and never leaves Resolved==nil && External==false), so
+		// this language-agnostic pass only fires for pre-populated refs.
+		if len(a.HandoffRefs) > 0 {
+			agentsByName := map[string]*models.AgentDef{}
+			for j := range inv.Agents {
+				if inv.Agents[j].FilePath != a.FilePath {
+					continue
+				}
+				if n := inv.Agents[j].Name; n != "" {
+					agentsByName[n] = &inv.Agents[j]
+				}
+				if v := inv.Agents[j].VarName; v != "" {
+					agentsByName[v] = &inv.Agents[j]
+				}
+			}
+			for j := range a.HandoffRefs {
+				ref := &a.HandoffRefs[j]
+				if ref.Resolved != nil || ref.External {
+					continue
+				}
+				if target, ok := agentsByName[ref.Name]; ok {
+					ref.Resolved = target
+				} else {
+					ref.External = true
+				}
 			}
 		}
 
