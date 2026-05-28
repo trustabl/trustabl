@@ -212,9 +212,10 @@ import { z } from "zod";
 }
 
 func TestTSImportAliasesAny_EmptyModuleList(t *testing.T) {
+	src := []byte(`import { x } from "y";`)
 	p := astutil.NewTSParser()
-	tree, _ := p.ParseCtx(context.Background(), nil, []byte(`import { x } from "y";`))
-	got := astutil.TSImportAliasesAny(tree.RootNode(), []byte{}, nil)
+	tree, _ := p.ParseCtx(context.Background(), nil, src)
+	got := astutil.TSImportAliasesAny(tree.RootNode(), src, nil)
 	if len(got) != 0 {
 		t.Errorf("empty module list should return empty map, got %v", got)
 	}
