@@ -12,6 +12,10 @@ import (
 // packages/agents-core/src/tool.ts and packages/agents-openai/src/tools.ts in
 // openai/openai-agents-js. camelCase factory functions, NOT PascalCase classes
 // (the Python SDK uses class instantiation; the JS SDK uses factory calls).
+// Note: the Python HostedToolClasses set has two entries with no JS factory
+// equivalent — Python's CustomTool is a user-defined subclass (not an exported
+// factory) and LocalShellTool maps to the JS shellTool factory above — so this
+// set has 9 entries to Python's 11.
 var TSOpenAIHostedToolFactories = map[string]bool{
 	// from @openai/agents-core
 	"computerTool":   true,
