@@ -124,7 +124,6 @@ func tsStringLiteralText(n *sitter.Node, src []byte) string {
 	return raw[1 : len(raw)-1]
 }
 
-
 // flattenKwargs walks a KwargTree and writes leaf values into out using
 // dot-joined keys (`annotations.readOnlyHint` etc.).
 func flattenKwargs(prefix string, kt *models.KwargTree, out map[string]string) {
