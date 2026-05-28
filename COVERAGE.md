@@ -4,7 +4,7 @@ Coverage matrix for Trustabl's static analysis: which agent SDKs (and which
 languages) we currently scan, analyse, and detect against. This file is the
 at-a-glance reference; `ARCHITECTURE.md` has the implementation detail.
 
-_Last reviewed: 2026-05-28 (HEAD `e933b37`)._
+_Last reviewed: 2026-05-28 (HEAD `c98d13f`)._
 
 > **Note:** Detection rules are not shipped in the binary. They live in the
 > separate `trustabl-rules` git repository
@@ -23,7 +23,7 @@ Legend: ✅ full · ◐ partial · ❌ none · — N/A
 | **Claude Agent SDK** | Python | ✅ dep-scan + file inventory + `.claude/` & `.claude-plugin/` components | ✅ tools, agents, subagents (canonical + flat-collection shape fallback), skills (`SKILL.md`), slash commands, plugin manifests, settings | ✅ CSDK-001..007 (tool), CSDK-101 (agent), CSDK-110 (subagent — fires on pure-markdown collections) |
 | **Claude Agent SDK** | TypeScript | ✅ dep-scan (`@anthropic-ai/claude-agent-sdk`) + file inventory + `.claude/` components | ✅ tools (`tool()` factory), agents (main thread `QueryMainAgent` per `query()` call + sub-agents inline-in-query + typed-const `AgentDefinition`), MCP servers (createSdkMcpServer + 4 config literals) | ❌ no TS rules yet (SP2) — META-004 fires |
 | **OpenAI Agents SDK** | Python | ✅ dep-scan + file inventory | ✅ tools, hosted tools (11 classes), agents, MCP servers (3 transports + alias), guardrails, sessions | ✅ OAI-001..006 (tool), OAI-101..105 (agent), OAI-201 (repo) |
-| **OpenAI Agents SDK** | TypeScript | ◐ file inventory only | ❌ no TS AST parser | ❌ |
+| **OpenAI Agents SDK** | TypeScript | ✅ dep-scan (`@openai/agents` substring catches `-core` / `-openai`) + file inventory | ✅ tools (`tool({...})` factory), agents (`new Agent({...})` + `Agent.create(...)`), hosted tools (9 factories across `@openai/agents-core` and `@openai/agents-openai`), MCP servers (3 transports + `MCPServers` wrapper), guardrails (4 `defineX` factories), sessions (`MemorySession` / `OpenAIConversationsSession` / `OpenAIResponsesCompactionSession`) | ❌ no TS-language OAI rules yet (SP2) — META-004 fires |
 | **MCP** | Python | ✅ tool registrations + config files | ◐ tool registrations only (no server-side resource/prompt discovery) | ❌ no dedicated pack (KindMCPTool is reachable by some CSDK rules' `applies_to`) |
 | **MCP** | TypeScript / Go / Rust | ❌ no MCP-specific recognition (file paths inventoried generically, no MCP parser or dep needles) | ❌ | ❌ |
 | **Google ADK** | Python | ✅ dep-scan (`google-adk`) + file inventory | ✅ LlmAgent (+ Agent alias), SequentialAgent, ParallelAgent, LoopAgent, LanggraphAgent; FunctionTool wrapping; 13 built-in hosted tools; sub_agents edges | ✅ ADK-001..003 (tool), ADK-101..103 (agent) |
@@ -79,6 +79,25 @@ Discovery sources: `internal/analysis/discovery.go`, `agents.go`, `hosted_tools.
 | Guardrails | `@input_guardrail` / `@output_guardrail` decorated functions, resolved as edges from each agent. Class-based guardrails are a documented gap |
 | Sessions | Construction sites of `SQLiteSession`, `SQLAlchemySession`, `RedisSession`, `MongoDBSession`, `EncryptedSession`, `AdvancedSQLiteSession` |
 
+### OpenAI Agents SDK — TypeScript
+
+Discovery sources: `internal/analysis/ts_openai_tools.go`,
+`ts_openai_agents.go`, `ts_openai_hosted_tools.go`,
+`ts_openai_mcp_servers.go`, `ts_openai_guardrails.go`,
+`ts_openai_sessions.go`, plus the shared `ts_handler_facts.go`. Import
+gate: only files importing from `@openai/agents`, `@openai/agents-core`,
+or `@openai/agents-openai` (handled by the `TSImportAliasesAny` union
+helper) are processed.
+
+| Construct | Recognition |
+|---|---|
+| Tools | `tool({name, description, parameters, execute, ...})` factory calls. Captures: `name` / `description`, `parameters` top-level keys as `ParamNames`, handler body facts via shared `tsHandlerFacts` (`shells_out`, `http_call`), and option fields (`strict`, `needsApproval`, `timeoutMs`, etc.) flattened into `Config`. `VarName` from the enclosing `const x = tool({...})` binding |
+| Agents | `new Agent({...})` and `Agent.create({...})`. All option-object kwargs captured into a typed `KwargTree`; `Opaque=true` when the arg is not an object literal or contains a `...spread`. Pre-resolves hosted-tool factory calls inside `tools: [...]` during discovery; identifier-valued refs in `tools`/`handoffs`/`inputGuardrails`/`outputGuardrails`/`mcpServers` are wired by `ResolveEdges` via a Name+VarName double-indexed lookup |
+| Hosted tools | Closed set of 9 factories across `@openai/agents-core` and `@openai/agents-openai`: emits `HostedToolDef` with `SDK=openai_agents` and the canonical factory name |
+| MCP servers | `new MCPServerStdio({...})` / `MCPServerSSE` / `MCPServerStreamableHttp` / `MCPServers` (the multi-transport wrapper). Emits `MCPServerDef` with `Transport` ∈ `stdio` / `sse` / `streamable_http` / `multi` and `VarName` from the enclosing `const` |
+| Guardrails | `defineInputGuardrail` / `defineOutputGuardrail` / `defineToolInputGuardrail` / `defineToolOutputGuardrail` factory calls. Emits `GuardrailDef` with `Kind` ∈ `input` / `output` / `tool_input` / `tool_output` and `VarName` from the enclosing `const` |
+| Sessions | `new MemorySession()`, `new OpenAIConversationsSession()`, `new OpenAIResponsesCompactionSession()`, and the `startOpenAIConversationsSession()` factory. Emits `SessionUse` with `Class` set to the canonical name |
+
 ### MCP — Python
 
 | Construct | Recognition |
@@ -131,7 +150,6 @@ not fire for it.
 | Gap | Effort sketch |
 |---|---|
 | **Claude SDK TypeScript rules** (`@anthropic-ai/claude-agent-sdk`) | Discovery is done (SP1). Remaining: per-language predicate implementations in `rules/predicates.go` and a TS-language rule pack in the `trustabl-rules` repository. Currently produces META-004 (policy loaded, no rule applicable to TS inputs) |
-| **OpenAI Agents SDK TypeScript** (`@openai/agents`) | Same as above — TS parser + discovery for `Agent`/`tool()` factory shape. The npm package uses a different shape than Python (e.g. `tool({})` factory rather than `@function_tool` decorator) |
 | **Google ADK TypeScript** ([`google/adk-js`](https://github.com/google/adk-js)) | Depends on TS parser landing for any TS work; then ADK-JS-specific shape discovery |
 | **MCP cross-language** (TS, Rust, Go) | Two prerequisites are missing today: (1) MCP dep-scan needles in `internal/ingestion/normalizer.go` — currently only `claude-agent-sdk` / `claude_agent_sdk` / `openai-agents` / `@openai/agents` / `google-adk` are matched; there is no `@modelcontextprotocol/sdk` (npm), no `rmcp` / `anthropic-mcp` (Cargo), no Go MCP module needle. (2) per-language AST parsers and discovery for the SDK shapes (`Server.tool()` factory in TS, `#[tool]` macros in Rust, etc.). File paths are recorded by the generic walk but no MCP-specific extraction happens against them |
 | **MCP server-side completeness** | We discover tools registered with `@server.tool` etc., but don't extract `Prompt`, `Resource`, `Sampling` registrations — those exist in the spec and would be a small additional pass |
@@ -141,11 +159,18 @@ not fire for it.
 This section is editorial — recorded here so future contributors see the
 rationale, not as a binding roadmap.
 
-1. **TypeScript parser** is the single biggest unlock. One infra investment
-   covers Claude SDK TS, OpenAI Agents JS, Google ADK JS, and TS MCP servers.
-   The discovery patterns are different per SDK but the AST plumbing is
-   shared.
-2. **MCP rule pack** would be a small detection win — we already discover
+1. **TypeScript parser** has now landed for Claude SDK TS and OpenAI Agents
+   JS — the same infra investment still covers the remaining TS targets
+   (Google ADK JS, TS MCP servers). The discovery patterns are different
+   per SDK but the AST plumbing is shared.
+2. **OpenAI Agents TS rule pack** is the highest-leverage near-term move
+   now that TS OpenAI discovery is wired (SP2). The Python OAI-* rules
+   (OAI-001..006 tool, OAI-101..105 agent, OAI-201 repo) all have direct
+   TS analogues — most are the same conceptual check, retargeted at
+   `tool({...})` factory args / `new Agent({...})` option-object kwargs
+   instead of Python decorator + constructor shapes — and would clear the
+   META-004 finding TS OpenAI repos currently produce.
+3. **MCP rule pack** would be a small detection win — we already discover
    MCP tools, but no rules target them. Useful checks include "MCP tool
    without input schema" and "stdio MCP server with absolute path to a
    binary outside the repo."

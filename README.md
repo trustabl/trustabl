@@ -166,11 +166,18 @@ Tool/agent AST discovery is wired for:
 - **TypeScript** — Claude Agent SDK (the `tool()` factory, the
   `query()` main-thread `QueryMainAgent`, inline-in-`query()` sub-agents,
   typed-const `AgentDefinition`s, `createSdkMcpServer` and the four
-  `options.mcpServers` config literals). Handles `.ts` / `.tsx` / `.mts`
-  / `.cts` with both `tree-sitter-typescript` and `tree-sitter-tsx`
-  grammars. Note: no TypeScript-specific rule pack ships yet; the engine
-  detects TS Claude SDK shapes but the inventory lands as `META-004`
-  findings until SP2 ships TS rules.
+  `options.mcpServers` config literals) and OpenAI Agents SDK (the
+  `tool({...})` factory, `new Agent({...})` and `Agent.create({...})`,
+  9 hosted-tool factories, MCP server classes across 3 transports plus
+  the `MCPServers` wrapper, 4 `defineX` guardrail factories, and the
+  `MemorySession` / `OpenAIConversationsSession` /
+  `OpenAIResponsesCompactionSession` session classes — gated on imports
+  from `@openai/agents`, `@openai/agents-core`, or
+  `@openai/agents-openai`). Handles `.ts` / `.tsx` / `.mts` / `.cts`
+  with both `tree-sitter-typescript` and `tree-sitter-tsx` grammars.
+  Note: no TypeScript-specific rule pack ships yet; the engine detects
+  TS Claude SDK and TS OpenAI Agents SDK shapes but the inventory lands
+  as `META-004` findings until SP2 ships TS rules.
 
 JavaScript and Go files are recognized by Recon (they appear in the
 file inventory and feed component discovery) but no AST parser for them
@@ -361,7 +368,7 @@ fails.
 | Importer           | `internal/ingestion/importer.go`         |
 | Normalizer (recon) | `internal/ingestion/normalizer.go`       |
 | Discovery (Python AST + markdown/JSON) | `internal/analysis/discovery.go`, `agents.go`, `hosted_tools.go`, `mcp_servers.go`, `adk_agents.go` (Python AST); `subagents.go`, `markdown_agents.go`, `skills.go`, `slash_commands.go` (markdown frontmatter); `plugins.go`, `claude_settings.go` (JSON) |
-| TypeScript discovery | `internal/analysis/ts_discovery.go`, `ts_agents.go`, `ts_mcp_servers.go`, `astutil/ts.go` |
+| TypeScript discovery | `internal/analysis/ts_discovery.go`, `ts_agents.go`, `ts_mcp_servers.go`, `ts_handler_facts.go`, `ts_openai_tools.go`, `ts_openai_agents.go`, `ts_openai_hosted_tools.go`, `ts_openai_mcp_servers.go`, `ts_openai_guardrails.go`, `ts_openai_sessions.go`, `astutil/ts.go` |
 | Detector runtime   | `internal/analysis/detectors/`           |
 | Rule source        | `internal/rulesource/` (git fetch + cache + schema-version gate) |
 | Detector rules     | external `trustabl-rules` repo (tests: `testdata/rules-fixture/`) |
