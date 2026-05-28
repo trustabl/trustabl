@@ -1,6 +1,8 @@
 package analysis
 
 import (
+	"sort"
+
 	sitter "github.com/smacker/go-tree-sitter"
 
 	"github.com/trustabl/trustabl/internal/analysis/astutil"
@@ -96,6 +98,7 @@ func extractTSADKTool(call *sitter.Node, pf ParsedFile) (models.ToolDef, bool) {
 		for k := range pChild.Children {
 			td.ParamNames = append(td.ParamNames, k)
 		}
+		sort.Strings(td.ParamNames) // map iteration order is nondeterministic; ParamNames is serialized
 	}
 	if execNode := getObjectProperty(opts, "execute", pf.Source); execNode != nil {
 		facts := tsHandlerFacts(execNode, pf.Source)

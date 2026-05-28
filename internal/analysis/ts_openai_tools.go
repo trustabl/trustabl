@@ -1,6 +1,8 @@
 package analysis
 
 import (
+	"sort"
+
 	sitter "github.com/smacker/go-tree-sitter"
 
 	"github.com/trustabl/trustabl/internal/analysis/astutil"
@@ -88,6 +90,7 @@ func extractTSOpenAITool(call *sitter.Node, pf ParsedFile) (models.ToolDef, bool
 		for k := range pChild.Children {
 			td.ParamNames = append(td.ParamNames, k)
 		}
+		sort.Strings(td.ParamNames) // map iteration order is nondeterministic; ParamNames is serialized
 	}
 	// execute: walk for body facts
 	if execNode := getObjectProperty(opts, "execute", pf.Source); execNode != nil {
