@@ -60,6 +60,25 @@ type repoRuleDetector struct{ rule RuleDef }
 func (d repoRuleDetector) RuleID() string                    { return d.rule.ID }
 func (d repoRuleDetector) Category() models.DetectorCategory { return d.rule.Category }
 func (d repoRuleDetector) Applies(p models.RepoProfile, inv models.RepoInventory) bool {
+	// Language gate at repo scope: a language-typed rule fires only when the
+	// inventory observes that language. Matches the gate enforced by
+	// toolRuleDetector and agentRuleDetector. Without this, a rule with
+	// `language: python` would silently fire on a TS-only repo where the
+	// rule's predicates have no Python code to evaluate against (e.g.
+	// OAI-201's repo_uses_default_tracing trivially holds on a Python-free
+	// repo since the tracing-config call never appears).
+	if d.rule.Language != "" {
+		var hasLang bool
+		for _, l := range p.Languages {
+			if l == d.rule.Language {
+				hasLang = true
+				break
+			}
+		}
+		if !hasLang {
+			return false
+		}
+	}
 	for _, k := range d.rule.AppliesTo {
 		// "openshell" is a risk-surface label, not an SDK — route it to
 		// HasShellInvocations instead of looking it up in SDKsDetected.

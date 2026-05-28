@@ -398,17 +398,28 @@ def fetch(url: str) -> str:
 var policyRepoRuleCases = []policyRepoCase{
 	// ─── OAI-201 default tracing (repo-scoped) ───────────────────────────────
 	{"OAI-201 fires when using default tracing", "OAI-201",
-		models.RepoProfile{},
+		models.RepoProfile{Languages: []models.Language{models.LanguagePython}},
 		models.RepoInventory{
 			SDKsDetected:       []models.SDK{models.SDKOpenAIAgents},
 			UsesDefaultTracing: true,
 		},
 		true},
 	{"OAI-201 silent when custom tracing configured", "OAI-201",
-		models.RepoProfile{},
+		models.RepoProfile{Languages: []models.Language{models.LanguagePython}},
 		models.RepoInventory{
 			SDKsDetected:       []models.SDK{models.SDKOpenAIAgents},
 			UsesDefaultTracing: false,
+		},
+		false},
+	// Language gate: a TS-only repo using @openai/agents must NOT fire
+	// OAI-201 even though SDKsDetected contains openai_agents and the
+	// (Python-shaped) default-tracing predicate trivially holds — the rule
+	// declares language: python and the repo has no Python.
+	{"OAI-201 silent on TS-only OpenAI repo (language gate)", "OAI-201",
+		models.RepoProfile{Languages: []models.Language{models.LanguageTypeScript}},
+		models.RepoInventory{
+			SDKsDetected:       []models.SDK{models.SDKOpenAIAgents},
+			UsesDefaultTracing: true,
 		},
 		false},
 }
