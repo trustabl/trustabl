@@ -124,35 +124,6 @@ func tsStringLiteralText(n *sitter.Node, src []byte) string {
 	return raw[1 : len(raw)-1]
 }
 
-// tsHandlerFacts walks a handler node (arrow_function or function) and
-// returns facts about its body. Mirrors the Python callsShell pattern but
-// recognizes JS/TS shell + HTTP call shapes.
-func tsHandlerFacts(handler *sitter.Node, src []byte) map[string]string {
-	out := map[string]string{}
-	if handler == nil {
-		return out
-	}
-	astutil.Walk(handler, func(n *sitter.Node) bool {
-		if n.Type() != "call_expression" {
-			return true
-		}
-		fn := n.ChildByFieldName("function")
-		if fn == nil {
-			return true
-		}
-		text := astutil.NodeText(fn, src)
-		switch text {
-		case "fetch", "axios", "axios.get", "axios.post", "axios.put", "axios.delete",
-			"axios.patch", "axios.request", "got", "got.get", "got.post",
-			"undici.fetch", "undici.request":
-			out["http_call"] = "true"
-		case "execSync", "exec", "spawn", "spawnSync", "fork":
-			out["shells_out"] = "true"
-		}
-		return true
-	})
-	return out
-}
 
 // flattenKwargs walks a KwargTree and writes leaf values into out using
 // dot-joined keys (`annotations.readOnlyHint` etc.).
