@@ -7,8 +7,9 @@ import (
 )
 
 // tsHandlerFacts walks a handler node (arrow_function or function) and
-// returns facts about its body. Mirrors the Python callsShell pattern but
-// recognizes JS/TS shell + HTTP call shapes.
+// returns body facts. Recognizes JS/TS shell and HTTP call shapes used by
+// both Claude SDK tool() handlers and OpenAI Agents SDK tool({execute: ...})
+// handlers. Lifted from ts_discovery.go so both discovery paths share it.
 func tsHandlerFacts(handler *sitter.Node, src []byte) map[string]string {
 	out := map[string]string{}
 	if handler == nil {
