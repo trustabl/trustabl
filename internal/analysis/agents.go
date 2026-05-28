@@ -107,7 +107,16 @@ func ResolveEdges(inv *models.RepoInventory, parsed []ParsedFile) {
 
 	for i := range inv.Agents {
 		a := &inv.Agents[i]
-		if a.Opaque {
+		// Opaque agents skip the Python kwarg blocks below (Kwargs can't be
+		// trusted on Agent(**config)). But TS opaque-spread agents like
+		// `new Agent({...defaults, tools: [webSearchTool()]})` still populate
+		// HostedToolRefs/MCPServerRefs/ToolRefs at discovery from explicit
+		// syntactic positions before the spread — those refs ARE trustworthy
+		// and must still flow through the language-agnostic resolution passes
+		// further down. The Python kwarg blocks no-op for TS anyway (TS uses
+		// camelCase keys; the tools= block is already TS-gated), so skipping
+		// them is safe even for non-opaque TS agents.
+		if a.Opaque && a.Language != models.LanguageTypeScript {
 			continue
 		}
 

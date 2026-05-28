@@ -634,3 +634,61 @@ func TestResolveEdges_TSHostedToolNoDoubleEmit(t *testing.T) {
 		t.Errorf("HostedToolRefs should have 1 entry, got %+v", inv.Agents[0].HostedToolRefs)
 	}
 }
+
+func TestResolveEdges_TSOpaqueAgent_StillResolvesPrePopulatedRefs(t *testing.T) {
+	// Regression: a spread-Opaque TS agent (`new Agent({...defaults, tools:
+	// [webSearchTool()]})`) populates HostedToolRefs/MCPServerRefs/ToolRefs
+	// at discovery time even though Opaque=true. ResolveEdges must still
+	// run the language-agnostic ref-resolution passes for it — the refs
+	// were extracted from explicit syntactic positions before the spread
+	// was encountered, so they're trustworthy even when Kwargs aren't.
+	inv := &models.RepoInventory{
+		Tools: []models.ToolDef{{
+			Name:     "sum",
+			VarName:  "computeSum",
+			Kind:     models.KindOpenAITool,
+			Language: models.LanguageTypeScript,
+			Location: models.Location{FilePath: "src/a.ts", Line: 1},
+		}},
+		MCPServers: []models.MCPServerDef{{
+			Class:     "MCPServerStdio",
+			VarName:   "fsServer",
+			Transport: "stdio",
+			SDK:       models.SDKOpenAIAgents,
+			Language:  models.LanguageTypeScript,
+			Location:  models.Location{FilePath: "src/a.ts", Line: 3},
+		}},
+		Agents: []models.AgentDef{{
+			SDK:      models.SDKOpenAIAgents,
+			Class:    "Agent",
+			Language: models.LanguageTypeScript,
+			Location: models.Location{FilePath: "src/a.ts", Line: 10},
+			Opaque:   true, // spread inside opts
+			ToolRefs: []models.ToolRef{{Name: "computeSum"}},
+			HostedToolRefs: []models.HostedToolRef{
+				{Class: "webSearchTool", DefIndex: -1},
+			},
+			MCPServerRefs: []models.MCPServerRef{
+				{Class: "fsServer", DefIndex: -1},
+			},
+		}},
+	}
+	analysis.ResolveEdges(inv, nil)
+
+	a := inv.Agents[0]
+	if a.ToolRefs[0].Resolved == nil {
+		t.Errorf("ToolRef should be resolved by VarName even for Opaque TS agent, got External=%v",
+			a.ToolRefs[0].External)
+	}
+	if len(inv.HostedTools) != 1 {
+		t.Errorf("inv.HostedTools should be materialized from HostedToolRef even for Opaque TS agent, got %d entries",
+			len(inv.HostedTools))
+	}
+	if a.HostedToolRefs[0].Resolved == nil {
+		t.Errorf("HostedToolRef should resolve after the post-sort remap even for Opaque TS agent")
+	}
+	if a.MCPServerRefs[0].External || a.MCPServerRefs[0].Resolved == nil {
+		t.Errorf("MCPServerRef should resolve by VarName even for Opaque TS agent, got %+v",
+			a.MCPServerRefs[0])
+	}
+}
