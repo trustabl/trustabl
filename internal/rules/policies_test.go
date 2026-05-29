@@ -1384,6 +1384,28 @@ var policyAgentRuleCases = []policyAgentCase{
 		},
 		models.RepoInventory{},
 		true},
+	{"OAI-111 fires on CodeInterpreterTool without needs_approval", "OAI-111",
+		models.AgentDef{
+			SDK:      models.SDKOpenAIAgents,
+			Class:    "Agent",
+			Language: models.LanguagePython,
+			HostedToolRefs: []models.HostedToolRef{
+				{Class: "CodeInterpreterTool", Resolved: &models.HostedToolDef{Class: "CodeInterpreterTool"}},
+			},
+		},
+		models.RepoInventory{},
+		true},
+	{"OAI-111 silent on a non-privileged hosted tool", "OAI-111",
+		models.AgentDef{
+			SDK:      models.SDKOpenAIAgents,
+			Class:    "Agent",
+			Language: models.LanguagePython,
+			HostedToolRefs: []models.HostedToolRef{
+				{Class: "WebSearchTool", Resolved: &models.HostedToolDef{Class: "WebSearchTool"}},
+			},
+		},
+		models.RepoInventory{},
+		false},
 	{"OAI-111 silent when ShellTool sets needs_approval=True", "OAI-111",
 		models.AgentDef{
 			SDK:      models.SDKOpenAIAgents,
