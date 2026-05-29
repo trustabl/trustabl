@@ -51,7 +51,7 @@ rules:
 
     confidence: 0.85                        # REQUIRED. (0, 1]. Probability the match is a real problem
                                             # vs. a false positive. Multiplies severity in scoring.
-                                            # Loader rejects values <= 0.
+                                            # Loader rejects values <= 0 or > 1.
 
     language: python                        # OPTIONAL (default: python). Source language this rule
                                             # targets. Allowed: python | typescript | javascript | go.

@@ -100,6 +100,10 @@ func Load(fsys fs.FS) ([]PolicyFile, error) {
 			}
 			if rule.Confidence <= 0 {
 				errs = append(errs, fmt.Errorf("%s: confidence is required (must be > 0)", tag))
+			} else if rule.Confidence > 1 {
+				// confidence is a probability in (0, 1]; scoring multiplies it by
+				// severity weight, so a value above 1 silently inflates the score.
+				errs = append(errs, fmt.Errorf("%s: confidence %g is out of range (must be <= 1)", tag, rule.Confidence))
 			}
 			if len(rule.AppliesTo) == 0 {
 				errs = append(errs, fmt.Errorf("%s: applies_to is required", tag))

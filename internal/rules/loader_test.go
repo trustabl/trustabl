@@ -87,6 +87,67 @@ rules:
 	}
 }
 
+func TestLoader_RejectsConfidenceAboveOne(t *testing.T) {
+	// confidence is a probability — schema.yaml documents the domain as (0, 1].
+	// Scoring multiplies severity weight by confidence, so a value > 1 silently
+	// inflates the risk score. The loader must reject it.
+	const tooConfident = `
+policy:
+  id: test
+  name: Test
+  category: claude_sdk
+  description: x
+rules:
+  - id: TEST-001
+    title: A rule
+    scope: tool
+    severity: low
+    confidence: 1.5
+    applies_to:
+      - claude_sdk_tool
+    match:
+      has_docstring: true
+    explanation: x
+    fix: x
+`
+	fsys := makeFS(map[string]string{"bad.yaml": tooConfident})
+	_, err := rules.Load(fsys)
+	if err == nil {
+		t.Fatal("expected error for confidence > 1, got nil")
+	}
+	if !strings.Contains(err.Error(), "confidence") {
+		t.Errorf("error should mention 'confidence', got: %v", err)
+	}
+}
+
+func TestLoader_AcceptsConfidenceOfExactlyOne(t *testing.T) {
+	// 1.0 is the inclusive upper bound — a rule the engine is certain about
+	// must still load.
+	const certain = `
+policy:
+  id: test
+  name: Test
+  category: claude_sdk
+  description: x
+rules:
+  - id: TEST-001
+    title: A rule
+    scope: tool
+    severity: low
+    confidence: 1.0
+    applies_to:
+      - claude_sdk_tool
+    match:
+      has_docstring: true
+    explanation: x
+    fix: x
+`
+	fsys := makeFS(map[string]string{"ok.yaml": certain})
+	if _, err := rules.Load(fsys); err != nil {
+		t.Fatalf("confidence of exactly 1.0 must load, got: %v", err)
+	}
+}
+
 func TestLoader_UnknownPredicateName(t *testing.T) {
 	const badPredicate = `
 policy:
