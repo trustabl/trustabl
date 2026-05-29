@@ -9,12 +9,12 @@ policy:
 rules:
   - id: OAI-005
     title: Network call has no timeout
-    scope: tool
     severity: high
     confidence: 0.85
     language: python
     applies_to:
       - openai_tool
+    scope: tool
     match:
       call_without_kwarg:
         callees:
@@ -39,3 +39,31 @@ rules:
       Pass timeout= (typically 5-30 seconds depending on the endpoint).
       Surface timeouts as a structured tool error the model can react to,
       using failure_error_function (see OAI-004).
+
+  - id: OAI-011
+    title: urllib network call has no timeout
+    severity: high
+    confidence: 0.85
+    language: python
+    applies_to:
+      - openai_tool
+    scope: tool
+    match:
+      call_without_kwarg:
+        callees:
+          - urllib.request.urlopen
+          - urlopen
+        missing: timeout
+    explanation: >
+      An OpenAI Agents SDK tool that calls urllib.request.urlopen without
+      timeout= can hang on a slow or unresponsive host. Python's default for
+      urlopen is socket._GLOBAL_DEFAULT_TIMEOUT, which is None unless
+      socket.setdefaulttimeout has been called process-wide; in practice
+      that means no timeout. The agent's run loop blocks inside the tool
+      until the OS-level TCP timeout (often minutes), consuming the
+      conversation's wall-clock budget and tying up the worker.
+    fix: >
+      Pass timeout= (typically 5-30 seconds depending on the endpoint) to
+      every urllib.request.urlopen call. Surface timeouts as a structured
+      tool error the model can react to using failure_error_function (see
+      OAI-004). OAI-005 covers the equivalent gap for requests/httpx callees.

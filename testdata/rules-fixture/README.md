@@ -23,19 +23,33 @@ Rules are grouped by `<category>/<topic>.yaml`:
 ```
 policies/
 ├── claude_sdk/                      Claude Agent SDK rules (CSDK-NNN)
-│   ├── agent_safety.yaml            CSDK-101 (agent scope)
+│   ├── agent_safety.yaml            CSDK-101, CSDK-102 (agent scope)
 │   ├── error_handling.yaml          CSDK-005
 │   ├── idempotency.yaml             CSDK-006
 │   ├── network.yaml                 CSDK-003
 │   ├── path_safety.yaml             CSDK-004
+│   ├── subagent_safety.yaml         CSDK-110 (subagent scope)
 │   └── tool_definition.yaml         CSDK-001, CSDK-002, CSDK-007
+├── google_adk/                      Google ADK rules (ADK-NNN)
+│   ├── agent_safety.yaml            ADK-101..105 (agent scope)
+│   ├── builtin_tools.yaml           ADK-008
+│   ├── error_handling.yaml          ADK-005
+│   ├── idempotency.yaml             ADK-006
+│   ├── network.yaml                 ADK-003
+│   ├── path_safety.yaml             ADK-004
+│   └── tool_definition.yaml         ADK-001, ADK-002, ADK-007
 └── openai_sdk/                      OpenAI Agents SDK rules (OAI-NNN)
-    ├── agent_safety.yaml            OAI-101..104 (agent scope)
+    ├── agent_safety.yaml            OAI-101..104, OAI-109 (agent scope)
+    ├── code_execution.yaml          OAI-013
     ├── decorator_config.yaml        OAI-003, OAI-004
-    ├── mcp_safety.yaml              OAI-105 (agent scope)
-    ├── network.yaml                 OAI-005
+    ├── error_handling.yaml          OAI-008
+    ├── idempotency.yaml             OAI-009
+    ├── mcp_safety.yaml              OAI-106 (agent scope)
+    ├── network.yaml                 OAI-005, OAI-011
+    ├── observability.yaml           OAI-010
     ├── path_safety.yaml             OAI-006
-    ├── tool_definition.yaml         OAI-001, OAI-002
+    ├── shell_safety.yaml            OAI-012
+    ├── tool_definition.yaml         OAI-001, OAI-002, OAI-007
     └── tracing.yaml                 OAI-201 (repo scope)
 
 # Note: an openshell/ subdirectory previously held OSH-001..005 (NVIDIA

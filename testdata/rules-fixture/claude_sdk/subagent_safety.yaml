@@ -4,15 +4,18 @@ policy:
   category: claude_sdk
   description: >
     Rules covering .claude/agents/*.md subagent declarations.
+
 rules:
   - id: CSDK-110
     title: Subagent granted the built-in Bash tool
-    scope: subagent
     severity: high
     confidence: 0.9
-    applies_to: [claude_subagent]
+    applies_to:
+      - claude_subagent
+    scope: subagent
     match:
-      subagent_grants_tool: [Bash]
+      subagent_grants_tool:
+        - Bash
     explanation: >
       This subagent's frontmatter grants the built-in `Bash` tool, letting it
       run arbitrary shell commands. A narrowly-scoped subagent (e.g. a search

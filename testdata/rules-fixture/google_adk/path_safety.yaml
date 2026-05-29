@@ -1,25 +1,21 @@
 policy:
-  id: claude_sdk_path_safety
-  name: Filesystem path safety
-  category: claude_sdk
+  id: google_adk_path_safety
+  name: ADK tool filesystem path safety
+  category: google_adk
   description: >
     Rules that catch model-supplied filesystem paths flowing into I/O calls
     without containment. A traversal payload like ../../etc/passwd reaches
     real filesystem state if the tool does not resolve and gate the path.
 
 rules:
-  - id: CSDK-004
-    title: Path parameter used in I/O without validation
+  - id: ADK-004
+    title: Path parameter used in I/O without normalization
     severity: high
     confidence: 0.7
     language: python
     applies_to:
-      - claude_sdk_tool
+      - adk_function_tool
     scope: tool
-    # call_uses_unnormalized_path_param is per-param: a tool with two path
-    # params and one .resolve() correctly fires on the unresolved one.
-    # A body-wide check would suppress the rule whenever any normalization
-    # appears, masking real exposure on other params.
     match:
       call_uses_unnormalized_path_param:
         callees:
@@ -32,8 +28,7 @@ rules:
       The tool accepts a path-like parameter and passes it to file or
       directory operations without resolving or sandboxing the path. A
       model-supplied `../../etc/passwd` is reachable. Detection is heuristic —
-      confirm the parameter is genuinely user-supplied before applying the
-      fix.
+      confirm the parameter is genuinely user-supplied before applying the fix.
     fix: >
       Resolve the path with `Path(...).resolve()` and assert it sits under an
-      allowed root.
+      allowed root before opening.

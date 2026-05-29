@@ -1,0 +1,31 @@
+policy:
+  id: google_adk_error_handling
+  name: ADK tool error contract hygiene
+  category: google_adk
+  description: >
+    Rules covering how a Google ADK FunctionTool surfaces failures back to the
+    model. Raising raw exceptions yields opaque error strings that the model
+    cannot branch on intelligently.
+
+rules:
+  - id: ADK-005
+    title: Tool raises exceptions without a structured error contract
+    severity: medium
+    confidence: 0.6
+    language: python
+    applies_to:
+      - adk_function_tool
+    scope: tool
+    match:
+      all:
+        - has_raise: true
+        - has_try_except: false
+    explanation: >
+      When a Google ADK tool raises an unhandled exception, the runtime
+      surfaces it to the model as an opaque string. The model often cannot
+      recover or retry intelligently from a raw traceback. Returning a
+      structured error payload lets the model branch on the failure mode
+      and decide whether to retry or escalate.
+    fix: >
+      Catch known failure modes and return a `{"error": ..., "retryable": bool}`
+      payload instead of raising.

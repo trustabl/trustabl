@@ -1,0 +1,31 @@
+policy:
+  id: openai_sdk_error_handling
+  name: OpenAI Agents SDK error contract hygiene
+  category: openai_sdk
+  description: >
+    Rules covering how an OpenAI Agents SDK tool surfaces failures back to the
+    model. Raising raw exceptions yields opaque error strings the model cannot
+    branch on intelligently.
+
+rules:
+  - id: OAI-008
+    title: Tool raises exceptions without a structured error contract
+    severity: medium
+    confidence: 0.6
+    language: python
+    applies_to:
+      - openai_tool
+    scope: tool
+    match:
+      all:
+        - has_raise: true
+        - has_try_except: false
+    explanation: >
+      When a @function_tool raises, the SDK surfaces the exception to the model
+      as an opaque string. The model often cannot recover or retry intelligently.
+      Returning a structured error object lets the model branch on the failure
+      mode and decide whether to retry or escalate. Use failure_error_function
+      (see OAI-004) as the decorator-level fallback.
+    fix: >
+      Catch known failure modes and return a structured payload such as
+      `{"error": "...", "retryable": False}` instead of raising.

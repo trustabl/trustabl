@@ -9,11 +9,12 @@ policy:
 rules:
   - id: ADK-001
     title: FunctionTool-wrapped function has no docstring
-    scope: tool
     severity: low
     confidence: 0.8
     language: python
-    applies_to: [adk_function_tool]
+    applies_to:
+      - adk_function_tool
+    scope: tool
     match:
       has_docstring: false
     explanation: >
@@ -30,11 +31,12 @@ rules:
 
   - id: ADK-002
     title: FunctionTool-wrapped function has no type-annotated parameters
-    scope: tool
     severity: medium
     confidence: 0.85
     language: python
-    applies_to: [adk_function_tool]
+    applies_to:
+      - adk_function_tool
+    scope: tool
     match:
       has_typed_params: false
     explanation: >
@@ -47,3 +49,30 @@ rules:
       Annotate every parameter with a concrete type (str, int, bool,
       list[str], Pydantic model, etc.). ADK propagates these into the
       schema the model sees.
+
+  - id: ADK-007
+    title: Ambiguous tool name
+    severity: low
+    confidence: 0.9
+    language: python
+    applies_to:
+      - adk_function_tool
+    scope: tool
+    match:
+      name_in:
+        - process
+        - handle
+        - run
+        - do
+        - execute
+        - perform
+        - work
+        - go
+        - thing
+        - stuff
+    explanation: >
+      Tool names like `process`, `handle`, or `run` give the model no signal
+      about intent. The model will either call this tool for the wrong job or
+      refuse to call it at all when a better-named alternative is present.
+    fix: >
+      Rename to a verb-object form, e.g. `summarize_document`, `fetch_order`.

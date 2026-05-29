@@ -1,0 +1,46 @@
+policy:
+  id: openai_sdk_shell_safety
+  name: OpenAI Agents SDK shell invocation safety
+  category: openai_sdk
+  description: >
+    Rules covering tool bodies that spawn OS processes. Process spawn from
+    inside an @function_tool is a wide attack surface — command injection,
+    arbitrary execution, and unbounded resource use — with no SDK-level
+    sandbox.
+
+rules:
+  - id: OAI-012
+    title: Tool body spawns a subprocess
+    severity: high
+    confidence: 0.9
+    language: python
+    applies_to:
+      - openai_tool
+    scope: tool
+    match:
+      has_body_text:
+        - subprocess.run(
+        - subprocess.Popen(
+        - subprocess.call(
+        - subprocess.check_output(
+        - subprocess.check_call(
+        - os.system(
+        - os.popen(
+        - os.spawn
+    explanation: >
+      The @function_tool body spawns an OS process. Exposing process spawn
+      to an LLM is a wide attack surface: command injection if any argument
+      flows from the model into a shell string, arbitrary code execution if
+      the command itself is model-supplied, and unbounded resource
+      consumption if no timeout is set. The OpenAI Agents SDK provides no
+      sandbox; the subprocess inherits the agent's filesystem, environment
+      variables, and network credentials. Even with manual deny-pattern
+      filtering, the design surface is too large to enumerate safely.
+    fix: >
+      Replace process spawn with a typed library API where possible (e.g.
+      shutil for file ops, psutil for process info). If subprocess is
+      genuinely required, pass argv as a list (never shell=True), set
+      timeout=, route the call through an explicit allow-list of commands,
+      and run the agent under a sandbox (container, seccomp profile, or
+      restricted-user namespace). Confine the working directory and drop
+      env vars the tool does not need.

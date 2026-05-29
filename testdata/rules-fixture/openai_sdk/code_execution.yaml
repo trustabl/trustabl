@@ -1,0 +1,41 @@
+policy:
+  id: openai_sdk_code_execution
+  name: OpenAI Agents SDK dynamic code execution
+  category: openai_sdk
+  description: >
+    Rules covering tool bodies that evaluate dynamic Python code. eval/exec/
+    compile inside an @function_tool turns the agent process into an
+    arbitrary-code-execution surface when any input flows from the model.
+
+rules:
+  - id: OAI-013
+    title: Tool body calls eval/exec/compile on dynamic input
+    severity: high
+    confidence: 0.9
+    language: python
+    applies_to:
+      - openai_tool
+    scope: tool
+    match:
+      has_body_text:
+        - exec(
+        - eval(
+        - compile(
+    explanation: >
+      The @function_tool body invokes Python's eval, exec, or compile. When
+      any portion of the input flows from the model (directly or via session
+      state the model writes to), the call is arbitrary-code-execution inside
+      the agent process. Unlike subprocess, no OS-level sandbox stands between
+      the call and the agent's full Python runtime: imports, file handles,
+      and credentials in memory are all reachable from inside the exec'd
+      string. Even an exec into a restricted globals dict is escapable via
+      the __builtins__ chain unless explicitly stripped, and a model that
+      controls the body of the exec'd code controls the agent.
+    fix: >
+      Remove eval/exec/compile from the tool. Replace dynamic evaluation with
+      a constrained interpreter (asteval, RestrictedPython) only if the use
+      case truly requires expression evaluation; for arithmetic,
+      ast.literal_eval is safe. If the tool is intentionally a code-execution
+      surface (e.g. notebook-style), run the exec inside a separate process
+      with seccomp + no network + no filesystem write, and treat the process
+      as a single-use sacrificial sandbox.

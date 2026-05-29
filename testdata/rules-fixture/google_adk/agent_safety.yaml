@@ -10,11 +10,12 @@ policy:
 rules:
   - id: ADK-101
     title: LlmAgent has no description
-    scope: agent
     severity: medium
     confidence: 0.85
     language: python
-    applies_to: [adk_llm_agent]
+    applies_to:
+      - adk_llm_agent
+    scope: agent
     match:
       all:
         - agent_class: [LlmAgent]
@@ -34,11 +35,12 @@ rules:
 
   - id: ADK-102
     title: Agent with BashTool has no before_tool_callback
-    scope: agent
     severity: high
     confidence: 0.85
     language: python
-    applies_to: [adk_llm_agent]
+    applies_to:
+      - adk_llm_agent
+    scope: agent
     match:
       all:
         - agent_class: [LlmAgent]
@@ -62,11 +64,12 @@ rules:
 
   - id: ADK-103
     title: Sub-agent is granted BashTool
-    scope: agent
     severity: high
     confidence: 0.9
     language: python
-    applies_to: [adk_llm_agent]
+    applies_to:
+      - adk_llm_agent
+    scope: agent
     match:
       all:
         - agent_is_subagent_of_any: true
@@ -84,3 +87,56 @@ rules:
       restructure so the shell-capable agent is the orchestrator at
       the top of the tree (so its `before_tool_callback` actually
       mediates every shell call).
+
+  - id: ADK-104
+    title: Agent has no safety_settings
+    severity: medium
+    confidence: 0.75
+    language: python
+    applies_to:
+      - adk_llm_agent
+    scope: agent
+    match:
+      all:
+        - agent_class: [LlmAgent]
+        - agent_kwarg_missing: [safety_settings]
+    explanation: >
+      Google ADK agents use Gemini models whose configurable content filters
+      default to OFF when safety_settings is not provided. Harm categories
+      including DANGEROUS_CONTENT, HATE_SPEECH, HARASSMENT, and
+      SEXUALLY_EXPLICIT are not actively filtered. In an agentic loop where
+      model outputs drive subsequent tool calls, an unfiltered harmful output
+      can propagate into real side effects.
+    fix: >
+      Pass safety_settings= to the LlmAgent constructor with explicit
+      HarmBlockThreshold values for each HarmCategory your use case requires.
+      At minimum set DANGEROUS_CONTENT to BLOCK_LOW_AND_ABOVE for agents that
+      touch external data or execute tools with side effects.
+
+  - id: ADK-105
+    title: Agent uses web search built-in without before_tool_callback
+    severity: high
+    confidence: 0.85
+    language: python
+    applies_to:
+      - adk_llm_agent
+    scope: agent
+    match:
+      all:
+        - agent_class: [LlmAgent]
+        - agent_uses_hosted_tool_class: [google_search, VertexAISearch]
+        - agent_kwarg_missing: [before_tool_callback]
+    explanation: >
+      This LlmAgent is wired with a web search built-in (google_search or
+      VertexAISearch) but has no before_tool_callback. Web search results are
+      untrusted external data that can contain prompt injection payloads.
+      Without a callback intercepting tool calls before execution, there is no
+      gate to validate queries or block attacker-influenced invocations. An
+      injected instruction retrieved from a prior search can direct the agent
+      to issue further queries or pass malicious content to downstream tools.
+    fix: >
+      Pass before_tool_callback= to the LlmAgent constructor. The callback
+      receives the tool name and parameters before execution; validate that the
+      search query conforms to expected patterns and return a dict with an
+      "error" key to block suspicious calls. Pair this with safety_settings= to
+      filter harmful model outputs from processing search content.

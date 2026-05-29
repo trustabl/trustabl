@@ -1,20 +1,20 @@
 policy:
-  id: claude_sdk_idempotency
-  name: Mutating-tool idempotency
-  category: claude_sdk
+  id: google_adk_idempotency
+  name: ADK mutating-tool idempotency
+  category: google_adk
   description: >
     Rules that flag mutating tools (create/send/refund/...) without an
-    idempotency key. Agents retry tool calls under timeouts and ambiguous
-    failures; without a key the same action can fire twice.
+    idempotency key. ADK agents retry tool calls under timeouts and ambiguous
+    failures; without a key the same side-effecting action can fire twice.
 
 rules:
-  - id: CSDK-006
+  - id: ADK-006
     title: Mutating tool has no idempotency key
     severity: medium
     confidence: 0.55
     language: python
     applies_to:
-      - claude_sdk_tool
+      - adk_function_tool
     scope: tool
     match:
       all:
@@ -35,11 +35,9 @@ rules:
                 - request_id
                 - txn_id
     explanation: >
-      Tool name suggests a side effect (create/send/refund/…). Agents retry
-      tool calls under timeouts and ambiguous failures; without an
-      idempotency key the same action can fire twice. The hook generator can
-      stamp a key into the request, but the downstream service has to honor
-      it.
+      Tool name suggests a side effect (create/send/refund/…). ADK agents
+      retry tool calls under timeouts and ambiguous failures; without an
+      idempotency key the same action can fire twice. Downstream services
+      must also honor the key for this protection to be effective.
     fix: >
-      Add an `idempotency_key: str` parameter; verify the receiving API
-      respects it.
+      Add an `idempotency_key: str` parameter and pass it to the backing API.

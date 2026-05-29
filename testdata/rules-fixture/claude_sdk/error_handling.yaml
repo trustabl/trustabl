@@ -10,13 +10,12 @@ policy:
 rules:
   - id: CSDK-005
     title: Tool raises exceptions without a structured error contract
-    scope: tool
     severity: medium
     confidence: 0.6
     language: python
     applies_to:
       - claude_sdk_tool
-      - mcp_tool
+    scope: tool
     match:
       all:
         - has_raise: true

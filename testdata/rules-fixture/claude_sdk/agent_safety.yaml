@@ -11,12 +11,12 @@ policy:
 rules:
   - id: CSDK-101
     title: Claude subagent is granted the Bash tool
-    scope: agent
     severity: high
     confidence: 0.8
     language: python
     applies_to:
       - claude_agent_definition
+    scope: agent
     match:
       agent_grants_builtin_tool:
         - Bash
@@ -34,3 +34,29 @@ rules:
       PreToolUse hook that allowlists the specific commands the subagent
       may run, and do not pair it with permission_mode="bypassPermissions"
       at the ClaudeAgentOptions level.
+
+  - id: CSDK-102
+    title: Claude subagent is granted the WebSearch tool
+    severity: high
+    confidence: 0.8
+    language: python
+    applies_to:
+      - claude_agent_definition
+    scope: agent
+    match:
+      agent_uses_hosted_tool_class:
+        - WebSearch
+    explanation: >
+      This AgentDefinition grants the built-in WebSearch tool, giving the
+      subagent access to live internet content. Subagents are dispatched
+      autonomously by a lead agent; a prompt-injected or mis-scoped task can
+      direct the subagent to retrieve attacker-controlled pages, whose content
+      can then inject further instructions into the agentic loop. WebSearch
+      results are untrusted external data with no SDK-level filtering — the
+      subagent will process whatever the search returns.
+    fix: >
+      Remove "WebSearch" from this subagent's tools list unless internet access
+      is essential to its job. If it is essential, gate inbound queries with a
+      PreToolUse hook that validates the search query before it executes, and
+      ensure the lead agent that dispatches this subagent validates task
+      descriptions before passing them down.

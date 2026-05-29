@@ -8,17 +8,29 @@ policy:
 rules:
   - id: ADK-003
     title: Network call has no timeout
-    scope: tool
     severity: high
     confidence: 0.85
     language: python
-    applies_to: [adk_function_tool]
+    applies_to:
+      - adk_function_tool
+    scope: tool
     match:
       call_without_kwarg:
-        callees: [requests.get, requests.post, requests.put, requests.delete,
-                  requests.patch, requests.head, requests.request,
-                  httpx.get, httpx.post, httpx.put, httpx.delete,
-                  httpx.patch, httpx.head, httpx.request]
+        callees:
+          - requests.get
+          - requests.post
+          - requests.put
+          - requests.delete
+          - requests.patch
+          - requests.head
+          - requests.request
+          - httpx.get
+          - httpx.post
+          - httpx.put
+          - httpx.delete
+          - httpx.patch
+          - httpx.head
+          - httpx.request
         missing: timeout
     explanation: >
       An ADK tool that makes a network request without a timeout will

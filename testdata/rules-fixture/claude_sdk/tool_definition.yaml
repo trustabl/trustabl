@@ -10,13 +10,12 @@ policy:
 rules:
   - id: CSDK-001
     title: Tool has no description
-    scope: tool
     severity: low
     confidence: 0.95
     language: python
     applies_to:
       - claude_sdk_tool
-      - mcp_tool
+    scope: tool
     match:
       has_docstring: false
     explanation: >
@@ -30,13 +29,12 @@ rules:
 
   - id: CSDK-002
     title: Tool parameters are not type-annotated
-    scope: tool
     severity: medium
     confidence: 0.9
     language: python
     applies_to:
       - claude_sdk_tool
-      - mcp_tool
+    scope: tool
     match:
       all:
         - has_params: true
@@ -52,13 +50,12 @@ rules:
 
   - id: CSDK-007
     title: Ambiguous tool name
-    scope: tool
     severity: low
     confidence: 0.9
     language: python
     applies_to:
       - claude_sdk_tool
-      - mcp_tool
+    scope: tool
     match:
       name_in:
         - process

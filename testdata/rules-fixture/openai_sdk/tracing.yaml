@@ -8,12 +8,12 @@ policy:
 rules:
   - id: OAI-201
     title: Project uses default OpenAI tracing
-    scope: repo
     severity: medium
     confidence: 0.8
     language: python
     applies_to:
       - openai_agents
+    scope: repo
     match:
       all:
         - repo_has_sdk_in_code: [openai_agents]

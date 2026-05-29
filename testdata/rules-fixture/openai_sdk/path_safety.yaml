@@ -9,12 +9,12 @@ policy:
 rules:
   - id: OAI-006
     title: Tool accepts path without normalization
-    scope: tool
     severity: high
     confidence: 0.7
     language: python
     applies_to:
       - openai_tool
+    scope: tool
     match:
       call_uses_unnormalized_path_param:
         callees: [open, Path]

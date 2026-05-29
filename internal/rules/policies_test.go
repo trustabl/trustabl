@@ -392,6 +392,170 @@ def fetch(url: str) -> str:
     s = requests.Session()
     return s.get(url).text
 `, nil, true},
+
+	// ─── OAI-007 ambiguous name ──────────────────────────────────────────────
+	{"OAI-007 fires on ambiguous name", "OAI-007", models.KindOpenAITool, `
+def process(data: dict) -> dict:
+    """Process data."""
+    return data
+`, nil, true},
+	{"OAI-007 silent on descriptive name", "OAI-007", models.KindOpenAITool, `
+def summarize_invoice(invoice_id: str) -> dict:
+    """Summarize an invoice."""
+    return {}
+`, nil, false},
+
+	// ─── OAI-008 raw exceptions ──────────────────────────────────────────────
+	{"OAI-008 fires on raise without try", "OAI-008", models.KindOpenAITool, `
+def process(x: str) -> dict:
+    """Process x."""
+    if not x:
+        raise ValueError("empty input")
+    return {"x": x}
+`, nil, true},
+	{"OAI-008 silent with try/except", "OAI-008", models.KindOpenAITool, `
+def process(x: str) -> dict:
+    """Process x."""
+    try:
+        if not x:
+            raise ValueError("empty")
+        return {"x": x}
+    except ValueError as e:
+        return {"error": str(e)}
+`, nil, false},
+
+	// ─── OAI-009 idempotency ─────────────────────────────────────────────────
+	{"OAI-009 fires on mutating tool without key", "OAI-009", models.KindOpenAITool, `
+def create_order(customer_id: str, amount: float) -> dict:
+    """Create an order."""
+    return {"ok": True}
+`, nil, true},
+	{"OAI-009 silent with idempotency key", "OAI-009", models.KindOpenAITool, `
+def create_order(customer_id: str, amount: float, idempotency_key: str) -> dict:
+    """Create an order."""
+    return {"ok": True}
+`, nil, false},
+
+	// ─── OAI-010 print to stdout ─────────────────────────────────────────────
+	{"OAI-010 fires on print()", "OAI-010", models.KindOpenAITool, `
+def fetch(x: str) -> dict:
+    """Fetch."""
+    print("debug", x)
+    return {}
+`, nil, true},
+	{"OAI-010 silent without print", "OAI-010", models.KindOpenAITool, `
+def fetch(x: str) -> dict:
+    """Fetch."""
+    return {}
+`, nil, false},
+
+	// ─── OAI-011 urllib without timeout ──────────────────────────────────────
+	{"OAI-011 fires on urlopen without timeout", "OAI-011", models.KindOpenAITool, `
+import urllib.request
+def fetch(url: str) -> bytes:
+    """Fetch."""
+    return urllib.request.urlopen(url).read()
+`, nil, true},
+	{"OAI-011 silent with timeout", "OAI-011", models.KindOpenAITool, `
+import urllib.request
+def fetch(url: str) -> bytes:
+    """Fetch."""
+    return urllib.request.urlopen(url, timeout=10).read()
+`, nil, false},
+
+	// ─── OAI-012 subprocess spawn ────────────────────────────────────────────
+	{"OAI-012 fires on subprocess.run", "OAI-012", models.KindOpenAITool, `
+import subprocess
+def run(cmd: str) -> str:
+    """Run."""
+    return subprocess.run([cmd], capture_output=True).stdout.decode()
+`, nil, true},
+	{"OAI-012 silent without subprocess", "OAI-012", models.KindOpenAITool, `
+def run(cmd: str) -> str:
+    """Run."""
+    return cmd.upper()
+`, nil, false},
+
+	// ─── OAI-013 dynamic code execution ──────────────────────────────────────
+	{"OAI-013 fires on eval", "OAI-013", models.KindOpenAITool, `
+def calc(expr: str):
+    """Calc."""
+    return eval(expr)
+`, nil, true},
+	{"OAI-013 silent without eval/exec/compile", "OAI-013", models.KindOpenAITool, `
+def calc(expr: str) -> int:
+    """Calc."""
+    return int(expr) + 1
+`, nil, false},
+
+	// ─── ADK-004 unsafe path ─────────────────────────────────────────────────
+	{"ADK-004 fires on path in open()", "ADK-004", models.KindADKFunctionTool, `
+def read_file(file_path: str) -> str:
+    """Read a file."""
+    with open(file_path, "r") as f:
+        return f.read()
+`, nil, true},
+	{"ADK-004 silent with .resolve()", "ADK-004", models.KindADKFunctionTool, `
+from pathlib import Path
+def read_file(file_path: str) -> str:
+    """Read a file."""
+    p = Path(file_path).resolve()
+    with open(p, "r") as f:
+        return f.read()
+`, nil, false},
+
+	// ─── ADK-005 raw exceptions ──────────────────────────────────────────────
+	{"ADK-005 fires on raise without try", "ADK-005", models.KindADKFunctionTool, `
+def process(x: str) -> dict:
+    """Process x."""
+    if not x:
+        raise ValueError("empty input")
+    return {"x": x}
+`, nil, true},
+	{"ADK-005 silent with try/except", "ADK-005", models.KindADKFunctionTool, `
+def process(x: str) -> dict:
+    """Process x."""
+    try:
+        return {"x": x}
+    except ValueError as e:
+        return {"error": str(e)}
+`, nil, false},
+
+	// ─── ADK-006 idempotency ─────────────────────────────────────────────────
+	{"ADK-006 fires on mutating tool without key", "ADK-006", models.KindADKFunctionTool, `
+def create_order(customer_id: str, amount: float) -> dict:
+    """Create an order."""
+    return {"ok": True}
+`, nil, true},
+	{"ADK-006 silent with idempotency key", "ADK-006", models.KindADKFunctionTool, `
+def create_order(customer_id: str, amount: float, idempotency_key: str) -> dict:
+    """Create an order."""
+    return {"ok": True}
+`, nil, false},
+
+	// ─── ADK-007 ambiguous name ──────────────────────────────────────────────
+	{"ADK-007 fires on ambiguous name", "ADK-007", models.KindADKFunctionTool, `
+def handle(data: dict) -> dict:
+    """Handle data."""
+    return data
+`, nil, true},
+	{"ADK-007 silent on descriptive name", "ADK-007", models.KindADKFunctionTool, `
+def fetch_order(order_id: str) -> dict:
+    """Fetch an order."""
+    return {}
+`, nil, false},
+
+	// ─── ADK-008 BashTool metacharacter blocking ─────────────────────────────
+	{"ADK-008 fires when block_shell_metacharacters not set", "ADK-008", models.KindADKFunctionTool, `
+def BashTool(command: str) -> str:
+    """Run a shell command."""
+    return ""
+`, nil, true},
+	{"ADK-008 silent when block_shell_metacharacters=True", "ADK-008", models.KindADKFunctionTool, `
+def BashTool(command: str) -> str:
+    """Run a shell command."""
+    return ""
+`, map[string]string{"block_shell_metacharacters": "True"}, false},
 }
 
 // policyRepoRuleCases covers repo-scoped rules.
@@ -532,8 +696,8 @@ var policyAgentRuleCases = []policyAgentCase{
 		models.RepoInventory{},
 		false},
 
-	// ─── OAI-105 mcp_servers + no input_guardrails ───────────────────────────
-	{"OAI-105 fires with mcp_servers and no guardrails", "OAI-105",
+	// ─── OAI-106 mcp_servers + no input_guardrails ───────────────────────────
+	{"OAI-106 fires with mcp_servers and no guardrails", "OAI-106",
 		models.AgentDef{
 			SDK:      models.SDKOpenAIAgents,
 			Class:    "Agent",
@@ -546,7 +710,7 @@ var policyAgentRuleCases = []policyAgentCase{
 		},
 		models.RepoInventory{},
 		true},
-	{"OAI-105 silent when input_guardrails also present", "OAI-105",
+	{"OAI-106 silent when input_guardrails also present", "OAI-106",
 		models.AgentDef{
 			SDK:      models.SDKOpenAIAgents,
 			Class:    "Agent",
@@ -706,6 +870,110 @@ var policyAgentRuleCases = []policyAgentCase{
 		},
 		models.RepoInventory{},
 		true},
+
+	// ─── CSDK-102 Claude subagent granted WebSearch ──────────────────────────
+	{"CSDK-102 fires when AgentDefinition grants WebSearch", "CSDK-102",
+		models.AgentDef{
+			SDK:            models.SDKClaudeAgentSDK,
+			Class:          "AgentDefinition",
+			Language:       models.LanguagePython,
+			Name:           "researcher",
+			HostedToolRefs: []models.HostedToolRef{{Class: "WebSearch"}},
+		},
+		models.RepoInventory{},
+		true},
+	{"CSDK-102 silent when no WebSearch granted", "CSDK-102",
+		models.AgentDef{
+			SDK:            models.SDKClaudeAgentSDK,
+			Class:          "AgentDefinition",
+			Language:       models.LanguagePython,
+			Name:           "writer",
+			HostedToolRefs: []models.HostedToolRef{{Class: "Read"}},
+		},
+		models.RepoInventory{},
+		false},
+
+	// ─── OAI-109 WebSearchTool without input_guardrails ──────────────────────
+	{"OAI-109 fires with WebSearchTool and no guardrails", "OAI-109",
+		models.AgentDef{
+			SDK:            models.SDKOpenAIAgents,
+			Class:          "Agent",
+			Language:       models.LanguagePython,
+			HostedToolRefs: []models.HostedToolRef{{Class: "WebSearchTool"}},
+		},
+		models.RepoInventory{},
+		true},
+	{"OAI-109 silent when input_guardrails present", "OAI-109",
+		models.AgentDef{
+			SDK:            models.SDKOpenAIAgents,
+			Class:          "Agent",
+			Language:       models.LanguagePython,
+			HostedToolRefs: []models.HostedToolRef{{Class: "WebSearchTool"}},
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"input_guardrails": {Value: &models.Expr{Kind: models.ExprList, List: []models.Expr{
+					{Kind: models.ExprNameRef, Text: "my_guard"},
+				}}},
+			}},
+		},
+		models.RepoInventory{},
+		false},
+
+	// ─── ADK-104 LlmAgent without safety_settings ────────────────────────────
+	{"ADK-104 fires when LlmAgent has no safety_settings", "ADK-104",
+		models.AgentDef{
+			SDK:      models.SDKGoogleADK,
+			Class:    "LlmAgent",
+			Language: models.LanguagePython,
+			Name:     "root",
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"name":        {Value: &models.Expr{Kind: models.ExprLiteralString, Text: `"root"`}},
+				"description": {Value: &models.Expr{Kind: models.ExprLiteralString, Text: `"Does things."`}},
+			}},
+		},
+		models.RepoInventory{},
+		true},
+	{"ADK-104 silent when safety_settings present", "ADK-104",
+		models.AgentDef{
+			SDK:      models.SDKGoogleADK,
+			Class:    "LlmAgent",
+			Language: models.LanguagePython,
+			Name:     "root",
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"name":            {Value: &models.Expr{Kind: models.ExprLiteralString, Text: `"root"`}},
+				"safety_settings": {Value: &models.Expr{Kind: models.ExprNameRef, Text: "my_settings"}},
+			}},
+		},
+		models.RepoInventory{},
+		false},
+
+	// ─── ADK-105 web search built-in without before_tool_callback ────────────
+	{"ADK-105 fires with google_search and no before_tool_callback", "ADK-105",
+		models.AgentDef{
+			SDK:            models.SDKGoogleADK,
+			Class:          "LlmAgent",
+			Language:       models.LanguagePython,
+			Name:           "root",
+			HostedToolRefs: []models.HostedToolRef{{Class: "google_search"}},
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"name": {Value: &models.Expr{Kind: models.ExprLiteralString, Text: `"root"`}},
+			}},
+		},
+		models.RepoInventory{},
+		true},
+	{"ADK-105 silent when before_tool_callback present", "ADK-105",
+		models.AgentDef{
+			SDK:            models.SDKGoogleADK,
+			Class:          "LlmAgent",
+			Language:       models.LanguagePython,
+			Name:           "root",
+			HostedToolRefs: []models.HostedToolRef{{Class: "google_search"}},
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"name":                 {Value: &models.Expr{Kind: models.ExprLiteralString, Text: `"root"`}},
+				"before_tool_callback": {Value: &models.Expr{Kind: models.ExprNameRef, Text: "my_guard"}},
+			}},
+		},
+		models.RepoInventory{},
+		false},
 }
 
 func TestPolicyAgentRules(t *testing.T) {

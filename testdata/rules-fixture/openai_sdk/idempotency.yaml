@@ -1,0 +1,43 @@
+policy:
+  id: openai_sdk_idempotency
+  name: OpenAI Agents SDK mutating-tool idempotency
+  category: openai_sdk
+  description: >
+    Rules that flag mutating OpenAI Agents SDK tools without an idempotency
+    key. Agents retry tool calls under timeouts and ambiguous failures; without
+    a key the same side-effecting action can fire more than once.
+
+rules:
+  - id: OAI-009
+    title: Mutating tool has no idempotency key
+    severity: medium
+    confidence: 0.55
+    language: python
+    applies_to:
+      - openai_tool
+    scope: tool
+    match:
+      all:
+        - name_has_prefix:
+            - create_
+            - send_
+            - delete_
+            - post_
+            - update_
+            - refund_
+            - charge_
+            - issue_
+        - not:
+            param_name_matches:
+              contains:
+                - idempot
+              exact:
+                - request_id
+                - txn_id
+    explanation: >
+      Tool name suggests a side effect (create/send/refund/…). The OpenAI
+      Agents SDK retries tool calls on timeout and ambiguous failures; without
+      an idempotency key the same action can fire twice. Downstream services
+      must also honor the key for this protection to be effective.
+    fix: >
+      Add an `idempotency_key: str` parameter and pass it to the backing API.

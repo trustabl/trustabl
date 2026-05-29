@@ -3,20 +3,21 @@ policy:
   name: OpenAI Agents SDK MCP integration safety
   category: openai_sdk
   description: >
-    Rules covering risks from MCP servers wired into an OpenAI agent. MCP
-    tool descriptions are attacker-controlled if the MCP server itself is
-    untrusted; guardrails are the agent's primary defense.
+    Rule covering tool-poisoning risk when an OpenAI agent wires MCP
+    servers. MCP tool descriptions are advertised by the MCP server, which
+    sits on a separate trust boundary from the agent; without an input
+    guardrail no pre-execution screen catches a poisoned tool list.
 
 rules:
-  - id: OAI-105
-    title: Agent has mcp_servers configured AND no input_guardrails
-    scope: agent
+  - id: OAI-106
+    title: Agent wires MCP servers without input_guardrails
     severity: high
-    confidence: 0.85
+    confidence: 0.9
     language: python
     applies_to:
       - openai_agent
       - openai_sandbox_agent
+    scope: agent
     match:
       all:
         - agent_kwarg_present: [mcp_servers]
@@ -25,8 +26,11 @@ rules:
       The agent imports tools from one or more MCP servers (mcp_servers=)
       but has no input_guardrails. MCP tool descriptions are advertised by
       the MCP server, which is a separate trust boundary; an attacker-
-      controlled or compromised MCP server can craft tool descriptions that
-      bait the agent into harmful actions (tool poisoning).
+      controlled or compromised MCP server can craft tool descriptions
+      that bait the agent into harmful actions — the "tool poisoning"
+      pattern documented in the MCP threat literature. Detection only
+      fires when mcp_servers is actually configured, so agents without
+      MCP are unaffected.
     fix: >
       Add at least one @input_guardrail that inspects the user's input AND
       the resolved tool list before the model is invoked. Pin MCP servers

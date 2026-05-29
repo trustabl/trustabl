@@ -10,12 +10,12 @@ policy:
 rules:
   - id: OAI-001
     title: Tool function has no docstring
-    scope: tool
     severity: low
     confidence: 0.9
     language: python
     applies_to:
       - openai_tool
+    scope: tool
     match:
       has_docstring: false
     explanation: >
@@ -30,12 +30,12 @@ rules:
 
   - id: OAI-002
     title: Tool function has no type-annotated parameters
-    scope: tool
     severity: medium
     confidence: 0.85
     language: python
     applies_to:
       - openai_tool
+    scope: tool
     match:
       has_params: true
       has_typed_params: false
@@ -47,3 +47,30 @@ rules:
     fix: >
       Add type hints to every parameter (def fetch(url: str, timeout: int = 10) -> dict).
       Use Pydantic models or TypedDict for structured inputs when complex.
+
+  - id: OAI-007
+    title: Ambiguous tool name
+    severity: low
+    confidence: 0.9
+    language: python
+    applies_to:
+      - openai_tool
+    scope: tool
+    match:
+      name_in:
+        - process
+        - handle
+        - run
+        - do
+        - execute
+        - perform
+        - work
+        - go
+        - thing
+        - stuff
+    explanation: >
+      Tool names like `process`, `handle`, or `run` give the model no signal
+      about intent. The model will either call this tool for the wrong job or
+      refuse to call it at all when a better-named alternative is present.
+    fix: >
+      Rename to a verb-object form, e.g. `summarize_invoice`, `fetch_weather`.

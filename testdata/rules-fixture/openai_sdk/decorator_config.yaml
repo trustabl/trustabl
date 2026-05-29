@@ -10,12 +10,12 @@ policy:
 rules:
   - id: OAI-003
     title: Tool sets strict_mode=False
-    scope: tool
     severity: medium
     confidence: 0.95
     language: python
     applies_to:
       - openai_tool
+    scope: tool
     match:
       tool_decorator_kwarg_value:
         kwarg: strict_mode
@@ -32,12 +32,12 @@ rules:
 
   - id: OAI-004
     title: Tool has no failure_error_function
-    scope: tool
     severity: medium
     confidence: 0.7
     language: python
     applies_to:
       - openai_tool
+    scope: tool
     match:
       not:
         tool_decorator_kwarg_present:
