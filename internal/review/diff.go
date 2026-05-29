@@ -305,30 +305,6 @@ func distinctAgentToolGrants(result models.ScanResult) int {
 	return len(seen)
 }
 
-// repoToolCount is the distinct repo-wide tool surface: every custom tool
-// definition, every tool name granted to any agent (quote-stripped, deduped),
-// and every hosted-tool class. This is the honest "how many tools does this
-// repo expose" number — len(result.Tools) alone reads as 0 for repos that
-// only wire built-in tools into agents or use SDK-managed hosted tools.
-//
-// No longer used by the human renderer (the surface is now broken out per
-// category for clarity), but kept for callers that want one number.
-func repoToolCount(result models.ScanResult) int {
-	seen := make(map[string]struct{})
-	for _, t := range result.Tools {
-		seen[t.Name] = struct{}{}
-	}
-	for _, a := range result.Agents {
-		for _, r := range a.ToolRefs {
-			seen[strings.Trim(r.Name, `"'`)] = struct{}{}
-		}
-	}
-	for _, h := range result.HostedTools {
-		seen[h.Class] = struct{}{}
-	}
-	return len(seen)
-}
-
 // toolRefNames renders an agent's granted tools (quote-stripped) for the
 // Agents section. These are the tools the agent can invoke — built-in tool
 // names for Claude AgentDefinition, resolved/external refs for others — and

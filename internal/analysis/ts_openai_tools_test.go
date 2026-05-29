@@ -128,6 +128,31 @@ const shellTool = tool({
 	}
 }
 
+// TestTSHandlerFacts_NamespacedChildProcess covers the namespace-import shape
+// `child_process.exec(...)` (from `import * as child_process` /
+// `const child_process = require("child_process")`), not just the destructured
+// bare `exec(...)` form. The callee text is `child_process.exec`, which the
+// bare-identifier match misses.
+func TestTSHandlerFacts_NamespacedChildProcess(t *testing.T) {
+	const src = `
+import { tool } from "@openai/agents";
+const runner = tool({
+  name: "runner",
+  description: "run",
+  parameters: {},
+  execute: async () => { child_process.exec("ls"); return ""; },
+});
+`
+	pf := parseTSForTest(t, "src/x.ts", src)
+	tools := analysis.DiscoverTSOpenAITools([]analysis.ParsedFile{pf}, nil)
+	if len(tools) != 1 {
+		t.Fatalf("got %d tools, want 1", len(tools))
+	}
+	if tools[0].Facts["shells_out"] != "true" {
+		t.Errorf("namespaced child_process.exec should record shells_out=true, got %v", tools[0].Facts)
+	}
+}
+
 func TestDiscoverTSOpenAITools_ConfigFlattens(t *testing.T) {
 	src := `
 import { tool } from "@openai/agents";

@@ -52,10 +52,17 @@ func IsHTTPCall(callee string) bool {
 	return false
 }
 
-// clientConstructorModule returns the canonical HTTP client module for a
-// constructor callee text (e.g. "requests.Session" -> "requests"), or "" if
-// the callee is not a recognized client constructor. Single source of truth
-// for the recognized client set.
+// clientConstructorModule returns the canonical receiver prefix for an HTTP
+// client constructor callee text, or "" if the callee is not a recognized
+// client constructor. Single source of truth for the recognized client set.
+//
+// The return value is the prefix that IsHTTPCallNode prepends to an aliased
+// method call (alias.get -> "<prefix>.get"), so it MUST be the prefix the rule
+// callee lists are written against. For requests/httpx the module name is the
+// receiver prefix (requests.get, httpx.get). For aiohttp the call surface lives
+// on ClientSession, so the prefix is "aiohttp.ClientSession" — yielding
+// aiohttp.ClientSession.get, which is what IsHTTPCall recognizes. Returning a
+// bare "aiohttp" would produce the unmatchable "aiohttp.get".
 func clientConstructorModule(calleeText string) string {
 	switch calleeText {
 	// requests.session (lowercase) is the library's legacy factory function,
@@ -65,15 +72,15 @@ func clientConstructorModule(calleeText string) string {
 	case "httpx.Client", "httpx.AsyncClient":
 		return "httpx"
 	case "aiohttp.ClientSession":
-		return "aiohttp"
+		return "aiohttp.ClientSession"
 	}
 	return ""
 }
 
 // ResolveClientAliases walks a function body and returns a map of
-// local-variable name -> canonical HTTP client module ("requests", "httpx",
-// "aiohttp") for variables bound to a recognized client constructor, via
-// either assignment (s = requests.Session()) or a with-binding
+// local-variable name -> canonical receiver prefix ("requests", "httpx",
+// "aiohttp.ClientSession") for variables bound to a recognized client
+// constructor, via either assignment (s = requests.Session()) or a with-binding
 // (with httpx.Client() as c:). Same-function scope only — instance attributes
 // (self.client) and cross-function/module aliases are intentionally NOT
 // resolved. Best-effort heuristic: last write wins on reassignment.

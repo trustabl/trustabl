@@ -48,7 +48,7 @@ def tool():
 	want := map[string]string{
 		"s":    "requests",
 		"c":    "httpx",
-		"sess": "aiohttp",
+		"sess": "aiohttp.ClientSession", // canonical receiver prefix, so sess.get -> aiohttp.ClientSession.get
 		"ac":   "httpx",
 	}
 	if len(got) != len(want) {
@@ -125,5 +125,24 @@ func TestIsHTTPCallNode(t *testing.T) {
 	c4, b4 := firstCallNamed(t, `json.dumps(x)`, "json.dumps")
 	if _, ok := IsHTTPCallNode(c4, b4, nil); ok {
 		t.Errorf("non-HTTP: ok=true, want false")
+	}
+}
+
+// TestIsHTTPCallNode_AiohttpAliasIsRuleCallee guards that an aliased aiohttp
+// session call canonicalizes to the SAME string rule callee lists use
+// (aiohttp.ClientSession.get), not aiohttp.get — which is in no rule's callee
+// set, so the resolution would "succeed" yet never match a rule.
+func TestIsHTTPCallNode_AiohttpAliasIsRuleCallee(t *testing.T) {
+	aliasMod := clientConstructorModule("aiohttp.ClientSession")
+	c, b := firstCallNamed(t, `sess.get("u")`, "sess.get")
+	got, ok := IsHTTPCallNode(c, b, map[string]string{"sess": aliasMod})
+	if !ok {
+		t.Fatal("aliased aiohttp call not recognized as HTTP")
+	}
+	if got != "aiohttp.ClientSession.get" {
+		t.Errorf("canonical = %q, want aiohttp.ClientSession.get", got)
+	}
+	if !IsHTTPCall(got) {
+		t.Errorf("canonical %q is not in the rule-callee set — unmatchable by any rule", got)
 	}
 }

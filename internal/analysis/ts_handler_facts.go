@@ -29,7 +29,14 @@ func tsHandlerFacts(handler *sitter.Node, src []byte) map[string]string {
 			"axios.patch", "axios.request", "got", "got.get", "got.post",
 			"undici.fetch", "undici.request":
 			out["http_call"] = "true"
-		case "execSync", "exec", "spawn", "spawnSync", "fork":
+		case "execSync", "exec", "spawn", "spawnSync", "fork",
+			// Namespace-import / require shape: `child_process.exec(...)` from
+			// `import * as child_process` or `const child_process = require(...)`.
+			// The bare cases above catch the destructured `const { exec } = ...`.
+			"child_process.exec", "child_process.execSync",
+			"child_process.spawn", "child_process.spawnSync",
+			"child_process.execFile", "child_process.execFileSync",
+			"child_process.fork":
 			out["shells_out"] = "true"
 		}
 		return true

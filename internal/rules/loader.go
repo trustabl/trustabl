@@ -144,6 +144,11 @@ func Load(fsys fs.FS) ([]PolicyFile, error) {
 					errs = append(errs, fmt.Errorf("%s: match predicate(s) [%s] are not valid for scope %q", tag, strings.Join(bad, ", "), rule.Scope))
 				}
 			}
+			// Scope-agnostic: a degenerate combinator (empty any/all list, or
+			// not: over an empty expression) is an authoring mistake, not intent.
+			if degen := rule.Match.degenerateCombinators(); len(degen) > 0 {
+				errs = append(errs, fmt.Errorf("%s: degenerate match combinator(s): %s", tag, strings.Join(degen, ", ")))
+			}
 			// Populate category from policy metadata — not in YAML.
 			pf.Rules[i].Category = models.DetectorCategory(pf.Policy.Category)
 			// Default language to python ONLY for tool/agent scope (the
