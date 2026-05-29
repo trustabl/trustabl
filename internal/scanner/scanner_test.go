@@ -342,11 +342,11 @@ func TestScanExamples_EmailAgent_SubagentDiscoveredAndAudited(t *testing.T) {
 //
 // Field paths asserted:
 //
-//	agents[].line, agents[].end_line, agents[].file_path
-//	hosted_tools[].line, hosted_tools[].end_line
-//	mcp_servers[].line, mcp_servers[].end_line
-//	subagents[].line, subagents[].end_line
-//	claude_settings[].line, claude_settings[].end_line
+//	agents[].start_line, agents[].end_line, agents[].file_path
+//	hosted_tools[].start_line, hosted_tools[].end_line
+//	mcp_servers[].start_line, mcp_servers[].end_line
+//	subagents[].start_line, subagents[].end_line
+//	claude_settings[].start_line, claude_settings[].end_line
 //	claude_settings[].permissions.allow[].line
 func TestScanResult_JSONLineRangeFields(t *testing.T) {
 	// Build a tiny fixture that exercises every new JSON field path:
@@ -444,44 +444,44 @@ Body.
 		return m
 	}
 
-	// agents[].line, agents[].end_line, agents[].file_path
+	// agents[].start_line, agents[].end_line, agents[].file_path
 	agents := mustList(generic["agents"], "agents")
 	a0 := mustObject(agents[0], "agents[0]")
-	mustHaveKey(a0, "line", "agents[0]")
+	mustHaveKey(a0, "start_line", "agents[0]")
 	mustHaveKey(a0, "end_line", "agents[0]")
 	mustHaveKey(a0, "file_path", "agents[0]")
 
-	// hosted_tools[].line, hosted_tools[].end_line
+	// hosted_tools[].start_line, hosted_tools[].end_line
 	if ht, ok := generic["hosted_tools"]; ok {
 		hosted := mustList(ht, "hosted_tools")
 		h0 := mustObject(hosted[0], "hosted_tools[0]")
-		mustHaveKey(h0, "line", "hosted_tools[0]")
+		mustHaveKey(h0, "start_line", "hosted_tools[0]")
 		mustHaveKey(h0, "end_line", "hosted_tools[0]")
 	} else {
 		t.Errorf("hosted_tools missing from JSON (fixture has WebSearchTool)")
 	}
 
-	// mcp_servers[].line, mcp_servers[].end_line
+	// mcp_servers[].start_line, mcp_servers[].end_line
 	if ms, ok := generic["mcp_servers"]; ok {
 		mcps := mustList(ms, "mcp_servers")
 		m0 := mustObject(mcps[0], "mcp_servers[0]")
-		mustHaveKey(m0, "line", "mcp_servers[0]")
+		mustHaveKey(m0, "start_line", "mcp_servers[0]")
 		mustHaveKey(m0, "end_line", "mcp_servers[0]")
 	} else {
 		t.Errorf("mcp_servers missing from JSON (fixture has MCPServerStdio)")
 	}
 
-	// subagents[].line, subagents[].end_line
+	// subagents[].start_line, subagents[].end_line
 	subs := mustList(generic["subagents"], "subagents")
 	s0 := mustObject(subs[0], "subagents[0]")
-	mustHaveKey(s0, "line", "subagents[0]")
+	mustHaveKey(s0, "start_line", "subagents[0]")
 	mustHaveKey(s0, "end_line", "subagents[0]")
 
-	// claude_settings[].line, claude_settings[].end_line,
+	// claude_settings[].start_line, claude_settings[].end_line,
 	// claude_settings[].permissions.allow[].line
 	cs := mustList(generic["claude_settings"], "claude_settings")
 	c0 := mustObject(cs[0], "claude_settings[0]")
-	mustHaveKey(c0, "line", "claude_settings[0]")
+	mustHaveKey(c0, "start_line", "claude_settings[0]")
 	mustHaveKey(c0, "end_line", "claude_settings[0]")
 	perms := mustObject(c0["permissions"], "claude_settings[0].permissions")
 	allow := mustList(perms["allow"], "claude_settings[0].permissions.allow")

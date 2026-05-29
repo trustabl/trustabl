@@ -23,7 +23,7 @@ func TestHostedToolDef_JSONShape(t *testing.T) {
 		t.Fatalf("marshal: %v", err)
 	}
 	got := string(b)
-	for _, want := range []string{`"class":"WebSearchTool"`, `"sdk":"openai_agents"`, `"file_path":"agents/search.py"`, `"line":16`} {
+	for _, want := range []string{`"class":"WebSearchTool"`, `"sdk":"openai_agents"`, `"file_path":"agents/search.py"`, `"start_line":16`} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in %s", want, got)
 		}

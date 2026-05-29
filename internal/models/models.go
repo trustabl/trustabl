@@ -93,7 +93,7 @@ type ToolDef struct {
 	VarName        string            `json:"var_name,omitempty"` // const-binding name (TS); empty for Python where Name and binding name coincide
 	Kind           ToolKind          `json:"kind"`
 	Language       Language          `json:"language"`
-	Location                         // file_path / line / end_line (flat in JSON via anonymous embed)
+	Location                         // file_path / start_line / end_line (flat in JSON via anonymous embed)
 	Description    string            `json:"description,omitempty"`
 	HasTypedParams bool              `json:"has_typed_params"`
 	ParamNames     []string          `json:"param_names,omitempty"`

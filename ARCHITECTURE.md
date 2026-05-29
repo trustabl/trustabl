@@ -761,13 +761,13 @@ RepoInventory {
 // "clean" — no SDK in code meant no pack loaded.
 
 // Location is embedded anonymously into every inventory entity so JSON
-// stays flat (entity.file_path, entity.line, entity.end_line). Line and
-// EndLine are 1-indexed inclusive; single-line entities set EndLine == Line.
+// stays flat (entity.file_path, entity.start_line, entity.end_line). Line
+// and EndLine are 1-indexed inclusive; single-line entities set EndLine == Line.
 Location { FilePath string; Line, EndLine int }
 
 AgentDef {
     SDK, Class string
-    Location               // file_path, line, end_line (flat in JSON)
+    Location               // file_path, start_line, end_line (flat in JSON)
     // Class values: "Agent" / "SandboxAgent" (OpenAI),
     //   "AgentDefinition" (Claude Python constructor + Claude TS sub-agents),
     //   "QueryMainAgent" (Claude TS: main thread of a query() call — the TS
@@ -795,7 +795,7 @@ ToolDef {
     Name           string
     Kind           ToolKind   // claude_sdk_tool | openai_tool | mcp_tool | shell_invocation | unknown | adk_function_tool
     Language       Language   // python | typescript | javascript | go
-    Location                   // file_path, line, end_line (flat in JSON)
+    Location                   // file_path, start_line, end_line (flat in JSON)
     Description    string
     HasTypedParams bool
     ParamNames     []string
@@ -821,7 +821,7 @@ AgentComponent {
 HostedToolDef {
     Class    string     // "WebSearchTool" | "FileSearchTool" | "ComputerTool" | ...
     SDK      SDK
-    Location              // file_path, line, end_line (flat in JSON)
+    Location              // file_path, start_line, end_line (flat in JSON)
     Kwargs   *KwargTree
 }
 
@@ -838,7 +838,7 @@ MCPServerDef {
     Transport string     // "stdio" | "sse" | "streamable_http" | "sdk" | "multi"
     Language  Language   // python | typescript
     SDK       SDK
-    Location              // file_path, line, end_line (flat in JSON)
+    Location              // file_path, start_line, end_line (flat in JSON)
     Kwargs    *KwargTree
 }
 
@@ -975,8 +975,7 @@ Discipline rules:
 - **`Location` embed.** `ToolDef`, `AgentDef`, `HostedToolDef`, `MCPServerDef`,
   `SubagentDef`, `GuardrailDef`, `SessionUse`, and `ClaudeSettings` all embed
   a shared `Location{FilePath, Line, EndLine}` struct anonymously, so JSON
-  stays flat (`entity.file_path`, `entity.line`, `entity.end_line`). Consumers
-  that read those flat paths today are unaffected; `end_line` is additive.
+  stays flat (`entity.file_path`, `entity.start_line`, `entity.end_line`).
   `Line` and `EndLine` are both 1-indexed and inclusive. Single-line entities
   set `EndLine == Line` — that is a valid state, not a placeholder. The
   contract is `EndLine >= Line >= 1` for any populated entity; `EndLine == 0`
