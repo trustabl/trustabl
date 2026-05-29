@@ -86,13 +86,14 @@ type MatchExpr struct {
 	SubagentGrantsTool []string `yaml:"subagent_grants_tool,omitempty"`
 
 	// Repo-scope predicates
-	RepoHasSDKDep           []string `yaml:"repo_has_sdk_dep,omitempty"`
-	RepoHasSDKInCode        []string `yaml:"repo_has_sdk_in_code,omitempty"`
-	RepoHasAgentClass       []string `yaml:"repo_has_agent_class,omitempty"`
-	RepoHasNoAgentClass     []string `yaml:"repo_has_no_agent_class,omitempty"`
-	RepoComponentPresent    []string `yaml:"repo_component_present,omitempty"`
-	RepoUsesDefaultTracing  *bool    `yaml:"repo_uses_default_tracing,omitempty"`
-	RepoClaudeDefaultModeIs []string `yaml:"repo_claude_default_mode_is,omitempty"`
+	RepoHasSDKDep                     []string `yaml:"repo_has_sdk_dep,omitempty"`
+	RepoHasSDKInCode                  []string `yaml:"repo_has_sdk_in_code,omitempty"`
+	RepoHasAgentClass                 []string `yaml:"repo_has_agent_class,omitempty"`
+	RepoHasNoAgentClass               []string `yaml:"repo_has_no_agent_class,omitempty"`
+	RepoComponentPresent              []string `yaml:"repo_component_present,omitempty"`
+	RepoUsesDefaultTracing            *bool    `yaml:"repo_uses_default_tracing,omitempty"`
+	RepoClaudeDefaultModeIs           []string `yaml:"repo_claude_default_mode_is,omitempty"`
+	RepoClaudeOptionsPermissionModeIs []string `yaml:"repo_claude_options_permission_mode_is,omitempty"`
 }
 
 // ToolDecoratorKwargValueExpr matches a decorator kwarg to a specific value.

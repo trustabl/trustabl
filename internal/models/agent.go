@@ -70,9 +70,9 @@ type AgentDef struct {
 	SDK            SDK             `json:"sdk"`
 	Class          string          `json:"class"`    // "Agent", "SandboxAgent", "AgentDefinition", "QueryMainAgent" (TS: main thread of a query() call), or one of the ADK Class values
 	Language       Language        `json:"language"` // populated by every discovery path
-	Location                        // file_path / start_line / end_line (flat in JSON via anonymous embed)
-	Name           string          `json:"name"`           // from name= kwarg literal
-	VarName        string          `json:"-"`              // assignment-target identifier (for in-file edge resolution; not serialized)
+	Location                       // file_path / start_line / end_line (flat in JSON via anonymous embed)
+	Name           string          `json:"name"` // from name= kwarg literal
+	VarName        string          `json:"-"`    // assignment-target identifier (for in-file edge resolution; not serialized)
 	Kwargs         *KwargTree      `json:"kwargs"`
 	ToolRefs       []ToolRef       `json:"tool_refs"`
 	HostedToolRefs []HostedToolRef `json:"hosted_tool_refs"`
@@ -101,7 +101,7 @@ type GuardrailDef struct {
 
 type SessionUse struct {
 	Class    string `json:"class"` // "SQLiteSession", "EncryptedSession", ...
-	Location          // file_path / start_line / end_line (flat in JSON via anonymous embed)
+	Location        // file_path / start_line / end_line (flat in JSON via anonymous embed)
 }
 
 // HostedToolDef is one OpenAI Agents SDK hosted tool instance (WebSearchTool,
@@ -111,7 +111,7 @@ type SessionUse struct {
 type HostedToolDef struct {
 	Class    string     `json:"class"` // "WebSearchTool", "FileSearchTool", "ComputerTool", ...
 	SDK      SDK        `json:"sdk"`
-	Location              // file_path / start_line / end_line (flat in JSON via anonymous embed)
+	Location            // file_path / start_line / end_line (flat in JSON via anonymous embed)
 	Kwargs   *KwargTree `json:"kwargs,omitempty"`
 }
 
@@ -133,10 +133,10 @@ type HostedToolRef struct {
 type MCPServerDef struct {
 	Class     string     `json:"class"`
 	VarName   string     `json:"var_name,omitempty"` // const-binding name (TS); empty for Python
-	Transport string     `json:"transport"` // "stdio" | "sse" | "streamable_http" | "http" | "sdk"
+	Transport string     `json:"transport"`          // "stdio" | "sse" | "streamable_http" | "http" | "sdk"
 	SDK       SDK        `json:"sdk"`
 	Language  Language   `json:"language"` // populated by every discovery path
-	Location              // file_path / start_line / end_line (flat in JSON via anonymous embed)
+	Location             // file_path / start_line / end_line (flat in JSON via anonymous embed)
 	Kwargs    *KwargTree `json:"kwargs,omitempty"`
 }
 
@@ -251,4 +251,17 @@ type ClaudeSettings struct {
 	HasEnvBlock     bool              `json:"has_env_block"`
 	HasHooks        bool              `json:"has_hooks"`
 	HasSandboxBlock bool              `json:"has_sandbox_block"`
+}
+
+// ClaudeAgentOptionsDef is one ClaudeAgentOptions(...) construction discovered
+// in code (claude-agent-sdk). It carries the constructor kwargs so repo-scope
+// rules can inspect session-level configuration — notably permission_mode,
+// which is the session-wide analogue of .claude/settings.json's defaultMode and
+// the place most apps actually set a permission bypass. Kwargs is an in-memory
+// carrier (not serialized); Opaque is true when the call used **unpacking that
+// makes the kwarg set untrustworthy.
+type ClaudeAgentOptionsDef struct {
+	Location
+	Kwargs *KwargTree `json:"-"`
+	Opaque bool       `json:"opaque,omitempty"`
 }

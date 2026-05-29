@@ -4,7 +4,8 @@ policy:
   category: claude_sdk
   description: >
     Repo-scoped rules for Claude Agent SDK project-wide configuration declared
-    in .claude/settings.json (and settings.local.json).
+    in .claude/settings.json (and settings.local.json) and in session
+    configuration objects (ClaudeAgentOptions).
 
 rules:
   - id: CSDK-201
@@ -31,3 +32,28 @@ rules:
       "default" so tool calls prompt, or "acceptEdits" if you only want to
       auto-approve file edits while still gating shell and network actions.
       Reserve bypassPermissions for disposable sandboxes, never a shared repo.
+
+  - id: CSDK-202
+    title: Session permission mode bypasses approvals
+    severity: high
+    confidence: 0.9
+    applies_to:
+      - claude_sdk
+    scope: repo
+    match:
+      repo_claude_options_permission_mode_is:
+        - bypassPermissions
+    explanation: >
+      A ClaudeAgentOptions(...) in this project sets permission_mode to
+      "bypassPermissions", which turns off Claude Code's approval prompts for
+      that session. Every tool the agent can call — file writes, shell
+      commands, network fetches — then runs with no human in the loop, so a
+      single prompt-injection or model error becomes an unguarded action. This
+      is the in-code, session-level form of the settings.json defaultMode
+      bypass (CSDK-201), and is where most applications actually enable it.
+    fix: >
+      Drop permission_mode="bypassPermissions" from the ClaudeAgentOptions(...)
+      call, or set it to "default" so tool calls prompt (or "acceptEdits" to
+      auto-approve only file edits while still gating shell and network access).
+      Reserve bypassPermissions for disposable sandboxes, never code that runs
+      on a developer's or user's machine.

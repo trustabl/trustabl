@@ -120,6 +120,9 @@ func (e MatchExpr) EvaluateRepo(p models.RepoProfile, inv models.RepoInventory) 
 	if len(e.RepoClaudeDefaultModeIs) > 0 && !PredRepoClaudeDefaultModeIs(e.RepoClaudeDefaultModeIs, inv) {
 		return false
 	}
+	if len(e.RepoClaudeOptionsPermissionModeIs) > 0 && !PredRepoClaudeOptionsPermissionModeIs(e.RepoClaudeOptionsPermissionModeIs, inv) {
+		return false
+	}
 	return true
 }
 
@@ -294,7 +297,8 @@ var predicatesByScope = map[models.Scope]map[string]bool{
 		"repo_has_sdk_dep": true, "repo_has_sdk_in_code": true,
 		"repo_has_agent_class": true, "repo_has_no_agent_class": true,
 		"repo_component_present": true, "repo_uses_default_tracing": true,
-		"repo_claude_default_mode_is": true,
+		"repo_claude_default_mode_is":            true,
+		"repo_claude_options_permission_mode_is": true,
 	},
 }
 
@@ -352,6 +356,7 @@ func (e MatchExpr) setPredicateNames() []string {
 	add(len(e.RepoComponentPresent) > 0, "repo_component_present")
 	add(e.RepoUsesDefaultTracing != nil, "repo_uses_default_tracing")
 	add(len(e.RepoClaudeDefaultModeIs) > 0, "repo_claude_default_mode_is")
+	add(len(e.RepoClaudeOptionsPermissionModeIs) > 0, "repo_claude_options_permission_mode_is")
 	return n
 }
 

@@ -702,6 +702,44 @@ var policyRepoRuleCases = []policyRepoCase{
 			ClaudeSettings: []models.ClaudeSettings{{}},
 		},
 		false},
+
+	// ─── CSDK-202 session permission_mode bypass (repo-scoped) ───────────────
+	{"CSDK-202 fires when ClaudeAgentOptions permission_mode is bypassPermissions", "CSDK-202",
+		models.RepoProfile{},
+		models.RepoInventory{
+			SDKsDetected:       []models.SDK{models.SDKClaudeAgentSDK},
+			ClaudeAgentOptions: []models.ClaudeAgentOptionsDef{optionsWithPermissionMode("bypassPermissions")},
+		},
+		true},
+	{"CSDK-202 silent when permission_mode is default", "CSDK-202",
+		models.RepoProfile{},
+		models.RepoInventory{
+			SDKsDetected:       []models.SDK{models.SDKClaudeAgentSDK},
+			ClaudeAgentOptions: []models.ClaudeAgentOptionsDef{optionsWithPermissionMode("default")},
+		},
+		false},
+	// permission_mode absent from the options object: nothing to flag.
+	{"CSDK-202 silent when no permission_mode set", "CSDK-202",
+		models.RepoProfile{},
+		models.RepoInventory{
+			SDKsDetected:       []models.SDK{models.SDKClaudeAgentSDK},
+			ClaudeAgentOptions: []models.ClaudeAgentOptionsDef{{}},
+		},
+		false},
+}
+
+// optionsWithPermissionMode builds a ClaudeAgentOptionsDef whose captured
+// kwargs contain permission_mode set to the given string literal, mirroring
+// what DiscoverClaudeAgentOptions produces from
+// ClaudeAgentOptions(permission_mode="...").
+func optionsWithPermissionMode(mode string) models.ClaudeAgentOptionsDef {
+	return models.ClaudeAgentOptionsDef{
+		Kwargs: &models.KwargTree{
+			Children: map[string]*models.KwargTree{
+				"permission_mode": {Value: &models.Expr{Kind: models.ExprLiteralString, Text: `"` + mode + `"`}},
+			},
+		},
+	}
 }
 
 // policySubagentRuleCases covers subagent-scoped rules.
@@ -951,10 +989,10 @@ var policyAgentRuleCases = []policyAgentCase{
 	// ─── ADK-103 sub-agent granted BashTool ──────────────────────────────────
 	{"ADK-103 fires on sub-agent with BashTool", "ADK-103",
 		models.AgentDef{
-			SDK:      models.SDKGoogleADK,
-			Class:    "LlmAgent",
-			Language: models.LanguagePython,
-			Location: models.Location{FilePath: "main.py"},
+			SDK:            models.SDKGoogleADK,
+			Class:          "LlmAgent",
+			Language:       models.LanguagePython,
+			Location:       models.Location{FilePath: "main.py"},
 			Name:           "child",
 			HostedToolRefs: []models.HostedToolRef{{Class: "BashTool"}},
 		},
@@ -973,10 +1011,10 @@ var policyAgentRuleCases = []policyAgentCase{
 		true},
 	{"ADK-103 silent on root agent (not a sub-agent of any)", "ADK-103",
 		models.AgentDef{
-			SDK:      models.SDKGoogleADK,
-			Class:    "LlmAgent",
-			Language: models.LanguagePython,
-			Location: models.Location{FilePath: "main.py"},
+			SDK:            models.SDKGoogleADK,
+			Class:          "LlmAgent",
+			Language:       models.LanguagePython,
+			Location:       models.Location{FilePath: "main.py"},
 			Name:           "root",
 			HostedToolRefs: []models.HostedToolRef{{Class: "BashTool"}},
 		},

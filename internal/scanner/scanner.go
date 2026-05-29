@@ -125,10 +125,11 @@ func Run(cfg Config) (models.ScanResult, error) {
 	inventory.SlashCommands = analysis.DiscoverSlashCommands(profile.Manifest)
 	inventory.PluginManifests = analysis.DiscoverPlugins(profile.Manifest)
 	inventory.ClaudeSettings = analysis.DiscoverClaudeSettings(profile.Manifest)
+	inventory.ClaudeAgentOptions = analysis.DiscoverClaudeAgentOptions(parsed)
 	// Markdown subagents are an independent Claude Agent SDK signal: a repo can
 	// ship .claude/agents/*.md (or a flat collection) with no Claude SDK code.
 	// Fold them into SDKsDetected so LoadFor loads the claude_sdk pack (CSDK-110).
-	inventory.SDKsDetected = deriveSDKsDetected(tools, agents, inventory.Subagents, inventory.ClaudeSettings)
+	inventory.SDKsDetected = deriveSDKsDetected(tools, agents, inventory.Subagents, inventory.ClaudeSettings, inventory.ClaudeAgentOptions)
 	rep.EndPhase(fmt.Sprintf("%d tools · %d agents", len(tools), len(agents)))
 
 	// Step 3: policy selection
@@ -190,7 +191,7 @@ func Run(cfg Config) (models.ScanResult, error) {
 // KindShellInvocation is intentionally NOT mapped here. There is no SDK
 // called "openshell" — it is a risk-surface label for Python functions
 // that shell out, carried on RepoInventory.HasShellInvocations.
-func deriveSDKsDetected(tools []models.ToolDef, agents []models.AgentDef, subagents []models.SubagentDef, claudeSettings []models.ClaudeSettings) []models.SDK {
+func deriveSDKsDetected(tools []models.ToolDef, agents []models.AgentDef, subagents []models.SubagentDef, claudeSettings []models.ClaudeSettings, claudeAgentOptions []models.ClaudeAgentOptionsDef) []models.SDK {
 	seen := make(map[models.SDK]bool)
 	for _, t := range tools {
 		switch t.Kind {
@@ -221,6 +222,14 @@ func deriveSDKsDetected(tools []models.ToolDef, agents []models.AgentDef, subage
 	// the claude_sdk pack so repo-scope settings rules (e.g. CSDK-201's
 	// defaultMode: bypassPermissions check) can fire.
 	if len(claudeSettings) > 0 {
+		seen[models.SDKClaudeAgentSDK] = true
+	}
+	// A ClaudeAgentOptions(...) construction is claude-agent-sdk code — it
+	// configures a session (permission_mode, allowed_tools, etc.) and is the
+	// likeliest place an app sets a permission bypass. Its presence marks the
+	// repo Claude even when no @tool/AgentDefinition/subagent/settings exists,
+	// so the claude_sdk pack loads and CSDK-202 can fire.
+	if len(claudeAgentOptions) > 0 {
 		seen[models.SDKClaudeAgentSDK] = true
 	}
 	var out []models.SDK

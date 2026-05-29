@@ -346,3 +346,8 @@ rules:
 #       RepoInventory.ClaudeSettings[].DefaultMode. Used by CSDK-201 to flag
 #       defaultMode: bypassPermissions, which disables Claude Code approval
 #       prompts repo-wide.
+#   repo_claude_options_permission_mode_is: [bypassPermissions, acceptEdits, ...]
+#       Fires when any discovered ClaudeAgentOptions(...) construction sets
+#       permission_mode to one of the listed modes. Reads
+#       RepoInventory.ClaudeAgentOptions[].Kwargs (permission_mode). The in-code,
+#       session-level analogue of repo_claude_default_mode_is. Used by CSDK-202.

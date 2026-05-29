@@ -866,3 +866,28 @@ func PredRepoClaudeDefaultModeIs(modes []string, inv models.RepoInventory) bool 
 	}
 	return false
 }
+
+// PredRepoClaudeOptionsPermissionModeIs fires when any discovered
+// ClaudeAgentOptions(...) construction sets permission_mode to one of the listed
+// modes. This is the session-level (in-code) analogue of
+// repo_claude_default_mode_is: ClaudeAgentOptions(permission_mode="bypassPermissions")
+// disables Claude Code's approval prompts for the session the same way
+// .claude/settings.json defaultMode does for the project.
+func PredRepoClaudeOptionsPermissionModeIs(modes []string, inv models.RepoInventory) bool {
+	for _, opt := range inv.ClaudeAgentOptions {
+		node := lookupKwargInTree(opt.Kwargs, "permission_mode")
+		if node == nil || node.Value == nil {
+			continue
+		}
+		val := node.Value.Text
+		if node.Value.Kind == models.ExprLiteralString {
+			val = strings.Trim(val, `"'`)
+		}
+		for _, m := range modes {
+			if val == m {
+				return true
+			}
+		}
+	}
+	return false
+}
