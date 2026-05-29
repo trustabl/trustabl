@@ -137,6 +137,12 @@ func Load(fsys fs.FS) ([]PolicyFile, error) {
 						errs = append(errs, fmt.Errorf("%s: applies_to value %q is not valid for scope %q", tag, kind, rule.Scope))
 					}
 				}
+				// A predicate the scope's evaluator never dispatches would be
+				// silently dropped at match time, so the rule would fire more
+				// broadly than written. Reject it here instead.
+				if bad := rule.Match.outOfScopePredicates(rule.Scope); len(bad) > 0 {
+					errs = append(errs, fmt.Errorf("%s: match predicate(s) [%s] are not valid for scope %q", tag, strings.Join(bad, ", "), rule.Scope))
+				}
 			}
 			// Populate category from policy metadata — not in YAML.
 			pf.Rules[i].Category = models.DetectorCategory(pf.Policy.Category)

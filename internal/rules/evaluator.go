@@ -246,3 +246,114 @@ func (e MatchExpr) EvaluateTool(t models.ToolDef, pf analysis.ParsedFile) bool {
 
 	return true
 }
+
+// predicatesByScope maps each scope to the predicate names its Evaluate* method
+// dispatches. This MUST mirror EvaluateTool / EvaluateAgent / EvaluateSubagent /
+// EvaluateRepo above: a predicate evaluated there but missing here would be
+// wrongly rejected at load time, and a predicate listed here but not evaluated
+// would be a silent no-op. The combinators (all/any/not) and `always` are
+// scope-agnostic and intentionally absent.
+var predicatesByScope = map[models.Scope]map[string]bool{
+	models.ScopeTool: {
+		"has_docstring": true, "has_params": true, "has_typed_params": true,
+		"has_raise": true, "has_try_except": true, "has_shell_call": true,
+		"has_write_call": true, "has_dynamic_url_call": true,
+		"name_in": true, "name_has_prefix": true, "has_body_text": true,
+		"param_name_matches": true, "call_without_kwarg": true,
+		"call_with_kwarg_value": true, "call_uses_unnormalized_path_param": true,
+		"tool_decorator_kwarg_value": true, "tool_decorator_kwarg_present": true,
+	},
+	models.ScopeAgent: {
+		"agent_class": true, "agent_kwarg_present": true, "agent_kwarg_missing": true,
+		"agent_kwarg_list_empty": true, "agent_kwarg_value": true,
+		"agent_uses_tool_kind": true, "agent_grants_builtin_tool": true,
+		"agent_handoff_to_class": true, "agent_uses_hosted_tool_class": true,
+		"agent_is_subagent_of_any": true,
+	},
+	models.ScopeSubagent: {
+		"subagent_grants_tool": true,
+	},
+	models.ScopeRepo: {
+		"repo_has_sdk_dep": true, "repo_has_sdk_in_code": true,
+		"repo_has_agent_class": true, "repo_has_no_agent_class": true,
+		"repo_component_present": true, "repo_uses_default_tracing": true,
+	},
+}
+
+// setPredicateNames returns the YAML names of every predicate field set on THIS
+// node — excluding the scope-agnostic combinators (all/any/not) and `always`.
+// It does not recurse; callers walk combinators. Order is field-declaration
+// order, so output is deterministic.
+func (e MatchExpr) setPredicateNames() []string {
+	var n []string
+	add := func(set bool, name string) {
+		if set {
+			n = append(n, name)
+		}
+	}
+	// Tool scope
+	add(e.HasDocstring != nil, "has_docstring")
+	add(e.HasParams != nil, "has_params")
+	add(e.HasTypedParams != nil, "has_typed_params")
+	add(e.HasRaise != nil, "has_raise")
+	add(e.HasTryExcept != nil, "has_try_except")
+	add(e.HasShellCall != nil, "has_shell_call")
+	add(e.HasWriteCall != nil, "has_write_call")
+	add(e.HasDynamicURLCall != nil, "has_dynamic_url_call")
+	add(len(e.NameIn) > 0, "name_in")
+	add(len(e.NameHasPrefix) > 0, "name_has_prefix")
+	add(len(e.HasBodyText) > 0, "has_body_text")
+	add(e.ParamNameMatches != nil, "param_name_matches")
+	add(e.CallWithoutKwarg != nil, "call_without_kwarg")
+	add(e.CallWithKwargValue != nil, "call_with_kwarg_value")
+	add(e.CallUsesUnnormalizedPathParam != nil, "call_uses_unnormalized_path_param")
+	add(e.ToolDecoratorKwargValue != nil, "tool_decorator_kwarg_value")
+	add(len(e.ToolDecoratorKwargPresent) > 0, "tool_decorator_kwarg_present")
+	// Agent scope
+	add(len(e.AgentClass) > 0, "agent_class")
+	add(len(e.AgentKwargPresent) > 0, "agent_kwarg_present")
+	add(len(e.AgentKwargMissing) > 0, "agent_kwarg_missing")
+	add(len(e.AgentKwargListEmpty) > 0, "agent_kwarg_list_empty")
+	add(e.AgentKwargValue != nil, "agent_kwarg_value")
+	add(len(e.AgentUsesToolKind) > 0, "agent_uses_tool_kind")
+	add(len(e.AgentGrantsBuiltinTool) > 0, "agent_grants_builtin_tool")
+	add(len(e.AgentHandoffToClass) > 0, "agent_handoff_to_class")
+	add(len(e.AgentUsesHostedToolClass) > 0, "agent_uses_hosted_tool_class")
+	add(e.AgentIsSubagentOfAny != nil, "agent_is_subagent_of_any")
+	// Subagent scope
+	add(len(e.SubagentGrantsTool) > 0, "subagent_grants_tool")
+	// Repo scope
+	add(len(e.RepoHasSDKDep) > 0, "repo_has_sdk_dep")
+	add(len(e.RepoHasSDKInCode) > 0, "repo_has_sdk_in_code")
+	add(len(e.RepoHasAgentClass) > 0, "repo_has_agent_class")
+	add(len(e.RepoHasNoAgentClass) > 0, "repo_has_no_agent_class")
+	add(len(e.RepoComponentPresent) > 0, "repo_component_present")
+	add(e.RepoUsesDefaultTracing != nil, "repo_uses_default_tracing")
+	return n
+}
+
+// outOfScopePredicates returns the YAML names of predicates set anywhere in the
+// match tree (recursing through all/any/not) that the given scope's evaluator
+// does not dispatch. A non-empty result means the rule would silently fire more
+// broadly than authored, since the out-of-scope clauses are dropped at
+// evaluation. Order is deterministic (field order; combinators walked
+// all→any→not).
+func (e MatchExpr) outOfScopePredicates(scope models.Scope) []string {
+	allowed := predicatesByScope[scope]
+	var bad []string
+	for _, name := range e.setPredicateNames() {
+		if !allowed[name] {
+			bad = append(bad, name)
+		}
+	}
+	for _, sub := range e.All {
+		bad = append(bad, sub.outOfScopePredicates(scope)...)
+	}
+	for _, sub := range e.Any {
+		bad = append(bad, sub.outOfScopePredicates(scope)...)
+	}
+	if e.Not != nil {
+		bad = append(bad, e.Not.outOfScopePredicates(scope)...)
+	}
+	return bad
+}
