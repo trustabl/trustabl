@@ -850,3 +850,19 @@ func PredRepoComponentPresent(kinds []string, p models.RepoProfile) bool {
 func PredRepoUsesDefaultTracing(want bool, inv models.RepoInventory) bool {
 	return inv.UsesDefaultTracing == want
 }
+
+// PredRepoClaudeDefaultModeIs fires when any discovered .claude/settings.json
+// (or settings.local.json) declares a defaultMode equal to one of the listed
+// modes. The defaultMode governs how Claude Code asks for permission before
+// running tools; values like "bypassPermissions" disable the prompts entirely,
+// turning every granted tool into an unguarded capability for the whole repo.
+func PredRepoClaudeDefaultModeIs(modes []string, inv models.RepoInventory) bool {
+	for _, cs := range inv.ClaudeSettings {
+		for _, m := range modes {
+			if cs.DefaultMode == m {
+				return true
+			}
+		}
+	}
+	return false
+}

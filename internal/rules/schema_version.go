@@ -8,4 +8,4 @@ package rules
 //
 // Bump this whenever a new predicate or schema field is added to the rules
 // engine (schema.go / predicates.go / evaluator.go).
-const SupportedSchemaVersion = 6
+const SupportedSchemaVersion = 7

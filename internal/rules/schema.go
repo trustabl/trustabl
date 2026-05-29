@@ -69,14 +69,14 @@ type MatchExpr struct {
 	ToolDecoratorKwargPresent []string                     `yaml:"tool_decorator_kwarg_present,omitempty"`
 
 	// Agent-scope predicates
-	AgentClass               []string             `yaml:"agent_class,omitempty"`
-	AgentKwargPresent        []string             `yaml:"agent_kwarg_present,omitempty"`
-	AgentKwargMissing        []string             `yaml:"agent_kwarg_missing,omitempty"`
-	AgentKwargListEmpty      []string             `yaml:"agent_kwarg_list_empty,omitempty"`
-	AgentKwargValue          *AgentKwargValueExpr `yaml:"agent_kwarg_value,omitempty"`
-	AgentUsesToolKind        []string             `yaml:"agent_uses_tool_kind,omitempty"`
-	AgentGrantsBuiltinTool   []string             `yaml:"agent_grants_builtin_tool,omitempty"`
-	AgentHandoffToClass      []string             `yaml:"agent_handoff_to_class,omitempty"`
+	AgentClass                  []string                  `yaml:"agent_class,omitempty"`
+	AgentKwargPresent           []string                  `yaml:"agent_kwarg_present,omitempty"`
+	AgentKwargMissing           []string                  `yaml:"agent_kwarg_missing,omitempty"`
+	AgentKwargListEmpty         []string                  `yaml:"agent_kwarg_list_empty,omitempty"`
+	AgentKwargValue             *AgentKwargValueExpr      `yaml:"agent_kwarg_value,omitempty"`
+	AgentUsesToolKind           []string                  `yaml:"agent_uses_tool_kind,omitempty"`
+	AgentGrantsBuiltinTool      []string                  `yaml:"agent_grants_builtin_tool,omitempty"`
+	AgentHandoffToClass         []string                  `yaml:"agent_handoff_to_class,omitempty"`
 	AgentUsesHostedToolClass    []string                  `yaml:"agent_uses_hosted_tool_class,omitempty"`
 	AgentIsSubagentOfAny        *bool                     `yaml:"agent_is_subagent_of_any,omitempty"`
 	AgentHostedToolKwargPresent *HostedToolKwargExpr      `yaml:"agent_hosted_tool_kwarg_present,omitempty"`
@@ -86,12 +86,13 @@ type MatchExpr struct {
 	SubagentGrantsTool []string `yaml:"subagent_grants_tool,omitempty"`
 
 	// Repo-scope predicates
-	RepoHasSDKDep          []string `yaml:"repo_has_sdk_dep,omitempty"`
-	RepoHasSDKInCode       []string `yaml:"repo_has_sdk_in_code,omitempty"`
-	RepoHasAgentClass      []string `yaml:"repo_has_agent_class,omitempty"`
-	RepoHasNoAgentClass    []string `yaml:"repo_has_no_agent_class,omitempty"`
-	RepoComponentPresent   []string `yaml:"repo_component_present,omitempty"`
-	RepoUsesDefaultTracing *bool    `yaml:"repo_uses_default_tracing,omitempty"`
+	RepoHasSDKDep           []string `yaml:"repo_has_sdk_dep,omitempty"`
+	RepoHasSDKInCode        []string `yaml:"repo_has_sdk_in_code,omitempty"`
+	RepoHasAgentClass       []string `yaml:"repo_has_agent_class,omitempty"`
+	RepoHasNoAgentClass     []string `yaml:"repo_has_no_agent_class,omitempty"`
+	RepoComponentPresent    []string `yaml:"repo_component_present,omitempty"`
+	RepoUsesDefaultTracing  *bool    `yaml:"repo_uses_default_tracing,omitempty"`
+	RepoClaudeDefaultModeIs []string `yaml:"repo_claude_default_mode_is,omitempty"`
 }
 
 // ToolDecoratorKwargValueExpr matches a decorator kwarg to a specific value.

@@ -88,8 +88,19 @@ func (d repoRuleDetector) Applies(p models.RepoProfile, inv models.RepoInventory
 			}
 			continue
 		}
+		// The repo-scope applies_to tokens are category labels, which equal
+		// their SDK enum string for every SDK EXCEPT Claude: the token is
+		// `claude_sdk` while the enum is `claude_agent_sdk`. Bridge that one
+		// mismatch so a Claude repo rule actually fires (it would otherwise
+		// load but never match). See validAppliesToForScope (loader.go) and
+		// LoadFor's pack-gate mapping for the two other places this bridge
+		// is made.
+		want := models.SDK(k)
+		if k == "claude_sdk" {
+			want = models.SDKClaudeAgentSDK
+		}
 		for _, sdk := range inv.SDKsDetected {
-			if string(sdk) == k {
+			if sdk == want {
 				return true
 			}
 		}

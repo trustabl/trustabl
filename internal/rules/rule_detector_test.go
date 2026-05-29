@@ -67,6 +67,53 @@ func TestSubagentRuleDetector_AppliesAndDetects(t *testing.T) {
 	}
 }
 
+// TestRepoRuleDetector_ClaudeSDKAlias guards the namespace bridge between the
+// repo-scope applies_to token `claude_sdk` (a category label) and the SDK enum
+// value stored in SDKsDetected, which is `claude_agent_sdk`. Without the alias
+// in repoRuleDetector.Applies, a Claude repo rule loads into the registry (the
+// pack gate in LoadFor maps the SDK to the claude_sdk category) but then never
+// fires, because the per-rule Applies compared the raw token against the enum
+// string and they differ. Every other SDK's token equals its enum string, so
+// only Claude was broken.
+func TestRepoRuleDetector_ClaudeSDKAlias(t *testing.T) {
+	d := repoRuleDetector{rule: RuleDef{
+		ID:        "TEST-REPO-CLAUDE",
+		Scope:     models.ScopeRepo,
+		AppliesTo: []string{"claude_sdk"},
+	}}
+	inv := models.RepoInventory{SDKsDetected: []models.SDK{models.SDKClaudeAgentSDK}}
+	if !d.Applies(models.RepoProfile{}, inv) {
+		t.Fatal("expected Applies()=true: claude_sdk token must match SDKClaudeAgentSDK in SDKsDetected")
+	}
+
+	// A repo without the Claude SDK must not match.
+	other := models.RepoInventory{SDKsDetected: []models.SDK{models.SDKOpenAIAgents}}
+	if d.Applies(models.RepoProfile{}, other) {
+		t.Error("expected Applies()=false: claude_sdk rule must not fire on an OpenAI-only repo")
+	}
+}
+
+// TestRepoRuleDetector_NonClaudeTokensUnaffected confirms the alias is surgical:
+// openai_agents/google_adk/mcp tokens already equal their SDK enum strings and
+// must keep matching by identity.
+func TestRepoRuleDetector_NonClaudeTokensUnaffected(t *testing.T) {
+	cases := []struct {
+		token string
+		sdk   models.SDK
+	}{
+		{"openai_agents", models.SDKOpenAIAgents},
+		{"google_adk", models.SDKGoogleADK},
+		{"mcp", models.SDKMCP},
+	}
+	for _, c := range cases {
+		d := repoRuleDetector{rule: RuleDef{Scope: models.ScopeRepo, AppliesTo: []string{c.token}}}
+		inv := models.RepoInventory{SDKsDetected: []models.SDK{c.sdk}}
+		if !d.Applies(models.RepoProfile{}, inv) {
+			t.Errorf("token %q must match SDK %q", c.token, c.sdk)
+		}
+	}
+}
+
 // TestSubagentRuleDetector_PropagatesSubagentLine guards against the regression
 // where subagent findings emitted line=0 even though SubagentDef carries a real
 // Line (1 = opening `---`, EndLine = closing `---`). Tools and agents already

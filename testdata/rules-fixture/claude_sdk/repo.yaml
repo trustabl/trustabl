@@ -1,0 +1,33 @@
+policy:
+  id: claude_sdk_repo
+  name: Claude Agent SDK repository configuration
+  category: claude_sdk
+  description: >
+    Repo-scoped rules for Claude Agent SDK project-wide configuration declared
+    in .claude/settings.json (and settings.local.json).
+
+rules:
+  - id: CSDK-201
+    title: Project default permission mode bypasses approvals
+    severity: high
+    confidence: 0.9
+    applies_to:
+      - claude_sdk
+    scope: repo
+    match:
+      repo_claude_default_mode_is:
+        - bypassPermissions
+    explanation: >
+      The project's .claude/settings.json sets defaultMode to
+      "bypassPermissions", which disables Claude Code's permission prompts for
+      the whole repo. Every tool the agent can reach then runs with no human
+      approval step — file writes, shell commands, and network fetches all
+      execute unprompted. A single prompt-injection or a model mistake becomes
+      an unguarded action on the developer's machine, and the setting applies to
+      everyone who checks the repo out, not just the author.
+    fix: >
+      Remove the "defaultMode": "bypassPermissions" entry from
+      .claude/settings.json (and settings.local.json), or change it to
+      "default" so tool calls prompt, or "acceptEdits" if you only want to
+      auto-approve file edits while still gating shell and network actions.
+      Reserve bypassPermissions for disposable sandboxes, never a shared repo.

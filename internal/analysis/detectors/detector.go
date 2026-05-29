@@ -127,11 +127,20 @@ func (r *Registry) Run(profile models.RepoProfile, inv models.RepoInventory, par
 }
 
 // ApplicableCategories returns the set of detector categories that had at
-// least one detector whose Applies() returned true for at least one entity.
-// This is "could a rule even run here", distinct from "did a rule fire" — a
-// clean repo still has applicable categories; a repo whose SDK was detected
-// but yielded no analyzable tools/agents does not. Used to emit the
-// coverage-gap META finding.
+// least one TOOL, AGENT, or SUBAGENT detector whose Applies() returned true for
+// at least one discovered entity. This is "could a rule even run against this
+// repo's code", distinct from "did a rule fire" — a clean repo still has
+// applicable categories; a repo whose SDK was detected but yielded no
+// analyzable tools/agents does not. It gates the coverage-gap META-004 finding.
+//
+// Repo-scope detectors are deliberately EXCLUDED. A repo-scope rule's Applies()
+// is true for the whole SDK (it only checks scope + SDK-detected + language),
+// so counting it would mark the category "audited" for every repo of that SDK —
+// even a TypeScript-only repo whose tools/agents discovery cannot parse, which
+// is exactly the unaudited case META-004 exists to surface. Repo rules audit
+// repo-wide config (e.g. CSDK-201's .claude/settings.json defaultMode), not the
+// tool/agent code, so they must not suppress the "your code is unaudited"
+// signal. The `profile` parameter is retained for call-site symmetry.
 func (r *Registry) ApplicableCategories(profile models.RepoProfile, inv models.RepoInventory) map[models.DetectorCategory]bool {
 	out := make(map[models.DetectorCategory]bool)
 	for _, d := range r.tool {
@@ -156,11 +165,6 @@ func (r *Registry) ApplicableCategories(profile models.RepoProfile, inv models.R
 				out[d.Category()] = true
 				break
 			}
-		}
-	}
-	for _, d := range r.repo {
-		if d.Applies(profile, inv) {
-			out[d.Category()] = true
 		}
 	}
 	return out

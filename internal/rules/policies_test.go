@@ -669,6 +669,39 @@ var policyRepoRuleCases = []policyRepoCase{
 			UsesDefaultTracing: true,
 		},
 		false},
+
+	// ─── CSDK-201 defaultMode bypass (repo-scoped) ───────────────────────────
+	{"CSDK-201 fires when defaultMode is bypassPermissions", "CSDK-201",
+		models.RepoProfile{},
+		models.RepoInventory{
+			SDKsDetected:   []models.SDK{models.SDKClaudeAgentSDK},
+			ClaudeSettings: []models.ClaudeSettings{{DefaultMode: "bypassPermissions"}},
+		},
+		true},
+	{"CSDK-201 silent when defaultMode is default", "CSDK-201",
+		models.RepoProfile{},
+		models.RepoInventory{
+			SDKsDetected:   []models.SDK{models.SDKClaudeAgentSDK},
+			ClaudeSettings: []models.ClaudeSettings{{DefaultMode: "default"}},
+		},
+		false},
+	// acceptEdits is a real mode but intentionally NOT flagged by CSDK-201 —
+	// the rule is scoped to the genuinely-dangerous full bypass only.
+	{"CSDK-201 silent when defaultMode is acceptEdits", "CSDK-201",
+		models.RepoProfile{},
+		models.RepoInventory{
+			SDKsDetected:   []models.SDK{models.SDKClaudeAgentSDK},
+			ClaudeSettings: []models.ClaudeSettings{{DefaultMode: "acceptEdits"}},
+		},
+		false},
+	// No settings at all (e.g. SDK present via code only): nothing to flag.
+	{"CSDK-201 silent when no settings declare a defaultMode", "CSDK-201",
+		models.RepoProfile{},
+		models.RepoInventory{
+			SDKsDetected:   []models.SDK{models.SDKClaudeAgentSDK},
+			ClaudeSettings: []models.ClaudeSettings{{}},
+		},
+		false},
 }
 
 // policySubagentRuleCases covers subagent-scoped rules.

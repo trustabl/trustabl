@@ -138,3 +138,26 @@ func TestRegistry_RunsSubagentDetectors(t *testing.T) {
 		t.Errorf("ApplicableCategories missing claude_sdk: %+v", cats)
 	}
 }
+
+// TestApplicableCategories_ExcludesRepoDetectors locks the META-004 coverage
+// contract: a repo-scope detector that Applies() must NOT mark its category
+// "audited", because repo rules audit repo-wide config (e.g. .claude/settings.json
+// via CSDK-201), not the discovered tools/agents. Counting them would suppress
+// the "SDK detected but code unaudited" META-004 signal for repos whose
+// tool/agent code discovery cannot parse (e.g. TypeScript). See
+// ApplicableCategories.
+func TestApplicableCategories_ExcludesRepoDetectors(t *testing.T) {
+	reg := New(
+		nil, nil,
+		[]RepoDetector{fakeRepo{id: "OAI-201", cat: models.CategoryOpenAISDK}},
+		nil,
+	)
+	// fakeRepo.Applies always returns true, yet no tool/agent/subagent matched.
+	got := reg.ApplicableCategories(models.RepoProfile{}, models.RepoInventory{})
+	if got[models.CategoryOpenAISDK] {
+		t.Error("repo-scope detector must not mark its category applicable for META-004")
+	}
+	if len(got) != 0 {
+		t.Errorf("expected no applicable categories from a repo-only registry, got %+v", got)
+	}
+}
