@@ -77,8 +77,10 @@ type MatchExpr struct {
 	AgentUsesToolKind        []string             `yaml:"agent_uses_tool_kind,omitempty"`
 	AgentGrantsBuiltinTool   []string             `yaml:"agent_grants_builtin_tool,omitempty"`
 	AgentHandoffToClass      []string             `yaml:"agent_handoff_to_class,omitempty"`
-	AgentUsesHostedToolClass []string             `yaml:"agent_uses_hosted_tool_class,omitempty"`
-	AgentIsSubagentOfAny     *bool                `yaml:"agent_is_subagent_of_any,omitempty"`
+	AgentUsesHostedToolClass    []string                  `yaml:"agent_uses_hosted_tool_class,omitempty"`
+	AgentIsSubagentOfAny        *bool                     `yaml:"agent_is_subagent_of_any,omitempty"`
+	AgentHostedToolKwargPresent *HostedToolKwargExpr      `yaml:"agent_hosted_tool_kwarg_present,omitempty"`
+	AgentHostedToolKwargValue   *HostedToolKwargValueExpr `yaml:"agent_hosted_tool_kwarg_value,omitempty"`
 
 	// Subagent-scope predicates
 	SubagentGrantsTool []string `yaml:"subagent_grants_tool,omitempty"`
@@ -100,6 +102,21 @@ type ToolDecoratorKwargValueExpr struct {
 
 // AgentKwargValueExpr matches an agent constructor kwarg (dotted-path) to a value.
 type AgentKwargValueExpr struct {
+	Kwarg string `yaml:"kwarg"`
+	Value string `yaml:"value"` // compared after quote-stripping for string literals
+}
+
+// HostedToolKwargExpr matches the presence of a kwarg on a hosted-tool instance
+// of the named class wired to the agent (e.g. BashTool's `policy`).
+type HostedToolKwargExpr struct {
+	Class string `yaml:"class"`
+	Kwarg string `yaml:"kwarg"` // dotted-path supported
+}
+
+// HostedToolKwargValueExpr matches a hosted-tool instance's kwarg to a value
+// (e.g. ShellTool's needs_approval == "True").
+type HostedToolKwargValueExpr struct {
+	Class string `yaml:"class"`
 	Kwarg string `yaml:"kwarg"`
 	Value string `yaml:"value"` // compared after quote-stripping for string literals
 }

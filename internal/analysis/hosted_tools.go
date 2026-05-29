@@ -46,7 +46,17 @@ func classifyHostedToolCall(callItem models.Expr, filePath string) (models.Hoste
 			Line:     callItem.Line,
 			EndLine:  callItem.EndLine,
 		},
+		Kwargs: hostedKwargTree(callItem),
 	}, true
+}
+
+// hostedKwargTree wraps a hosted-tool call's captured kwargs into a KwargTree,
+// or returns nil when the call had no keyword arguments.
+func hostedKwargTree(callItem models.Expr) *models.KwargTree {
+	if len(callItem.CallKwargs) == 0 {
+		return nil
+	}
+	return &models.KwargTree{Children: callItem.CallKwargs}
 }
 
 func calleeName(callText string) string {

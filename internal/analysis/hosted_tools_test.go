@@ -39,6 +39,43 @@ agent = Agent(name="search", tools=[WebSearchTool()])
 	}
 }
 
+func TestHostedTools_CapturesKwargs(t *testing.T) {
+	// E1: a hosted-tool call's kwargs must survive discovery onto
+	// HostedToolDef.Kwargs (and be reachable via the resolved ref), so
+	// agent-scope rules can inspect e.g. ShellTool(needs_approval=False).
+	src := `
+from agents import Agent, ShellTool
+
+agent = Agent(name="ops", tools=[ShellTool(needs_approval=False)])
+`
+	pf := parsePyFile(t, "main.py", src)
+	inv := &models.RepoInventory{
+		Agents: analysis.DiscoverAgents([]analysis.ParsedFile{pf}),
+	}
+	analysis.ResolveEdges(inv, []analysis.ParsedFile{pf})
+
+	if len(inv.HostedTools) != 1 {
+		t.Fatalf("expected 1 hosted tool, got %d", len(inv.HostedTools))
+	}
+	h := inv.HostedTools[0]
+	if h.Class != "ShellTool" {
+		t.Fatalf("Class = %v, want ShellTool", h.Class)
+	}
+	if h.Kwargs == nil || h.Kwargs.Children["needs_approval"] == nil {
+		t.Fatalf("expected needs_approval captured in Kwargs, got %+v", h.Kwargs)
+	}
+	na := h.Kwargs.Children["needs_approval"]
+	if na.Value == nil || na.Value.Text != "False" {
+		t.Errorf("needs_approval value = %+v, want False", na.Value)
+	}
+	// And reachable through the resolved ref the predicate uses.
+	ref := inv.Agents[0].HostedToolRefs[0]
+	if ref.Resolved == nil || ref.Resolved.Kwargs == nil ||
+		ref.Resolved.Kwargs.Children["needs_approval"] == nil {
+		t.Errorf("resolved ref does not carry kwargs: %+v", ref)
+	}
+}
+
 func TestHostedTools_AllKnownClasses(t *testing.T) {
 	classes := []string{
 		"WebSearchTool", "FileSearchTool", "ComputerTool", "HostedMCPTool",
@@ -106,9 +143,13 @@ b = Agent(name="b", tools=[FileSearchTool(vector_store_ids=["v"]), WebSearchTool
 		t.Fatalf("non-deterministic length: %d vs %d", len(inv1.HostedTools), len(inv2.HostedTools))
 	}
 	for i := range inv1.HostedTools {
-		if inv1.HostedTools[i] != inv2.HostedTools[i] {
-			t.Errorf("non-deterministic at index %d: %+v vs %+v",
-				i, inv1.HostedTools[i], inv2.HostedTools[i])
+		// Compare identity fields, not the whole struct: HostedToolDef now
+		// carries a *KwargTree (distinct pointer per run), so == would spuriously
+		// differ. Determinism that matters is the serialized output, which is
+		// stable because JSON sorts map keys.
+		a, b := inv1.HostedTools[i], inv2.HostedTools[i]
+		if a.Class != b.Class || a.SDK != b.SDK || a.Location != b.Location {
+			t.Errorf("non-deterministic at index %d: %+v vs %+v", i, a, b)
 		}
 	}
 }

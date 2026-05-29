@@ -601,7 +601,11 @@ func exprFromNode(n *sitter.Node, src []byte) *models.KwargTree {
 	// the call's kwargs so dotted-path lookups can find model_settings.tool_choice.
 	if n.Type() == "call" {
 		inner, _ := extractCallKwargs(n, src)
-		return &models.KwargTree{Value: e, Children: nilToEmpty(inner).Children}
+		children := nilToEmpty(inner).Children
+		// Also carry the kwargs on the Expr itself, so list elements (which keep
+		// only the Expr, not this KwargTree) retain a hosted-tool call's kwargs.
+		e.CallKwargs = children
+		return &models.KwargTree{Value: e, Children: children}
 	}
 	return &models.KwargTree{Value: e}
 }

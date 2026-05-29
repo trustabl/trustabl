@@ -63,6 +63,12 @@ func (e MatchExpr) EvaluateAgent(a models.AgentDef, inv models.RepoInventory) bo
 	if e.AgentIsSubagentOfAny != nil && PredAgentIsSubagentOfAny(a, inv) != *e.AgentIsSubagentOfAny {
 		return false
 	}
+	if e.AgentHostedToolKwargPresent != nil && !PredAgentHostedToolKwargPresent(*e.AgentHostedToolKwargPresent, a) {
+		return false
+	}
+	if e.AgentHostedToolKwargValue != nil && !PredAgentHostedToolKwargValue(*e.AgentHostedToolKwargValue, a) {
+		return false
+	}
 	return true
 }
 
@@ -276,6 +282,7 @@ var predicatesByScope = map[models.Scope]map[string]bool{
 		"agent_uses_tool_kind": true, "agent_grants_builtin_tool": true,
 		"agent_handoff_to_class": true, "agent_uses_hosted_tool_class": true,
 		"agent_is_subagent_of_any": true,
+		"agent_hosted_tool_kwarg_present": true, "agent_hosted_tool_kwarg_value": true,
 	},
 	models.ScopeSubagent: {
 		"subagent_grants_tool": true,
@@ -329,6 +336,8 @@ func (e MatchExpr) setPredicateNames() []string {
 	add(len(e.AgentHandoffToClass) > 0, "agent_handoff_to_class")
 	add(len(e.AgentUsesHostedToolClass) > 0, "agent_uses_hosted_tool_class")
 	add(e.AgentIsSubagentOfAny != nil, "agent_is_subagent_of_any")
+	add(e.AgentHostedToolKwargPresent != nil, "agent_hosted_tool_kwarg_present")
+	add(e.AgentHostedToolKwargValue != nil, "agent_hosted_tool_kwarg_value")
 	// Subagent scope
 	add(len(e.SubagentGrantsTool) > 0, "subagent_grants_tool")
 	// Repo scope

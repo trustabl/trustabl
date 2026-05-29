@@ -645,6 +645,64 @@ func PredAgentHandoffToClass(classes []string, a models.AgentDef) bool {
 	return false
 }
 
+// lookupKwargInTree navigates a dotted path within a KwargTree, returning the
+// node at that path or nil. Mirror of lookupKwarg but rooted at any tree (used
+// for hosted-tool kwargs, which hang off the HostedToolDef, not the agent).
+func lookupKwargInTree(t *models.KwargTree, path string) *models.KwargTree {
+	if t == nil {
+		return nil
+	}
+	cur := t
+	for _, p := range strings.Split(path, ".") {
+		if cur.Children == nil {
+			return nil
+		}
+		next, ok := cur.Children[p]
+		if !ok {
+			return nil
+		}
+		cur = next
+	}
+	return cur
+}
+
+// PredAgentHostedToolKwargPresent fires when the agent wires a hosted tool of
+// the named class whose Kwarg is present. Requires Resolved (the def carries the
+// captured kwargs); unresolved refs cannot be inspected.
+func PredAgentHostedToolKwargPresent(expr HostedToolKwargExpr, a models.AgentDef) bool {
+	for _, ref := range a.HostedToolRefs {
+		if ref.Class != expr.Class || ref.Resolved == nil {
+			continue
+		}
+		if lookupKwargInTree(ref.Resolved.Kwargs, expr.Kwarg) != nil {
+			return true
+		}
+	}
+	return false
+}
+
+// PredAgentHostedToolKwargValue fires when the agent wires a hosted tool of the
+// named class whose Kwarg equals Value (quote-stripped for string literals).
+func PredAgentHostedToolKwargValue(expr HostedToolKwargValueExpr, a models.AgentDef) bool {
+	for _, ref := range a.HostedToolRefs {
+		if ref.Class != expr.Class || ref.Resolved == nil {
+			continue
+		}
+		kw := lookupKwargInTree(ref.Resolved.Kwargs, expr.Kwarg)
+		if kw == nil || kw.Value == nil {
+			continue
+		}
+		raw := kw.Value.Text
+		if kw.Value.Kind == models.ExprLiteralString {
+			raw = strings.Trim(raw, `"'`)
+		}
+		if raw == expr.Value {
+			return true
+		}
+	}
+	return false
+}
+
 // PredAgentUsesHostedToolClass fires when the agent's HostedToolRefs include
 // any of the named classes. Matches by the Class string on the ref itself
 // (does not require Resolved), so unresolved hosted-tool refs still count.

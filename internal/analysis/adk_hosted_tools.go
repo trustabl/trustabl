@@ -66,5 +66,6 @@ func classifyADKHostedToolCall(callItem models.Expr, filePath string) (models.Ho
 			Line:     callItem.Line,
 			EndLine:  callItem.EndLine,
 		},
+		Kwargs: hostedKwargTree(callItem),
 	}, true
 }

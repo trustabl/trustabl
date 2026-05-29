@@ -5,12 +5,11 @@ package models
 // set EndLine == Line; that is a valid state, not a placeholder.
 //
 // Location is intended to be embedded anonymously into entity structs so
-// JSON serialization stays flat (entity.file_path, entity.line,
-// entity.end_line). Consumers that read entity.file_path / entity.line
-// today are unaffected; entity.end_line is additive.
+// JSON serialization stays flat (entity.file_path, entity.start_line,
+// entity.end_line).
 type Location struct {
 	FilePath string `json:"file_path"`
-	Line     int    `json:"line"`
+	Line     int    `json:"start_line"`
 	EndLine  int    `json:"end_line"`
 }
 
@@ -28,6 +27,11 @@ type Expr struct {
 	List    []Expr   `json:"list,omitempty"` // populated when Kind == ExprList
 	Line    int      `json:"-"`              // 1-indexed start line; in-memory carrier, not serialized
 	EndLine int      `json:"-"`              // 1-indexed end line; in-memory carrier, not serialized
+	// CallKwargs holds the keyword arguments of a call expression (Kind ==
+	// ExprCall), e.g. ShellTool(needs_approval=False) -> {"needs_approval": ...}.
+	// In-memory carrier so hosted-tool discovery can attach a call's kwargs to
+	// the HostedToolDef; not serialized.
+	CallKwargs map[string]*KwargTree `json:"-"`
 }
 
 type ExprKind string
@@ -66,7 +70,7 @@ type AgentDef struct {
 	SDK            SDK             `json:"sdk"`
 	Class          string          `json:"class"`    // "Agent", "SandboxAgent", "AgentDefinition", "QueryMainAgent" (TS: main thread of a query() call), or one of the ADK Class values
 	Language       Language        `json:"language"` // populated by every discovery path
-	Location                        // file_path / line / end_line (flat in JSON via anonymous embed)
+	Location                        // file_path / start_line / end_line (flat in JSON via anonymous embed)
 	Name           string          `json:"name"`           // from name= kwarg literal
 	VarName        string          `json:"-"`              // assignment-target identifier (for in-file edge resolution; not serialized)
 	Kwargs         *KwargTree      `json:"kwargs"`
@@ -92,12 +96,12 @@ type GuardrailDef struct {
 	Name     string        `json:"name"`
 	VarName  string        `json:"var_name,omitempty"` // const-binding name (TS); empty for Python decorator-defined guardrails
 	Kind     GuardrailKind `json:"kind"`
-	Location               // file_path / line / end_line (flat in JSON via anonymous embed)
+	Location               // file_path / start_line / end_line (flat in JSON via anonymous embed)
 }
 
 type SessionUse struct {
 	Class    string `json:"class"` // "SQLiteSession", "EncryptedSession", ...
-	Location          // file_path / line / end_line (flat in JSON via anonymous embed)
+	Location          // file_path / start_line / end_line (flat in JSON via anonymous embed)
 }
 
 // HostedToolDef is one OpenAI Agents SDK hosted tool instance (WebSearchTool,
@@ -107,7 +111,7 @@ type SessionUse struct {
 type HostedToolDef struct {
 	Class    string     `json:"class"` // "WebSearchTool", "FileSearchTool", "ComputerTool", ...
 	SDK      SDK        `json:"sdk"`
-	Location              // file_path / line / end_line (flat in JSON via anonymous embed)
+	Location              // file_path / start_line / end_line (flat in JSON via anonymous embed)
 	Kwargs   *KwargTree `json:"kwargs,omitempty"`
 }
 
@@ -132,7 +136,7 @@ type MCPServerDef struct {
 	Transport string     `json:"transport"` // "stdio" | "sse" | "streamable_http" | "http" | "sdk"
 	SDK       SDK        `json:"sdk"`
 	Language  Language   `json:"language"` // populated by every discovery path
-	Location              // file_path / line / end_line (flat in JSON via anonymous embed)
+	Location              // file_path / start_line / end_line (flat in JSON via anonymous embed)
 	Kwargs    *KwargTree `json:"kwargs,omitempty"`
 }
 
@@ -161,7 +165,7 @@ type SubagentDef struct {
 	Skills          []string    `json:"skills,omitempty"`
 	HasHooks        bool        `json:"has_hooks,omitempty"`
 	Isolation       string      `json:"isolation,omitempty"`
-	Location                    // file_path / line / end_line (flat in JSON via anonymous embed)
+	Location                    // file_path / start_line / end_line (flat in JSON via anonymous embed)
 }
 
 // SkillDef is one parsed Claude Code skill (a SKILL.md file). allowed-tools may
@@ -240,7 +244,7 @@ type ClaudePermissions struct {
 
 // ClaudeSettings is one parsed .claude/settings.json (or settings.local.json).
 type ClaudeSettings struct {
-	Location                          // file_path / line / end_line (flat in JSON via anonymous embed)
+	Location                          // file_path / start_line / end_line (flat in JSON via anonymous embed)
 	Permissions     ClaudePermissions `json:"permissions"`
 	DefaultMode     string            `json:"default_mode,omitempty"`
 	AdditionalDirs  []string          `json:"additional_directories,omitempty"`

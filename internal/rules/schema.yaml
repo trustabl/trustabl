@@ -287,6 +287,17 @@ rules:
 #       on agents that participate in a delegation tree (e.g. ADK's sub_agents
 #       composition or OpenAI's handoffs= edges).
 #
+#   agent_hosted_tool_kwarg_present: {class: ToolClass, kwarg: name}
+#       Returns true if the agent wires a hosted tool of `class` whose `kwarg`
+#       is present (e.g. BashTool with a `policy=`). `kwarg` supports dotted
+#       paths. Requires the hosted ref to be resolved (the def carries the
+#       captured kwargs). Negate with not: to flag a missing safety kwarg.
+#
+#   agent_hosted_tool_kwarg_value: {class: ToolClass, kwarg: name, value: V}
+#       Returns true if the agent wires a hosted tool of `class` whose `kwarg`
+#       equals `value` (quote-stripped for string literals), e.g. ShellTool with
+#       needs_approval == "True".
+#
 #
 # ━━━ SUBAGENT-SCOPE PREDICATES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # (used only in scope: subagent rules)

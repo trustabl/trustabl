@@ -786,6 +786,57 @@ func TestPredAgentUsesHostedToolClass(t *testing.T) {
 	}
 }
 
+// hostedRefWithKwargs builds a resolved HostedToolRef of class with one kwarg.
+func hostedRefWithKwargs(class string, kwargs map[string]*models.KwargTree) models.HostedToolRef {
+	return models.HostedToolRef{
+		Class:    class,
+		Resolved: &models.HostedToolDef{Class: class, Kwargs: &models.KwargTree{Children: kwargs}},
+	}
+}
+
+func TestPredAgentHostedToolKwargPresent(t *testing.T) {
+	withPolicy := models.AgentDef{HostedToolRefs: []models.HostedToolRef{
+		hostedRefWithKwargs("BashTool", map[string]*models.KwargTree{
+			"policy": {Value: &models.Expr{Kind: models.ExprNameRef, Text: "p"}},
+		}),
+	}}
+	noPolicy := models.AgentDef{HostedToolRefs: []models.HostedToolRef{
+		hostedRefWithKwargs("BashTool", map[string]*models.KwargTree{}),
+	}}
+	unresolved := models.AgentDef{HostedToolRefs: []models.HostedToolRef{{Class: "BashTool"}}}
+
+	expr := rules.HostedToolKwargExpr{Class: "BashTool", Kwarg: "policy"}
+	if !rules.PredAgentHostedToolKwargPresent(expr, withPolicy) {
+		t.Error("expected present=true when BashTool has policy")
+	}
+	if rules.PredAgentHostedToolKwargPresent(expr, noPolicy) {
+		t.Error("expected present=false when BashTool has no policy")
+	}
+	if rules.PredAgentHostedToolKwargPresent(expr, unresolved) {
+		t.Error("expected present=false when ref unresolved (kwargs unavailable)")
+	}
+}
+
+func TestPredAgentHostedToolKwargValue(t *testing.T) {
+	approved := models.AgentDef{HostedToolRefs: []models.HostedToolRef{
+		hostedRefWithKwargs("ShellTool", map[string]*models.KwargTree{
+			"needs_approval": {Value: &models.Expr{Kind: models.ExprLiteralBool, Text: "True"}},
+		}),
+	}}
+	unapproved := models.AgentDef{HostedToolRefs: []models.HostedToolRef{
+		hostedRefWithKwargs("ShellTool", map[string]*models.KwargTree{
+			"needs_approval": {Value: &models.Expr{Kind: models.ExprLiteralBool, Text: "False"}},
+		}),
+	}}
+	expr := rules.HostedToolKwargValueExpr{Class: "ShellTool", Kwarg: "needs_approval", Value: "True"}
+	if !rules.PredAgentHostedToolKwargValue(expr, approved) {
+		t.Error("expected value match when needs_approval=True")
+	}
+	if rules.PredAgentHostedToolKwargValue(expr, unapproved) {
+		t.Error("expected no match when needs_approval=False")
+	}
+}
+
 // ─── agent_is_subagent_of_any ─────────────────────────────────────────────────
 
 // ─── call_without_kwarg: alias-aware + None-aware ────────────────────────────
