@@ -340,3 +340,9 @@ rules:
 #       Fires when the scanner's derived UsesDefaultTracing flag matches.
 #       UsesDefaultTracing is true when no add_trace_processor or
 #       OPENAI_AGENTS_DISABLE_TRACING appears anywhere in parsed Python files.
+#   repo_claude_default_mode_is: [bypassPermissions, acceptEdits, ...]
+#       Fires when any discovered .claude/settings.json (or settings.local.json)
+#       declares a defaultMode equal to one of the listed modes. Reads
+#       RepoInventory.ClaudeSettings[].DefaultMode. Used by CSDK-201 to flag
+#       defaultMode: bypassPermissions, which disables Claude Code approval
+#       prompts repo-wide.
