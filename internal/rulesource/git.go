@@ -68,11 +68,11 @@ func resolveRef(url, ref string) (sha string, name plumbing.ReferenceName, err e
 //     clone, which would otherwise record a SHA that mislabels the content.
 func cloneInto(url string, refName plumbing.ReferenceName, cacheDir string) (string, error) {
 	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
-		return "", err
+		return "", &fatalResolveError{fmt.Errorf("create rules cache dir: %w", err)}
 	}
 	tmp, err := os.MkdirTemp(cacheDir, ".tmp-clone-*")
 	if err != nil {
-		return "", err
+		return "", &fatalResolveError{fmt.Errorf("create rules clone temp dir: %w", err)}
 	}
 	defer os.RemoveAll(tmp) // no-op once a successful rename moves the contents
 
@@ -80,13 +80,17 @@ func cloneInto(url string, refName plumbing.ReferenceName, cacheDir string) (str
 	if refName != "" {
 		opts.ReferenceName = refName
 	}
+	// A clone failure is a remote-contact fault — left unwrapped so Resolve may
+	// fall back to cached rules (the offline story).
 	repo, err := git.PlainClone(tmp, false, opts)
 	if err != nil {
 		return "", fmt.Errorf("clone rules repo %s: %w", url, err)
 	}
+	// Past this point the bytes are local: a HEAD-resolution failure means the
+	// freshly cloned repo is corrupt, which must not silently serve stale rules.
 	head, err := repo.Head()
 	if err != nil {
-		return "", fmt.Errorf("resolve cloned HEAD for %s: %w", url, err)
+		return "", &fatalResolveError{fmt.Errorf("resolve cloned HEAD for %s: %w", url, err)}
 	}
 	sha := head.Hash().String()
 
@@ -101,7 +105,7 @@ func cloneInto(url string, refName plumbing.ReferenceName, cacheDir string) (str
 		if _, statErr := os.Stat(dest); statErr == nil {
 			return sha, nil // lost the rename race; existing pack is the same commit
 		}
-		return "", fmt.Errorf("install rules pack: %w", err)
+		return "", &fatalResolveError{fmt.Errorf("install rules pack: %w", err)}
 	}
 	return sha, nil
 }

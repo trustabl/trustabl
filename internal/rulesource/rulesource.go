@@ -23,6 +23,21 @@ var ErrNoRules = errors.New("no rules available: none cached and could not fetch
 // exceeds what this engine build supports.
 var ErrNoCompatibleRules = errors.New("no schema-compatible rules available")
 
+// fatalResolveError wraps a failure that must NOT degrade to cached rules: a
+// local filesystem / install fault (disk full, permission denied, a failed
+// rename, or a corrupt freshly-cloned repo). These are operator-environment
+// problems, not "the remote is unreachable" — silently serving stale rules
+// would mask a real failure. Remote-contact failures are deliberately left
+// unwrapped so they stay fallback-eligible (the offline story).
+type fatalResolveError struct{ err error }
+
+func (e *fatalResolveError) Error() string { return e.err.Error() }
+func (e *fatalResolveError) Unwrap() error { return e.err }
+
+// cloneIntoFn is a seam so tests can simulate an install failure without
+// forcing a real disk fault. Production always uses cloneInto.
+var cloneIntoFn = cloneInto
+
 // Config controls one rule-source resolution.
 type Config struct {
 	RepoURL  string // rules repo; empty => DefaultRepoURL
@@ -74,9 +89,12 @@ func fallbackToCache(cfg Config, supported int) (Resolved, error) {
 }
 
 // Resolve obtains a rule pack for a scan. With NoUpdate it uses the cache
-// only. Otherwise it resolves the latest ref, clones it if new, and gates it;
-// on any network/clone failure or incompatibility it falls back to the cached
-// pack. It returns ErrNoRules only when nothing is available at all.
+// only. Otherwise it resolves the latest ref, clones it if new, and gates it.
+// It falls back to the cached pack on a remote-contact failure (the offline
+// story) or a schema incompatibility, but a local install fault — disk full,
+// permission denied, a failed rename, or a corrupt clone (a fatalResolveError) —
+// is propagated, never masked by stale cached rules. It returns ErrNoRules only
+// when nothing is available at all.
 func Resolve(cfg Config, supported int) (Resolved, error) {
 	cfg, err := withDefaults(cfg)
 	if err != nil {
@@ -92,8 +110,15 @@ func Resolve(cfg Config, supported int) (Resolved, error) {
 		return fallbackToCache(cfg, supported)
 	}
 	if !packExists(cfg.CacheDir, sha) {
-		cloned, err := cloneInto(cfg.RepoURL, refName, cfg.CacheDir)
+		cloned, err := cloneIntoFn(cfg.RepoURL, refName, cfg.CacheDir)
 		if err != nil {
+			// A local install fault (disk full, permission, failed rename,
+			// corrupt clone) must surface — falling back to stale cached rules
+			// would mask it. Only remote-contact failures degrade to cache.
+			var fe *fatalResolveError
+			if errors.As(err, &fe) {
+				return Resolved{}, fmt.Errorf("resolve rules: %w", err)
+			}
 			return fallbackToCache(cfg, supported)
 		}
 		sha = cloned // authoritative: the commit actually cloned (see cloneInto)
