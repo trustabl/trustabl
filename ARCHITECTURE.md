@@ -292,6 +292,14 @@ For each language recon cleared, do the AST work and produce a `RepoInventory`:
   (`Tool`, `Pattern`, `Raw`) using the grammar `<Tool>` | `<Tool>(<pattern>)`
   plus the literal MCP-tool form `mcp__<server>__<tool>`. Malformed JSON is
   skipped silently.
+- **DiscoverClaudeAgentOptions** (`claude_agent_options.go`) — finds every
+  `ClaudeAgentOptions(...)` construction in parsed Python and captures its
+  constructor kwargs into a `ClaudeAgentOptionsDef` (carried on
+  `RepoInventory.ClaudeAgentOptions`). This is the claude-agent-sdk session
+  config object; its `permission_mode` is the in-code analogue of
+  settings.json `defaultMode`, read by `repo_claude_options_permission_mode_is`
+  (CSDK-202). Its presence also marks the repo `claude_agent_sdk` so the pack
+  loads for options-only repos.
 - **DiscoverADKAgents** (`adk_agents.go`) — finds `LlmAgent(...)`,
   `SequentialAgent(...)`, `ParallelAgent(...)`, `LoopAgent(...)`,
   `LanggraphAgent(...)`, and the `Agent(...)` alias (normalized to `LlmAgent`
@@ -747,7 +755,8 @@ RepoInventory {
     SlashCommands      []SlashCommandDef
     PluginManifests    []PluginManifest
     ClaudeSettings     []ClaudeSettings
-    SDKsDetected        []SDK     // observed in code, PLUS claude_agent_sdk when any markdown subagent is present (drives the policy-selection step)
+    ClaudeAgentOptions []ClaudeAgentOptionsDef  // ClaudeAgentOptions(...) session configs (permission_mode, etc.)
+    SDKsDetected        []SDK     // observed in code, PLUS claude_agent_sdk when any markdown subagent OR ClaudeAgentOptions(...) is present (drives the policy-selection step)
     HasShellInvocations bool      // any Python function calling subprocess.* / os.system / os.popen ("openshell" risk surface, not an SDK)
     Manifest            ScanManifest
     UsesDefaultTracing  bool
@@ -923,6 +932,13 @@ ClaudeSettings {
     HasEnvBlock     bool
     HasHooks        bool
     HasSandboxBlock bool
+}
+
+ClaudeAgentOptionsDef {
+    Location                          // file_path = .py path of the ClaudeAgentOptions(...) call
+    Kwargs *KwargTree                 // captured constructor kwargs (in-memory; not serialized).
+                                      //   permission_mode read by repo_claude_options_permission_mode_is
+    Opaque bool                       // true when the call used **unpacking
 }
 
 // Top-level output

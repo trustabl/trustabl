@@ -4,7 +4,7 @@ Coverage matrix for Trustabl's static analysis: which agent SDKs (and which
 languages) we currently scan, analyse, and detect against. This file is the
 at-a-glance reference; `ARCHITECTURE.md` has the implementation detail.
 
-_Last reviewed: 2026-05-29 (HEAD `99aef01`)._
+_Last reviewed: 2026-05-30 (HEAD `c5b230c`)._
 
 > **Note:** Detection rules are not shipped in the binary. They live in the
 > separate `trustabl-rules` git repository
@@ -20,7 +20,7 @@ Legend: ✅ full · ◐ partial · ❌ none · — N/A
 
 | SDK | Language | Scanning | Analysis (AST discovery) | Detection rules |
 |---|---|---|---|---|
-| **Claude Agent SDK** | Python | ✅ dep-scan + file inventory + `.claude/` & `.claude-plugin/` components | ✅ tools, agents, subagents (canonical + flat-collection shape fallback), skills (`SKILL.md`), slash commands, plugin manifests, settings | ✅ CSDK-001..007 (tool), CSDK-101 (agent), CSDK-110 (subagent — fires on pure-markdown collections) |
+| **Claude Agent SDK** | Python | ✅ dep-scan + file inventory + `.claude/` & `.claude-plugin/` components | ✅ tools, agents, subagents (canonical + flat-collection shape fallback), skills (`SKILL.md`), slash commands, plugin manifests, settings, `ClaudeAgentOptions` session config | ✅ CSDK-001..007 (tool), CSDK-101 (agent), CSDK-110 (subagent — fires on pure-markdown collections), CSDK-201/202 (repo — settings.json defaultMode and ClaudeAgentOptions permission_mode bypass) |
 | **Claude Agent SDK** | TypeScript | ✅ dep-scan (`@anthropic-ai/claude-agent-sdk`) + file inventory + `.claude/` components | ✅ tools (`tool()` factory), agents (main thread `QueryMainAgent` per `query()` call + sub-agents inline-in-query + typed-const `AgentDefinition`), MCP servers (createSdkMcpServer + 4 config literals) | ❌ no TS rules yet (SP2) — META-004 fires |
 | **OpenAI Agents SDK** | Python | ✅ dep-scan + file inventory | ✅ tools, hosted tools (11 classes), agents, MCP servers (3 transports + alias), guardrails, sessions | ✅ OAI-001..006 (tool), OAI-101..105 (agent), OAI-201 (repo) |
 | **OpenAI Agents SDK** | TypeScript | ✅ dep-scan (`@openai/agents` substring catches `-core` / `-openai`) + file inventory | ✅ tools (`tool({...})` factory), agents (`new Agent({...})` + `Agent.create(...)`), hosted tools (9 factories across `@openai/agents-core` and `@openai/agents-openai`), MCP servers (3 transports + `MCPServers` wrapper), guardrails (4 `defineX` factories), sessions (`MemorySession` / `OpenAIConversationsSession` / `OpenAIResponsesCompactionSession`) | ❌ no TS-language OAI rules yet (SP2) — META-004 fires |
@@ -47,6 +47,7 @@ Discovery sources: `internal/analysis/discovery.go`, `agents.go`, `subagents.go`
 | Slash commands | **Two path shapes**: canonical `.claude/commands/*.md` AND `<plugin-root>/commands/*.md` whenever `<plugin-root>` has a sibling `.claude-plugin/plugin.json` (the layout used by plugin-distribution repos like `wshobson/agents` — `plugins/<x>/commands/*.md`). Command name = file basename. Parses frontmatter `description`, `allowed-tools`, `model`, `argument-hint`, `disable-model-invocation`; a command without frontmatter is still emitted (body is the prompt). No rules yet — surfaced in inventory/JSON |
 | Plugin manifests | `.claude-plugin/plugin.json` and `marketplace.json` JSON-parsed into `PluginManifest` (`kind` plugin/marketplace, `name`, catalog `plugins[]` with `name` + normalized `source`). The `source` field accepts both forms in the wild: a plain string (`"./local-foo"`) or an object (`{"source":"git-subdir","url":"…","path":"…"}` for external git refs); object forms are normalized to `<source>:<url>#<path>` so the trust category survives the round-trip, unknown shapes fall back to raw JSON. A previous typed-string parser dropped the entire manifest on the object form. The recon walk descends into `.claude-plugin/`. No rules yet — surfaced in inventory/JSON |
 | Settings | `.claude/settings.json` and `settings.local.json` JSON-parsed: `permissions.allow`/`deny`/`ask` decomposed via the grammar `<Tool>` \| `<Tool>(<pattern>)` plus `mcp__<server>__<tool>`; `defaultMode`, `additionalDirectories`, presence flags for `env`/`hooks`/`sandbox` |
+| Session config | `ClaudeAgentOptions(...)` constructor calls. Captures kwargs into a `KwargTree`; `permission_mode` is read by the repo-scope rule CSDK-202. Presence alone marks the repo `claude_agent_sdk` so the pack loads for options-only repos |
 | Components surfaced (path-only) | `CLAUDE.md`, `hooks/*.{py,ts,js,jsx,mjs}`, MCP configs (`mcp.json`, `mcp_servers.json`, `claude_desktop_config.json`) |
 
 ### Claude Agent SDK — TypeScript
