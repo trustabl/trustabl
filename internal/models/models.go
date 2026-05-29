@@ -151,7 +151,8 @@ type Finding struct {
 // ToolReadiness is the per-tool score from the Scoring Engine.
 type ToolReadiness struct {
 	ToolName         string  `json:"tool_name"`
-	Score            float64 `json:"score"` // 0..1
+	FilePath         string  `json:"file_path"` // distinguishes same-named tools across files
+	Score            float64 `json:"score"`     // 0..1
 	FindingCount     int     `json:"finding_count"`
 	WeightedSeverity float64 `json:"weighted_severity"`
 }
