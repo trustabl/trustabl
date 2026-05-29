@@ -1191,6 +1191,16 @@ negation.
 - Required-field validation, enum validation (severity / category),
   duplicate-rule-ID detection across files. Every error is collected via
   `errors.Join` so a contributor sees every problem in one run.
+- **`applies_to`-vs-scope** check (`validAppliesToForScope`): the declared
+  `applies_to` kinds must be legal for the rule's `scope`.
+- **`match`-vs-scope** check (`MatchExpr.outOfScopePredicates`): every predicate
+  set in `match:` must be one the rule's scope actually evaluates. A predicate
+  outside the scope's set (e.g. a tool predicate like `has_docstring` on an
+  `agent` rule) is rejected at load time — otherwise the scope's `Evaluate*`
+  method, which only dispatches its own predicates, would silently drop the
+  clause and the rule would fire more broadly than authored. The per-scope
+  predicate set (`predicatesByScope`) is the lockstep mirror of the four
+  `Evaluate*` methods; the check recurses through `all`/`any`/`not`.
 
 ### Rule source ([internal/rulesource/](internal/rulesource/))
 
@@ -1224,7 +1234,7 @@ flowchart LR
     yaml["trustabl-rules<br/>&lt;sdk&gt;/&lt;topic&gt;.yaml"]
     resolve["rulesource.Resolve<br/>· go-git clone/fetch<br/>· cache fallback<br/>· schema_version gate"]
     fs[("Config.RulesFS<br/>(fs.FS)")]
-    loader["rules.Load<br/>· KnownFields(true)<br/>· required-field validation<br/>· severity/category/scope enums<br/>· applies_to-vs-scope check<br/>· cross-file ID uniqueness"]
+    loader["rules.Load<br/>· KnownFields(true)<br/>· required-field validation<br/>· severity/category/scope enums<br/>· applies_to-vs-scope check<br/>· match-vs-scope check<br/>· cross-file ID uniqueness"]
     rules[("[]PolicyFile")]
     loadfor["rules.LoadFor(SDKsDetected)<br/>filters by inventory"]
     wrap["wrap each RuleDef as<br/>ToolRuleDetector / AgentRuleDetector / RepoRuleDetector / SubagentRuleDetector"]
