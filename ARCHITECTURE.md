@@ -90,8 +90,13 @@ Resolution order:
 
 1. Unless `--no-rules-update` is set, fetch the configured ref and clone it
    into the cache if not already present.
-2. If the network is unreachable, fall back to the cached `current` rules and
-   print a warning.
+2. If the remote is unreachable (a remote-contact failure), fall back to the
+   cached `current` rules and print a warning. A **local** install fault during
+   the clone — disk full, permission denied, a failed rename, or a corrupt
+   freshly-cloned repo — is *not* a fallback case: it is propagated as a hard
+   error so stale cached rules never silently mask an operator-environment
+   problem. (Internally these are tagged `fatalResolveError`; remote-contact
+   failures are deliberately left untagged so they stay fallback-eligible.)
 3. If no usable rules exist locally **and** none can be fetched, exit `2` and
    advise `trustabl rules pull`. The engine never runs rule-less.
 4. After a successful resolve, the cache is pruned to a single active pack —
