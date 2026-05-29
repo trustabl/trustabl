@@ -43,6 +43,44 @@ func TestScore_SkipsFindingsWithoutMatchingTool(t *testing.T) {
 	}
 }
 
+// TestScore_DistinguishesSameNamedToolsAcrossFiles guards against collapsing
+// two tools that share a name but live in different files into one readiness
+// row. Real repos reuse tool names across modules; keying readiness by name
+// alone would overwrite the first tool and pile both files' findings onto one
+// row, mis-scoring both.
+func TestScore_DistinguishesSameNamedToolsAcrossFiles(t *testing.T) {
+	tools := []models.ToolDef{
+		{Name: "search", Kind: models.KindClaudeSDKTool, Location: models.Location{FilePath: "a.py"}},
+		{Name: "search", Kind: models.KindClaudeSDKTool, Location: models.Location{FilePath: "b.py"}},
+	}
+	findings := []models.Finding{
+		// Only the a.py "search" has the finding.
+		{RuleID: "CSDK-003", ToolName: "search", FilePath: "a.py", Severity: models.SeverityHigh, Confidence: 1.0},
+	}
+	readiness, overall := analysis.Score(tools, findings)
+	if len(readiness) != 2 {
+		t.Fatalf("got %d readiness entries, want 2 (one per file): %+v", len(readiness), readiness)
+	}
+	var withFinding, clean *models.ToolReadiness
+	for i := range readiness {
+		switch readiness[i].FilePath {
+		case "a.py":
+			withFinding = &readiness[i]
+		case "b.py":
+			clean = &readiness[i]
+		}
+	}
+	if withFinding == nil || withFinding.FindingCount != 1 {
+		t.Errorf("a.py search: want FindingCount=1, got %+v", withFinding)
+	}
+	if clean == nil || clean.FindingCount != 0 || clean.Score != 1.0 {
+		t.Errorf("b.py search: want clean (0 findings, score=1.0), got %+v", clean)
+	}
+	if withFinding != nil && overall != withFinding.Score {
+		t.Errorf("overall: got %v, want a.py search.Score=%v (weakest link)", overall, withFinding.Score)
+	}
+}
+
 func TestScore_AttributesToolScopedFindingsToCorrectTool(t *testing.T) {
 	tools := []models.ToolDef{
 		{Name: "search", Kind: models.KindClaudeSDKTool},

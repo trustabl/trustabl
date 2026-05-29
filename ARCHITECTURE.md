@@ -573,6 +573,12 @@ Shipped rules (one row per YAML rule entry):
 
 ### Step 5 — Scoring ([internal/analysis/scoring.go](internal/analysis/scoring.go))
 
+A tool's readiness identity is `(FilePath, Name)`, not `Name` alone — repos
+reuse tool names across modules, and tool-scoped findings carry the tool's
+`FilePath`, so they attribute to the right row. Each `ToolReadiness` records its
+`FilePath` so the two rows for a shared name stay distinct in output and the
+sort is deterministic.
+
 Per-tool:
 
 ```

@@ -23,21 +23,28 @@ import (
 // score, the agent is as reliable as its weakest surface, so min is honest.
 const saturation = 3.0
 
+// toolKey identifies a tool by file AND name. Name alone collapses distinct
+// tools that share a name across modules (real repos reuse names like
+// "search") into one row — overwriting the first and piling both files'
+// findings onto it. Tool-scoped findings carry the tool's FilePath, so they key
+// the same way.
+type toolKey struct{ filePath, name string }
+
 // Score returns per-tool readiness and the overall score.
 func Score(tools []models.ToolDef, findings []models.Finding) ([]models.ToolReadiness, float64) {
-	byTool := map[string]*models.ToolReadiness{}
+	byTool := map[toolKey]*models.ToolReadiness{}
 	for _, t := range tools {
-		byTool[t.Name] = &models.ToolReadiness{ToolName: t.Name, Score: 1.0}
+		byTool[toolKey{t.FilePath, t.Name}] = &models.ToolReadiness{ToolName: t.Name, FilePath: t.FilePath, Score: 1.0}
 	}
 	for _, f := range findings {
 		// Only tool-scoped findings count toward per-tool readiness. Findings
-		// without a ToolName, or with a ToolName that doesn't match any
-		// discovered tool, are agent-scoped, repo-scoped, or META — they have
-		// their own attribution in the findings list and don't belong in
-		// per-tool buckets. Aggregating them under a blank-name "tool" used
-		// to surface as a confusing empty row in the readiness table and
+		// without a matching (FilePath, ToolName), or with a ToolName that
+		// doesn't match any discovered tool, are agent-scoped, repo-scoped, or
+		// META — they have their own attribution in the findings list and don't
+		// belong in per-tool buckets. Aggregating them under a blank-name "tool"
+		// used to surface as a confusing empty row in the readiness table and
 		// dragged the overall score for non-tool reasons.
-		r, ok := byTool[f.ToolName]
+		r, ok := byTool[toolKey{f.FilePath, f.ToolName}]
 		if !ok {
 			continue
 		}
@@ -58,7 +65,10 @@ func Score(tools []models.ToolDef, findings []models.Finding) ([]models.ToolRead
 		if readiness[i].Score != readiness[j].Score {
 			return readiness[i].Score < readiness[j].Score // worst first
 		}
-		return readiness[i].ToolName < readiness[j].ToolName
+		if readiness[i].ToolName != readiness[j].ToolName {
+			return readiness[i].ToolName < readiness[j].ToolName
+		}
+		return readiness[i].FilePath < readiness[j].FilePath // stable across same-named tools
 	})
 
 	if len(readiness) == 0 {
