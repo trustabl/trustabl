@@ -1,0 +1,42 @@
+policy:
+  id: openai_sdk_approvals
+  name: OpenAI Agents SDK tool approval gates
+  category: openai_sdk
+  description: >
+    Rules covering the human-in-the-loop approval gate the OpenAI Agents SDK
+    offers on sensitive tool calls. The SDK exposes needs_approval on
+    @function_tool (and on hosted tools); its default is False everywhere, so a
+    privileged tool ships un-gated unless the author opts in.
+
+rules:
+  - id: OAI-014
+    title: Privileged tool has no needs_approval gate
+    severity: high
+    confidence: 0.7
+    language: python
+    applies_to:
+      - openai_tool
+    scope: tool
+    match:
+      all:
+        - any:
+            - has_shell_call: true
+            - has_code_exec_call: true
+            - has_write_call: true
+        - not:
+            tool_decorator_kwarg_present:
+              - needs_approval
+    explanation: >
+      This @function_tool shells out, executes dynamic code, or writes the
+      filesystem, but sets no needs_approval kwarg. needs_approval is the OpenAI
+      Agents SDK's documented human-in-the-loop gate for sensitive tool calls,
+      and its default is False — so an un-gated privileged tool executes
+      attacker-influenced model output with no human checkpoint. This complements
+      OAI-012 (subprocess) and OAI-013 (eval/exec): those flag the dangerous
+      call; OAI-014 flags the missing approval gate around it.
+    fix: >
+      Pass needs_approval=True to the @function_tool decorator for tools that
+      execute commands, run code, or mutate the filesystem, and handle the
+      resulting approval items in your run loop. If approval is intentionally
+      automated for a trusted tool, gate the tool at the agent level
+      (input_guardrails) instead and document the decision.

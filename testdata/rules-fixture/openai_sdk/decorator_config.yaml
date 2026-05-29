@@ -54,3 +54,29 @@ rules:
       Pass failure_error_function= to the decorator. The function should
       receive the exception and the run context, and return a structured
       string the model can reason about.
+
+  - id: OAI-015
+    title: Tool sets failure_error_function=None
+    severity: high
+    confidence: 0.85
+    language: python
+    applies_to:
+      - openai_tool
+    scope: tool
+    match:
+      tool_decorator_kwarg_value:
+        kwarg: failure_error_function
+        value: "None"
+    explanation: >
+      Passing failure_error_function=None to @function_tool is the opposite of
+      the default: instead of surfacing a structured error to the model, the
+      SDK re-raises the exception, which aborts the entire agent run. A single
+      tool failure then takes down the whole conversation with no model-visible
+      recovery path. This is distinct from OAI-004 (which flags the kwarg being
+      absent, i.e. the safe default); OAI-015 flags the deliberate, riskier
+      choice of None.
+    fix: >
+      Remove failure_error_function=None, or replace it with a function that
+      returns a structured error string the model can react to. Only keep None
+      if the run is wrapped in external error handling that intentionally wants
+      hard-fail semantics — and document that.

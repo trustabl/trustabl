@@ -587,6 +587,42 @@ def get_invoice(id: str) -> dict:
     """Fetch invoice."""
     return requests.get("https://api.example.com/invoice/" + id).json()
 `, nil, true},
+
+	// ─── OAI-014 privileged tool without needs_approval ──────────────────────
+	{"OAI-014 fires on shell tool with no needs_approval", "OAI-014", models.KindOpenAITool, `
+import subprocess
+def run(cmd: str) -> str:
+    """Run."""
+    return subprocess.run([cmd], capture_output=True).stdout.decode()
+`, nil, true},
+	{"OAI-014 silent when needs_approval is set", "OAI-014", models.KindOpenAITool, `
+import subprocess
+def run(cmd: str) -> str:
+    """Run."""
+    return subprocess.run([cmd], capture_output=True).stdout.decode()
+`, map[string]string{"needs_approval": "True"}, false},
+	{"OAI-014 silent on a tool that is not privileged", "OAI-014", models.KindOpenAITool, `
+def echo(x: str) -> str:
+    """Echo."""
+    return x
+`, nil, false},
+
+	// ─── OAI-015 failure_error_function=None ─────────────────────────────────
+	{"OAI-015 fires when failure_error_function=None", "OAI-015", models.KindOpenAITool, `
+def fetch(x: str) -> dict:
+    """Fetch."""
+    return {}
+`, map[string]string{"failure_error_function": "None"}, true},
+	{"OAI-015 silent when failure_error_function is a real handler", "OAI-015", models.KindOpenAITool, `
+def fetch(x: str) -> dict:
+    """Fetch."""
+    return {}
+`, map[string]string{"failure_error_function": "handle_error"}, false},
+	{"OAI-015 silent when failure_error_function absent", "OAI-015", models.KindOpenAITool, `
+def fetch(x: str) -> dict:
+    """Fetch."""
+    return {}
+`, nil, false},
 }
 
 // policyRepoRuleCases covers repo-scoped rules.
@@ -1028,6 +1064,40 @@ var policyAgentRuleCases = []policyAgentCase{
 				"name":                 {Value: &models.Expr{Kind: models.ExprLiteralString, Text: `"root"`}},
 				"before_tool_callback": {Value: &models.Expr{Kind: models.ExprNameRef, Text: "my_guard"}},
 			}},
+		},
+		models.RepoInventory{},
+		false},
+
+	// ─── OAI-110 content-fetching tool without output_guardrails ─────────────
+	{"OAI-110 fires with WebSearchTool and empty output_guardrails", "OAI-110",
+		models.AgentDef{
+			SDK:            models.SDKOpenAIAgents,
+			Class:          "Agent",
+			Language:       models.LanguagePython,
+			HostedToolRefs: []models.HostedToolRef{{Class: "WebSearchTool"}},
+		},
+		models.RepoInventory{},
+		true},
+	{"OAI-110 silent when output_guardrails present", "OAI-110",
+		models.AgentDef{
+			SDK:            models.SDKOpenAIAgents,
+			Class:          "Agent",
+			Language:       models.LanguagePython,
+			HostedToolRefs: []models.HostedToolRef{{Class: "WebSearchTool"}},
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"output_guardrails": {Value: &models.Expr{Kind: models.ExprList, List: []models.Expr{
+					{Kind: models.ExprNameRef, Text: "my_output_guard"},
+				}}},
+			}},
+		},
+		models.RepoInventory{},
+		false},
+	{"OAI-110 silent when no content-fetching tool wired", "OAI-110",
+		models.AgentDef{
+			SDK:      models.SDKOpenAIAgents,
+			Class:    "Agent",
+			Language: models.LanguagePython,
+			ToolRefs: []models.ToolRef{{Name: "fetch", Resolved: &models.ToolDef{Kind: models.KindOpenAITool}}},
 		},
 		models.RepoInventory{},
 		false},

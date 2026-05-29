@@ -136,3 +136,31 @@ rules:
       to attacker-controlled content (e.g. queries containing raw URLs or
       suspicious redirection patterns). Wire it via input_guardrails=[...] on
       the Agent(...) constructor.
+
+  - id: OAI-110
+    title: Agent wires a content-fetching tool without output_guardrails
+    severity: high
+    confidence: 0.6
+    language: python
+    applies_to:
+      - openai_agent
+      - openai_sandbox_agent
+    scope: agent
+    match:
+      all:
+        - agent_kwarg_list_empty: [output_guardrails]
+        - agent_uses_hosted_tool_class: [WebSearchTool, FileSearchTool, CodeInterpreterTool]
+    explanation: >
+      This agent pulls in untrusted external content (web search, file search,
+      or a code interpreter) but has no output_guardrails. Input guardrails
+      (OAI-101/106/109) screen what reaches the model; output guardrails are
+      the SDK's mechanism to screen the final response before it reaches the
+      user. Without them, a prompt-injected tool result can drive an
+      exfiltrating or unsafe final answer with nothing inspecting the egress.
+      The check is scoped to agents that actually wire a content-fetching
+      hosted tool, since a plain agent legitimately needs no output guardrail.
+    fix: >
+      Add at least one output guardrail (a function decorated @output_guardrail
+      or an OutputGuardrail instance) and wire it via output_guardrails=[...]
+      on the Agent(...) constructor. It should inspect the final output for
+      data exfiltration and unsafe content before it is returned.
