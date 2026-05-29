@@ -1165,13 +1165,30 @@ var policyAgentRuleCases = []policyAgentCase{
 		false},
 
 	// ─── ADK-105 web search built-in without before_tool_callback ────────────
-	{"ADK-105 fires with google_search and no before_tool_callback", "ADK-105",
+	// google_search as a CALL (GoogleSearchTool()) → HostedToolRef Class
+	// "GoogleSearchTool"; as a bare instance → ToolRef Name "google_search".
+	// Discovery never emits a HostedToolRef "google_search", so the rule matches
+	// both real shapes via an any: branch.
+	{"ADK-105 fires with GoogleSearchTool hosted class, no before_tool_callback", "ADK-105",
 		models.AgentDef{
 			SDK:            models.SDKGoogleADK,
 			Class:          "LlmAgent",
 			Language:       models.LanguagePython,
 			Name:           "root",
-			HostedToolRefs: []models.HostedToolRef{{Class: "google_search"}},
+			HostedToolRefs: []models.HostedToolRef{{Class: "GoogleSearchTool"}},
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"name": {Value: &models.Expr{Kind: models.ExprLiteralString, Text: `"root"`}},
+			}},
+		},
+		models.RepoInventory{},
+		true},
+	{"ADK-105 fires with google_search instance (ToolRef), no before_tool_callback", "ADK-105",
+		models.AgentDef{
+			SDK:      models.SDKGoogleADK,
+			Class:    "LlmAgent",
+			Language: models.LanguagePython,
+			Name:     "root",
+			ToolRefs: []models.ToolRef{{Name: "google_search", External: true}},
 			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
 				"name": {Value: &models.Expr{Kind: models.ExprLiteralString, Text: `"root"`}},
 			}},
@@ -1184,10 +1201,136 @@ var policyAgentRuleCases = []policyAgentCase{
 			Class:          "LlmAgent",
 			Language:       models.LanguagePython,
 			Name:           "root",
-			HostedToolRefs: []models.HostedToolRef{{Class: "google_search"}},
+			HostedToolRefs: []models.HostedToolRef{{Class: "GoogleSearchTool"}},
 			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
 				"name":                 {Value: &models.Expr{Kind: models.ExprLiteralString, Text: `"root"`}},
 				"before_tool_callback": {Value: &models.Expr{Kind: models.ExprNameRef, Text: "my_guard"}},
+			}},
+		},
+		models.RepoInventory{},
+		false},
+
+	// ─── ADK-106 code_executor without before_model_callback ─────────────────
+	{"ADK-106 fires with code_executor and no before_model_callback", "ADK-106",
+		models.AgentDef{
+			SDK:      models.SDKGoogleADK,
+			Class:    "LlmAgent",
+			Language: models.LanguagePython,
+			Name:     "root",
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"name":          {Value: &models.Expr{Kind: models.ExprLiteralString, Text: `"root"`}},
+				"code_executor": {Value: &models.Expr{Kind: models.ExprNameRef, Text: "UnsafeLocalCodeExecutor()"}},
+			}},
+		},
+		models.RepoInventory{},
+		true},
+	{"ADK-106 silent when before_model_callback present", "ADK-106",
+		models.AgentDef{
+			SDK:      models.SDKGoogleADK,
+			Class:    "LlmAgent",
+			Language: models.LanguagePython,
+			Name:     "root",
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"name":                  {Value: &models.Expr{Kind: models.ExprLiteralString, Text: `"root"`}},
+				"code_executor":         {Value: &models.Expr{Kind: models.ExprNameRef, Text: "executor"}},
+				"before_model_callback": {Value: &models.Expr{Kind: models.ExprNameRef, Text: "guard"}},
+			}},
+		},
+		models.RepoInventory{},
+		false},
+	{"ADK-106 silent when no code_executor", "ADK-106",
+		models.AgentDef{
+			SDK:      models.SDKGoogleADK,
+			Class:    "LlmAgent",
+			Language: models.LanguagePython,
+			Name:     "root",
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"name": {Value: &models.Expr{Kind: models.ExprLiteralString, Text: `"root"`}},
+			}},
+		},
+		models.RepoInventory{},
+		false},
+
+	// ─── ADK-107 AgentTool without before_tool_callback ──────────────────────
+	{"ADK-107 fires with AgentTool and no before_tool_callback", "ADK-107",
+		models.AgentDef{
+			SDK:            models.SDKGoogleADK,
+			Class:          "LlmAgent",
+			Language:       models.LanguagePython,
+			Name:           "root",
+			HostedToolRefs: []models.HostedToolRef{{Class: "AgentTool"}},
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"name": {Value: &models.Expr{Kind: models.ExprLiteralString, Text: `"root"`}},
+			}},
+		},
+		models.RepoInventory{},
+		true},
+	{"ADK-107 silent when before_tool_callback present", "ADK-107",
+		models.AgentDef{
+			SDK:            models.SDKGoogleADK,
+			Class:          "LlmAgent",
+			Language:       models.LanguagePython,
+			Name:           "root",
+			HostedToolRefs: []models.HostedToolRef{{Class: "AgentTool"}},
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"name":                 {Value: &models.Expr{Kind: models.ExprLiteralString, Text: `"root"`}},
+				"before_tool_callback": {Value: &models.Expr{Kind: models.ExprNameRef, Text: "guard"}},
+			}},
+		},
+		models.RepoInventory{},
+		false},
+
+	// ─── ADK-108 LoopAgent without max_iterations ────────────────────────────
+	{"ADK-108 fires when LoopAgent has no max_iterations", "ADK-108",
+		models.AgentDef{
+			SDK:      models.SDKGoogleADK,
+			Class:    "LoopAgent",
+			Language: models.LanguagePython,
+			Name:     "loop",
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"name": {Value: &models.Expr{Kind: models.ExprLiteralString, Text: `"loop"`}},
+			}},
+		},
+		models.RepoInventory{},
+		true},
+	{"ADK-108 silent when max_iterations set", "ADK-108",
+		models.AgentDef{
+			SDK:      models.SDKGoogleADK,
+			Class:    "LoopAgent",
+			Language: models.LanguagePython,
+			Name:     "loop",
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"name":           {Value: &models.Expr{Kind: models.ExprLiteralString, Text: `"loop"`}},
+				"max_iterations": {Value: &models.Expr{Kind: models.ExprLiteralInt, Text: "5"}},
+			}},
+		},
+		models.RepoInventory{},
+		false},
+
+	// ─── ADK-110 UrlContextTool/LoadWebPage without before_tool_callback ─────
+	{"ADK-110 fires with UrlContextTool and no before_tool_callback", "ADK-110",
+		models.AgentDef{
+			SDK:            models.SDKGoogleADK,
+			Class:          "LlmAgent",
+			Language:       models.LanguagePython,
+			Name:           "root",
+			HostedToolRefs: []models.HostedToolRef{{Class: "UrlContextTool"}},
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"name": {Value: &models.Expr{Kind: models.ExprLiteralString, Text: `"root"`}},
+			}},
+		},
+		models.RepoInventory{},
+		true},
+	{"ADK-110 silent when before_tool_callback present", "ADK-110",
+		models.AgentDef{
+			SDK:            models.SDKGoogleADK,
+			Class:          "LlmAgent",
+			Language:       models.LanguagePython,
+			Name:           "root",
+			HostedToolRefs: []models.HostedToolRef{{Class: "LoadWebPage"}},
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"name":                 {Value: &models.Expr{Kind: models.ExprLiteralString, Text: `"root"`}},
+				"before_tool_callback": {Value: &models.Expr{Kind: models.ExprNameRef, Text: "guard"}},
 			}},
 		},
 		models.RepoInventory{},

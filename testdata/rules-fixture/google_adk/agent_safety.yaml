@@ -128,11 +128,14 @@ rules:
     match:
       all:
         - agent_class: [LlmAgent]
-        - agent_uses_hosted_tool_class: [google_search, VertexAISearch]
+        - any:
+            - agent_grants_builtin_tool: [google_search]
+            - agent_uses_hosted_tool_class: [GoogleSearchTool, VertexAiSearchTool]
         - agent_kwarg_missing: [before_tool_callback]
     explanation: >
-      This LlmAgent is wired with a web search built-in (google_search or
-      VertexAISearch) but has no before_tool_callback. Web search results are
+      This LlmAgent is wired with a web search built-in (the google_search
+      instance, GoogleSearchTool, or VertexAiSearchTool) but has no
+      before_tool_callback. Web search results are
       untrusted external data that can contain prompt injection payloads.
       Without a callback intercepting tool calls before execution, there is no
       gate to validate queries or block attacker-influenced invocations. An
@@ -144,3 +147,106 @@ rules:
       search query conforms to expected patterns and return a dict with an
       "error" key to block suspicious calls. Pair this with safety_settings= to
       filter harmful model outputs from processing search content.
+
+  - id: ADK-106
+    title: Agent has a code_executor but no before_model_callback
+    severity: high
+    confidence: 0.8
+    language: python
+    applies_to:
+      - adk_llm_agent
+    scope: agent
+    match:
+      all:
+        - agent_class: [LlmAgent]
+        - agent_kwarg_present: [code_executor]
+        - agent_kwarg_missing: [before_model_callback]
+    explanation: >
+      This LlmAgent sets a code_executor, which lets the model emit code blocks
+      that ADK extracts and runs. With an UnsafeLocalCodeExecutor this is
+      arbitrary code execution in the agent process. The only synchronous gate
+      over what the model emits is before_model_callback — before_tool_callback
+      does not fire for code execution, because code blocks are not tool calls.
+      An agent with a code_executor and no before_model_callback runs
+      model-authored code with nothing inspecting it.
+    fix: >
+      Add a before_model_callback that inspects the assembled LlmRequest and
+      rejects unsafe code, and prefer a sandboxed executor (ContainerCodeExecutor
+      / VertexAiCodeExecutor) over UnsafeLocalCodeExecutor. Run the agent under
+      OS-level isolation if local execution is unavoidable.
+
+  - id: ADK-107
+    title: Agent grants AgentTool but has no before_tool_callback
+    severity: high
+    confidence: 0.7
+    language: python
+    applies_to:
+      - adk_llm_agent
+    scope: agent
+    match:
+      all:
+        - agent_class: [LlmAgent]
+        - agent_uses_hosted_tool_class: [AgentTool]
+        - agent_kwarg_missing: [before_tool_callback]
+    explanation: >
+      This LlmAgent wraps another agent as a callable via AgentTool but has no
+      before_tool_callback. AgentTool delegates to the wrapped agent, whose own
+      tool calls are not mediated by this agent's callbacks (and ADK does not
+      transitively analyze the wrapped agent). The parent's before_tool_callback
+      is the only point that sees the delegation call itself; without it, the
+      model can route work into the delegated agent with no policy gate on the
+      handoff.
+    fix: >
+      Add a before_tool_callback that inspects AgentTool invocations and the
+      arguments passed to the delegated agent. Ensure the wrapped agent carries
+      its own guardrails, since the parent cannot see past the delegation
+      boundary.
+
+  - id: ADK-108
+    title: LoopAgent has no max_iterations
+    severity: medium
+    confidence: 0.7
+    language: python
+    applies_to:
+      - adk_loop_agent
+    scope: agent
+    match:
+      all:
+        - agent_class: [LoopAgent]
+        - agent_kwarg_missing: [max_iterations]
+    explanation: >
+      This LoopAgent sets no max_iterations, so it loops until a sub-agent
+      escalates. An agentic loop with no iteration cap, driven by model output,
+      is a cost and availability footgun: a model that never escalates spins
+      indefinitely, burning tokens and wall-clock with no termination guarantee.
+    fix: >
+      Pass max_iterations= to the LoopAgent constructor with a bound appropriate
+      to the workflow. If the loop is meant to terminate via a sub-agent's
+      escalate action, still set a defensive cap so a missed escalation cannot
+      run unbounded.
+
+  - id: ADK-110
+    title: Agent fetches web content via UrlContextTool/LoadWebPage without before_tool_callback
+    severity: medium
+    confidence: 0.7
+    language: python
+    applies_to:
+      - adk_llm_agent
+    scope: agent
+    match:
+      all:
+        - agent_class: [LlmAgent]
+        - agent_uses_hosted_tool_class: [UrlContextTool, LoadWebPage]
+        - agent_kwarg_missing: [before_tool_callback]
+    explanation: >
+      This LlmAgent is wired with a URL/page-fetch built-in (UrlContextTool or
+      LoadWebPage) but has no before_tool_callback. These tools retrieve
+      model-chosen URLs whose content re-enters the agent loop — a prompt
+      injection vector (attacker-controlled page content) and an SSRF surface
+      (the model can point the fetch at internal addresses). Without a callback
+      gating the call there is nothing to validate the target before the fetch
+      runs. This extends ADK-105's web-search coverage to the direct-fetch tools.
+    fix: >
+      Add a before_tool_callback that allow-lists permitted hosts/URLs and blocks
+      internal address ranges before the fetch executes. Treat fetched content as
+      untrusted and avoid passing it directly into further tool calls.
