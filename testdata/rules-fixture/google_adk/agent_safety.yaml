@@ -99,19 +99,23 @@ rules:
     match:
       all:
         - agent_class: [LlmAgent]
-        - agent_kwarg_missing: [safety_settings]
+        - agent_kwarg_missing: [generate_content_config.safety_settings]
     explanation: >
       Google ADK agents use Gemini models whose configurable content filters
-      default to OFF when safety_settings is not provided. Harm categories
-      including DANGEROUS_CONTENT, HATE_SPEECH, HARASSMENT, and
-      SEXUALLY_EXPLICIT are not actively filtered. In an agentic loop where
-      model outputs drive subsequent tool calls, an unfiltered harmful output
-      can propagate into real side effects.
+      default to OFF when safety_settings is not provided. safety_settings is
+      not a top-level LlmAgent argument — it is set inside the agent's
+      generate_content_config (a google-genai GenerateContentConfig). Harm
+      categories including DANGEROUS_CONTENT, HATE_SPEECH, HARASSMENT, and
+      SEXUALLY_EXPLICIT are not actively filtered when it is absent. In an
+      agentic loop where model outputs drive subsequent tool calls, an
+      unfiltered harmful output can propagate into real side effects.
     fix: >
-      Pass safety_settings= to the LlmAgent constructor with explicit
-      HarmBlockThreshold values for each HarmCategory your use case requires.
-      At minimum set DANGEROUS_CONTENT to BLOCK_LOW_AND_ABOVE for agents that
-      touch external data or execute tools with side effects.
+      Pass safety_settings within the generate_content_config= given to the
+      LlmAgent constructor, e.g. generate_content_config=types.GenerateContentConfig(
+      safety_settings=[...]), with explicit HarmBlockThreshold values for each
+      HarmCategory your use case requires. At minimum set DANGEROUS_CONTENT to
+      BLOCK_LOW_AND_ABOVE for agents that touch external data or execute tools
+      with side effects.
 
   - id: ADK-105
     title: Agent uses web search built-in without before_tool_callback

@@ -949,29 +949,55 @@ var policyAgentRuleCases = []policyAgentCase{
 		models.RepoInventory{},
 		false},
 
-	// ─── ADK-104 LlmAgent without safety_settings ────────────────────────────
-	{"ADK-104 fires when LlmAgent has no safety_settings", "ADK-104",
+	// ─── ADK-104 LlmAgent without generate_content_config.safety_settings ────
+	// safety_settings is NOT a top-level LlmAgent kwarg — it lives inside
+	// generate_content_config (a google-genai GenerateContentConfig). The match
+	// is the dotted path generate_content_config.safety_settings; discovery
+	// descends into the nested constructor call (extractCallKwargs/exprFromNode).
+	{"ADK-104 fires when generate_content_config has no safety_settings", "ADK-104",
 		models.AgentDef{
 			SDK:      models.SDKGoogleADK,
 			Class:    "LlmAgent",
 			Language: models.LanguagePython,
 			Name:     "root",
 			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
-				"name":        {Value: &models.Expr{Kind: models.ExprLiteralString, Text: `"root"`}},
-				"description": {Value: &models.Expr{Kind: models.ExprLiteralString, Text: `"Does things."`}},
+				"name": {Value: &models.Expr{Kind: models.ExprLiteralString, Text: `"root"`}},
+				"generate_content_config": {
+					Value: &models.Expr{Kind: models.ExprCall, Text: "types.GenerateContentConfig(temperature=0.2)"},
+					Children: map[string]*models.KwargTree{
+						"temperature": {Value: &models.Expr{Kind: models.ExprLiteralInt, Text: "0"}},
+					},
+				},
 			}},
 		},
 		models.RepoInventory{},
 		true},
-	{"ADK-104 silent when safety_settings present", "ADK-104",
+	{"ADK-104 fires when no generate_content_config at all", "ADK-104",
 		models.AgentDef{
 			SDK:      models.SDKGoogleADK,
 			Class:    "LlmAgent",
 			Language: models.LanguagePython,
 			Name:     "root",
 			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
-				"name":            {Value: &models.Expr{Kind: models.ExprLiteralString, Text: `"root"`}},
-				"safety_settings": {Value: &models.Expr{Kind: models.ExprNameRef, Text: "my_settings"}},
+				"name": {Value: &models.Expr{Kind: models.ExprLiteralString, Text: `"root"`}},
+			}},
+		},
+		models.RepoInventory{},
+		true},
+	{"ADK-104 silent when generate_content_config.safety_settings present", "ADK-104",
+		models.AgentDef{
+			SDK:      models.SDKGoogleADK,
+			Class:    "LlmAgent",
+			Language: models.LanguagePython,
+			Name:     "root",
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"name": {Value: &models.Expr{Kind: models.ExprLiteralString, Text: `"root"`}},
+				"generate_content_config": {
+					Value: &models.Expr{Kind: models.ExprCall, Text: "types.GenerateContentConfig(safety_settings=safety)"},
+					Children: map[string]*models.KwargTree{
+						"safety_settings": {Value: &models.Expr{Kind: models.ExprNameRef, Text: "safety"}},
+					},
+				},
 			}},
 		},
 		models.RepoInventory{},
