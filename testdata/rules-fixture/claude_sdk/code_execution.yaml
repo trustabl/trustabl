@@ -1,0 +1,37 @@
+policy:
+  id: claude_sdk_code_execution
+  name: Claude Agent SDK dynamic code execution
+  category: claude_sdk
+  description: >
+    Rules covering tool bodies that evaluate dynamic Python code. eval/exec/
+    compile inside a Claude Agent SDK tool (or an MCP tool the agent can call)
+    turns the host process into an arbitrary-code-execution surface when any
+    input flows from the model.
+
+rules:
+  - id: CSDK-107
+    title: Tool body calls eval/exec/compile on dynamic input
+    severity: high
+    confidence: 0.85
+    language: python
+    applies_to:
+      - claude_sdk_tool
+      - mcp_tool
+    scope: tool
+    match:
+      has_code_exec_call: true
+    explanation: >
+      The tool body invokes Python's eval, exec, or compile. When any portion of
+      the input flows from the model (directly, or via state the model writes),
+      the call is arbitrary code execution inside the agent's own Python process:
+      same memory, same imports, same in-process credentials. There is no process
+      boundary and no SDK sandbox between the call and the host. A model steered
+      by an untrusted document or a prompt-injected task can reach this primitive
+      and run whatever it constructs.
+    fix: >
+      Remove eval/exec/compile from the tool. For arithmetic use
+      ast.literal_eval; for richer expressions validate the AST against an
+      allow-list before compiling. If the tool is intentionally a code-execution
+      surface, run the code in a separate, sandboxed, single-use process (no
+      network, read-only filesystem, CPU/wall-clock caps) rather than in the
+      agent process.

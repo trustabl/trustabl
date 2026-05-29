@@ -24,3 +24,29 @@ rules:
     fix: >
       Remove `Bash` from the subagent's `tools:` list unless shell access is
       essential. Prefer specific tools (Read, Grep, Glob) for read-only roles.
+
+  - id: CSDK-111
+    title: Subagent granted filesystem-write or web-fetch built-ins
+    severity: high
+    confidence: 0.85
+    applies_to:
+      - claude_subagent
+    scope: subagent
+    match:
+      subagent_grants_tool:
+        - Write
+        - Edit
+        - WebFetch
+    explanation: >
+      This subagent's frontmatter grants a filesystem-write (`Write`/`Edit`) or
+      web-fetch (`WebFetch`) built-in. Like Bash (CSDK-110), these widen the
+      blast radius of an autonomously-dispatched subagent: write tools let it
+      modify source, config, or the `.claude/` settings that govern it, and
+      WebFetch pulls attacker-controllable URL content back into the loop (a
+      prompt-injection and SSRF surface). A narrowly-scoped subagent rarely
+      needs them.
+    fix: >
+      Remove `Write`/`Edit`/`WebFetch` from the subagent's `tools:` list unless
+      the role genuinely requires them. For read/research roles prefer Read,
+      Grep, Glob; for fetching, gate with a PreToolUse hook that allowlists
+      hosts.

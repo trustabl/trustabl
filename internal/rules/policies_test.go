@@ -623,6 +623,31 @@ def fetch(x: str) -> dict:
     """Fetch."""
     return {}
 `, nil, false},
+
+	// ─── CSDK-107 Claude tool body calls eval/exec/compile ───────────────────
+	{"CSDK-107 fires on exec", "CSDK-107", models.KindClaudeSDKTool, `
+def run(code: str):
+    """Run."""
+    exec(code)
+`, nil, true},
+	{"CSDK-107 silent without eval/exec/compile", "CSDK-107", models.KindClaudeSDKTool, `
+def run(code: str) -> int:
+    """Run."""
+    return int(code) + 1
+`, nil, false},
+
+	// ─── CSDK-108 Claude tool body spawns a subprocess ───────────────────────
+	{"CSDK-108 fires on subprocess.run", "CSDK-108", models.KindClaudeSDKTool, `
+import subprocess
+def run(cmd: str) -> str:
+    """Run."""
+    return subprocess.run([cmd], capture_output=True).stdout.decode()
+`, nil, true},
+	{"CSDK-108 silent without a shell call", "CSDK-108", models.KindClaudeSDKTool, `
+def run(cmd: str) -> str:
+    """Run."""
+    return cmd.upper()
+`, nil, false},
 }
 
 // policyRepoRuleCases covers repo-scoped rules.
@@ -663,6 +688,16 @@ var policySubagentRuleCases = []policySubagentCase{
 	{"CSDK-110 silent when no Bash", "CSDK-110",
 		models.SubagentDef{Name: "reader", Location: models.Location{FilePath: ".claude/agents/reader.md"},
 			Tools: []string{"Read", "Grep"}}, models.RepoInventory{}, false},
+
+	{"CSDK-111 fires when subagent grants Write", "CSDK-111",
+		models.SubagentDef{Name: "editor", Location: models.Location{FilePath: ".claude/agents/editor.md"},
+			Tools: []string{"Read", "Write"}}, models.RepoInventory{}, true},
+	{"CSDK-111 fires when subagent grants WebFetch", "CSDK-111",
+		models.SubagentDef{Name: "fetcher", Location: models.Location{FilePath: ".claude/agents/fetcher.md"},
+			Tools: []string{"Read", "WebFetch"}}, models.RepoInventory{}, true},
+	{"CSDK-111 silent on read-only tool set", "CSDK-111",
+		models.SubagentDef{Name: "reader", Location: models.Location{FilePath: ".claude/agents/reader2.md"},
+			Tools: []string{"Read", "Grep", "Glob"}}, models.RepoInventory{}, false},
 }
 
 // policyAgentRuleCases covers agent-scoped rules.
@@ -939,23 +974,113 @@ var policyAgentRuleCases = []policyAgentCase{
 		true},
 
 	// ─── CSDK-102 Claude subagent granted WebSearch ──────────────────────────
+	// Claude AgentDefinition tools are string literals → ToolRefs (Name carries
+	// the quoted token), NOT HostedToolRefs. The rule uses agent_grants_builtin_tool.
 	{"CSDK-102 fires when AgentDefinition grants WebSearch", "CSDK-102",
 		models.AgentDef{
-			SDK:            models.SDKClaudeAgentSDK,
-			Class:          "AgentDefinition",
-			Language:       models.LanguagePython,
-			Name:           "researcher",
-			HostedToolRefs: []models.HostedToolRef{{Class: "WebSearch"}},
+			SDK:      models.SDKClaudeAgentSDK,
+			Class:    "AgentDefinition",
+			Language: models.LanguagePython,
+			Name:     "researcher",
+			ToolRefs: []models.ToolRef{
+				{Name: `"Read"`, External: true},
+				{Name: `"WebSearch"`, External: true},
+			},
 		},
 		models.RepoInventory{},
 		true},
 	{"CSDK-102 silent when no WebSearch granted", "CSDK-102",
 		models.AgentDef{
-			SDK:            models.SDKClaudeAgentSDK,
-			Class:          "AgentDefinition",
-			Language:       models.LanguagePython,
-			Name:           "writer",
-			HostedToolRefs: []models.HostedToolRef{{Class: "Read"}},
+			SDK:      models.SDKClaudeAgentSDK,
+			Class:    "AgentDefinition",
+			Language: models.LanguagePython,
+			Name:     "writer",
+			ToolRefs: []models.ToolRef{
+				{Name: `"Read"`, External: true},
+				{Name: `"Grep"`, External: true},
+			},
+		},
+		models.RepoInventory{},
+		false},
+
+	// ─── CSDK-103 permissionMode=bypassPermissions ───────────────────────────
+	{"CSDK-103 fires on bypassPermissions", "CSDK-103",
+		models.AgentDef{
+			SDK:      models.SDKClaudeAgentSDK,
+			Class:    "AgentDefinition",
+			Language: models.LanguagePython,
+			Name:     "worker",
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"permissionMode": {Value: &models.Expr{Kind: models.ExprLiteralString, Text: `"bypassPermissions"`}},
+			}},
+		},
+		models.RepoInventory{},
+		true},
+	{"CSDK-103 silent on default permission mode", "CSDK-103",
+		models.AgentDef{
+			SDK:      models.SDKClaudeAgentSDK,
+			Class:    "AgentDefinition",
+			Language: models.LanguagePython,
+			Name:     "worker",
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"permissionMode": {Value: &models.Expr{Kind: models.ExprLiteralString, Text: `"default"`}},
+			}},
+		},
+		models.RepoInventory{},
+		false},
+
+	// ─── CSDK-104 subagent granted Write/Edit ─────────────────────────────────
+	{"CSDK-104 fires when AgentDefinition grants Edit", "CSDK-104",
+		models.AgentDef{
+			SDK:      models.SDKClaudeAgentSDK,
+			Class:    "AgentDefinition",
+			Language: models.LanguagePython,
+			Name:     "coder",
+			ToolRefs: []models.ToolRef{
+				{Name: `"Read"`, External: true},
+				{Name: `"Edit"`, External: true},
+			},
+		},
+		models.RepoInventory{},
+		true},
+	{"CSDK-104 silent on read-only tool set", "CSDK-104",
+		models.AgentDef{
+			SDK:      models.SDKClaudeAgentSDK,
+			Class:    "AgentDefinition",
+			Language: models.LanguagePython,
+			Name:     "reader",
+			ToolRefs: []models.ToolRef{
+				{Name: `"Read"`, External: true},
+				{Name: `"Grep"`, External: true},
+			},
+		},
+		models.RepoInventory{},
+		false},
+
+	// ─── CSDK-105 subagent granted WebFetch ──────────────────────────────────
+	{"CSDK-105 fires when AgentDefinition grants WebFetch", "CSDK-105",
+		models.AgentDef{
+			SDK:      models.SDKClaudeAgentSDK,
+			Class:    "AgentDefinition",
+			Language: models.LanguagePython,
+			Name:     "fetcher",
+			ToolRefs: []models.ToolRef{
+				{Name: `"Read"`, External: true},
+				{Name: `"WebFetch"`, External: true},
+			},
+		},
+		models.RepoInventory{},
+		true},
+	{"CSDK-105 silent without WebFetch", "CSDK-105",
+		models.AgentDef{
+			SDK:      models.SDKClaudeAgentSDK,
+			Class:    "AgentDefinition",
+			Language: models.LanguagePython,
+			Name:     "reader",
+			ToolRefs: []models.ToolRef{
+				{Name: `"Read"`, External: true},
+				{Name: `"WebSearch"`, External: true},
+			},
 		},
 		models.RepoInventory{},
 		false},

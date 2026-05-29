@@ -1,0 +1,36 @@
+policy:
+  id: claude_sdk_shell_safety
+  name: Claude Agent SDK shell invocation safety
+  category: claude_sdk
+  description: >
+    Rules covering tool bodies that spawn OS processes. Process spawn from
+    inside a Claude Agent SDK tool (or an MCP tool the agent can call) exposes
+    the OS shell to the model with no SDK-level sandbox.
+
+rules:
+  - id: CSDK-108
+    title: Tool body spawns a subprocess
+    severity: high
+    confidence: 0.7
+    language: python
+    applies_to:
+      - claude_sdk_tool
+      - mcp_tool
+    scope: tool
+    match:
+      has_shell_call: true
+    explanation: >
+      The tool body spawns an OS process (subprocess.*, os.system, os.popen, or
+      os.spawn*). Exposing process spawn to a model is a wide attack surface:
+      command injection if any argument flows from the model into a shell
+      string, arbitrary execution if the command itself is model-supplied, and
+      unbounded resource use with no timeout. The Claude Agent SDK provides no
+      sandbox for tool code; the subprocess inherits the host's filesystem,
+      environment, and network credentials. Some tools legitimately shell out,
+      so this is a strong signal to review, not an automatic defect.
+    fix: >
+      Prefer a typed library API over shelling out (e.g. shutil for file ops). If
+      subprocess is required, pass argv as a list (never shell=True), set
+      timeout=, route through an explicit command allow-list, and run the agent
+      under an OS sandbox. Keep shell-invoking logic out of model-callable tools
+      where possible.

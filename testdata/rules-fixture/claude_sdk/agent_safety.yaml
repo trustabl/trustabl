@@ -44,7 +44,7 @@ rules:
       - claude_agent_definition
     scope: agent
     match:
-      agent_uses_hosted_tool_class:
+      agent_grants_builtin_tool:
         - WebSearch
     explanation: >
       This AgentDefinition grants the built-in WebSearch tool, giving the
@@ -60,3 +60,85 @@ rules:
       PreToolUse hook that validates the search query before it executes, and
       ensure the lead agent that dispatches this subagent validates task
       descriptions before passing them down.
+
+  - id: CSDK-103
+    title: AgentDefinition sets permissionMode to bypassPermissions
+    severity: high
+    confidence: 0.9
+    language: python
+    applies_to:
+      - claude_agent_definition
+    scope: agent
+    match:
+      agent_kwarg_value:
+        kwarg: permissionMode
+        value: bypassPermissions
+    explanation: >
+      This AgentDefinition sets permissionMode="bypassPermissions", which
+      disables the SDK's interactive approval gate for every tool the subagent
+      runs. Subagents are dispatched autonomously by a lead agent in response to
+      model-generated task descriptions, so a prompt-injected or mis-scoped task
+      reaches the subagent's tools — including Bash, Write, and Edit — with no
+      human in the loop and no per-call confirmation. This is the single
+      highest-impact Claude-specific misconfiguration: it removes the one control
+      that stands between model output and real side effects.
+    fix: >
+      Remove permissionMode="bypassPermissions" unless this subagent runs in a
+      fully sandboxed, non-interactive context you control (e.g. CI with no
+      secrets or network). If autonomous operation is required, pair it with a
+      PreToolUse hook that allowlists exactly the commands and paths the subagent
+      may touch, and prefer a restrictive mode ("default"/"acceptEdits") scoped
+      to a minimal tool set.
+
+  - id: CSDK-104
+    title: Claude subagent is granted filesystem-write built-ins
+    severity: high
+    confidence: 0.8
+    language: python
+    applies_to:
+      - claude_agent_definition
+    scope: agent
+    match:
+      agent_grants_builtin_tool:
+        - Write
+        - Edit
+        - MultiEdit
+        - NotebookEdit
+    explanation: >
+      This AgentDefinition grants a filesystem-write built-in (Write, Edit,
+      MultiEdit, or NotebookEdit), letting the subagent modify files on disk.
+      Subagents are dispatched autonomously; a prompt-injected or mis-scoped
+      task can drive the subagent to rewrite source, configuration, or even the
+      .claude/settings.json that governs the agent's own permissions. Write
+      access is comparable blast radius to shell execution (CSDK-101) and is not
+      gated by any guardrail mechanism on AgentDefinition itself.
+    fix: >
+      Remove the write built-ins from this subagent's tools list unless file
+      mutation is essential to its job. If it is essential, scope the writable
+      area with add_dirs / cwd, gate writes with a PreToolUse hook, and never
+      pair broad write access with permission_mode="bypassPermissions".
+
+  - id: CSDK-105
+    title: Claude subagent is granted the WebFetch tool
+    severity: high
+    confidence: 0.75
+    language: python
+    applies_to:
+      - claude_agent_definition
+    scope: agent
+    match:
+      agent_grants_builtin_tool:
+        - WebFetch
+    explanation: >
+      This AgentDefinition grants the built-in WebFetch tool, which retrieves a
+      model-chosen URL and feeds its content back into the agent loop. Unlike
+      WebSearch (CSDK-102), WebFetch takes a direct URL, so it is both a
+      prompt-injection vector (attacker-controlled page content re-enters the
+      loop) and a server-side request forgery surface (the model can point it at
+      internal addresses). Fetched content is untrusted external data with no
+      SDK-level filtering.
+    fix: >
+      Remove "WebFetch" from this subagent's tools list unless fetching is
+      essential. If it is essential, gate it with a PreToolUse hook that
+      allowlists permitted hosts/URLs and blocks internal address ranges, and
+      validate the task descriptions the lead agent passes down.
