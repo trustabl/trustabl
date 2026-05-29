@@ -639,6 +639,18 @@ func TestPredAgentUsesToolKind(t *testing.T) {
 	if rules.PredAgentUsesToolKind([]string{"mcp_tool"}, a, inv) {
 		t.Error("expected no match")
 	}
+
+	// E2: a hosted ShellTool (no ToolDef/Kind) maps to shell_invocation.
+	hosted := models.AgentDef{Language: models.LanguagePython,
+		HostedToolRefs: []models.HostedToolRef{{Class: "ShellTool"}}}
+	if !rules.PredAgentUsesToolKind([]string{"shell_invocation"}, hosted, inv) {
+		t.Error("expected hosted ShellTool to match shell_invocation kind")
+	}
+	webOnly := models.AgentDef{Language: models.LanguagePython,
+		HostedToolRefs: []models.HostedToolRef{{Class: "WebSearchTool"}}}
+	if rules.PredAgentUsesToolKind([]string{"shell_invocation"}, webOnly, inv) {
+		t.Error("expected hosted WebSearchTool NOT to match shell_invocation")
+	}
 }
 
 func TestPredAgentHandoffToClass(t *testing.T) {

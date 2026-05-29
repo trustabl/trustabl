@@ -703,6 +703,16 @@ var policyAgentRuleCases = []policyAgentCase{
 		},
 		models.RepoInventory{},
 		true},
+	// E2: a hosted ShellTool (no ToolDef) now satisfies the shell-tool clause.
+	{"OAI-101 fires when no guardrails and has a hosted ShellTool", "OAI-101",
+		models.AgentDef{
+			SDK:            models.SDKOpenAIAgents,
+			Class:          "Agent",
+			Language:       models.LanguagePython,
+			HostedToolRefs: []models.HostedToolRef{{Class: "ShellTool"}},
+		},
+		models.RepoInventory{},
+		true},
 	{"OAI-101 silent when input_guardrails present", "OAI-101",
 		models.AgentDef{
 			SDK:      models.SDKOpenAIAgents,

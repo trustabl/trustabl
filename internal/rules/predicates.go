@@ -600,6 +600,19 @@ func PredAgentKwargValue(expr AgentKwargValueExpr, a models.AgentDef) bool {
 	return raw == expr.Value
 }
 
+// hostedClassToKind maps hosted-tool classes to the synthetic ToolKind they
+// represent. Hosted tools have no ToolDef (and thus no Kind), so without this
+// agent_uses_tool_kind:[shell_invocation] would miss an agent wired with a
+// hosted ShellTool / CodeInterpreterTool / BashTool — the shapes OAI-101/104
+// promise to catch (documented gap (c)).
+var hostedClassToKind = map[string]string{
+	"ShellTool":           "shell_invocation",
+	"LocalShellTool":      "shell_invocation",
+	"CodeInterpreterTool": "shell_invocation",
+	"ApplyPatchTool":      "shell_invocation",
+	"BashTool":            "shell_invocation", // Google ADK
+}
+
 func PredAgentUsesToolKind(kinds []string, a models.AgentDef, inv models.RepoInventory) bool {
 	for _, ref := range a.ToolRefs {
 		if ref.Resolved == nil {
@@ -607,6 +620,19 @@ func PredAgentUsesToolKind(kinds []string, a models.AgentDef, inv models.RepoInv
 		}
 		for _, k := range kinds {
 			if string(ref.Resolved.Kind) == k {
+				return true
+			}
+		}
+	}
+	// Hosted tools carry no ToolDef; map their class to a synthetic kind so a
+	// hosted ShellTool etc. still satisfies agent_uses_tool_kind.
+	for _, ref := range a.HostedToolRefs {
+		hk, ok := hostedClassToKind[ref.Class]
+		if !ok {
+			continue
+		}
+		for _, k := range kinds {
+			if hk == k {
 				return true
 			}
 		}
