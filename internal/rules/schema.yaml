@@ -147,7 +147,9 @@ rules:
 #   has_typed_params:       at least one parameter is type-annotated
 #   has_raise:              body contains a `raise` statement
 #   has_try_except:         body contains a try/except block
-#   has_shell_call:         body calls subprocess.* / os.system / os.popen
+#   has_shell_call:         body calls subprocess.* / os.system / os.popen / os.spawn*
+#   has_code_exec_call:     body calls the eval/exec/compile builtins (bare callee,
+#                           so re.compile and other attribute calls are not flagged)
 #   has_write_call:         body opens a file 'w'/'a'/'x', or shutil.copy/copy2/move/rmtree
 #   has_dynamic_url_call:   HTTP call where the URL is a non-literal (param/f-string)
 #   always:                 sentinel — `false` matches nothing; `true` is a no-op

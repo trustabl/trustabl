@@ -58,7 +58,39 @@ func PredHasShellCall(t models.ToolDef, pf analysis.ParsedFile) bool {
 			return true
 		}
 		c := astutil.NodeText(fn, pf.Source)
-		if strings.HasPrefix(c, "subprocess.") || c == "os.system" || c == "os.popen" {
+		if strings.HasPrefix(c, "subprocess.") || c == "os.system" || c == "os.popen" ||
+			strings.HasPrefix(c, "os.spawn") {
+			found = true
+			return false
+		}
+		return true
+	})
+	return found
+}
+
+// PredHasCodeExecCall reports whether the tool body invokes Python's dynamic
+// code-execution builtins (eval/exec/compile). It matches the bare builtin
+// callee only, so safe attribute calls like re.compile are not flagged — the
+// false positive that substring matching on "compile(" cannot avoid.
+func PredHasCodeExecCall(t models.ToolDef, pf analysis.ParsedFile) bool {
+	root := analysis.FindFunctionNode(t, pf)
+	if root == nil {
+		return false
+	}
+	found := false
+	astutil.Walk(root, func(n *sitter.Node) bool {
+		if found {
+			return false
+		}
+		if n.Type() != "call" {
+			return true
+		}
+		fn := n.ChildByFieldName("function")
+		if fn == nil {
+			return true
+		}
+		switch astutil.NodeText(fn, pf.Source) {
+		case "eval", "exec", "compile":
 			found = true
 			return false
 		}

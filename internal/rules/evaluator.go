@@ -201,6 +201,9 @@ func (e MatchExpr) EvaluateTool(t models.ToolDef, pf analysis.ParsedFile) bool {
 	if e.HasShellCall != nil && PredHasShellCall(t, pf) != *e.HasShellCall {
 		return false
 	}
+	if e.HasCodeExecCall != nil && PredHasCodeExecCall(t, pf) != *e.HasCodeExecCall {
+		return false
+	}
 	if e.HasWriteCall != nil && PredHasWriteCall(t, pf) != *e.HasWriteCall {
 		return false
 	}
@@ -257,6 +260,7 @@ var predicatesByScope = map[models.Scope]map[string]bool{
 	models.ScopeTool: {
 		"has_docstring": true, "has_params": true, "has_typed_params": true,
 		"has_raise": true, "has_try_except": true, "has_shell_call": true,
+		"has_code_exec_call": true,
 		"has_write_call": true, "has_dynamic_url_call": true,
 		"name_in": true, "name_has_prefix": true, "has_body_text": true,
 		"param_name_matches": true, "call_without_kwarg": true,
@@ -298,6 +302,7 @@ func (e MatchExpr) setPredicateNames() []string {
 	add(e.HasRaise != nil, "has_raise")
 	add(e.HasTryExcept != nil, "has_try_except")
 	add(e.HasShellCall != nil, "has_shell_call")
+	add(e.HasCodeExecCall != nil, "has_code_exec_call")
 	add(e.HasWriteCall != nil, "has_write_call")
 	add(e.HasDynamicURLCall != nil, "has_dynamic_url_call")
 	add(len(e.NameIn) > 0, "name_in")

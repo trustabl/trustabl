@@ -271,6 +271,75 @@ def run(cmd: str) -> str:
 	}
 }
 
+func TestPred_HasShellCall_OsSpawn(t *testing.T) {
+	// os.spawn* spawns a process just like subprocess/os.system; the predicate
+	// must catch the whole os.spawn family, not only system/popen.
+	tool, pf := parsePy(t, `
+import os
+def run(cmd: str) -> str:
+    """Run."""
+    os.spawnl(os.P_WAIT, "/bin/ls", "ls")
+    return "done"
+`, models.KindShellInvocation)
+	if !rules.PredHasShellCall(tool, pf) {
+		t.Error("expected HasShellCall true for os.spawnl")
+	}
+}
+
+func TestPred_HasCodeExecCall_True(t *testing.T) {
+	for _, src := range []string{
+		"\ndef t(x: str):\n    \"\"\"d.\"\"\"\n    return eval(x)\n",
+		"\ndef t(x: str):\n    \"\"\"d.\"\"\"\n    exec(x)\n",
+		"\ndef t(x: str):\n    \"\"\"d.\"\"\"\n    return compile(x, \"<s>\", \"exec\")\n",
+	} {
+		tool, pf := parsePy(t, src, models.KindOpenAITool)
+		if !rules.PredHasCodeExecCall(tool, pf) {
+			t.Errorf("expected HasCodeExecCall true for: %q", src)
+		}
+	}
+}
+
+func TestPred_HasCodeExecCall_ReCompileIsSafe(t *testing.T) {
+	// re.compile is a safe stdlib call. The structured predicate matches the
+	// bare builtin `compile`, not the `re.compile` attribute call — this is the
+	// false positive that substring matching on "compile(" cannot avoid.
+	tool, pf := parsePy(t, `
+import re
+def t(pattern: str):
+    """d."""
+    return re.compile(pattern)
+`, models.KindOpenAITool)
+	if rules.PredHasCodeExecCall(tool, pf) {
+		t.Error("expected HasCodeExecCall false for re.compile")
+	}
+}
+
+func TestPred_HasCodeExecCall_None(t *testing.T) {
+	tool, pf := parsePy(t, `
+def t(x: str) -> str:
+    """d."""
+    return x.upper()
+`, models.KindOpenAITool)
+	if rules.PredHasCodeExecCall(tool, pf) {
+		t.Error("expected HasCodeExecCall false")
+	}
+}
+
+func TestEvaluateTool_DispatchesHasCodeExecCall(t *testing.T) {
+	// Guards that EvaluateTool actually wires the predicate — a field present in
+	// the scope maps but not dispatched would be a silent no-op.
+	tool, pf := parsePy(t, `
+def t(x: str):
+    """d."""
+    return eval(x)
+`, models.KindOpenAITool)
+	tru := true
+	expr := rules.MatchExpr{HasCodeExecCall: &tru}
+	if !expr.EvaluateTool(tool, pf) {
+		t.Error("EvaluateTool should dispatch has_code_exec_call and match eval()")
+	}
+}
+
 func TestPred_HasShellCall_False(t *testing.T) {
 	tool, pf := parsePy(t, `
 def foo(x: str) -> str:
