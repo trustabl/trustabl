@@ -357,3 +357,41 @@ func (e MatchExpr) outOfScopePredicates(scope models.Scope) []string {
 	}
 	return bad
 }
+
+// isEmpty reports whether the expression sets no combinator and no predicate
+// (including `always`). An empty top-level match is a valid singleton (matches
+// vacuously, gated only by applies_to); an empty expression *inside* a `not:`
+// is a degenerate footgun (see degenerateCombinators).
+func (e MatchExpr) isEmpty() bool {
+	return e.All == nil && e.Any == nil && e.Not == nil &&
+		e.Always == nil && len(e.setPredicateNames()) == 0
+}
+
+// degenerateCombinators returns descriptions of meaningless combinators in the
+// match tree: an empty `all:`/`any:` list (a present-but-empty sequence, not an
+// absent one) and a `not:` wrapping an empty expression. `any: []` vacuously
+// passes today — matching everything, the opposite of "at least one of these" —
+// and `not: {}` is always false; both are authoring mistakes, so the loader
+// rejects them rather than silently mis-evaluating. Recurses through all/any/not.
+func (e MatchExpr) degenerateCombinators() []string {
+	var bad []string
+	if e.All != nil && len(e.All) == 0 {
+		bad = append(bad, "empty all")
+	}
+	if e.Any != nil && len(e.Any) == 0 {
+		bad = append(bad, "empty any")
+	}
+	if e.Not != nil && e.Not.isEmpty() {
+		bad = append(bad, "not over an empty expression")
+	}
+	for _, sub := range e.All {
+		bad = append(bad, sub.degenerateCombinators()...)
+	}
+	for _, sub := range e.Any {
+		bad = append(bad, sub.degenerateCombinators()...)
+	}
+	if e.Not != nil {
+		bad = append(bad, e.Not.degenerateCombinators()...)
+	}
+	return bad
+}

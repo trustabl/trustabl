@@ -30,7 +30,7 @@ policy:
 
   name: Network call hygiene                # REQUIRED. Human title. Reserved for future UX surfaces.
 
-  category: claude_sdk                      # REQUIRED. Allowed: claude_sdk | openai_sdk | openshell.
+  category: claude_sdk                      # REQUIRED. Allowed: claude_sdk | openai_sdk | google_adk | openshell.
                                             # Inherited by every rule in this file.
 
   description: >                            # REQUIRED. Multi-line ok. Describe the policy's intent.
@@ -61,12 +61,14 @@ rules:
                                             # the corresponding language parser ships. Future TS/JS/Go
                                             # rules MUST set this explicitly.
 
-    applies_to:                             # REQUIRED. Non-empty list of ToolKind strings:
+    applies_to:                             # REQUIRED. Non-empty list of kind strings (tool scope shown):
       - claude_sdk_tool                     #   claude_sdk_tool   — @tool / @claude_tool / claude_agent_sdk
       - mcp_tool                            #   openai_tool       — OpenAI Agents SDK @function_tool
                                             #   mcp_tool          — @server.tool / @mcp.tool / .register_tool
+                                            #   adk_function_tool — Google ADK FunctionTool-wrapped function
                                             #   shell_invocation  — bare functions calling subprocess.* / os.system
                                             #   unknown           — fallback; rarely useful
+                                            # (agent/subagent/repo scopes accept different kinds — see scope below.)
                                             #
                                             # Be honest about scope: a rule's explanation/fix text
                                             # often references a specific SDK ("the Claude Agent SDK
@@ -78,14 +80,17 @@ rules:
     scope: tool                             # REQUIRED. One of: tool | agent | repo | subagent.
                                             #   tool  — fires per ToolDef. Input: a ToolDef + ParsedFile.
                                             #           applies_to accepts: claude_sdk_tool, openai_tool,
-                                            #           mcp_tool, shell_invocation, unknown.
-                                            #   agent — fires per AgentDef (Agent/SandboxAgent/AgentDefinition
-                                            #           constructor call). applies_to accepts: openai_agent,
-                                            #           openai_sandbox_agent, claude_agent_definition.
+                                            #           mcp_tool, adk_function_tool, shell_invocation, unknown.
+                                            #   agent — fires per AgentDef (Agent/SandboxAgent/AgentDefinition/
+                                            #           ADK/query() constructor call). applies_to accepts:
+                                            #           openai_agent, openai_sandbox_agent,
+                                            #           claude_agent_definition, claude_query_main,
+                                            #           adk_llm_agent, adk_sequential_agent, adk_parallel_agent,
+                                            #           adk_loop_agent, adk_langgraph_agent.
                                             #   subagent — fires per Claude Code subagent. applies_to accepts:
                                             #           claude_subagent.
                                             #   repo  — fires once per scan. applies_to accepts:
-                                            #           claude_sdk, openai_agents, openshell, mcp.
+                                            #           claude_sdk, openai_agents, google_adk, openshell, mcp.
 
     match:                                  # REQUIRED. Predicate expression. See the reference section
                                             # below the example for the full vocabulary.

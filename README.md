@@ -245,8 +245,12 @@ own automation.
 `--format sarif` emits a SARIF 2.1.0 document, suitable for
 `github/codeql-action/upload-sarif` and other SARIF-aware tools.
 
-`--format json` and `--format sarif` are progress-silent. All three
-formats are byte-stable across identical-input runs.
+`--format json` and `--format sarif` are progress-silent and byte-stable
+across identical-input runs (pure functions of the `ScanResult`). The human
+format is not byte-stable by design: its ANSI color is auto-detected from the
+terminal (TTY vs pipe, `NO_COLOR`), so the same scan can render with or without
+color. Use `--no-color`, or diff the JSON/SARIF output, when byte-stability
+matters.
 
 Exit codes:
 - `0` — no findings ≥ medium severity (or no findings at all).
