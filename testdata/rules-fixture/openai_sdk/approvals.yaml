@@ -40,3 +40,32 @@ rules:
       resulting approval items in your run loop. If approval is intentionally
       automated for a trusted tool, gate the tool at the agent level
       (input_guardrails) instead and document the decision.
+
+  - id: OAI-111
+    title: Agent wires ShellTool without needs_approval
+    severity: high
+    confidence: 0.75
+    language: python
+    applies_to:
+      - openai_agent
+      - openai_sandbox_agent
+    scope: agent
+    match:
+      all:
+        - agent_uses_hosted_tool_class: [ShellTool]
+        - not:
+            agent_hosted_tool_kwarg_value:
+              class: ShellTool
+              kwarg: needs_approval
+              value: "True"
+    explanation: >
+      This agent wires the hosted ShellTool, which executes shell commands the
+      model chooses, but does not set needs_approval=True on it. ShellTool's
+      needs_approval defaults to False, so without an explicit opt-in the model
+      can run commands with no human checkpoint. needs_approval is the SDK's
+      human-in-the-loop gate for exactly this class of tool.
+    fix: >
+      Construct the ShellTool with needs_approval=True and handle the resulting
+      approval items in your run loop, or wrap the agent with input_guardrails
+      that screen what can reach the shell. Prefer SandboxAgent to confine the
+      commands the tool can run.

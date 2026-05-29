@@ -9,29 +9,31 @@ policy:
 
 rules:
   - id: ADK-008
-    title: BashTool missing shell metacharacter blocking
+    title: Agent grants BashTool with no restrictive command policy
     severity: high
-    confidence: 0.9
+    confidence: 0.75
     language: python
     applies_to:
-      - adk_function_tool
-    scope: tool
+      - adk_llm_agent
+    scope: agent
     match:
       all:
-        - name_in:
-            - BashTool
+        - agent_uses_hosted_tool_class: [BashTool]
         - not:
-            tool_decorator_kwarg_value:
-              kwarg: block_shell_metacharacters
-              value: "True"
+            agent_hosted_tool_kwarg_present:
+              class: BashTool
+              kwarg: policy
     explanation: >
-      BashTool executes shell commands on behalf of the model. Without
-      block_shell_metacharacters=True, model-supplied input can contain shell
-      metacharacters (;, |, &&, $(...), backticks) that rewrite the intended
-      command into an arbitrary shell injection. This parameter was added in
-      google-adk v1.34 and defaults to False — omitting it leaves the shell
-      fully injectable.
+      This LlmAgent grants BashTool with no explicit policy=. BashTool runs
+      shell commands chosen by the model, and its BashToolPolicy defaults to
+      allowed_command_prefixes=("*",) (every command) and blocked_operators=()
+      (no shell metacharacters blocked) — i.e. fully injectable. Without a
+      restrictive policy, model-supplied input reaches the shell with no
+      command allow-list and no operator filtering. (Earlier google-adk exposed
+      a block_shell_metacharacters kwarg; current ADK gates this through
+      BashToolPolicy instead.)
     fix: >
-      Pass block_shell_metacharacters=True to the BashTool constructor. If the
-      tool legitimately needs metacharacters for a specific use case, document
-      the threat model and pair it with an explicit command allowlist.
+      Construct BashTool with a restrictive policy=BashToolPolicy(...): set
+      allowed_command_prefixes to the specific commands the agent needs and
+      blocked_operators to deny shell metacharacters. Pair with a
+      before_tool_callback that validates the command before execution.

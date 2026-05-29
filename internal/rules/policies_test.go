@@ -545,17 +545,8 @@ def fetch_order(order_id: str) -> dict:
     return {}
 `, nil, false},
 
-	// ─── ADK-008 BashTool metacharacter blocking ─────────────────────────────
-	{"ADK-008 fires when block_shell_metacharacters not set", "ADK-008", models.KindADKFunctionTool, `
-def BashTool(command: str) -> str:
-    """Run a shell command."""
-    return ""
-`, nil, true},
-	{"ADK-008 silent when block_shell_metacharacters=True", "ADK-008", models.KindADKFunctionTool, `
-def BashTool(command: str) -> str:
-    """Run a shell command."""
-    return ""
-`, map[string]string{"block_shell_metacharacters": "True"}, false},
+	// ADK-008 moved to agent scope (BashTool is a hosted tool on an LlmAgent) —
+	// see policyAgentRuleCases.
 
 	// ─── OAI-010 FP-safety: structured has_print_call ignores pprint ──────────
 	{"OAI-010 silent on pprint (not the print builtin)", "OAI-010", models.KindOpenAITool, `
@@ -1332,6 +1323,68 @@ var policyAgentRuleCases = []policyAgentCase{
 				"name":                 {Value: &models.Expr{Kind: models.ExprLiteralString, Text: `"root"`}},
 				"before_tool_callback": {Value: &models.Expr{Kind: models.ExprNameRef, Text: "guard"}},
 			}},
+		},
+		models.RepoInventory{},
+		false},
+
+	// ─── ADK-008 BashTool without a restrictive policy (E1 hosted-kwarg) ─────
+	{"ADK-008 fires when BashTool has no policy", "ADK-008",
+		models.AgentDef{
+			SDK:      models.SDKGoogleADK,
+			Class:    "LlmAgent",
+			Language: models.LanguagePython,
+			Name:     "ops",
+			HostedToolRefs: []models.HostedToolRef{
+				{Class: "BashTool", Resolved: &models.HostedToolDef{Class: "BashTool"}},
+			},
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"name": {Value: &models.Expr{Kind: models.ExprLiteralString, Text: `"ops"`}},
+			}},
+		},
+		models.RepoInventory{},
+		true},
+	{"ADK-008 silent when BashTool has a policy", "ADK-008",
+		models.AgentDef{
+			SDK:      models.SDKGoogleADK,
+			Class:    "LlmAgent",
+			Language: models.LanguagePython,
+			Name:     "ops",
+			HostedToolRefs: []models.HostedToolRef{
+				{Class: "BashTool", Resolved: &models.HostedToolDef{Class: "BashTool",
+					Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+						"policy": {Value: &models.Expr{Kind: models.ExprNameRef, Text: "my_policy"}},
+					}}}},
+			},
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"name": {Value: &models.Expr{Kind: models.ExprLiteralString, Text: `"ops"`}},
+			}},
+		},
+		models.RepoInventory{},
+		false},
+
+	// ─── OAI-111 ShellTool without needs_approval (E1 hosted-kwarg) ──────────
+	{"OAI-111 fires when ShellTool has no needs_approval", "OAI-111",
+		models.AgentDef{
+			SDK:      models.SDKOpenAIAgents,
+			Class:    "Agent",
+			Language: models.LanguagePython,
+			HostedToolRefs: []models.HostedToolRef{
+				{Class: "ShellTool", Resolved: &models.HostedToolDef{Class: "ShellTool"}},
+			},
+		},
+		models.RepoInventory{},
+		true},
+	{"OAI-111 silent when ShellTool sets needs_approval=True", "OAI-111",
+		models.AgentDef{
+			SDK:      models.SDKOpenAIAgents,
+			Class:    "Agent",
+			Language: models.LanguagePython,
+			HostedToolRefs: []models.HostedToolRef{
+				{Class: "ShellTool", Resolved: &models.HostedToolDef{Class: "ShellTool",
+					Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+						"needs_approval": {Value: &models.Expr{Kind: models.ExprLiteralBool, Text: "True"}},
+					}}}},
+			},
 		},
 		models.RepoInventory{},
 		false},
