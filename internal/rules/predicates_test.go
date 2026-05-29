@@ -340,6 +340,46 @@ def t(x: str):
 	}
 }
 
+func TestPred_HasPrintCall_True(t *testing.T) {
+	tool, pf := parsePy(t, `
+def t(x: str):
+    """d."""
+    print("debug", x)
+    return x
+`, models.KindOpenAITool)
+	if !rules.PredHasPrintCall(tool, pf) {
+		t.Error("expected HasPrintCall true for print()")
+	}
+}
+
+func TestPred_HasPrintCall_PprintIsSafe(t *testing.T) {
+	// pprint() contains the substring "print(" but is a distinct callee. The
+	// structured predicate matches the bare `print` builtin, not any callee
+	// whose text happens to contain "print(" — the false positive that
+	// substring matching cannot avoid.
+	tool, pf := parsePy(t, `
+from pprint import pprint
+def t(x: dict):
+    """d."""
+    pprint(x)
+    return x
+`, models.KindOpenAITool)
+	if rules.PredHasPrintCall(tool, pf) {
+		t.Error("expected HasPrintCall false for pprint()")
+	}
+}
+
+func TestPred_HasPrintCall_None(t *testing.T) {
+	tool, pf := parsePy(t, `
+def t(x: str) -> str:
+    """d."""
+    return x.upper()
+`, models.KindOpenAITool)
+	if rules.PredHasPrintCall(tool, pf) {
+		t.Error("expected HasPrintCall false")
+	}
+}
+
 func TestPred_HasShellCall_False(t *testing.T) {
 	tool, pf := parsePy(t, `
 def foo(x: str) -> str:

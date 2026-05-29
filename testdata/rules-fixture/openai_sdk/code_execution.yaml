@@ -17,10 +17,7 @@ rules:
       - openai_tool
     scope: tool
     match:
-      has_body_text:
-        - exec(
-        - eval(
-        - compile(
+      has_code_exec_call: true
     explanation: >
       The @function_tool body invokes Python's eval, exec, or compile. When
       any portion of the input flows from the model (directly or via session

@@ -150,6 +150,8 @@ rules:
 #   has_shell_call:         body calls subprocess.* / os.system / os.popen / os.spawn*
 #   has_code_exec_call:     body calls the eval/exec/compile builtins (bare callee,
 #                           so re.compile and other attribute calls are not flagged)
+#   has_print_call:         body calls the print builtin (bare callee, so pprint and
+#                           other callees containing "print" are not flagged)
 #   has_write_call:         body opens a file 'w'/'a'/'x', or shutil.copy/copy2/move/rmtree
 #   has_dynamic_url_call:   HTTP call where the URL is a non-literal (param/f-string)
 #   always:                 sentinel — `false` matches nothing; `true` is a no-op
@@ -165,9 +167,14 @@ rules:
 #       Tool name (case-insensitive) starts with any listed prefix.
 #
 #   has_body_text: [substring, substring, ...]
-#       The function body's raw text contains any listed substring. Use
-#       sparingly — substring matching is brittle vs AST-based predicates.
-#       Useful when you need to detect a known constant by name.
+#       The function body's raw text contains any listed substring.
+#       DISCOURAGED last resort — substring matching is brittle (it false-
+#       positives on comments, docstrings, and callees whose text merely
+#       contains the needle, e.g. "print(" matches "pprint("). Prefer a
+#       structured AST predicate (has_shell_call, has_code_exec_call,
+#       has_print_call, call_without_kwarg, …); add a new Pred* if none fits.
+#       No shipped rule uses this today. Reserved for a known constant that
+#       has no structural signature.
 #
 #
 # ━━━ NESTED STRUCT PREDICATES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

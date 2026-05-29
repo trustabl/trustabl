@@ -556,6 +556,37 @@ def BashTool(command: str) -> str:
     """Run a shell command."""
     return ""
 `, map[string]string{"block_shell_metacharacters": "True"}, false},
+
+	// ─── OAI-010 FP-safety: structured has_print_call ignores pprint ──────────
+	{"OAI-010 silent on pprint (not the print builtin)", "OAI-010", models.KindOpenAITool, `
+from pprint import pprint
+def fetch(x: dict) -> dict:
+    """Fetch."""
+    pprint(x)
+    return x
+`, nil, false},
+
+	// ─── OAI-013 FP-safety: structured has_code_exec_call ignores re.compile ──
+	{"OAI-013 silent on re.compile (not the compile builtin)", "OAI-013", models.KindOpenAITool, `
+import re
+def build(pattern: str):
+    """Build."""
+    return re.compile(pattern)
+`, nil, false},
+
+	// ─── mcp_tool scope restored on CSDK tool-hygiene rules ──────────────────
+	// CSDK-001/002/003/007 apply to [claude_sdk_tool, mcp_tool]; these cases
+	// exercise the mcp_tool half that the fixture had drifted to drop.
+	{"CSDK-001 fires on MCP tool missing docstring", "CSDK-001", models.KindMCPTool, `
+def fetch_data(x: str) -> dict:
+    return {}
+`, nil, true},
+	{"CSDK-003 fires on MCP tool network call without timeout", "CSDK-003", models.KindMCPTool, `
+import requests
+def get_invoice(id: str) -> dict:
+    """Fetch invoice."""
+    return requests.get("https://api.example.com/invoice/" + id).json()
+`, nil, true},
 }
 
 // policyRepoRuleCases covers repo-scoped rules.

@@ -99,6 +99,36 @@ func PredHasCodeExecCall(t models.ToolDef, pf analysis.ParsedFile) bool {
 	return found
 }
 
+// PredHasPrintCall reports whether the tool body calls the print builtin. It
+// matches the bare `print` callee only, so pprint() and other callees whose
+// text merely contains "print(" are not flagged — the false positive that
+// substring matching cannot avoid.
+func PredHasPrintCall(t models.ToolDef, pf analysis.ParsedFile) bool {
+	root := analysis.FindFunctionNode(t, pf)
+	if root == nil {
+		return false
+	}
+	found := false
+	astutil.Walk(root, func(n *sitter.Node) bool {
+		if found {
+			return false
+		}
+		if n.Type() != "call" {
+			return true
+		}
+		fn := n.ChildByFieldName("function")
+		if fn == nil {
+			return true
+		}
+		if astutil.NodeText(fn, pf.Source) == "print" {
+			found = true
+			return false
+		}
+		return true
+	})
+	return found
+}
+
 func PredHasWriteCall(t models.ToolDef, pf analysis.ParsedFile) bool {
 	root := analysis.FindFunctionNode(t, pf)
 	if root == nil {

@@ -18,15 +18,7 @@ rules:
       - openai_tool
     scope: tool
     match:
-      has_body_text:
-        - subprocess.run(
-        - subprocess.Popen(
-        - subprocess.call(
-        - subprocess.check_output(
-        - subprocess.check_call(
-        - os.system(
-        - os.popen(
-        - os.spawn
+      has_shell_call: true
     explanation: >
       The @function_tool body spawns an OS process. Exposing process spawn
       to an LLM is a wide attack surface: command injection if any argument

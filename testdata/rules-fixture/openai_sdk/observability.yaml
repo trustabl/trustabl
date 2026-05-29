@@ -17,8 +17,7 @@ rules:
       - openai_tool
     scope: tool
     match:
-      has_body_text:
-        - print(
+      has_print_call: true
     explanation: >
       The @function_tool body calls print(), which writes diagnostics to the
       process's stdout. The model never sees that output — only the return

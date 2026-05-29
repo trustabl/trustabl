@@ -48,6 +48,7 @@ type MatchExpr struct {
 	HasTryExcept      *bool `yaml:"has_try_except,omitempty"`
 	HasShellCall      *bool `yaml:"has_shell_call,omitempty"`
 	HasCodeExecCall   *bool `yaml:"has_code_exec_call,omitempty"`
+	HasPrintCall      *bool `yaml:"has_print_call,omitempty"`
 	HasWriteCall      *bool `yaml:"has_write_call,omitempty"`
 	HasDynamicURLCall *bool `yaml:"has_dynamic_url_call,omitempty"`
 	Always            *bool `yaml:"always,omitempty"`
