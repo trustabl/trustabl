@@ -47,25 +47,46 @@ type Config struct {
 // Run executes the full pipeline. The returned ScanResult is what gets
 // JSON-serialized for CI output and what the Renderer prints for humans.
 func Run(cfg Config) (models.ScanResult, error) {
-	src, err := ingestion.Resolve(cfg.Target)
+	rep := cfg.Progress
+	if rep == nil {
+		rep = progress.NewNop()
+	}
+
+	// Step 0: resolve the target. For a remote target this shallow-clones to a
+	// temp dir — potentially the longest single wait of the whole scan, and the
+	// one step with no files to tick — so report it as its own spinner phase.
+	// Local targets resolve instantly and get no phase.
+	remote := ingestion.IsRemote(cfg.Target)
+	if remote {
+		// Name the repo in the live label; the plumbing fetch then drives an
+		// accurate "receiving objects N/M" bar under this phase (rep satisfies
+		// ingestion.CloneProgress).
+		rep.StartPhase("clone", "Cloning "+cfg.Target)
+	}
+	var prog ingestion.CloneProgress
+	if remote {
+		prog = rep
+	}
+	src, err := ingestion.Resolve(cfg.Target, prog)
 	if err != nil {
+		if remote {
+			rep.Fatal(err)
+		}
 		return models.ScanResult{}, fmt.Errorf("ingest: %w", err)
 	}
 	defer src.Cleanup()
+	if remote {
+		rep.EndPhase(cfg.Target)
+	}
 
 	repoLabel := src.RemoteURL
 	if repoLabel == "" {
 		repoLabel = src.RootPath
 	}
 
-	rep := cfg.Progress
-	if rep == nil {
-		rep = progress.NewNop()
-	}
-
 	// Step 1: recon (cheap, no AST)
 	rep.StartPhase("recon", "Recon")
-	profile, err := ingestion.Recon(src)
+	profile, err := ingestion.Recon(src, func(path string) { rep.Advance(path) })
 	if err != nil {
 		rep.Fatal(err)
 		return models.ScanResult{}, fmt.Errorf("recon: %w", err)

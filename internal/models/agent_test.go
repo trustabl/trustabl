@@ -93,4 +93,3 @@ func TestMCPServerDef_Language_RoundTripsThroughJSON(t *testing.T) {
 		t.Errorf("language: got %q, want %q", got.Language, models.LanguageTypeScript)
 	}
 }
-

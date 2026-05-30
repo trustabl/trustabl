@@ -10,8 +10,9 @@ import (
 )
 
 // DiscoverTSAgents extracts AgentDef records from TS source. Two shapes:
-//   1. Inline inside query({ options: { agents: { ... } } })
-//   2. Typed-const declarations: const x: AgentDefinition = {...}
+//  1. Inline inside query({ options: { agents: { ... } } })
+//  2. Typed-const declarations: const x: AgentDefinition = {...}
+//
 // (Typed-const shape added in a later task.)
 func DiscoverTSAgents(files []ParsedFile, onFile func(string)) []models.AgentDef {
 	var out []models.AgentDef
@@ -117,9 +118,9 @@ func extractQueryMainAgent(call *sitter.Node, pf ParsedFile) models.AgentDef {
 
 // extractQueryAssignmentName returns a useful identifier for a query() main
 // agent. Tries in order:
-//   1. Immediate `const X = query(...)` (or let/var) binding → "X".
-//   2. Enclosing function/method declaration → "fn" or "Class.method".
-//   3. "" if neither applies (e.g. top-level for-await-of in module scope).
+//  1. Immediate `const X = query(...)` (or let/var) binding → "X".
+//  2. Enclosing function/method declaration → "fn" or "Class.method".
+//  3. "" if neither applies (e.g. top-level for-await-of in module scope).
 //
 // Walks through wrapping parenthesized_expression for case 1. For case 2,
 // walks up the AST stopping at the first function_declaration,

@@ -26,8 +26,8 @@ type Request struct {
 
 // Response is what the router returns. Currently a single text payload.
 type Response struct {
-	Text       string
-	FromCache  bool
+	Text      string
+	FromCache bool
 }
 
 // Router is the single point of inference. It owns the cache and the API key

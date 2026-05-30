@@ -283,10 +283,10 @@ func TestParsePermissionRule_EdgeCases(t *testing.T) {
 	cases := []struct {
 		raw, tool, pattern string
 	}{
-		{"Bash()", "Bash", ""},       // empty parens — not distinguished from bare "Bash"
-		{"mcp__", "", ""},            // bare mcp__ prefix, nothing after — unrecognized
-		{"Bash(unclosed", "", ""},    // malformed — unrecognized, Raw preserved
-		{"", "", ""},                 // empty string
+		{"Bash()", "Bash", ""},    // empty parens — not distinguished from bare "Bash"
+		{"mcp__", "", ""},         // bare mcp__ prefix, nothing after — unrecognized
+		{"Bash(unclosed", "", ""}, // malformed — unrecognized, Raw preserved
+		{"", "", ""},              // empty string
 	}
 	for _, c := range cases {
 		t.Run(c.raw, func(t *testing.T) {

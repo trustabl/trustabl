@@ -41,10 +41,14 @@ func TestNopWritesNothing(t *testing.T) {
 	r.EndPhase("done")
 }
 
-func TestPlainWritesSummaryLinesOnly(t *testing.T) {
+// Plain mode prints a start line per phase (so a long network pre-flight is not
+// a blank screen) and a summary line at the end. Per-item Advance must NOT print
+// (it would flood CI logs).
+func TestPlainWritesStartAndSummaryLines(t *testing.T) {
 	var buf bytes.Buffer
 	r := NewPlain(&buf)
 	r.StartPhase("rules", "Resolving rules")
+	r.SetDetail("fetching x") // must NOT print
 	r.EndPhase("a3a1502 (cached, offline)")
 	r.StartPhase("inventory", "Inventory")
 	r.SetTotal(18)
@@ -52,7 +56,8 @@ func TestPlainWritesSummaryLinesOnly(t *testing.T) {
 	r.EndPhase("7 tools · 2 agents")
 
 	got := buf.String()
-	want := "[rules] a3a1502 (cached, offline)\n[inventory] 7 tools · 2 agents\n"
+	want := "[rules] Resolving rules...\n[rules] a3a1502 (cached, offline)\n" +
+		"[inventory] Inventory...\n[inventory] 7 tools · 2 agents\n"
 	if got != want {
 		t.Errorf("plain output =\n%q\nwant\n%q", got, want)
 	}

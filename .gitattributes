@@ -1,9 +1,24 @@
-# Normalize line endings inside the test mirror of the rules repo so its
-# diff against trustabl-rules (which is LF) shows only real content drift —
-# not CRLF/LF noise from Windows checkouts. Scope is intentionally narrow:
-# rules content is what we cross-check against the live repo; the rest of
-# the engine repo keeps Git's default behavior.
-testdata/rules-fixture/**/*.yaml text eol=lf
-testdata/rules-fixture/**/*.md   text eol=lf
+# Line-ending policy: the engine repo is LF-only for source and docs.
+#
+# Windows editors and tooling readily flip files to CRLF; pinning eol=lf makes
+# that impossible to commit accidentally, so history stays byte-stable across
+# platforms. HEAD is already uniformly LF, so this is enforcement going forward,
+# not a mass rewrite.
+* text=auto
+
+*.go   text eol=lf
+*.md   text eol=lf
+*.yaml text eol=lf
+*.yml  text eol=lf
+*.json text eol=lf
+*.txt  text eol=lf
+*.sh   text eol=lf
+
+# The test mirror of the rules repo must stay byte-for-byte comparable to
+# trustabl-rules (which is LF) so its diff shows only real content drift, not
+# CRLF/LF noise. Covered by the rules above but kept explicit as documentation
+# of why LF matters here specifically.
+testdata/rules-fixture/**/*.yaml     text eol=lf
+testdata/rules-fixture/**/*.md       text eol=lf
 testdata/rules-fixture/manifest.yaml text eol=lf
 internal/sarif/testdata/*.sarif.json text eol=lf

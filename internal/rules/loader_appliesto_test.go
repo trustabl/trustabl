@@ -19,7 +19,7 @@ func TestValidAppliesToForScope_ADKTokens(t *testing.T) {
 		{models.ScopeAgent, "adk_loop_agent", true},
 		{models.ScopeAgent, "adk_langgraph_agent", true},
 		{models.ScopeRepo, "google_adk", true},
-		{models.ScopeTool, "google_adk", false},        // wrong scope
+		{models.ScopeTool, "google_adk", false},         // wrong scope
 		{models.ScopeAgent, "adk_function_tool", false}, // wrong scope
 		// claude_query_main is handled by agentKindMatches (TS QueryMainAgent);
 		// the loader's scope validator must accept it too, else an SP2 rule

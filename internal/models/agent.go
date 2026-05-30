@@ -128,8 +128,8 @@ type HostedToolRef struct {
 //     ("MCPServerStdio" | "MCPServerSse" | "MCPServerStreamableHttp")
 //   - TS:     @anthropic-ai/claude-agent-sdk type defs
 //     ("McpStdioServerConfig" | "McpSSEServerConfig" |
-//      "McpHttpServerConfig" | "McpSdkServerConfigWithInstance" |
-//      "createSdkMcpServer")
+//     "McpHttpServerConfig" | "McpSdkServerConfigWithInstance" |
+//     "createSdkMcpServer")
 type MCPServerDef struct {
 	Class     string     `json:"class"`
 	VarName   string     `json:"var_name,omitempty"` // const-binding name (TS); empty for Python

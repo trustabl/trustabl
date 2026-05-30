@@ -145,20 +145,31 @@ func runScan(target string, f scanFlags) error {
 		return runScanSync(f, cfg, rep)
 	}
 
-	// TTY path: render on the main goroutine, do the job in a goroutine.
+	// TTY path: render on the main goroutine, do the job in a goroutine. The
+	// outcome crosses back over a buffered channel — the receive below is the
+	// explicit happens-before edge that publishes the goroutine's writes to this
+	// goroutine (the buffer means the goroutine never blocks even if we bail on
+	// an interrupt before receiving).
 	rep := progress.NewTTY(os.Stderr)
-	var (
+	type scanOutcome struct {
 		result models.ScanResult
-		jobErr error
-	)
+		err    error
+	}
+	done := make(chan scanOutcome, 1)
 	go func() {
-		jobErr = resolveAndScan(&cfg, f, rep, &result)
+		result, err := resolveAndScan(&cfg, f, rep)
 		rep.Done()
+		done <- scanOutcome{result, err}
 	}()
 	if err := rep.Run(); err != nil {
+		if errors.Is(err, progress.ErrInterrupted) {
+			fmt.Fprintln(os.Stderr, "Scan interrupted.")
+			return exitCodeError{2}
+		}
 		return err
 	}
-	return finishScan(result, jobErr, f)
+	out := <-done
+	return finishScan(out.result, out.err, f)
 }
 
 // pickScanMode maps flags + stderr TTY state to a progress mode.
@@ -169,21 +180,27 @@ func pickScanMode(f scanFlags) progress.Mode {
 
 // runScanSync runs resolution + scan + render inline (plain/nop modes).
 func runScanSync(f scanFlags, cfg scanner.Config, rep progress.Reporter) error {
-	var result models.ScanResult
-	if err := resolveAndScan(&cfg, f, rep, &result); err != nil {
-		return finishScan(result, err, f)
-	}
-	return finishScan(result, nil, f)
+	result, err := resolveAndScan(&cfg, f, rep)
+	return finishScan(result, err, f)
 }
 
 // resolveAndScan resolves rules (reporting a "rules" phase) and runs the scan
-// with the reporter attached. The result is written to *out.
-func resolveAndScan(cfg *scanner.Config, f scanFlags, rep progress.Reporter, out *models.ScanResult) error {
+// with the reporter attached.
+func resolveAndScan(cfg *scanner.Config, f scanFlags, rep progress.Reporter) (models.ScanResult, error) {
 	rep.StartPhase("rules", "Resolving rules")
-	res, err := rulesource.Resolve(rulesConfigFromScan(f), rules.SupportedSchemaVersion)
+	// Resolve makes a network round-trip (and a full clone on a cold cache) with
+	// no internal progress; without a detail line the pre-flight spinner reads as
+	// a blank/frozen screen. Name what it's contacting so the wait is legible.
+	rcfg := rulesConfigFromScan(f)
+	rulesRepo := rcfg.RepoURL
+	if rulesRepo == "" {
+		rulesRepo = rulesource.DefaultRepoURL
+	}
+	rep.SetDetail("fetching " + rulesRepo)
+	res, err := rulesource.Resolve(rcfg, rules.SupportedSchemaVersion)
 	if err != nil {
 		rep.Fatal(err)
-		return err
+		return models.ScanResult{}, err
 	}
 	summary := res.SHA
 	if res.FromCache {
@@ -200,10 +217,9 @@ func resolveAndScan(cfg *scanner.Config, f scanFlags, rep progress.Reporter, out
 	result, err := scanner.Run(*cfg)
 	if err != nil {
 		rep.Fatal(err)
-		return err
+		return models.ScanResult{}, err
 	}
-	*out = result
-	return nil
+	return result, nil
 }
 
 // finishScan turns a job outcome into output + the process exit code.

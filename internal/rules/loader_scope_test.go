@@ -107,8 +107,8 @@ rules:
 `
 	}
 	cases := map[string]string{
-		"empty any": "      any: []",
-		"empty all": "      all: []",
+		"empty any":      "      any: []",
+		"empty all":      "      all: []",
 		"not over empty": `      not: {}`,
 	}
 	for name, block := range cases {

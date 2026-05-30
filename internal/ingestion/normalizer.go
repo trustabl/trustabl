@@ -13,8 +13,11 @@ import (
 // Recon is the recon-step entrypoint. It walks the source tree (cheap, no AST)
 // and returns a typed RepoProfile capturing languages, SDK deps, and the
 // existing ScanManifest.
-func Recon(src *Source) (models.RepoProfile, error) {
-	manifest, err := Normalize(src)
+// onFile, when non-nil, is invoked once per file the recon pass touches — both
+// as the tree is walked and as file bodies are read during component discovery.
+// It is a progress hook only; it must not influence the returned profile.
+func Recon(src *Source, onFile func(string)) (models.RepoProfile, error) {
+	manifest, err := Normalize(src, onFile)
 	if err != nil {
 		return models.RepoProfile{}, err
 	}
@@ -114,7 +117,7 @@ func detectSDKDeps(root string) []models.SDKDep {
 // .tox, .mypy_cache, .pytest_cache) and any other dot-prefixed directory,
 // EXCEPT .claude/ — that's a real agent-config directory we deliberately
 // descend into.
-func Normalize(src *Source) (models.ScanManifest, error) {
+func Normalize(src *Source, onFile func(string)) (models.ScanManifest, error) {
 	manifest := models.ScanManifest{
 		RepoRoot:    src.RootPath,
 		IsRemote:    src.IsRemote,
@@ -144,6 +147,11 @@ func Normalize(src *Source) (models.ScanManifest, error) {
 		// (matters on Windows; everything downstream sees POSIX separators).
 		rel = filepath.ToSlash(rel)
 
+		// Progress: report every file the walk visits.
+		if onFile != nil {
+			onFile(rel)
+		}
+
 		switch {
 		case strings.HasSuffix(path, ".py"):
 			manifest.PythonFiles = append(manifest.PythonFiles, rel)
@@ -169,7 +177,7 @@ func Normalize(src *Source) (models.ScanManifest, error) {
 
 	manifest.HasClaudeSDKDependency = detectClaudeSDKDependency(src.RootPath)
 	manifest.HasOpenShellArtifact = detectOpenShellArtifact(manifest.YAMLFiles, src.RootPath)
-	manifest.Components = discoverComponents(src.RootPath, manifest)
+	manifest.Components = discoverComponents(src.RootPath, manifest, onFile)
 	return manifest, nil
 }
 
@@ -252,7 +260,7 @@ func detectOpenShellArtifact(yamls []string, root string) bool {
 //
 // Patterns are deliberately conservative — better to under-detect a component
 // than to mislabel a generic file as agent infrastructure.
-func discoverComponents(root string, m models.ScanManifest) []models.AgentComponent {
+func discoverComponents(root string, m models.ScanManifest, onFile func(string)) []models.AgentComponent {
 	var out []models.AgentComponent
 
 	// MCP configs: well-known names at any depth.
@@ -377,6 +385,11 @@ func discoverComponents(root string, m models.ScanManifest) []models.AgentCompon
 	// positive risk (e.g. a comment containing "AgentDefinition(") in
 	// exchange for not parsing every Python file twice.
 	for _, p := range m.PythonFiles {
+		// Progress: reading every Python body is the measured slow span of recon
+		// on large repos — report each so the counter keeps moving here.
+		if onFile != nil {
+			onFile(p)
+		}
 		b, err := os.ReadFile(filepath.Join(root, p))
 		if err != nil {
 			continue

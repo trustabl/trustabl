@@ -115,12 +115,42 @@ The resolved commit SHA is recorded on `ScanResult` (`RulesSource`,
 ### Progress reporting
 
 `scanner.Run` takes an optional `Config.Progress` (`progress.Reporter`); nil
-means no output. It emits phase events (recon, inventory per-file, analysis
-per-entity) that the CLI renders to **stderr** — animated on a TTY, plain lines
-when piped, silent for JSON. `DiscoverTools` takes an `onFile` callback and
-`detectors.Registry.Run` takes an `onEntity` callback to drive the per-item
-bars; both are nil-able and do not affect `ScanResult`. Progress never touches
-stdout, preserving the determinism contract (§7).
+means no output. It emits phase events (clone for remote targets, recon
+per-file, inventory per-file, analysis per-entity) that the CLI renders to
+**stderr** — animated on a TTY, plain lines when piped, silent for JSON. The
+TTY renderer is a **live multi-row panel** (`internal/progress/tty.go`): every
+stage is a row drawn together and repainted in place — finished rows show a green
+`✔ <label>  <summary>`, the active row its spinner and (where a total is known) a
+teal bar, a failed row a red `✗`. The completed panel is printed once via
+`tea.Println` on quit so it persists in scrollback. In plain mode each phase
+prints a start line (`[key] label…`) as well as its end summary, so a long
+network pre-flight (rules resolution, remote clone) is never a blank screen. The
+clone phase wraps `ingestion.Resolve` (gated on `ingestion.IsRemote`); local
+targets resolve instantly and get no phase.
+
+The remote clone shows an **accurate `receiving objects N/M` bar**. go-git's
+high-level `PlainClone` cannot drive this — its `CloneOptions.Progress` writer
+forwards only the server-side sideband (counting/compressing, the fast prep) and
+reports nothing through the actual object download. So `ingestion.fetchTreeToDir`
+does the shallow fetch at the **plumbing level**: an upload-pack session (HEAD,
+depth 1), then it parses the returned packfile with a `packfile.Parser` whose
+`Observer` fires `OnHeader(total)` and one `OnInflatedObjectHeader` per object —
+driving `SetTotal` then `Advance` for a true bar. Because the scanner only needs
+the working tree (not history), it then walks the wanted commit's tree and writes
+each file blob to the temp dir (via `safeJoin`, which rejects path-escapes;
+symlinks/submodules are skipped) rather than doing a full checkout. If the
+plumbing fetch fails — notably private/SSH auth, which go-git's defaults cover —
+it falls back to `PlainClone` (spinner only). `Reporter.SetDetail` is the
+spinner-phase primitive for a status string with no count (clone's "connecting…"
+/ "writing files…", and the rules pre-flight's "fetching <repo>" line).
+`ingestion.Recon` and `DiscoverTools`
+each take an `onFile` callback and `detectors.Registry.Run` takes an `onEntity`
+callback to drive the per-item line; all are nil-able and do not affect
+`ScanResult`. Recon has no upfront file total (the walk discovers it), so its
+live line is a running counter rather than a bar; the callback fires both on the
+tree walk and on the per-file body reads in component discovery (the slow span
+on large repos). Progress never touches stdout, preserving the determinism
+contract (§7).
 
 ### Steps
 

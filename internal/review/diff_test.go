@@ -121,7 +121,7 @@ func TestRender_MCPServersVisibleInHumanFormat(t *testing.T) {
 	result := models.ScanResult{
 		Agents: []models.AgentDef{{
 			SDK: models.SDKOpenAIAgents, Class: "Agent", Language: models.LanguagePython,
-			Location: models.Location{FilePath: "main.py", Line: 10},
+			Location:      models.Location{FilePath: "main.py", Line: 10},
 			Name:          "fs",
 			MCPServerRefs: []models.MCPServerRef{{Class: "MCPServerStdio", Resolved: &stdio}},
 		}},
@@ -178,15 +178,15 @@ func TestRender_SubagentsAndClaudeSettingsSections(t *testing.T) {
 
 	out := (&review.Renderer{NoColor: true}).Render(result)
 	for _, want := range []string{
-		"Subagents",                            // section header
-		"researcher",                           // subagent name
-		".claude/agents/researcher.md",         // subagent file path
-		"tools: Read, Glob, Grep",              // tools list
-		"model: haiku",                         // model
-		"Claude settings",                      // section header
-		".claude/settings.json",                // settings file path
-		"defaultMode=acceptEdits",              // settings metadata
-		"allow:1",                              // permission counts
+		"Subagents",                    // section header
+		"researcher",                   // subagent name
+		".claude/agents/researcher.md", // subagent file path
+		"tools: Read, Glob, Grep",      // tools list
+		"model: haiku",                 // model
+		"Claude settings",              // section header
+		".claude/settings.json",        // settings file path
+		"defaultMode=acceptEdits",      // settings metadata
+		"allow:1",                      // permission counts
 		"deny:1",
 	} {
 		if !strings.Contains(out, want) {

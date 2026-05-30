@@ -9,9 +9,9 @@ import (
 
 // DiscoverTSMCPServers extracts MCPServerDef records from TS source. Two
 // recognition paths:
-//   1. createSdkMcpServer({...}) calls (SDK-instance servers)
-//   2. Object literals with type: "stdio"|"sse"|"http"|"sdk" inside
-//      options.mcpServers records (added in a later task)
+//  1. createSdkMcpServer({...}) calls (SDK-instance servers)
+//  2. Object literals with type: "stdio"|"sse"|"http"|"sdk" inside
+//     options.mcpServers records (added in a later task)
 func DiscoverTSMCPServers(files []ParsedFile, onFile func(string)) []models.MCPServerDef {
 	var out []models.MCPServerDef
 	for _, pf := range files {

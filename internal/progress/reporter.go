@@ -17,6 +17,8 @@ type Reporter interface {
 	StartPhase(key, label string) // begin a phase
 	SetTotal(n int)               // optional: switch the phase to an n-step bar
 	Advance(detail string)        // tick the bar; detail = current file/entity
+	SetDetail(detail string)      // set the live detail line without a count/bar (spinner phases: clone sub-phase, network status)
+	ResetPhase()                  // clear the active phase's bar/count/detail back to a bare spinner (e.g. a clone falling back from a counted fetch to an uncounted one)
 	EndPhase(summary string)      // finish: emit a persistent "[key] summary"
 	Fatal(err error)              // a phase failed; tear the UI down cleanly
 }
@@ -41,5 +43,7 @@ func NewNop() Reporter { return nopReporter{} }
 func (nopReporter) StartPhase(string, string) {}
 func (nopReporter) SetTotal(int)              {}
 func (nopReporter) Advance(string)            {}
+func (nopReporter) SetDetail(string)          {}
+func (nopReporter) ResetPhase()               {}
 func (nopReporter) EndPhase(string)           {}
 func (nopReporter) Fatal(error)               {}

@@ -116,6 +116,60 @@ func TestDetectSDKDeps_TSPackageInPackageJSONProducesExactlyOneEntry(t *testing.
 	}
 }
 
+// TestNormalize_OnFileReportsEveryScannedFile verifies the walk-side progress
+// hook: every file the tree walk visits is reported, so the recon counter moves
+// while files are being discovered.
+func TestNormalize_OnFileReportsEveryScannedFile(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"a.py", "b.ts", "c.md"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(""), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var seen []string
+	src := &Source{RootPath: dir}
+	if _, err := Normalize(src, func(p string) { seen = append(seen, p) }); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"a.py", "b.ts", "c.md"} {
+		var found bool
+		for _, p := range seen {
+			if p == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("onFile never reported %q; got %v", want, seen)
+		}
+	}
+}
+
+// TestNormalize_OnFileReportsPythonBodyReads guards the slow span of recon:
+// component discovery reads every Python file's body (the measured hot spot on
+// large repos). Each Python file must be reported again there, so the counter
+// keeps moving through that span instead of freezing on a bare spinner. A
+// Python file is therefore reported at least twice: once on the walk, once on
+// the body read.
+func TestNormalize_OnFileReportsPythonBodyReads(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"a.py", "b.py", "c.md"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x = 1\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	counts := map[string]int{}
+	src := &Source{RootPath: dir}
+	if _, err := Normalize(src, func(p string) { counts[p]++ }); err != nil {
+		t.Fatal(err)
+	}
+	for _, py := range []string{"a.py", "b.py"} {
+		if counts[py] < 2 {
+			t.Errorf("python file %q reported %d times; want >= 2 (walk + body read)", py, counts[py])
+		}
+	}
+}
+
 func TestNormalize_CollectsMTSAndCTS(t *testing.T) {
 	dir := t.TempDir()
 	for _, name := range []string{"a.ts", "b.tsx", "c.mts", "d.cts"} {
@@ -124,7 +178,7 @@ func TestNormalize_CollectsMTSAndCTS(t *testing.T) {
 		}
 	}
 	src := &Source{RootPath: dir}
-	m, err := Normalize(src)
+	m, err := Normalize(src, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +206,7 @@ func TestNormalize_NestedClaudeAgentsClassified(t *testing.T) {
 	mustWrite("agent/.claude/commands/foo.md", "# cmd")
 
 	src := &Source{RootPath: dir}
-	m, err := Normalize(src)
+	m, err := Normalize(src, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,7 +248,7 @@ func TestNormalize_SkillAndPluginClassified(t *testing.T) {
 	mustWrite(".claude-plugin/plugin.json", `{"name":"p"}`)
 
 	src := &Source{RootPath: dir}
-	m, err := Normalize(src)
+	m, err := Normalize(src, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,9 +257,9 @@ func TestNormalize_SkillAndPluginClassified(t *testing.T) {
 		kindsByPath[c.Path] = c.Kind
 	}
 	want := map[string]models.ComponentKind{
-		".claude/skills/deploy/SKILL.md":   models.ComponentSkill,
-		".claude-plugin/marketplace.json":  models.ComponentPluginManifest,
-		".claude-plugin/plugin.json":       models.ComponentPluginManifest,
+		".claude/skills/deploy/SKILL.md":  models.ComponentSkill,
+		".claude-plugin/marketplace.json": models.ComponentPluginManifest,
+		".claude-plugin/plugin.json":      models.ComponentPluginManifest,
 	}
 	for path, wantKind := range want {
 		if got := kindsByPath[path]; got != wantKind {
@@ -244,7 +298,7 @@ func TestNormalize_PluginSlashCommandsClassified(t *testing.T) {
 	mustWrite(".claude/commands/legacy.md", "Legacy\n")
 
 	src := &Source{RootPath: dir}
-	m, err := Normalize(src)
+	m, err := Normalize(src, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

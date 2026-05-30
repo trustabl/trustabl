@@ -207,7 +207,7 @@ agent = Agent(
 	//  9: "        ),"              <- tool call end line
 	// 10: "    ],"
 	// 11: ")"
-	const wantLine    = 7
+	const wantLine = 7
 	const wantEndLine = 9
 
 	pf := parsePyFile(t, "main.py", src)

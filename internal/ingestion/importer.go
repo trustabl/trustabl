@@ -6,6 +6,7 @@
 package ingestion
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/url"
@@ -26,22 +27,27 @@ type Source struct {
 
 // Resolve takes the user's --target argument and returns a Source.
 //
+// prog, when non-nil, receives remote-clone progress (an accurate
+// receiving-objects bar). It is ignored for local targets. Pass nil for none.
+//
 // Discipline: callers MUST `defer src.Cleanup()` even on local paths. The
 // no-op cleanup avoids a branching defer at every call site.
-func Resolve(target string) (*Source, error) {
+func Resolve(target string, prog CloneProgress) (*Source, error) {
 	if target == "" {
 		return nil, errors.New("empty target")
 	}
 
-	if looksRemote(target) {
-		return cloneRemote(target)
+	if IsRemote(target) {
+		return cloneRemote(target, prog)
 	}
 	return openLocal(target)
 }
 
-// looksRemote returns true if target appears to be a remote URL. Conservative:
-// anything we can't parse as a URL with a host is treated as a local path.
-func looksRemote(target string) bool {
+// IsRemote returns true if target appears to be a remote URL (so resolving it
+// will clone). Conservative: anything we can't parse as a URL with a host is
+// treated as a local path. Exported so the scanner can report a clone phase
+// only for remote targets.
+func IsRemote(target string) bool {
 	// Common shorthand: git@github.com:owner/repo.git
 	if strings.HasPrefix(target, "git@") {
 		return true
@@ -72,24 +78,39 @@ func openLocal(target string) (*Source, error) {
 	}, nil
 }
 
-func cloneRemote(remoteURL string) (*Source, error) {
+func cloneRemote(remoteURL string, prog CloneProgress) (*Source, error) {
 	tmp, err := os.MkdirTemp("", "trustabl-clone-*")
 	if err != nil {
 		return nil, fmt.Errorf("mktmp: %w", err)
 	}
 	cleanup := func() { _ = os.RemoveAll(tmp) }
 
-	// Shallow clone — we only need source, not history.
-	// Auth note: go-git will pick up SSH agent / GIT_ASKPASS for private repos.
-	// BYOK for GitHub auth is out of scope; document it.
-	_, err = git.PlainClone(tmp, false, &git.CloneOptions{
-		URL:      remoteURL,
-		Depth:    1,
-		Progress: nil,
-	})
-	if err != nil {
-		cleanup()
-		return nil, fmt.Errorf("clone %s: %w", remoteURL, err)
+	// Primary path: a plumbing-level shallow fetch that reports an accurate
+	// receiving-objects bar (go-git's high-level PlainClone can't — it only
+	// surfaces the server-side counting/compressing sideband, then goes silent
+	// through the actual download). We only need the working tree, not history.
+	if err := fetchTreeToDir(context.Background(), remoteURL, tmp, prog); err != nil {
+		// Fall back to the proven PlainClone for anything the plumbing path can't
+		// handle — notably private/SSH auth, which go-git's defaults cover. Reset
+		// the temp dir first (the failed attempt may have written a partial tree).
+		_ = os.RemoveAll(tmp)
+		if mkErr := os.MkdirAll(tmp, 0o755); mkErr != nil {
+			cleanup()
+			return nil, fmt.Errorf("clone %s: reset temp: %w", remoteURL, mkErr)
+		}
+		if prog != nil {
+			// The plumbing fetch may have advanced the receiving-objects bar before
+			// failing; clear it so the fallback shows a live "cloning…" spinner
+			// rather than a bar frozen mid-fill.
+			prog.ResetPhase()
+			prog.SetDetail("cloning…")
+		}
+		if _, e2 := git.PlainClone(tmp, false, &git.CloneOptions{
+			URL: remoteURL, Depth: 1, Progress: nil,
+		}); e2 != nil {
+			cleanup()
+			return nil, fmt.Errorf("clone %s: %w", remoteURL, e2)
+		}
 	}
 
 	return &Source{

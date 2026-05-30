@@ -1,70 +1,156 @@
 package progress
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/progress"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/reflow/truncate"
 )
+
+// ErrInterrupted is returned by (*TTYReporter).Run when the user interrupts the
+// render loop (Ctrl-C). The caller translates it into a clean exit instead of
+// surfacing bubbletea's raw kill error.
+var ErrInterrupted = errors.New("progress: interrupted")
+
+// Stage markers: a green check for a completed stage, a red cross for a failed
+// one.
+var (
+	checkStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#22c55e"))
+	crossStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#ef4444"))
+)
+
+// completedLine renders a finished stage as "✔ <label>  <summary>". The summary
+// is omitted when empty, or when the label already ends with it (the clone label
+// is "Cloning <url>" and its summary is the same <url>, which must not be
+// doubled). HasSuffix rather than Contains so an unrelated summary that merely
+// appears mid-label isn't silently dropped.
+func completedLine(label, summary string) string {
+	line := checkStyle.Render("✔") + " " + label
+	if summary != "" && !strings.HasSuffix(label, summary) {
+		line += "  " + summary
+	}
+	return line
+}
 
 // Messages mirror the Reporter methods; the TTYReporter sends them via p.Send.
 type startPhaseMsg struct{ key, label string }
 type setTotalMsg struct{ n int }
 type advanceMsg struct{ detail string }
+type setDetailMsg struct{ detail string }
+type resetPhaseMsg struct{}
 type endPhaseMsg struct{ summary string }
 type doneMsg struct{}
 type fatalMsg struct{ err error }
 
-// model is the bubbletea model rendering the active phase. Completed phases are
-// printed as persistent lines via tea.Println (above the live view).
-type model struct {
-	spinner spinner.Model
-	bar     progress.Model
+// stage lifecycle states.
+const (
+	stageRunning = iota
+	stageDone
+	stageFailed
+)
 
-	active bool
-	key    string
-	label  string
-	total  int
-	count  int
-	detail string
-	err    error
+// stage is one pipeline step, shown as a row in the live panel.
+type stage struct {
+	key, label   string
+	state        int
+	total, count int
+	detail       string
+	summary      string
+	err          error
+}
+
+// model is the bubbletea model. It keeps every stage and repaints them all as
+// one in-place panel: finished rows show a ✔, the active row its
+// spinner/bar, a failed row a ✗. On quit the final panel is printed once via
+// tea.Println so it persists in scrollback.
+type model struct {
+	spinner  spinner.Model
+	bar      progress.Model
+	stages   []*stage
+	cur      int // index of the running stage, or -1 when none is active
+	width    int // terminal width (0 until the first WindowSizeMsg); rows fit to it
+	quitting bool
 }
 
 func newModel() model {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
-	return model{
-		spinner: s,
-		bar:     progress.New(progress.WithDefaultGradient(), progress.WithWidth(24)),
+	b := progress.New(progress.WithGradient("#0d9488", "#5eead4"), progress.WithWidth(24))
+	// Thinner bar: light/heavy horizontal lines instead of the default
+	// full/▒ blocks, so the bar reads as a slim rule rather than a tall band.
+	b.Full = '━'
+	b.Empty = '─'
+	return model{spinner: s, bar: b, cur: -1}
+}
+
+// current returns the active stage, or nil if none is running.
+func (m model) current() *stage {
+	if m.cur < 0 || m.cur >= len(m.stages) {
+		return nil
 	}
+	return m.stages[m.cur]
 }
 
 func (m model) Init() tea.Cmd { return m.spinner.Tick }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		return m, nil
 	case startPhaseMsg:
-		m.active, m.key, m.label = true, msg.key, msg.label
-		m.total, m.count, m.detail = 0, 0, ""
+		m.stages = append(m.stages, &stage{key: msg.key, label: msg.label, state: stageRunning})
+		m.cur = len(m.stages) - 1
 		return m, nil
 	case setTotalMsg:
-		m.total = msg.n
+		if s := m.current(); s != nil {
+			s.total = msg.n
+		}
 		return m, nil
 	case advanceMsg:
-		m.count++
-		m.detail = msg.detail
+		if s := m.current(); s != nil {
+			s.count++
+			s.detail = msg.detail
+		}
+		return m, nil
+	case setDetailMsg:
+		if s := m.current(); s != nil {
+			s.detail = msg.detail
+		}
+		return m, nil
+	case resetPhaseMsg:
+		// Drop the active phase back to a bare spinner: a counted fetch that
+		// failed and is now retrying via an uncounted path must not leave a stale
+		// bar frozen mid-fill (the bar branch in renderStage outranks detail, so
+		// total/count have to be cleared, not just the detail overwritten).
+		if s := m.current(); s != nil {
+			s.total, s.count, s.detail = 0, 0, ""
+		}
 		return m, nil
 	case endPhaseMsg:
-		m.active = false
-		line := fmt.Sprintf("[%s] %s", m.key, msg.summary)
-		return m, tea.Println(line)
+		if s := m.current(); s != nil {
+			s.state = stageDone
+			s.summary = msg.summary
+		}
+		m.cur = -1
+		return m, nil
 	case fatalMsg:
-		m.err = msg.err
-		return m, tea.Sequence(tea.Println(fmt.Sprintf("[%s] failed: %v", m.key, msg.err)), tea.Quit)
+		if s := m.current(); s != nil {
+			s.state = stageFailed
+			s.err = msg.err
+		}
+		m.cur = -1
+		m.quitting = true
+		return m, tea.Sequence(tea.Println(m.staticView()), tea.Quit)
 	case doneMsg:
-		return m, tea.Quit
+		m.quitting = true
+		return m, tea.Sequence(tea.Println(m.staticView()), tea.Quit)
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
@@ -74,15 +160,77 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() string {
-	if !m.active {
+	// On quit the persistent panel was already printed via tea.Println; clear
+	// the live region so it isn't duplicated.
+	if m.quitting {
 		return ""
 	}
-	if m.total > 0 {
-		pct := float64(m.count) / float64(m.total)
-		return fmt.Sprintf("%s %s %s %d/%d  %s\n",
-			m.spinner.View(), m.label, m.bar.ViewAs(pct), m.count, m.total, m.detail)
+	rows := make([]string, len(m.stages))
+	for i, s := range m.stages {
+		rows[i] = m.fit(m.renderStage(s, true))
 	}
-	return fmt.Sprintf("%s %s\n", m.spinner.View(), m.label)
+	return strings.Join(rows, "\n")
+}
+
+// staticView renders the final panel with no spinner, for the one-time
+// tea.Println on quit (so the completed panel persists in scrollback).
+func (m model) staticView() string {
+	rows := make([]string, len(m.stages))
+	for i, s := range m.stages {
+		rows[i] = m.fit(m.renderStage(s, false))
+	}
+	return strings.Join(rows, "\n")
+}
+
+// fit truncates a rendered row to the terminal width so a long detail (deep
+// file path) or error never wraps — a wrapped row throws off bubbletea's
+// in-place repaint and leaves orphaned lines on every subsequent tick. The
+// truncate is ANSI-aware (it preserves the styled check/cross, spinner, and bar
+// gradient while counting only visible width). width 0 (before the first
+// WindowSizeMsg, e.g. in unit tests) means "unknown" → no truncation.
+func (m model) fit(line string) string {
+	if m.width <= 0 {
+		return line
+	}
+	return truncate.StringWithTail(line, uint(m.width), "…")
+}
+
+// renderStage renders one panel row. A running row leads with the animated
+// spinner (live) or a plain bullet (static), then shows its bar/count/detail;
+// a finished row shows ✔ + summary; a failed row shows ✗ + error.
+func (m model) renderStage(s *stage, withSpinner bool) string {
+	switch s.state {
+	case stageDone:
+		return completedLine(s.label, s.summary)
+	case stageFailed:
+		// Flatten the error to one line: a multi-line message would add physical
+		// rows the panel's repaint math doesn't account for.
+		msg := strings.ReplaceAll(fmt.Sprintf("%v", s.err), "\n", " ")
+		return crossStyle.Render("✗") + " " + s.label + ": " + msg
+	}
+	lead := m.spinner.View()
+	if !withSpinner {
+		lead = "•"
+	}
+	switch {
+	case s.total > 0:
+		// Known total → an accurate bar (inventory/analysis, and the clone's
+		// receiving-objects phase). Clamp: a count that overshoots total (a bad
+		// SetTotal, or an extra Advance) must not drive the bar past 100%.
+		pct := float64(s.count) / float64(s.total)
+		if pct > 1 {
+			pct = 1
+		}
+		return fmt.Sprintf("%s %s %s %d/%d  %s", lead, s.label, m.bar.ViewAs(pct), s.count, s.total, s.detail)
+	case s.count > 0:
+		// No upfront total (recon): a running counter keeps the row moving.
+		return fmt.Sprintf("%s %s  %d  %s", lead, s.label, s.count, s.detail)
+	case s.detail != "":
+		// A status string with no count (clone connecting/writing, rules fetch).
+		return fmt.Sprintf("%s %s  %s", lead, s.label, s.detail)
+	default:
+		return fmt.Sprintf("%s %s", lead, s.label)
+	}
 }
 
 // TTYReporter forwards Reporter calls to a running bubbletea program. It
@@ -96,8 +244,18 @@ func NewTTY(w io.Writer) *TTYReporter {
 	return &TTYReporter{p: p}
 }
 
-// Run renders until Done/Fatal triggers quit. Call on the main goroutine.
-func (r *TTYReporter) Run() error { _, err := r.p.Run(); return err }
+// Run renders until Done/Fatal triggers quit. Call on the main goroutine. A
+// user interrupt (Ctrl-C) surfaces as ErrInterrupted so the caller can exit
+// cleanly rather than printing bubbletea's raw kill error.
+func (r *TTYReporter) Run() error {
+	if _, err := r.p.Run(); err != nil {
+		if errors.Is(err, tea.ErrProgramKilled) {
+			return ErrInterrupted
+		}
+		return err
+	}
+	return nil
+}
 
 // Done signals the render loop to stop (call after the job finishes).
 func (r *TTYReporter) Done() { r.p.Send(doneMsg{}) }
@@ -105,6 +263,8 @@ func (r *TTYReporter) Done() { r.p.Send(doneMsg{}) }
 func (r *TTYReporter) StartPhase(key, label string) { r.p.Send(startPhaseMsg{key, label}) }
 func (r *TTYReporter) SetTotal(n int)               { r.p.Send(setTotalMsg{n}) }
 func (r *TTYReporter) Advance(detail string)        { r.p.Send(advanceMsg{detail}) }
+func (r *TTYReporter) SetDetail(detail string)      { r.p.Send(setDetailMsg{detail}) }
+func (r *TTYReporter) ResetPhase()                  { r.p.Send(resetPhaseMsg{}) }
 func (r *TTYReporter) EndPhase(summary string)      { r.p.Send(endPhaseMsg{summary}) }
 func (r *TTYReporter) Fatal(err error)              { r.p.Send(fatalMsg{err}) }
 

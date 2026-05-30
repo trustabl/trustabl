@@ -43,8 +43,9 @@ func ParserKindForExtension(path string) string {
 // TSImportAliases walks a parsed TS file's top-level import_statement nodes
 // and returns a map: local-binding-name -> canonical-export-name, for every
 // import that targets `module`. Sentinel canonical values:
-//   "*"        — namespace import: `import * as ns from "module"`
-//   "default"  — default import:   `import x from "module"`
+//
+//	"*"        — namespace import: `import * as ns from "module"`
+//	"default"  — default import:   `import x from "module"`
 //
 // Named imports map their local name to the original export name. A renamed
 // import (`import { tool as t }`) maps "t" -> "tool"; a plain named import
@@ -223,10 +224,11 @@ func classifyTSExpr(n *sitter.Node, src []byte) *models.Expr {
 // returns the canonical export name (e.g. "tool", "query",
 // "createSdkMcpServer") if the call targets a tracked export, or "" if it
 // does not. The aliases map should come from TSImportAliases. Handles:
-//   tool(...)            — direct call, aliases["tool"] = "tool"
-//   t(...)               — renamed import, aliases["t"] = "tool"
-//   sdk.tool(...)        — namespace import, aliases["sdk"] = "*"
-//   defaultExport.tool() — default import treated as a namespace, aliases["defaultExport"] = "default"
+//
+//	tool(...)            — direct call, aliases["tool"] = "tool"
+//	t(...)               — renamed import, aliases["t"] = "tool"
+//	sdk.tool(...)        — namespace import, aliases["sdk"] = "*"
+//	defaultExport.tool() — default import treated as a namespace, aliases["defaultExport"] = "default"
 func TSCalleeText(call *sitter.Node, src []byte, aliases map[string]string) string {
 	if call == nil || aliases == nil {
 		return ""

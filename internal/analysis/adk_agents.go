@@ -13,12 +13,12 @@ import (
 // recognizes. The `Agent` alias is recognized and normalized to `LlmAgent`
 // in the emitted AgentDef.Class.
 var adkAgentClasses = map[string]string{
-	"LlmAgent":       "LlmAgent",
-	"Agent":          "LlmAgent", // TypeAlias = LlmAgent in google.adk.agents
+	"LlmAgent":        "LlmAgent",
+	"Agent":           "LlmAgent", // TypeAlias = LlmAgent in google.adk.agents
 	"SequentialAgent": "SequentialAgent",
-	"ParallelAgent":  "ParallelAgent",
-	"LoopAgent":      "LoopAgent",
-	"LanggraphAgent": "LanggraphAgent",
+	"ParallelAgent":   "ParallelAgent",
+	"LoopAgent":       "LoopAgent",
+	"LanggraphAgent":  "LanggraphAgent",
 }
 
 // DiscoverADKAgents walks each ParsedFile and returns AgentDef records for
