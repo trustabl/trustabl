@@ -200,6 +200,12 @@ func TestScore_OverallPulledTowardWeakSurface(t *testing.T) {
 	if !(overall > worst) {
 		t.Errorf("overall (%v) must be > weakest surface (%v) — no min-cliff", overall, worst)
 	}
+	// Pin the exact blended value so a change to the aggregation formula
+	// (blendK/saturation) is caught, not just the relational invariants.
+	// clean=1.0 (w=1), bad=2/3 (w=2.0) -> overall = (1 + 2*2/3)/3 = 7/9.
+	if math.Abs(overall-7.0/9.0) > 1e-6 {
+		t.Errorf("overall: got %v, want 7/9 ≈ 0.77778", overall)
+	}
 }
 
 // TestScore_EmptyReturnsOne: a genuinely empty repo (no surfaces) scores 1.0.

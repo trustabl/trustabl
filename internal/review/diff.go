@@ -84,7 +84,7 @@ func (r *Renderer) Render(result models.ScanResult) string {
 	// tool-scope rules; agent grants and hosted instances do not (no body to
 	// audit) but are inputs to agent-scope rules.
 	fmt.Fprintf(&b, "  Tool definitions:   %d %s\n", len(result.Tools),
-		styleDim.Render("(custom tools with function bodies — scored below)"))
+		styleDim.Render("(custom tools with function bodies — audited in Surface readiness below)"))
 	if n := distinctAgentToolGrants(result); n > 0 {
 		fmt.Fprintf(&b, "  Agent tool grants:  %d %s\n", n,
 			styleDim.Render("(tool names the agent may call — audited by agent-scope rules)"))
@@ -209,9 +209,9 @@ func (r *Renderer) Render(result models.ScanResult) string {
 		return b.String()
 	}
 
-	// Per-tool readiness table (only custom tool definitions appear here —
-	// agent grants and hosted instances have no function body and are scored
-	// indirectly via agent-scope rules in the Findings section).
+	// Surface readiness table: one row per discovered tool, agent, and subagent,
+	// plus a repo row when repo-scoped findings exist. Each row is scored from the
+	// findings attributed to that surface; rows are sorted worst-first.
 	b.WriteString(styleHeader.Render("Surface readiness") + "\n")
 	for _, rd := range result.Surfaces {
 		label := string(rd.Kind)
@@ -223,12 +223,12 @@ func (r *Renderer) Render(result models.ScanResult) string {
 	}
 	b.WriteString("\n")
 
-	// Findings list, grouped by attribution. Discovered tools first (in
-	// Readiness order — already sorted worst-first). Then anything left —
-	// agent-scoped findings (ToolName = agent name, not in Readiness) and
-	// repo-wide / META findings (ToolName = "") — under their own headers,
-	// sorted alphabetically for determinism. The empty-ToolName bucket
-	// renders under "(repo-wide)" so it doesn't look like a missing label.
+	// Findings list, grouped by attribution. Discovered surfaces first (in
+	// Surfaces order — already sorted worst-first). Then anything left —
+	// findings whose ToolName matches no surface and repo-wide / META findings
+	// (ToolName = "") — under their own headers, sorted alphabetically for
+	// determinism. The empty-ToolName bucket renders under "(repo-wide)" so it
+	// doesn't look like a missing label.
 	b.WriteString(styleHeader.Render("Findings") + "\n")
 	byTool := map[string][]models.Finding{}
 	for _, f := range result.Findings {
