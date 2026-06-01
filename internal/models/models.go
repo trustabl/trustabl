@@ -247,26 +247,26 @@ type Coverage struct {
 
 // ScanResult is the top-level output. JSON-serializable for CI.
 type ScanResult struct {
-	ScanID              string            `json:"scan_id"`
-	Repo                string            `json:"repo"`
-	Languages           []Language        `json:"languages"` // detected by file extension (recon)
-	SDKs                []SDK             `json:"sdks"`      // observed in code (inventory)
-	HasShellInvocations bool              `json:"has_shell_invocations"`
-	Manifest            ScanManifest      `json:"manifest"`
-	Tools               []ToolDef         `json:"tools"`
-	Agents              []AgentDef        `json:"agents"`
-	HostedTools         []HostedToolDef   `json:"hosted_tools"`
-	MCPServers          []MCPServerDef    `json:"mcp_servers"`
-	Subagents           []SubagentDef     `json:"subagents"`
-	Skills              []SkillDef        `json:"skills"`
-	SlashCommands       []SlashCommandDef `json:"slash_commands"`
-	PluginManifests     []PluginManifest  `json:"plugin_manifests"`
-	ClaudeSettings      []ClaudeSettings  `json:"claude_settings"`
-	Findings            []Finding         `json:"findings"`
+	ScanID              string             `json:"scan_id"`
+	Repo                string             `json:"repo"`
+	Languages           []Language         `json:"languages"` // detected by file extension (recon)
+	SDKs                []SDK              `json:"sdks"`      // observed in code (inventory)
+	HasShellInvocations bool               `json:"has_shell_invocations"`
+	Manifest            ScanManifest       `json:"manifest"`
+	Tools               []ToolDef          `json:"tools"`
+	Agents              []AgentDef         `json:"agents"`
+	HostedTools         []HostedToolDef    `json:"hosted_tools"`
+	MCPServers          []MCPServerDef     `json:"mcp_servers"`
+	Subagents           []SubagentDef      `json:"subagents"`
+	Skills              []SkillDef         `json:"skills"`
+	SlashCommands       []SlashCommandDef  `json:"slash_commands"`
+	PluginManifests     []PluginManifest   `json:"plugin_manifests"`
+	ClaudeSettings      []ClaudeSettings   `json:"claude_settings"`
+	Findings            []Finding          `json:"findings"`
 	Surfaces            []SurfaceReadiness `json:"surfaces"`
-	OverallScore        float64           `json:"overall_score"`
-	RulesSource         string            `json:"rules_source"`     // repo the rule pack came from
-	RulesVersion        string            `json:"rules_version"`    // resolved rules commit SHA
-	RulesFromCache      bool              `json:"rules_from_cache"` // true if rules came from cache (network skipped/unreachable)
-	Coverage            Coverage          `json:"coverage"`         // how many source files parsed vs. were skipped
+	OverallScore        float64            `json:"overall_score"`
+	RulesSource         string             `json:"rules_source"`     // repo the rule pack came from
+	RulesVersion        string             `json:"rules_version"`    // resolved rules commit SHA
+	RulesFromCache      bool               `json:"rules_from_cache"` // true if rules came from cache (network skipped/unreachable)
+	Coverage            Coverage           `json:"coverage"`         // how many source files parsed vs. were skipped
 }

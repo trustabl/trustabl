@@ -184,6 +184,14 @@ func TestScan_GoogleADKDemoFiresExpectedRules(t *testing.T) {
 			t.Errorf("expected rule %s to fire on google-adk-demo; fired set: %v", want, fired)
 		}
 	}
+
+	// End-to-end regression guard for the multi-scope score: this repo fires
+	// agent/repo-scoped rules, so the overall score must reflect them and read
+	// below 100%. This is the user-visible bug the surface scoring fixed — a repo
+	// with real non-tool findings used to report 100%.
+	if res.OverallScore >= 1.0 {
+		t.Errorf("OverallScore = %v; want < 1.0 (non-tool rules fired: %v)", res.OverallScore, fired)
+	}
 }
 
 func TestScan_SurfacesNewInventoryFields(t *testing.T) {
