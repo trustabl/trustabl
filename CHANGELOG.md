@@ -4,6 +4,71 @@ All notable changes to Trustabl are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project aims
 to follow Semantic Versioning once it reaches 1.0.
 
+## [0.1.1] - 2026-06-01
+
+### Added
+
+- **TypeScript discovery for the OpenAI Agents SDK and Google ADK.** Previously
+  only the Claude TypeScript surface was understood; the scanner now discovers
+  tools, agents, guardrails, sessions, MCP servers, and hosted tools in the
+  OpenAI Agents (`tool({...})`, `Agent({...})` / `Agent.create(...)`) and Google
+  ADK TypeScript/JavaScript shapes, resolving agent→tool/handoff/guardrail edges
+  by variable name. Backed by vendored, licensed example corpora.
+- **Markdown agent surface.** Discovers and parses Claude Code skills
+  (`SKILL.md`), slash commands (frontmatter `allowed-tools` / `model`), and
+  plugins (`.claude-plugin/plugin.json`, `marketplace.json`, including the
+  object form of `plugins[].source`), plus flat-collection subagents matched by
+  frontmatter shape. These surface in the scan summary, and the presence of
+  subagents/skills now triggers the Claude SDK rule pack even with no SDK code.
+- **Repo-scope permission-bypass detection.** `CSDK-201` flags a
+  `.claude/settings.json` `defaultMode: bypassPermissions`; `CSDK-202` flags
+  `ClaudeAgentOptions(permission_mode="bypassPermissions")`. (Rule
+  `schema_version` advanced to 8.)
+- **Hosted-tool approval and policy checks.** Hosted-tool kwargs are captured and
+  new predicates evaluate them, powering rules such as `OAI-111` and `ADK-008`
+  for missing approval gates / safety policies on privileged hosted tools.
+- **Per-finding line attribution.** Findings now carry a real
+  `file:line`–`end_line` range for MCP servers, hosted tools, subagents,
+  guardrails, sessions, and individual permission rules (a `Location` type is
+  embedded across the inventory; the `line` JSON field was renamed to
+  `start_line`).
+- New and expanded rules across all three SDKs (Tier-1 additions for Claude,
+  OpenAI, and ADK; `has_code_exec_call` and `has_print_call` predicates;
+  `mcp_tool` applicability on `CSDK-004/005/006`).
+- An `llms.txt` index pointing at the project documentation.
+
+### Changed
+
+- **Production-readiness hardening.** A panicking detector is now recovered and
+  skipped (one malformed rule can no longer crash a scan); all network git
+  operations are bounded by a timeout; rules-repo and target URLs are restricted
+  to `https`/`ssh` (`file://` and `git://` are rejected); individual scanned
+  files are size-capped and symlinks are skipped; SARIF results are sorted
+  deterministically and file URIs no longer leak the local clone path; and parse
+  **coverage** (files parsed vs. skipped) is now surfaced so an incomplete scan
+  is never mistaken for a clean one.
+- The risk-surfaces summary line now reports a count, examples, why it matters,
+  and how to fix it — and no longer claims an OpenShell audit that does not ship.
+- The example corpus moved to `testdata/corpus/`.
+
+### Fixed
+
+- **Rules that never fired.** `CSDK-102`; `ADK-104` (had been firing on every
+  `LlmAgent`, re-pointed to `generate_content_config.safety_settings`); `ADK-105`
+  (class-name mismatch).
+- **Determinism.** `ScanID` now folds in every inventoried file list (not just
+  Python), and TypeScript parameter names are sorted, so the ID and report stay
+  byte-stable across more inputs.
+- **Rule sourcing.** A local install fault (disk full, permission denied, failed
+  rename, corrupt clone) is propagated instead of being masked as a cache hit.
+- **Scoring.** Per-tool readiness is keyed by `(FilePath, Name)` so same-named
+  tools in different files no longer collide.
+- **Rule loading.** The loader rejects match predicates the rule's scope never
+  evaluates, enforces the confidence upper bound (and rejects `NaN`), and applies
+  the rule `language` gate at repo scope.
+- AST-walk recursion is depth-bounded against adversarial nesting, and
+  tree-sitter parsers are reused with parsed trees closed to bound memory.
+
 ## [0.1.0] - 2026-05-26
 
 First tagged release. A single-binary, read-only static analyzer for agent-SDK
