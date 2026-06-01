@@ -28,7 +28,7 @@ func (d toolRuleDetector) Detect(t models.ToolDef, pf analysis.ParsedFile, inv m
 	if !d.rule.Match.EvaluateTool(t, pf) {
 		return nil
 	}
-	return []models.Finding{findingFromRule(d.rule, t.FilePath, t.Line, t.Name)}
+	return []models.Finding{findingFromRule(d.rule, models.ScopeTool, t.FilePath, t.Line, t.Name)}
 }
 
 // agentRuleDetector adapts an agent-scoped RuleDef into an AgentDetector.
@@ -51,7 +51,7 @@ func (d agentRuleDetector) Detect(a models.AgentDef, inv models.RepoInventory) [
 	if !d.rule.Match.EvaluateAgent(a, inv) {
 		return nil
 	}
-	return []models.Finding{findingFromRule(d.rule, a.FilePath, a.Line, a.Name)}
+	return []models.Finding{findingFromRule(d.rule, models.ScopeAgent, a.FilePath, a.Line, a.Name)}
 }
 
 // repoRuleDetector adapts a repo-scoped RuleDef into a RepoDetector.
@@ -111,7 +111,7 @@ func (d repoRuleDetector) Detect(p models.RepoProfile, inv models.RepoInventory)
 	if !d.rule.Match.EvaluateRepo(p, inv) {
 		return nil
 	}
-	return []models.Finding{findingFromRule(d.rule, "", 0, "")}
+	return []models.Finding{findingFromRule(d.rule, models.ScopeRepo, "", 0, "")}
 }
 
 func agentKindMatches(kind string, a models.AgentDef) bool {
@@ -161,7 +161,7 @@ func (d subagentRuleDetector) Detect(s models.SubagentDef, inv models.RepoInvent
 	// (usually 1), EndLine = the closing "---". Attribute to the opening so
 	// the user lands at the start of the declaration when jumping from a
 	// finding.
-	return []models.Finding{findingFromRule(d.rule, s.FilePath, s.Line, s.Name)}
+	return []models.Finding{findingFromRule(d.rule, models.ScopeSubagent, s.FilePath, s.Line, s.Name)}
 }
 
 // NewToolRuleDetector wraps a RuleDef as a ToolDetector. Exported for test packages.
@@ -176,10 +176,11 @@ func NewRepoRuleDetector(r RuleDef) detectors.RepoDetector { return repoRuleDete
 // NewSubagentRuleDetector wraps a RuleDef as a SubagentDetector. Exported for test packages.
 func NewSubagentRuleDetector(r RuleDef) detectors.SubagentDetector { return subagentRuleDetector{r} }
 
-func findingFromRule(r RuleDef, filePath string, line int, toolName string) models.Finding {
+func findingFromRule(r RuleDef, scope models.Scope, filePath string, line int, toolName string) models.Finding {
 	return models.Finding{
 		RuleID:       r.ID,
 		Category:     r.Category,
+		Scope:        scope,
 		Severity:     r.Severity,
 		ToolName:     toolName,
 		FilePath:     filePath,

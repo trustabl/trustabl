@@ -134,10 +134,11 @@ type AgentComponent struct {
 	Note     string        `json:"note,omitempty"`     // human-readable hint, e.g. "3 tools registered"
 }
 
-// Finding is one detector hit on one tool.
+// Finding is one detector hit on one surface (tool, agent, subagent, or repo).
 type Finding struct {
 	RuleID       string           `json:"rule_id"`
 	Category     DetectorCategory `json:"category"`
+	Scope        Scope            `json:"scope,omitempty"` // tool|agent|subagent|repo; "" for META findings
 	Severity     Severity         `json:"severity"`
 	ToolName     string           `json:"tool_name"`
 	FilePath     string           `json:"file_path"`

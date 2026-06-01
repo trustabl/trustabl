@@ -58,6 +58,9 @@ func TestSubagentRuleDetector_AppliesAndDetects(t *testing.T) {
 	if findings[0].FilePath != ".claude/agents/searcher.md" || findings[0].ToolName != "searcher" {
 		t.Errorf("finding attribution wrong: %+v", findings[0])
 	}
+	if findings[0].Scope != models.ScopeSubagent {
+		t.Errorf("subagent finding scope: got %q, want %q", findings[0].Scope, models.ScopeSubagent)
+	}
 
 	other := NewSubagentRuleDetector(RuleDef{
 		ID: "X", Scope: models.ScopeSubagent, AppliesTo: []string{"claude_agent_definition"},
@@ -110,6 +113,21 @@ func TestRepoRuleDetector_NonClaudeTokensUnaffected(t *testing.T) {
 		inv := models.RepoInventory{SDKsDetected: []models.SDK{c.sdk}}
 		if !d.Applies(models.RepoProfile{}, inv) {
 			t.Errorf("token %q must match SDK %q", c.token, c.sdk)
+		}
+	}
+}
+
+// TestFindingFromRule_RecordsScope verifies the rule's scope is stamped onto the
+// emitted finding, so the scorer can route it to the right surface and exclude
+// non-scored (META) findings.
+func TestFindingFromRule_RecordsScope(t *testing.T) {
+	cases := []models.Scope{
+		models.ScopeTool, models.ScopeAgent, models.ScopeRepo, models.ScopeSubagent,
+	}
+	for _, sc := range cases {
+		f := findingFromRule(RuleDef{ID: "X"}, sc, "f.py", 3, "thing")
+		if f.Scope != sc {
+			t.Errorf("scope %q: got Finding.Scope=%q", sc, f.Scope)
 		}
 	}
 }
