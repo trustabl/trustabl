@@ -3,6 +3,7 @@ package rules
 import (
 	"testing"
 
+	"github.com/trustabl/trustabl/internal/analysis"
 	"github.com/trustabl/trustabl/internal/models"
 )
 
@@ -127,8 +128,63 @@ func TestFindingFromRule_RecordsScope(t *testing.T) {
 	for _, sc := range cases {
 		f := findingFromRule(RuleDef{ID: "X"}, sc, "f.py", 3, "thing")
 		if f.Scope != sc {
-			t.Errorf("scope %q: got Finding.Scope=%q", sc, f.Scope)
+			t.Errorf("got Finding.Scope=%q, want %q", f.Scope, sc)
 		}
+	}
+}
+
+// TestToolRuleDetector_DetectStampsToolScope proves a tool-scoped detector
+// stamps ScopeTool on the findings it emits (guards against a Detect method
+// wired with the wrong scope constant).
+func TestToolRuleDetector_DetectStampsToolScope(t *testing.T) {
+	// NameIn fires when t.Name is in the list — a pure string comparison on the
+	// ToolDef struct, requiring no AST / ParsedFile.
+	d := toolRuleDetector{rule: RuleDef{
+		ID:        "TEST-TOOL-SCOPE",
+		Scope:     models.ScopeTool,
+		AppliesTo: []string{"openai_tool"},
+		Severity:  models.SeverityLow,
+		Match:     MatchExpr{NameIn: []string{"my_tool"}},
+	}}
+	tool := models.ToolDef{
+		Name:     "my_tool",
+		Kind:     models.KindOpenAITool,
+		Language: models.LanguagePython,
+		Location: models.Location{FilePath: "tools.py", Line: 10},
+	}
+	findings := d.Detect(tool, analysis.ParsedFile{}, models.RepoInventory{})
+	if len(findings) != 1 {
+		t.Fatalf("expected one finding, got %d", len(findings))
+	}
+	if findings[0].Scope != models.ScopeTool {
+		t.Errorf("got Finding.Scope=%q, want %q", findings[0].Scope, models.ScopeTool)
+	}
+}
+
+// TestAgentRuleDetector_DetectStampsAgentScope proves an agent-scoped detector
+// stamps ScopeAgent on the findings it emits.
+func TestAgentRuleDetector_DetectStampsAgentScope(t *testing.T) {
+	// AgentKwargMissing fires when lookupKwarg returns nil for the named path.
+	// A zero-value AgentDef has nil Kwargs, so any path is "missing".
+	d := agentRuleDetector{rule: RuleDef{
+		ID:        "TEST-AGENT-SCOPE",
+		Scope:     models.ScopeAgent,
+		AppliesTo: []string{"openai_agent"},
+		Severity:  models.SeverityMedium,
+		Match:     MatchExpr{AgentKwargMissing: []string{"input_guardrails"}},
+	}}
+	agent := models.AgentDef{
+		SDK:      models.SDKOpenAIAgents,
+		Class:    "Agent",
+		Language: models.LanguagePython,
+		Location: models.Location{FilePath: "agent.py", Line: 5},
+	}
+	findings := d.Detect(agent, models.RepoInventory{})
+	if len(findings) != 1 {
+		t.Fatalf("expected one finding, got %d", len(findings))
+	}
+	if findings[0].Scope != models.ScopeAgent {
+		t.Errorf("got Finding.Scope=%q, want %q", findings[0].Scope, models.ScopeAgent)
 	}
 }
 
