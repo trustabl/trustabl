@@ -198,7 +198,7 @@ func Run(cfg Config) (models.ScanResult, error) {
 	rep.EndPhase(fmt.Sprintf("%d findings", len(findings)))
 
 	// Step 5: scoring
-	readiness, overall := analysis.Score(tools, findings)
+	surfaces, overall := analysis.Score(tools, inventory.Agents, inventory.Subagents, findings)
 
 	// Coverage: how many AST-targeted source files we actually parsed vs. how
 	// many we attempted. Discovery skips files it cannot read or parse (one bad
@@ -231,7 +231,7 @@ func Run(cfg Config) (models.ScanResult, error) {
 		PluginManifests:     inventory.PluginManifests,
 		ClaudeSettings:      inventory.ClaudeSettings,
 		Findings:            findings,
-		Readiness:           readiness,
+		Surfaces:            surfaces,
 		OverallScore:        overall,
 		RulesSource:         cfg.RulesSource,
 		RulesVersion:        cfg.RulesVersion,

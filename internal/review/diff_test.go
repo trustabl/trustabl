@@ -86,9 +86,9 @@ func TestRender_ToolSurfaceBrokenOutClearly(t *testing.T) {
 		Findings: []models.Finding{
 			{RuleID: "META-001", Severity: models.SeverityInfo, Confidence: 1.0},
 		},
-		Readiness: []models.ToolReadiness{
-			{ToolName: "search_inbox", Score: 1.0},
-			{ToolName: "read_emails", Score: 1.0},
+		Surfaces: []models.SurfaceReadiness{
+			{Kind: models.ScopeTool, Name: "search_inbox", Score: 1.0},
+			{Kind: models.ScopeTool, Name: "read_emails", Score: 1.0},
 		},
 	}
 
@@ -98,7 +98,7 @@ func TestRender_ToolSurfaceBrokenOutClearly(t *testing.T) {
 	for _, want := range []string{
 		"Tool definitions:   2",
 		"Agent tool grants:  4",
-		"Per-tool readiness (custom tool definitions)",
+		"Surface readiness",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("human output missing %q\n---\n%s", want, out)
@@ -298,8 +298,8 @@ func TestRender_NonToolFindingsAppearUnderRepoWide(t *testing.T) {
 		Tools: []models.ToolDef{
 			{Name: "search", Kind: models.KindClaudeSDKTool, Language: models.LanguageTypeScript},
 		},
-		Readiness: []models.ToolReadiness{
-			{ToolName: "search", Score: 1.0},
+		Surfaces: []models.SurfaceReadiness{
+			{Kind: models.ScopeTool, Name: "search", Score: 1.0},
 		},
 		Findings: []models.Finding{
 			{
@@ -392,8 +392,8 @@ func TestRender_AgentScopedFindingsAppearUnderAgentName(t *testing.T) {
 		Tools: []models.ToolDef{
 			{Name: "search", Kind: models.KindClaudeSDKTool, Language: models.LanguageTypeScript},
 		},
-		Readiness: []models.ToolReadiness{
-			{ToolName: "search", Score: 1.0},
+		Surfaces: []models.SurfaceReadiness{
+			{Kind: models.ScopeTool, Name: "search", Score: 1.0},
 		},
 		Findings: []models.Finding{
 			{

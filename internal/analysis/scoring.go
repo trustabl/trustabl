@@ -6,79 +6,129 @@ import (
 	"github.com/trustabl/trustabl/internal/models"
 )
 
-// Score computes per-tool readiness percentages and an overall score for the repo.
-//
-// Per-tool algorithm (deliberately simple — calibrate against a real corpus
-// before declaring it "right"):
-//
-//	weighted = Σ severityWeight(finding) * finding.confidence  for this tool
-//	score    = max(0, 1 - weighted / saturation)
-//
-// `saturation` is the weighted-severity value at which the score bottoms out at 0.
-// It's a magic number; bump it after looking at real-repo distributions.
-//
-// Overall score: the MIN across per-tool scores (weakest-link aggregation).
-// Mean was misleading — a repo with one terrible tool and one perfect tool
-// reads 50%, identical to a uniformly-mediocre repo. For an agent-reliability
-// score, the agent is as reliable as its weakest surface, so min is honest.
+// saturation is the weighted-severity value at which a surface's score bottoms
+// out at 0. Magic number — calibrate against a real-repo corpus before trusting
+// the absolute value.
 const saturation = 3.0
 
-// toolKey identifies a tool by file AND name. Name alone collapses distinct
-// tools that share a name across modules (real repos reuse names like
-// "search") into one row — overwriting the first and piling both files'
-// findings onto it. Tool-scoped findings carry the tool's FilePath, so they key
-// the same way.
-type toolKey struct{ filePath, name string }
+// blendK controls how hard the overall score is pulled toward weak surfaces.
+// overall is a badness-weighted mean: weight wᵢ = 1 + blendK*(1-sᵢ). k=0 is a
+// plain arithmetic mean; larger k weights low-scoring surfaces more heavily,
+// without the min-cliff or divide-by-zero of harmonic/geometric means. Magic
+// number — calibrate against a real-repo corpus.
+const blendK = 3.0
 
-// Score returns per-tool readiness and the overall score.
-func Score(tools []models.ToolDef, findings []models.Finding) ([]models.ToolReadiness, float64) {
-	byTool := map[toolKey]*models.ToolReadiness{}
-	for _, t := range tools {
-		byTool[toolKey{t.FilePath, t.Name}] = &models.ToolReadiness{ToolName: t.Name, FilePath: t.FilePath, Score: 1.0}
+// surfaceKey identifies a scored surface: a single tool, agent, or subagent
+// (kind + file + name, so same-named entities across files stay distinct), or
+// the single repo bucket (kind=repo, empty file/name).
+type surfaceKey struct {
+	kind     models.Scope
+	filePath string
+	name     string
+}
+
+// Score returns per-surface readiness and the overall score.
+//
+// A surface is created for every discovered tool, agent, and subagent (seeded at
+// 1.0), plus one repo surface IFF at least one repo-scoped finding exists (the
+// repo is not a discovered entity, so it gets no row when clean). Findings route
+// to their surface by (Scope, FilePath, ToolName); all repo-scoped findings pool
+// into the single repo surface. Findings whose Scope is not one of the four real
+// scopes — META findings carry an empty Scope — are ignored, so info-meta signals
+// never move the score.
+//
+// Per-surface:
+//
+//	weighted = Σ severityWeight(finding) * finding.confidence
+//	score    = max(0, 1 - weighted/saturation)
+//
+// Overall is a badness-weighted mean across all surfaces (see blendK), so it
+// responds to both severity and breadth. An empty surface set scores 1.0.
+//
+// Takes the three discovered slices explicitly (not the whole RepoInventory) to
+// stay honest about exactly what scoring depends on.
+func Score(tools []models.ToolDef, agents []models.AgentDef, subagents []models.SubagentDef, findings []models.Finding) ([]models.SurfaceReadiness, float64) {
+	bySurface := map[surfaceKey]*models.SurfaceReadiness{}
+
+	seed := func(kind models.Scope, filePath, name string) {
+		k := surfaceKey{kind, filePath, name}
+		if _, ok := bySurface[k]; !ok {
+			bySurface[k] = &models.SurfaceReadiness{Kind: kind, Name: name, FilePath: filePath, Score: 1.0}
+		}
 	}
+	for _, t := range tools {
+		seed(models.ScopeTool, t.FilePath, t.Name)
+	}
+	for _, a := range agents {
+		seed(models.ScopeAgent, a.FilePath, a.Name)
+	}
+	for _, s := range subagents {
+		seed(models.ScopeSubagent, s.FilePath, s.Name)
+	}
+
 	for _, f := range findings {
-		// Only tool-scoped findings count toward per-tool readiness. Findings
-		// without a matching (FilePath, ToolName), or with a ToolName that
-		// doesn't match any discovered tool, are agent-scoped, repo-scoped, or
-		// META — they have their own attribution in the findings list and don't
-		// belong in per-tool buckets. Aggregating them under a blank-name "tool"
-		// used to surface as a confusing empty row in the readiness table and
-		// dragged the overall score for non-tool reasons.
-		r, ok := byTool[toolKey{f.FilePath, f.ToolName}]
+		var k surfaceKey
+		switch f.Scope {
+		case models.ScopeTool, models.ScopeAgent, models.ScopeSubagent:
+			k = surfaceKey{f.Scope, f.FilePath, f.ToolName}
+		case models.ScopeRepo:
+			// All repo findings pool into one repo surface, created on demand.
+			k = surfaceKey{kind: models.ScopeRepo}
+			if _, ok := bySurface[k]; !ok {
+				bySurface[k] = &models.SurfaceReadiness{Kind: models.ScopeRepo, Score: 1.0}
+			}
+		default:
+			// Empty/unknown scope (META findings) — not a scored surface.
+			continue
+		}
+		r, ok := bySurface[k]
 		if !ok {
+			// A tool/agent/subagent finding whose (kind, file, name) matches no
+			// discovered surface. Its attribution lives in the findings list;
+			// don't invent a surface row for it.
 			continue
 		}
 		r.FindingCount++
 		r.WeightedSeverity += models.SeverityWeight(f.Severity) * f.Confidence
 	}
 
-	readiness := make([]models.ToolReadiness, 0, len(byTool))
-	for _, r := range byTool {
+	surfaces := make([]models.SurfaceReadiness, 0, len(bySurface))
+	for _, r := range bySurface {
 		s := 1.0 - r.WeightedSeverity/saturation
 		if s < 0 {
 			s = 0
 		}
 		r.Score = s
-		readiness = append(readiness, *r)
+		surfaces = append(surfaces, *r)
 	}
-	sort.Slice(readiness, func(i, j int) bool {
-		if readiness[i].Score != readiness[j].Score {
-			return readiness[i].Score < readiness[j].Score // worst first
+	sort.Slice(surfaces, func(i, j int) bool {
+		if surfaces[i].Score != surfaces[j].Score {
+			return surfaces[i].Score < surfaces[j].Score // worst first
 		}
-		if readiness[i].ToolName != readiness[j].ToolName {
-			return readiness[i].ToolName < readiness[j].ToolName
+		if surfaces[i].Kind != surfaces[j].Kind {
+			return surfaces[i].Kind < surfaces[j].Kind
 		}
-		return readiness[i].FilePath < readiness[j].FilePath // stable across same-named tools
+		if surfaces[i].Name != surfaces[j].Name {
+			return surfaces[i].Name < surfaces[j].Name
+		}
+		return surfaces[i].FilePath < surfaces[j].FilePath // stable across same-named surfaces
 	})
 
-	if len(readiness) == 0 {
-		return readiness, 1.0
+	return surfaces, overallScore(surfaces)
+}
+
+// overallScore is the badness-weighted mean of surface scores: weak surfaces
+// pull harder via weight 1+blendK*(1-score). Bounded [0,1], deterministic, no
+// divide-by-zero, no single-surface cliff. Empty input scores 1.0.
+func overallScore(surfaces []models.SurfaceReadiness) float64 {
+	if len(surfaces) == 0 {
+		return 1.0
 	}
-	min := readiness[0].Score
-	for _, r := range readiness[1:] {
-		if r.Score < min {
-			min = r.Score
-		}
+	var num, den float64
+	for _, s := range surfaces {
+		w := 1.0 + blendK*(1.0-s.Score)
+		num += w * s.Score
+		den += w
 	}
-	return readiness, min
+	return num / den
 }

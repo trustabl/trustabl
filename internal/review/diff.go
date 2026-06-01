@@ -212,10 +212,14 @@ func (r *Renderer) Render(result models.ScanResult) string {
 	// Per-tool readiness table (only custom tool definitions appear here —
 	// agent grants and hosted instances have no function body and are scored
 	// indirectly via agent-scope rules in the Findings section).
-	b.WriteString(styleHeader.Render("Per-tool readiness (custom tool definitions)") + "\n")
-	for _, rd := range result.Readiness {
+	b.WriteString(styleHeader.Render("Surface readiness") + "\n")
+	for _, rd := range result.Surfaces {
+		label := string(rd.Kind)
+		if rd.Name != "" {
+			label += ":" + rd.Name
+		}
 		fmt.Fprintf(&b, "  %-32s %s  (%d findings)\n",
-			rd.ToolName, scoreCell(rd.Score), rd.FindingCount)
+			label, scoreCell(rd.Score), rd.FindingCount)
 	}
 	b.WriteString("\n")
 
@@ -250,8 +254,8 @@ func (r *Renderer) Render(result models.ScanResult) string {
 			fmt.Fprintf(&b, "        %s %s\n", styleDim.Render("fix:"), f.SuggestedFix)
 		}
 	}
-	for _, ready := range result.Readiness {
-		emit(ready.ToolName)
+	for _, s := range result.Surfaces {
+		emit(s.Name)
 	}
 	var rest []string
 	for name := range byTool {

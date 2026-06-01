@@ -149,10 +149,14 @@ type Finding struct {
 	Confidence   float64          `json:"confidence"` // 0..1
 }
 
-// ToolReadiness is the per-tool score from the Scoring Engine.
-type ToolReadiness struct {
-	ToolName         string  `json:"tool_name"`
-	FilePath         string  `json:"file_path"` // distinguishes same-named tools across files
+// SurfaceReadiness is the readiness score for one analyzable surface — a single
+// tool, agent, or subagent, or the repo as a whole. Kind names which; Name is
+// empty for the repo surface. Identity is (Kind, FilePath, Name) so same-named
+// surfaces across files stay distinct.
+type SurfaceReadiness struct {
+	Kind             Scope   `json:"kind"`      // tool|agent|subagent|repo
+	Name             string  `json:"name"`      // "" for the repo surface
+	FilePath         string  `json:"file_path"` // distinguishes same-named surfaces across files
 	Score            float64 `json:"score"`     // 0..1
 	FindingCount     int     `json:"finding_count"`
 	WeightedSeverity float64 `json:"weighted_severity"`
@@ -259,7 +263,7 @@ type ScanResult struct {
 	PluginManifests     []PluginManifest  `json:"plugin_manifests"`
 	ClaudeSettings      []ClaudeSettings  `json:"claude_settings"`
 	Findings            []Finding         `json:"findings"`
-	Readiness           []ToolReadiness   `json:"readiness"`
+	Surfaces            []SurfaceReadiness `json:"surfaces"`
 	OverallScore        float64           `json:"overall_score"`
 	RulesSource         string            `json:"rules_source"`     // repo the rule pack came from
 	RulesVersion        string            `json:"rules_version"`    // resolved rules commit SHA
