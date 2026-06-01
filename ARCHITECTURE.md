@@ -15,7 +15,7 @@ Trustabl scans an agent SDK repository (Claude Agent SDK, OpenAI Agents SDK,
 Google ADK, MCP), finds reliability weaknesses in its tool and agent
 definitions, and reports them. A scan is read-only: it writes nothing into the scanned repo. The
 output is a `ScanResult` — findings (each with an explanation, suggested fix,
-and confidence), per-tool readiness scores, an overall score, and the
+and confidence), per-surface readiness scores, an overall score, and the
 discovered inventory — rendered as a human summary or as JSON for CI.
 
 Single Go binary, no daemon, no server. Web app and CI surfaces are out of
@@ -627,23 +627,29 @@ Shipped rules (one row per YAML rule entry):
 
 ### Step 5 — Scoring ([internal/analysis/scoring.go](internal/analysis/scoring.go))
 
-A tool's readiness identity is `(FilePath, Name)`, not `Name` alone — repos
-reuse tool names across modules, and tool-scoped findings carry the tool's
-`FilePath`, so they attribute to the right row. Each `ToolReadiness` records its
-`FilePath` so the two rows for a shared name stay distinct in output and the
-sort is deterministic.
+Scoring works per **surface**, where a surface is a single discovered tool,
+agent, or subagent, or the repo as a whole. A surface's identity is
+`(Kind, FilePath, Name)` — repos reuse names across modules, and findings carry
+the surface's `FilePath`, so they attribute to the right row. Each finding
+carries its `Scope` (stamped at emit time), which routes it to its surface; all
+repo-scoped findings pool into one repo surface, created only when at least one
+repo finding exists. Findings with an empty scope (META) are not scored.
 
-Per-tool:
+Per-surface:
 
 ```
 weighted = Σ severityWeight(finding) * finding.confidence
 score    = max(0, 1 - weighted / saturation)        # saturation = 3.0
 ```
 
-Overall score is the **min** across per-tool scores. The agent is as reliable
-as its weakest surface; mean is misleading because one terrible tool and one
-perfect tool would average to a "moderate" overall score that hides the
-critical exposure.
+The overall score is a **badness-weighted mean** across all surfaces: surface
+weight `wᵢ = 1 + k·(1 - scoreᵢ)` (k = 3), so weak surfaces pull the number down
+harder while clean surfaces still count. This responds to both severity and
+breadth — 20 rough surfaces read worse than one — without the min-cliff (a
+single 0-scoring surface dents but does not zero the overall) and without the
+dilution-blindness of a plain mean. The overall score is a **triage signal**,
+not a gate: the CI pass/fail decision is `exitCode` (severity-based), which does
+not read the score.
 
 Both `saturation` and the severity weights in [models.SeverityWeight](internal/models/models.go)
 are initial values pending corpus calibration (architecture § 8). They live in one
@@ -655,7 +661,7 @@ The scan is read-only: review renders the `ScanResult`, it does not write
 anything into the scanned repo.
 
 - `Renderer.Render` ([diff.go](internal/review/diff.go)) — produces the human
-  scan summary printed to stdout for `--format human`: per-tool readiness, the
+  scan summary printed to stdout for `--format human`: per-surface readiness, the
   overall score, the discovered inventory, and the findings list. Color via
   lipgloss, disabled with `--no-color`. When `ScanResult.HasShellInvocations`
   is true the summary prints a `Risk surfaces: openshell` block: the count of
@@ -988,7 +994,7 @@ ScanResult {
     PluginManifests    []PluginManifest
     ClaudeSettings     []ClaudeSettings
     Findings           []Finding
-    Readiness          []ToolReadiness
+    Surfaces           []SurfaceReadiness
     OverallScore       float64
     RulesSource        string              // repo the rule pack came from
     RulesVersion       string              // resolved rules commit SHA (folded into ScanID)
@@ -1106,7 +1112,7 @@ internal/
 │   ├── heuristics.go            Domain helpers shared by every detector path:
 │   │                            FindFunctionNode, IsHTTPCall, ResolveClientAliases,
 │   │                            IsHTTPCallNode, IsPathishParam.
-│   ├── scoring.go               Per-tool + overall scoring.
+│   ├── scoring.go               Per-surface + overall scoring.
 │   └── detectors/               Detector interface + Registry runtime only.
 │       └── detector.go          Detector iface, Registry, New(ds), Subset, Run.
 ├── rules/                       YAML-driven detection engine. Authoritative.

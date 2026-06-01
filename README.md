@@ -7,7 +7,7 @@ repository (Claude Agent SDK, OpenAI Agents SDK, Google ADK, MCP), models the
 tools, agents, subagents, skills, slash commands, and plugin manifests it
 declares, and checks them against a catalog of reliability and safety rules. It reports the weaknesses it finds — each
 with an explanation, a suggested fix, and a confidence score — as a
-human-readable summary, JSON, or SARIF 2.1.0, plus a per-tool reliability
+human-readable summary, JSON, or SARIF 2.1.0, plus a per-surface reliability
 score and a CI-friendly exit code. It ships as a single Go binary; there is
 no daemon, server, or hosted service.
 
@@ -103,7 +103,7 @@ flowchart LR
     inv["Inventory<br/>Python + TS AST:<br/>tools · agents ·<br/>subagents · MCP servers"]
     pol["Policy selection<br/>load rules per<br/>detected SDK ·<br/>META findings"]
     ana["Analysis<br/>tool · agent · subagent ·<br/>repo detectors"]
-    score["Scoring<br/>per-tool score ·<br/>overall readiness"]
+    score["Scoring<br/>per-surface score ·<br/>overall readiness"]
     out[("ScanResult<br/>findings · scores<br/>(human / JSON / SARIF)")]
 
     target --> recon --> inv --> pol --> ana --> score --> out
@@ -208,10 +208,10 @@ files in the scanned repo. Each run produces a `ScanResult` containing:
 - **Findings** — one per rule hit, each with `severity`, `confidence`,
   an `explanation`, a `suggested_fix`, and the location it fired at
   (tool file/line, agent call site, subagent file, or the manifest).
-- **Per-tool readiness scores** (over custom tool definitions, since
-  those are what tool-scope rules audit) and an **overall score** (the
-  minimum across tools — an agent is only as reliable as its weakest
-  surface).
+- **Per-surface readiness scores** (one per discovered tool, agent, subagent,
+  or the repo as a whole) and an **overall score** (a breadth-aware,
+  badness-weighted mean — weak surfaces pull it down harder, but a single
+  poor surface does not zero it; the score is a triage signal, not the CI gate).
 - **The discovered inventory** — tools, agents, hosted tools, MCP
   servers, subagents, skills, slash commands, plugin manifests, and
   Claude settings — surfaced at the top level for CI consumers.
@@ -230,7 +230,7 @@ Hosted tools:       1  (...)
 Only the "Tool definitions" category flows through tool-scope rules
 (they have function bodies a rule can read). Agent grants and hosted
 instances are inputs to *agent-scope* rules, not unanalyzed — they just
-don't appear in the per-tool readiness table.
+don't appear in the per-surface readiness table.
 
 ### Output modes
 
