@@ -56,6 +56,19 @@ const q = query({
 	if a.Kwargs == nil || a.Kwargs.Children["description"] == nil {
 		t.Errorf("Kwargs.description missing: %+v", a.Kwargs)
 	}
+	// Both the inline AgentDefinition and the QueryMainAgent must carry a real
+	// EndLine — it was left at 0 (the zero value) before, violating the Location
+	// invariant and surfacing as "end_line": 0 in JSON output.
+	if a.EndLine == 0 || a.EndLine < a.Line {
+		t.Errorf("AgentDefinition EndLine: got %d (Line %d); must be set and >= Line", a.EndLine, a.Line)
+	}
+	main := findAgentByClass(agents, "QueryMainAgent")
+	if main == nil {
+		t.Fatalf("missing QueryMainAgent in %+v", agents)
+	}
+	if main.EndLine == 0 || main.EndLine < main.Line {
+		t.Errorf("QueryMainAgent EndLine: got %d (Line %d); must be set and >= Line", main.EndLine, main.Line)
+	}
 }
 
 func TestDiscoverTSAgents_TypedConst(t *testing.T) {
@@ -89,6 +102,10 @@ export const auditor: AgentDefinition = {
 		}
 		if a.Language != models.LanguageTypeScript {
 			t.Errorf("Language: got %q", a.Language)
+		}
+		// Typed-const AgentDefinitions must carry a real EndLine (was 0 before).
+		if a.EndLine == 0 || a.EndLine < a.Line {
+			t.Errorf("agent %q EndLine: got %d (Line %d); must be set and >= Line", a.Name, a.EndLine, a.Line)
 		}
 	}
 }

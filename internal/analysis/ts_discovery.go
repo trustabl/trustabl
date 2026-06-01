@@ -72,6 +72,7 @@ func extractTSToolFromCall(call *sitter.Node, pf ParsedFile) (models.ToolDef, bo
 		Location: models.Location{
 			FilePath: pf.RelPath,
 			Line:     int(call.StartPoint().Row) + 1,
+			EndLine:  int(call.EndPoint().Row) + 1,
 		},
 	}
 	// Param names from the Zod schema object.

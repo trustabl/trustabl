@@ -74,6 +74,7 @@ func extractQueryMainAgent(call *sitter.Node, pf ParsedFile) models.AgentDef {
 		Location: models.Location{
 			FilePath: pf.RelPath,
 			Line:     int(call.StartPoint().Row) + 1,
+			EndLine:  int(call.EndPoint().Row) + 1,
 		},
 		Name:    name,
 		VarName: name,
@@ -319,6 +320,7 @@ func extractInlineAgentsFromQuery(call *sitter.Node, pf ParsedFile) []models.Age
 			Location: models.Location{
 				FilePath: pf.RelPath,
 				Line:     int(prop.StartPoint().Row) + 1,
+				EndLine:  int(prop.EndPoint().Row) + 1,
 			},
 			Name:          name,
 			MCPServerRefs: mcpRefs,
@@ -433,6 +435,7 @@ func extractTypedConstAgent(decl *sitter.Node, pf ParsedFile) (models.AgentDef, 
 		Location: models.Location{
 			FilePath: pf.RelPath,
 			Line:     int(decl.StartPoint().Row) + 1,
+			EndLine:  int(decl.EndPoint().Row) + 1,
 		},
 		Name:    name,
 		VarName: name,

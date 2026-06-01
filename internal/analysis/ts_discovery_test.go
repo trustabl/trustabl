@@ -54,6 +54,15 @@ const searchTool = tool(
 	if len(tool.ParamNames) != 1 || tool.ParamNames[0] != "query" {
 		t.Errorf("ParamNames: got %+v, want [query]", tool.ParamNames)
 	}
+	// Location must span the full multi-line tool() call. EndLine was left at
+	// the zero value before, violating the Location invariant (every entity
+	// sets EndLine — single-line entities set EndLine == Line, never 0).
+	if tool.Line != 5 {
+		t.Errorf("Line: got %d, want 5", tool.Line)
+	}
+	if tool.EndLine != 10 {
+		t.Errorf("EndLine: got %d, want 10 (full tool() call span, not 0)", tool.EndLine)
+	}
 }
 
 func TestDiscoverTSTools_NoImportGate_NoExtraction(t *testing.T) {
