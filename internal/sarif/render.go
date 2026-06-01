@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"net/url"
 	"sort"
 	"strings"
 
@@ -44,9 +45,9 @@ func securitySeverityForSeverity(s models.Severity) string {
 }
 
 // tagsForFinding builds the rule-descriptor tag set: category, scope (parsed
-// from the rule ID prefix when applicable), and language. Language defaults
-// to "python" because Trustabl's discovery is python-only today and the
-// loader fills "" with "python".
+// from the rule ID prefix when applicable), and language (derived from the
+// finding's file extension, since Trustabl now does first-class TypeScript /
+// JavaScript discovery alongside Python).
 func tagsForFinding(f models.Finding) []string {
 	tags := []string{}
 	if f.Category != "" {
@@ -60,8 +61,25 @@ func tagsForFinding(f models.Finding) []string {
 	if scope := scopeFromRuleID(f.RuleID); scope != "" {
 		tags = append(tags, scope)
 	}
-	tags = append(tags, "python") // language; revisit when multi-language discovery lands
+	tags = append(tags, languageTagForPath(f.FilePath))
 	return tags
+}
+
+// languageTagForPath maps a finding's file path to a language tag for SARIF.
+// Falls back to "python" when the path has no recognized source extension
+// (e.g. repo-scope findings with no file), preserving prior behavior.
+func languageTagForPath(path string) string {
+	lower := strings.ToLower(path)
+	switch {
+	case strings.HasSuffix(lower, ".ts"), strings.HasSuffix(lower, ".tsx"),
+		strings.HasSuffix(lower, ".mts"), strings.HasSuffix(lower, ".cts"):
+		return "typescript"
+	case strings.HasSuffix(lower, ".js"), strings.HasSuffix(lower, ".jsx"),
+		strings.HasSuffix(lower, ".mjs"):
+		return "javascript"
+	default:
+		return "python"
+	}
 }
 
 // scopeFromRuleID returns the rule's scope tag based on its numeric prefix, or
@@ -124,8 +142,11 @@ func ruleFromFinding(f models.Finding) ReportingDescriptor {
 
 // resultFromFinding builds a SARIF Result from a Finding. ruleIndex points at
 // the entry for f.RuleID in tool.driver.rules (or nil if unknown — defensive,
-// shouldn't happen in normal flow).
-func resultFromFinding(f models.Finding, ruleIndex *int) Result {
+// shouldn't happen in normal flow). useBase controls whether the location
+// references the REPO_ROOT uriBaseId: only when buildRun also emits the matching
+// originalUriBaseIds entry (local scans), so the SARIF is never internally
+// inconsistent with a dangling base reference.
+func resultFromFinding(f models.Finding, ruleIndex *int, useBase bool) Result {
 	r := Result{
 		RuleID:    f.RuleID,
 		RuleIndex: ruleIndex,
@@ -146,12 +167,11 @@ func resultFromFinding(f models.Finding, ruleIndex *int) Result {
 
 	// Locations: physical when we have a file; logical when we have a tool name.
 	if f.FilePath != "" {
-		phys := &PhysicalLocation{
-			ArtifactLocation: ArtifactLocation{
-				URI:       f.FilePath,
-				URIBaseID: "REPO_ROOT",
-			},
+		al := ArtifactLocation{URI: f.FilePath}
+		if useBase {
+			al.URIBaseID = "REPO_ROOT"
 		}
+		phys := &PhysicalLocation{ArtifactLocation: al}
 		if f.Line > 0 {
 			phys.Region = &Region{StartLine: f.Line}
 		}
@@ -228,6 +248,20 @@ func Render(sr models.ScanResult, toolVersion string) []byte {
 	return append(out, '\n')
 }
 
+// sortFindings orders findings by (RuleID, FilePath, Line) so SARIF output is
+// byte-stable regardless of the order findings are supplied in.
+func sortFindings(fs []models.Finding) {
+	sort.SliceStable(fs, func(i, j int) bool {
+		if fs[i].RuleID != fs[j].RuleID {
+			return fs[i].RuleID < fs[j].RuleID
+		}
+		if fs[i].FilePath != fs[j].FilePath {
+			return fs[i].FilePath < fs[j].FilePath
+		}
+		return fs[i].Line < fs[j].Line
+	})
+}
+
 // buildRun assembles the single run that Trustabl emits.
 func buildRun(sr models.ScanResult, toolVersion string) Run {
 	// Partition findings: META-001/004 → notifications; everything else → results.
@@ -240,6 +274,12 @@ func buildRun(sr models.ScanResult, toolVersion string) Run {
 			resultFindings = append(resultFindings, f)
 		}
 	}
+
+	// Byte-stable SARIF is a hard contract; the renderer owns it rather than
+	// inheriting whatever order sr.Findings arrived in, so a future change to
+	// finding assembly upstream cannot perturb the emitted bytes.
+	sortFindings(resultFindings)
+	sortFindings(notifyFindings)
 
 	// Build the referenced rule catalog from the first Finding seen for each
 	// rule. Sort by ID for determinism.
@@ -261,11 +301,16 @@ func buildRun(sr models.ScanResult, toolVersion string) Run {
 		indexByID[id] = i
 	}
 
+	// A REPO_ROOT uriBaseId is only meaningful for a local scan (see the
+	// originalUriBaseIds block below). Results must reference the base only when
+	// it is actually emitted, or the SARIF is internally inconsistent.
+	useBase := !sr.Manifest.IsRemote && sr.Manifest.RepoRoot != ""
+
 	// Results.
 	results := make([]Result, 0, len(resultFindings))
 	for _, f := range resultFindings {
 		idx := indexByID[f.RuleID]
-		results = append(results, resultFromFinding(f, &idx))
+		results = append(results, resultFromFinding(f, &idx, useBase))
 	}
 
 	// Notifications.
@@ -295,7 +340,12 @@ func buildRun(sr models.ScanResult, toolVersion string) Run {
 		}},
 		Results: results,
 	}
-	if sr.Manifest.RepoRoot != "" {
+	// Only emit a REPO_ROOT base for LOCAL scans. For a remote scan the repo
+	// root is a throwaway temp clone dir (trustabl-clone-*) that means nothing
+	// to a SARIF consumer and would leak the local filesystem layout into the
+	// report; GitHub code scanning resolves results by their repo-relative URI +
+	// versionControlProvenance, not by uriBaseId. See review finding H7.
+	if useBase {
 		run.OriginalUriBaseIds = map[string]ArtifactLocation{
 			"REPO_ROOT": {URI: repoRootURI(sr.Manifest.RepoRoot)},
 		}
@@ -310,7 +360,9 @@ func buildRun(sr models.ScanResult, toolVersion string) Run {
 
 // repoRootURI normalizes the repo root into a file:// URI ending with a slash,
 // suitable for use as a SARIF uriBaseId base. The trailing slash matters for
-// SARIF's resolution rules (uriBase + relative uri = full uri).
+// SARIF's resolution rules (uriBase + relative uri = full uri). The path is
+// percent-encoded so a root containing spaces or non-ASCII characters produces
+// a valid URI a SARIF validator will accept.
 func repoRootURI(root string) string {
 	root = strings.ReplaceAll(root, "\\", "/")
 	if !strings.HasSuffix(root, "/") {
@@ -318,7 +370,15 @@ func repoRootURI(root string) string {
 	}
 	// Treat absolute-looking roots as file URIs; otherwise leave as-is.
 	if len(root) > 1 && (root[0] == '/' || (len(root) > 2 && root[1] == ':')) {
-		return "file:///" + strings.TrimPrefix(root, "/")
+		// url.URL.String() percent-encodes the path while leaving "/" separators
+		// intact. A leading "/" is required so a Windows drive path ("C:/...")
+		// becomes file:///C:/... and a POSIX path ("/tmp/...") stays file:///tmp/...
+		p := root
+		if !strings.HasPrefix(p, "/") {
+			p = "/" + p
+		}
+		u := url.URL{Scheme: "file", Path: p}
+		return u.String()
 	}
 	return root
 }

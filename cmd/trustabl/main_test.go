@@ -2,11 +2,35 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/trustabl/trustabl/internal/models"
 )
+
+// TestFinishScan_GenericErrorNotDoublePrinted guards the double-print fix: in an
+// active progress mode (plain/tty) the reporter's Fatal already presented the
+// error, so finishScan must return a silent exitCodeError rather than the raw
+// error (which main would print a second time). In off mode nothing presented
+// it, so the raw error must propagate for main to print once.
+func TestFinishScan_GenericErrorNotDoublePrinted(t *testing.T) {
+	genErr := errors.New("boom")
+
+	// Plain mode (human format, non-tty in tests): reporter already showed it.
+	errPlain := finishScan(models.ScanResult{}, genErr, scanFlags{format: "human"})
+	var ec exitCodeError
+	if !errors.As(errPlain, &ec) {
+		t.Errorf("plain mode: got %v, want silent exitCodeError", errPlain)
+	}
+
+	// Off mode (json format forces progress off): main must print it, so the
+	// raw error propagates.
+	errOff := finishScan(models.ScanResult{}, genErr, scanFlags{format: "json"})
+	if !errors.Is(errOff, genErr) {
+		t.Errorf("off mode: got %v, want the raw error to propagate", errOff)
+	}
+}
 
 func TestVersionCommandOutput(t *testing.T) {
 	// Save and restore the package-level vars so the test is hermetic.

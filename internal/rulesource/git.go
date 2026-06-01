@@ -1,8 +1,10 @@
 package rulesource
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
@@ -10,15 +12,22 @@ import (
 	"github.com/go-git/go-git/v5/storage/memory"
 )
 
+// networkTimeout bounds every remote git operation (ref listing and clone). A
+// hung or slow-loris remote must not hang the scan forever — without a deadline
+// the only way out is SIGINT. 120s is generous for a shallow clone of the rules
+// repo while still guaranteeing forward progress.
+const networkTimeout = 120 * time.Second
+
 // resolveRef contacts the remote at url and returns the commit SHA and full
 // reference name for ref. An empty ref resolves the remote's default-branch
-// HEAD; a non-empty ref is matched against branches then tags.
-func resolveRef(url, ref string) (sha string, name plumbing.ReferenceName, err error) {
+// HEAD; a non-empty ref is matched against branches then tags. The operation is
+// bounded by ctx (see networkTimeout).
+func resolveRef(ctx context.Context, url, ref string) (sha string, name plumbing.ReferenceName, err error) {
 	remote := git.NewRemote(memory.NewStorage(), &config.RemoteConfig{
 		Name: "origin",
 		URLs: []string{url},
 	})
-	refs, err := remote.List(&git.ListOptions{})
+	refs, err := remote.ListContext(ctx, &git.ListOptions{})
 	if err != nil {
 		return "", "", fmt.Errorf("contact rules repo %s: %w", url, err)
 	}
@@ -66,8 +75,8 @@ func resolveRef(url, ref string) (sha string, name plumbing.ReferenceName, err e
 //     cloned repo's HEAD — not by the SHA resolveRef observed earlier. That
 //     closes the window where a branch tip advances between resolveRef and the
 //     clone, which would otherwise record a SHA that mislabels the content.
-func cloneInto(url string, refName plumbing.ReferenceName, cacheDir string) (string, error) {
-	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+func cloneInto(ctx context.Context, url string, refName plumbing.ReferenceName, cacheDir string) (string, error) {
+	if err := os.MkdirAll(cacheDir, 0o700); err != nil {
 		return "", &fatalResolveError{fmt.Errorf("create rules cache dir: %w", err)}
 	}
 	tmp, err := os.MkdirTemp(cacheDir, ".tmp-clone-*")
@@ -81,8 +90,9 @@ func cloneInto(url string, refName plumbing.ReferenceName, cacheDir string) (str
 		opts.ReferenceName = refName
 	}
 	// A clone failure is a remote-contact fault — left unwrapped so Resolve may
-	// fall back to cached rules (the offline story).
-	repo, err := git.PlainClone(tmp, false, opts)
+	// fall back to cached rules (the offline story). The clone is ctx-bounded so
+	// a hung remote cannot stall the scan indefinitely.
+	repo, err := git.PlainCloneContext(ctx, tmp, false, opts)
 	if err != nil {
 		return "", fmt.Errorf("clone rules repo %s: %w", url, err)
 	}

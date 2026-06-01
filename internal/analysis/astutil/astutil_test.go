@@ -40,6 +40,12 @@ func TestKwargValue(t *testing.T) {
 		{"absent", "requests.get(url)", "timeout", "", false},
 		{"none", "requests.get(url, timeout=None)", "timeout", "None", true},
 		{"int", "requests.get(url, timeout=10)", "timeout", "10", true},
+		// A kwarg nested inside an argument's own call must NOT be attributed to
+		// the outer call — otherwise "does this call set timeout?" answers true
+		// for a timeout that belongs to build(...), a false negative for
+		// timeout/retry findings. parseFirstCall returns the outer call here.
+		{"nested-not-attributed", "requests.get(url, headers=build(timeout=5))", "timeout", "", false},
+		{"direct-wins-over-nested", "requests.get(url, timeout=10, headers=build(timeout=5))", "timeout", "10", true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

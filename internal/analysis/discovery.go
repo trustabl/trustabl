@@ -3,6 +3,7 @@
 package analysis
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -48,6 +49,11 @@ func DiscoverTools(manifest models.ScanManifest, onFile func(path string)) ([]mo
 	var tools []models.ToolDef
 	var parsed []ParsedFile
 
+	// Reuse one parser across every file instead of allocating a fresh C parser
+	// per file (the prior astutil.Parse-per-file pattern). Parsers are reusable
+	// and not shared across goroutines; this loop is single-threaded.
+	parser := astutil.NewPyParser()
+
 	for _, rel := range manifest.PythonFiles {
 		if onFile != nil {
 			onFile(rel)
@@ -57,7 +63,7 @@ func DiscoverTools(manifest models.ScanManifest, onFile func(path string)) ([]mo
 		if err != nil {
 			continue
 		}
-		tree, err := astutil.Parse(src)
+		tree, err := parser.ParseCtx(context.Background(), nil, src)
 		if err != nil {
 			// One unparseable file shouldn't fail the scan. Surface upstream
 			// via the result if needed; for now, skip silently.

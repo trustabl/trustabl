@@ -353,22 +353,26 @@ func PredCallWithKwargValue(expr CallWithKwargValueExpr, t models.ToolDef, pf an
 		if args == nil {
 			return true
 		}
-		astutil.Walk(args, func(kn *sitter.Node) bool {
+		// Only the call's DIRECT keyword arguments count — descending into a
+		// nested argument's own call would attribute its kwargs to this call
+		// (the same nested-attribution bug fixed in astutil.KwargValue).
+		argc := int(args.NamedChildCount())
+		for i := 0; i < argc; i++ {
+			kn := args.NamedChild(i)
 			if kn.Type() != "keyword_argument" {
-				return true
+				continue
 			}
 			kname := kn.ChildByFieldName("name")
 			kval := kn.ChildByFieldName("value")
 			if kname == nil || kval == nil {
-				return true
+				continue
 			}
 			if astutil.NodeText(kname, pf.Source) == expr.Kwarg &&
 				astutil.NodeText(kval, pf.Source) == expr.Value {
 				found = true
-				return false
+				break
 			}
-			return true
-		})
+		}
 		return !found
 	})
 	return found

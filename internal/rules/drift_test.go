@@ -1,10 +1,31 @@
 package rules
 
 import (
+	"os"
 	"reflect"
 	"strings"
 	"testing"
 )
+
+// TestSchemaYAML_DocumentsEveryPredicate closes the gap the package CLAUDE.md
+// implies is guarded: schema.yaml is the human reference for the schema, but
+// nothing previously asserted it stays in sync with the MatchExpr struct (the
+// source of truth). A predicate added to schema.go but never documented in
+// schema.yaml would let that reference silently rot. Membership-only check (the
+// name appears somewhere in the file) — enough to flag an undocumented
+// predicate without over-constraining the prose layout.
+func TestSchemaYAML_DocumentsEveryPredicate(t *testing.T) {
+	doc, err := os.ReadFile("schema.yaml")
+	if err != nil {
+		t.Fatalf("read schema.yaml: %v", err)
+	}
+	text := string(doc)
+	for name := range reflectedPredicateNames(t) {
+		if !strings.Contains(text, name) {
+			t.Errorf("predicate %q is a MatchExpr field but is not documented anywhere in schema.yaml — the human schema reference has drifted from schema.go", name)
+		}
+	}
+}
 
 // The match layer keeps three hand-maintained tables that MUST agree on the set
 // of predicate names: the MatchExpr struct fields (the anchor / source of

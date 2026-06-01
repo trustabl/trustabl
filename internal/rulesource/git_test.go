@@ -1,6 +1,7 @@
 package rulesource
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -48,7 +49,7 @@ func TestResolveRef_DefaultHEAD(t *testing.T) {
 	dir := t.TempDir()
 	remote := filepath.Join(dir, "remote")
 	want := newFixtureRepo(t, remote, map[string]string{"manifest.yaml": "schema_version: 1\n"})
-	sha, _, err := resolveRef(remote, "")
+	sha, _, err := resolveRef(context.Background(), remote, "")
 	if err != nil {
 		t.Fatalf("resolveRef: %v", err)
 	}
@@ -65,11 +66,11 @@ func TestCloneInto_CopiesContent(t *testing.T) {
 		"claude_sdk/a.yaml": "policy: {}\n",
 	})
 	cache := filepath.Join(dir, "cache")
-	_, name, err := resolveRef(remote, "")
+	_, name, err := resolveRef(context.Background(), remote, "")
 	if err != nil {
 		t.Fatalf("resolveRef: %v", err)
 	}
-	sha, err := cloneInto(remote, name, cache)
+	sha, err := cloneInto(context.Background(), remote, name, cache)
 	if err != nil {
 		t.Fatalf("cloneInto: %v", err)
 	}
@@ -129,7 +130,7 @@ func TestResolve_IgnoresPartialPack(t *testing.T) {
 }
 
 func TestResolveRef_NetworkError(t *testing.T) {
-	if _, _, err := resolveRef(filepath.Join(t.TempDir(), "does-not-exist"), ""); err == nil {
+	if _, _, err := resolveRef(context.Background(), filepath.Join(t.TempDir(), "does-not-exist"), ""); err == nil {
 		t.Fatal("expected error for nonexistent remote, got nil")
 	}
 }

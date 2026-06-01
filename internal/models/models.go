@@ -230,6 +230,16 @@ type RepoInventory struct {
 	UsesDefaultTracing  bool         `json:"uses_default_tracing"`
 }
 
+// Coverage records how thoroughly the scan actually parsed the repo's source.
+// A scanner that silently skips files it cannot read or parse can report a
+// near-empty, low-risk result that is indistinguishable from a genuinely clean
+// repo — the worst failure mode for a security tool. Surfacing the skip count
+// makes incomplete coverage an explicit, machine-readable signal.
+type Coverage struct {
+	FilesParsed  int `json:"files_parsed"`  // source files successfully read AND parsed
+	FilesSkipped int `json:"files_skipped"` // source files attempted but skipped (read or parse error)
+}
+
 // ScanResult is the top-level output. JSON-serializable for CI.
 type ScanResult struct {
 	ScanID              string            `json:"scan_id"`
@@ -253,4 +263,5 @@ type ScanResult struct {
 	RulesSource         string            `json:"rules_source"`     // repo the rule pack came from
 	RulesVersion        string            `json:"rules_version"`    // resolved rules commit SHA
 	RulesFromCache      bool              `json:"rules_from_cache"` // true if rules came from cache (network skipped/unreachable)
+	Coverage            Coverage          `json:"coverage"`         // how many source files parsed vs. were skipped
 }

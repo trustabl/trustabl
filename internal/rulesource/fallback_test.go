@@ -1,6 +1,7 @@
 package rulesource
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -24,7 +25,7 @@ func TestCloneInto_LocalFSFailureIsFatal(t *testing.T) {
 		t.Fatalf("seed cache file: %v", err)
 	}
 
-	_, err := cloneInto(remote, "", cacheFile)
+	_, err := cloneInto(context.Background(), remote, "", cacheFile)
 	if err == nil {
 		t.Fatal("cloneInto into a file-path cache returned nil error")
 	}
@@ -60,7 +61,7 @@ func TestResolve_LocalInstallFailureNotMaskedAsCache(t *testing.T) {
 
 	// Simulate a local install fault during that clone.
 	orig := cloneIntoFn
-	cloneIntoFn = func(url string, refName plumbing.ReferenceName, cacheDir string) (string, error) {
+	cloneIntoFn = func(_ context.Context, url string, refName plumbing.ReferenceName, cacheDir string) (string, error) {
 		return "", &fatalResolveError{errors.New("simulated disk-full during install")}
 	}
 	defer func() { cloneIntoFn = orig }()
@@ -99,7 +100,7 @@ func TestResolve_RemoteCloneFailureStillFallsBack(t *testing.T) {
 	})
 
 	orig := cloneIntoFn
-	cloneIntoFn = func(url string, refName plumbing.ReferenceName, cacheDir string) (string, error) {
+	cloneIntoFn = func(_ context.Context, url string, refName plumbing.ReferenceName, cacheDir string) (string, error) {
 		return "", errors.New("connection reset during clone") // plain, non-fatal
 	}
 	defer func() { cloneIntoFn = orig }()

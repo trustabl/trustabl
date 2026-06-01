@@ -13,13 +13,22 @@ import (
 	"github.com/smacker/go-tree-sitter/python"
 )
 
+// NewPyParser returns a parser configured for the tree-sitter-python grammar.
+// Parsers are reusable across files, and reuse avoids allocating a fresh C
+// parser per file; they are not safe for concurrent use, so create one per
+// goroutine if you parallelize.
+func NewPyParser() *sitter.Parser {
+	p := sitter.NewParser()
+	p.SetLanguage(python.GetLanguage())
+	return p
+}
+
 // Parse parses Python source into a tree. Returns the tree and the original
 // source — detectors need both (the tree gives structure; the source gives
-// the actual byte content of identifiers).
+// the actual byte content of identifiers). Each call allocates a one-shot
+// parser; hot per-file loops should reuse a NewPyParser instead.
 func Parse(src []byte) (*sitter.Tree, error) {
-	parser := sitter.NewParser()
-	parser.SetLanguage(python.GetLanguage())
-	return parser.ParseCtx(context.Background(), nil, src)
+	return NewPyParser().ParseCtx(context.Background(), nil, src)
 }
 
 // NodeText returns the source bytes a node spans, as a string.
@@ -46,22 +55,33 @@ func NodeEndLine(n *sitter.Node) int {
 	return int(n.EndPoint().Row) + 1
 }
 
+// maxWalkDepth bounds the recursion depth of a tree walk. Discovery parses
+// untrusted source, and a pathologically nested input (thousands of nested
+// brackets/parens) yields a correspondingly deep tree that would otherwise
+// recurse until the goroutine stack is exhausted and the scanner crashes. A
+// cap this high is never reached by real code but caps an adversarial file.
+const maxWalkDepth = 4000
+
 // Walk performs a pre-order traversal, calling fn on each named node. Return
-// false from fn to stop descending into that subtree.
+// false from fn to stop descending into that subtree. Traversal stops descending
+// past maxWalkDepth to bound stack growth on adversarially-nested input.
 func Walk(root *sitter.Node, fn func(*sitter.Node) bool) {
 	if root == nil {
 		return
 	}
-	walk(root, fn)
+	walk(root, fn, 0)
 }
 
-func walk(n *sitter.Node, fn func(*sitter.Node) bool) {
+func walk(n *sitter.Node, fn func(*sitter.Node) bool, depth int) {
+	if depth > maxWalkDepth {
+		return
+	}
 	if !fn(n) {
 		return
 	}
 	count := int(n.NamedChildCount())
 	for i := 0; i < count; i++ {
-		walk(n.NamedChild(i), fn)
+		walk(n.NamedChild(i), fn, depth+1)
 	}
 }
 
@@ -215,24 +235,27 @@ func KwargValue(call *sitter.Node, src []byte, name string) (value string, prese
 	if args == nil {
 		return "", false
 	}
-	Walk(args, func(n *sitter.Node) bool {
-		if present {
-			return false
-		}
+	// Inspect only the call's DIRECT keyword arguments. A previous Walk descended
+	// the whole argument subtree, so a kwarg nested inside an argument's own call
+	// — e.g. requests.get(url, headers=build(timeout=5)) — was wrongly attributed
+	// to the outer call, making "does this call set `timeout`?" answer true and
+	// silently weakening timeout/retry findings. keyword_argument nodes are direct
+	// children of the argument_list, so depth-1 is the correct scope.
+	count := int(args.NamedChildCount())
+	for i := 0; i < count; i++ {
+		n := args.NamedChild(i)
 		if n.Type() != "keyword_argument" {
-			return true
+			continue
 		}
 		k := n.ChildByFieldName("name")
 		if k != nil && NodeText(k, src) == name {
-			present = true
 			if v := n.ChildByFieldName("value"); v != nil {
 				value = NodeText(v, src)
 			}
-			return false
+			return value, true
 		}
-		return true
-	})
-	return value, present
+	}
+	return "", false
 }
 
 // FunctionHasTypedParams reports whether the function declares at least one

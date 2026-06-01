@@ -143,3 +143,23 @@ func TestPull_NetworkFailErrors(t *testing.T) {
 		t.Fatal("Pull against a dead remote returned nil error")
 	}
 }
+
+func TestValidateRepoURL(t *testing.T) {
+	cases := []struct {
+		raw     string
+		wantErr bool
+	}{
+		{"https://github.com/trustabl/trustabl-rules", false},
+		{"ssh://git@github.com/trustabl/trustabl-rules.git", false},
+		{"git@github.com:trustabl/trustabl-rules.git", false},
+		{"/local/path/to/rules", false}, // bare local path: legitimate offline source
+		{`C:\local\rules`, false},       // Windows drive path: scheme "c" treated as local
+		{"git://example.com/rules.git", true},
+		{"file:///etc/passwd", true},
+	}
+	for _, c := range cases {
+		if err := validateRepoURL(c.raw); (err != nil) != c.wantErr {
+			t.Errorf("validateRepoURL(%q) err=%v, wantErr=%v", c.raw, err, c.wantErr)
+		}
+	}
+}

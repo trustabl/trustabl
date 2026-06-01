@@ -241,6 +241,14 @@ func finishScan(result models.ScanResult, jobErr error, f scanFlags) error {
 				`Run "trustabl rules pull" to download the rule packs.`)
 			return exitCodeError{2}
 		}
+		// A generic error was already surfaced to the user by the reporter's
+		// Fatal() in plain/tty modes (the "[phase] failed: …" line / the ✗ row).
+		// Returning it raw here would make main() print "Error: …" a second
+		// time. Only in silent (off) mode did nothing present it, so let main
+		// be the single presenter there.
+		if pickScanMode(f) != progress.ModeOff {
+			return exitCodeError{2}
+		}
 		return jobErr
 	}
 
@@ -251,6 +259,16 @@ func finishScan(result models.ScanResult, jobErr error, f scanFlags) error {
 		fmt.Fprintf(os.Stderr,
 			"warning: using cached rules %s; could not fetch or use newer rules\n",
 			result.RulesVersion)
+	}
+
+	// Incomplete parse coverage must never masquerade as a clean result. If any
+	// AST-targeted file was skipped (unreadable or unparseable), say so on
+	// stderr — stdout stays machine-clean for JSON/SARIF consumers.
+	if skipped := result.Coverage.FilesSkipped; skipped > 0 {
+		total := result.Coverage.FilesParsed + skipped
+		fmt.Fprintf(os.Stderr,
+			"warning: %d of %d source files could not be parsed and were skipped; findings may be incomplete\n",
+			skipped, total)
 	}
 
 	switch f.format {

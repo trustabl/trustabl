@@ -117,6 +117,13 @@ func detectSDKDeps(root string) []models.SDKDep {
 // .tox, .mypy_cache, .pytest_cache) and any other dot-prefixed directory,
 // EXCEPT .claude/ — that's a real agent-config directory we deliberately
 // descend into.
+// maxScannedFileBytes caps the size of an individual source file the scan will
+// consider. A single multi-gigabyte file (hostile, or a generated blob checked
+// into the repo) must not be slurped into memory by a downstream reader and
+// OOM the scan. Files over this cap are left out of the manifest entirely, so
+// no reader ever opens them. 10 MiB comfortably covers real source files.
+const maxScannedFileBytes = 10 << 20
+
 func Normalize(src *Source, onFile func(string)) (models.ScanManifest, error) {
 	manifest := models.ScanManifest{
 		RepoRoot:    src.RootPath,
@@ -137,6 +144,18 @@ func Normalize(src *Source, onFile func(string)) (models.ScanManifest, error) {
 			if shouldSkipDir(d.Name()) {
 				return filepath.SkipDir
 			}
+			return nil
+		}
+		// Skip symlinks: following one can read content outside the repo tree
+		// (e.g. a link to /etc/passwd or ../../secret), whose bytes are not part
+		// of the repo being scanned and could surface in a finding snippet.
+		// WalkDir does not descend symlinked directories, but it still yields
+		// symlinked files — exclude them here so no downstream reader follows them.
+		if d.Type()&fs.ModeSymlink != 0 {
+			return nil
+		}
+		// Cap individual file size so a giant file cannot OOM a downstream reader.
+		if info, ierr := d.Info(); ierr == nil && info.Size() > maxScannedFileBytes {
 			return nil
 		}
 		rel, err := filepath.Rel(src.RootPath, path)

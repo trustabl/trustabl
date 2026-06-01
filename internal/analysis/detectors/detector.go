@@ -11,11 +11,35 @@
 package detectors
 
 import (
+	"fmt"
 	"sort"
 
 	"github.com/trustabl/trustabl/internal/analysis"
 	"github.com/trustabl/trustabl/internal/models"
 )
+
+// safeDetect runs one detector's Detect call, recovering any panic so a single
+// malformed rule cannot crash the whole scan. Rule packs are loaded from an
+// external repo (trustabl-rules), so a rule that steers a predicate into a nil
+// dereference or an out-of-range index is untrusted input — it must degrade to
+// a skipped detector plus a diagnostic finding, not a process abort. The
+// returned finding is emitted through the same deterministic sort as every other
+// finding, so recovery does not perturb byte-stable output.
+func safeDetect(ruleID string, cat models.DetectorCategory, detect func() []models.Finding) (findings []models.Finding) {
+	defer func() {
+		if r := recover(); r != nil {
+			findings = []models.Finding{{
+				RuleID:      ruleID,
+				Category:    cat,
+				Severity:    models.SeverityInfo,
+				Title:       "Detector skipped after internal error",
+				Explanation: fmt.Sprintf("Rule %s could not be evaluated and was skipped (internal error: %v). This is an engine or rule-pack defect, not a finding about the scanned code.", ruleID, r),
+				Confidence:  1,
+			}}
+		}
+	}()
+	return detect()
+}
 
 // ToolDetector fires against one ToolDef at a time.
 type ToolDetector interface {
@@ -83,7 +107,7 @@ func (r *Registry) Run(profile models.RepoProfile, inv models.RepoInventory, par
 			if !d.Applies(t) {
 				continue
 			}
-			out = append(out, d.Detect(t, pf, inv)...)
+			out = append(out, safeDetect(d.RuleID(), d.Category(), func() []models.Finding { return d.Detect(t, pf, inv) })...)
 		}
 	}
 	for _, a := range inv.Agents {
@@ -94,7 +118,7 @@ func (r *Registry) Run(profile models.RepoProfile, inv models.RepoInventory, par
 			if !d.Applies(a) {
 				continue
 			}
-			out = append(out, d.Detect(a, inv)...)
+			out = append(out, safeDetect(d.RuleID(), d.Category(), func() []models.Finding { return d.Detect(a, inv) })...)
 		}
 	}
 	for _, s := range inv.Subagents {
@@ -105,14 +129,14 @@ func (r *Registry) Run(profile models.RepoProfile, inv models.RepoInventory, par
 			if !d.Applies(s) {
 				continue
 			}
-			out = append(out, d.Detect(s, inv)...)
+			out = append(out, safeDetect(d.RuleID(), d.Category(), func() []models.Finding { return d.Detect(s, inv) })...)
 		}
 	}
 	for _, d := range r.repo {
 		if !d.Applies(profile, inv) {
 			continue
 		}
-		out = append(out, d.Detect(profile, inv)...)
+		out = append(out, safeDetect(d.RuleID(), d.Category(), func() []models.Finding { return d.Detect(profile, inv) })...)
 	}
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].RuleID != out[j].RuleID {

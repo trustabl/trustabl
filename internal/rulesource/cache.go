@@ -60,7 +60,7 @@ func pruneCache(cacheDir, keep string) {
 // interrupted write can never leave a truncated pointer that readCurrent would
 // misread.
 func writeCurrent(cacheDir, sha string) error {
-	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+	if err := os.MkdirAll(cacheDir, 0o700); err != nil {
 		return err
 	}
 	tmp, err := os.CreateTemp(cacheDir, ".tmp-current-*")

@@ -4,11 +4,14 @@
 package rulesource
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // DefaultRepoURL is the canonical rules repository pulled at scan time. It is
@@ -37,6 +40,33 @@ func (e *fatalResolveError) Unwrap() error { return e.err }
 // cloneIntoFn is a seam so tests can simulate an install failure without
 // forcing a real disk fault. Production always uses cloneInto.
 var cloneIntoFn = cloneInto
+
+// validateRepoURL rejects rules-repo URLs whose transport is unsafe. The repo
+// URL is operator-controlled (--rules-repo / TRUSTABL_RULES_REPO), so an
+// attacker-influenced value must not be able to turn a "remote fetch" into a
+// local-filesystem read (file://) or a cleartext/unauthenticated transport
+// (git://). A bare local path (empty scheme) is allowed — that is a legitimate
+// offline/development rules source — as is the scp-like git@host:path form.
+func validateRepoURL(raw string) error {
+	if strings.HasPrefix(raw, "git@") {
+		return nil // scp-like SSH shorthand
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" {
+		return nil // local filesystem path, not a network transport
+	}
+	// A single-letter scheme is a Windows drive letter (C:\...), i.e. a local
+	// path — url.Parse reports its drive as the "scheme". Treat it as local.
+	if len(u.Scheme) == 1 {
+		return nil
+	}
+	switch u.Scheme {
+	case "http", "https", "ssh":
+		return nil
+	default:
+		return fmt.Errorf("rules repo URL uses unsupported transport %q (allowed: https, ssh): %s", u.Scheme, raw)
+	}
+}
 
 // Config controls one rule-source resolution.
 type Config struct {
@@ -100,17 +130,23 @@ func Resolve(cfg Config, supported int) (Resolved, error) {
 	if err != nil {
 		return Resolved{}, err
 	}
+	if err := validateRepoURL(cfg.RepoURL); err != nil {
+		return Resolved{}, err
+	}
 
 	if cfg.NoUpdate {
 		return fallbackToCache(cfg, supported)
 	}
 
-	sha, refName, err := resolveRef(cfg.RepoURL, cfg.Ref)
+	ctx, cancel := context.WithTimeout(context.Background(), networkTimeout)
+	defer cancel()
+
+	sha, refName, err := resolveRef(ctx, cfg.RepoURL, cfg.Ref)
 	if err != nil {
 		return fallbackToCache(cfg, supported)
 	}
 	if !packExists(cfg.CacheDir, sha) {
-		cloned, err := cloneIntoFn(cfg.RepoURL, refName, cfg.CacheDir)
+		cloned, err := cloneIntoFn(ctx, cfg.RepoURL, refName, cfg.CacheDir)
 		if err != nil {
 			// A local install fault (disk full, permission, failed rename,
 			// corrupt clone) must surface — falling back to stale cached rules
@@ -147,12 +183,17 @@ func Pull(cfg Config, supported int) (Resolved, error) {
 	if err != nil {
 		return Resolved{}, err
 	}
-	sha, refName, err := resolveRef(cfg.RepoURL, cfg.Ref)
+	if err := validateRepoURL(cfg.RepoURL); err != nil {
+		return Resolved{}, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), networkTimeout)
+	defer cancel()
+	sha, refName, err := resolveRef(ctx, cfg.RepoURL, cfg.Ref)
 	if err != nil {
 		return Resolved{}, err
 	}
 	if !packExists(cfg.CacheDir, sha) {
-		cloned, err := cloneInto(cfg.RepoURL, refName, cfg.CacheDir)
+		cloned, err := cloneInto(ctx, cfg.RepoURL, refName, cfg.CacheDir)
 		if err != nil {
 			return Resolved{}, err
 		}

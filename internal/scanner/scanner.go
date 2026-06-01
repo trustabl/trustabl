@@ -114,6 +114,25 @@ func Run(cfg Config) (models.ScanResult, error) {
 	tsFiles := parseTSFiles(profile.Manifest.TypeScriptFiles, profile.Manifest.RepoRoot, func(path string) {
 		rep.Advance(path)
 	})
+
+	// Release every parsed tree's C-heap memory once the whole scan completes.
+	// Trees are consumed by the discovery/edge-resolution/analysis steps below
+	// and the returned ScanResult retains none of them (it carries only
+	// extracted, JSON-serializable data), so closing at Run's exit is safe and
+	// bounds peak memory on large repos. parsed and tsFiles are disjoint, so no
+	// tree is closed twice.
+	defer func() {
+		for _, pf := range parsed {
+			if pf.Tree != nil {
+				pf.Tree.Close()
+			}
+		}
+		for _, pf := range tsFiles {
+			if pf.Tree != nil {
+				pf.Tree.Close()
+			}
+		}
+	}()
 	// Claude TS
 	tools = append(tools, analysis.DiscoverTSTools(tsFiles, nil)...)
 	agents = append(agents, analysis.DiscoverTSAgents(tsFiles, nil)...)
@@ -181,6 +200,20 @@ func Run(cfg Config) (models.ScanResult, error) {
 	// Step 5: scoring
 	readiness, overall := analysis.Score(tools, findings)
 
+	// Coverage: how many AST-targeted source files we actually parsed vs. how
+	// many we attempted. Discovery skips files it cannot read or parse (one bad
+	// file must not abort the scan), but that skip has to be visible — a scan
+	// that silently dropped half the repo must not look like a clean result.
+	// `parsed` holds the successfully parsed Python files; `tsFiles` the
+	// successfully parsed TypeScript files. JavaScript files are inventoried but
+	// not yet AST-parsed, so they are not counted as attempted here.
+	filesParsed := len(parsed) + len(tsFiles)
+	filesAttempted := len(profile.Manifest.PythonFiles) + len(profile.Manifest.TypeScriptFiles)
+	coverage := models.Coverage{
+		FilesParsed:  filesParsed,
+		FilesSkipped: filesAttempted - filesParsed,
+	}
+
 	return models.ScanResult{
 		ScanID:              scanID(repoLabel, profile.Manifest, cfg.RulesVersion),
 		Repo:                repoLabel,
@@ -203,6 +236,7 @@ func Run(cfg Config) (models.ScanResult, error) {
 		RulesSource:         cfg.RulesSource,
 		RulesVersion:        cfg.RulesVersion,
 		RulesFromCache:      cfg.RulesFromCache,
+		Coverage:            coverage,
 	}, nil
 }
 
@@ -276,13 +310,63 @@ func deriveHasShellInvocations(tools []models.ToolDef) bool {
 
 func computeUsesDefaultTracing(parsed []analysis.ParsedFile) bool {
 	for _, pf := range parsed {
-		src := string(pf.Source)
-		if strings.Contains(src, "add_trace_processor") ||
-			strings.Contains(src, "OPENAI_AGENTS_DISABLE_TRACING") {
+		if pf.Tree == nil {
+			continue
+		}
+		if disablesDefaultTracing(pf) {
 			return false
 		}
 	}
 	return true
+}
+
+// tracingProcessorFuncs are the OpenAI Agents SDK calls that replace or augment
+// the default trace processor. Either one means the repo is not on the pure
+// default-tracing path.
+var tracingProcessorFuncs = map[string]bool{
+	"add_trace_processor":  true,
+	"set_trace_processors": true,
+}
+
+// disablesDefaultTracing reports whether a parsed file installs a custom trace
+// processor or references the tracing-disable env var. It inspects typed AST
+// nodes — call-function names and string literals — rather than substring-
+// scanning raw source, so a mention inside a comment or an unrelated identifier
+// no longer produces a false signal (the inventory-owns-AST-facts contract).
+func disablesDefaultTracing(pf analysis.ParsedFile) bool {
+	found := false
+	astutil.Walk(pf.Tree.RootNode(), func(n *sitter.Node) bool {
+		if found {
+			return false
+		}
+		switch n.Type() {
+		case "call":
+			fn := n.ChildByFieldName("function")
+			if fn == nil {
+				return true
+			}
+			name := astutil.NodeText(fn, pf.Source)
+			// For an attribute callee (e.g. trace.add_trace_processor) match the
+			// final dotted component; for a bare identifier match it directly.
+			if i := strings.LastIndex(name, "."); i >= 0 {
+				name = name[i+1:]
+			}
+			if tracingProcessorFuncs[name] {
+				found = true
+				return false
+			}
+		case "string":
+			// The disable switch is the env var name as a string literal, e.g.
+			// os.environ["OPENAI_AGENTS_DISABLE_TRACING"]. Restricting the match
+			// to string nodes excludes comments and unrelated code.
+			if strings.Contains(astutil.NodeText(n, pf.Source), "OPENAI_AGENTS_DISABLE_TRACING") {
+				found = true
+				return false
+			}
+		}
+		return true
+	})
+	return found
 }
 
 // languagesLabel renders a stable, comma-separated language list for progress.

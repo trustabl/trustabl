@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"math"
 	"sort"
 	"strings"
 
@@ -98,8 +99,11 @@ func Load(fsys fs.FS) ([]PolicyFile, error) {
 					errs = append(errs, fmt.Errorf("%s: unknown severity %q (allowed: info, low, medium, high, critical)", tag, rule.Severity))
 				}
 			}
-			if rule.Confidence <= 0 {
-				errs = append(errs, fmt.Errorf("%s: confidence is required (must be > 0)", tag))
+			if rule.Confidence <= 0 || math.IsNaN(rule.Confidence) {
+				// NaN fails every ordered comparison, so it would slip past a
+				// bare `<= 0 || > 1` range check and then poison scoring
+				// (NaN * weight = NaN) and the deterministic finding order.
+				errs = append(errs, fmt.Errorf("%s: confidence is required (must be a number > 0)", tag))
 			} else if rule.Confidence > 1 {
 				// confidence is a probability in (0, 1]; scoring multiplies it by
 				// severity weight, so a value above 1 silently inflates the score.

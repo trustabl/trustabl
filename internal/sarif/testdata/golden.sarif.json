@@ -122,6 +122,30 @@
       ],
       "results": [
         {
+          "ruleId": "META-002",
+          "ruleIndex": 1,
+          "kind": "informational",
+          "message": {
+            "text": "Dependency \"google-adk\" is declared in pyproject.toml but no code uses it."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "pyproject.toml"
+                }
+              }
+            }
+          ],
+          "rank": 100,
+          "partialFingerprints": {
+            "primaryLocationLineHash": "336680924c44beda699cbd3310e79ea2ccb0fdff9351658cfe80918592a3c194"
+          },
+          "properties": {
+            "confidence": 1
+          }
+        },
+        {
           "ruleId": "OAI-005",
           "ruleIndex": 2,
           "message": {
@@ -131,8 +155,7 @@
             {
               "physicalLocation": {
                 "artifactLocation": {
-                  "uri": "agents/web.py",
-                  "uriBaseId": "REPO_ROOT"
+                  "uri": "agents/web.py"
                 },
                 "region": {
                   "startLine": 42
@@ -175,40 +198,10 @@
           "properties": {
             "confidence": 0.7
           }
-        },
-        {
-          "ruleId": "META-002",
-          "ruleIndex": 1,
-          "kind": "informational",
-          "message": {
-            "text": "Dependency \"google-adk\" is declared in pyproject.toml but no code uses it."
-          },
-          "locations": [
-            {
-              "physicalLocation": {
-                "artifactLocation": {
-                  "uri": "pyproject.toml",
-                  "uriBaseId": "REPO_ROOT"
-                }
-              }
-            }
-          ],
-          "rank": 100,
-          "partialFingerprints": {
-            "primaryLocationLineHash": "336680924c44beda699cbd3310e79ea2ccb0fdff9351658cfe80918592a3c194"
-          },
-          "properties": {
-            "confidence": 1
-          }
         }
       ],
       "automationDetails": {
         "id": "scan_fixture0001"
-      },
-      "originalUriBaseIds": {
-        "REPO_ROOT": {
-          "uri": "file:///tmp/trustabl-clone-fixture/"
-        }
       },
       "versionControlProvenance": [
         {

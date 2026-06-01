@@ -114,7 +114,7 @@ func TestResultFromFinding_LocatedToolFinding(t *testing.T) {
 		Confidence:   0.85,
 	}
 	idx := 3
-	r := resultFromFinding(f, &idx)
+	r := resultFromFinding(f, &idx, true)
 
 	if r.RuleID != "OAI-005" {
 		t.Errorf("RuleID = %q", r.RuleID)
@@ -174,7 +174,7 @@ func TestResultFromFinding_RepoScopedFindingNoLocation(t *testing.T) {
 		Explanation: "Tracing is enabled by default but no custom processor is configured.",
 		Confidence:  0.7,
 	}
-	r := resultFromFinding(f, nil)
+	r := resultFromFinding(f, nil, true)
 	if r.Kind != "informational" {
 		t.Errorf("Kind = %q, want informational", r.Kind)
 	}
@@ -195,7 +195,7 @@ func TestResultFromFinding_META002LocatedAtManifest(t *testing.T) {
 		Explanation: "The 'openai-agents' dep is declared but not used in any source file.",
 		Confidence:  1.0,
 	}
-	r := resultFromFinding(f, nil)
+	r := resultFromFinding(f, nil, true)
 	if r.Kind != "informational" {
 		t.Errorf("Kind = %q, want informational", r.Kind)
 	}
