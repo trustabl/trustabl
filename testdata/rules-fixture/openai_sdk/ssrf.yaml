@@ -1,0 +1,35 @@
+policy:
+  id: openai_sdk_ssrf
+  name: OpenAI Agents SDK server-side request forgery
+  category: openai_sdk
+  description: >
+    Rules covering @function_tool bodies that issue HTTP requests to a
+    non-literal destination URL. A tool that fetches a model-controlled URL
+    is an SSRF vector into the agent host's internal network.
+
+rules:
+  - id: OAI-016
+    title: Tool fetches a caller-controlled URL (SSRF)
+    severity: high
+    confidence: 0.6
+    language: python
+    applies_to:
+      - openai_tool
+    scope: tool
+    match:
+      has_dynamic_url_call: true
+    explanation: >
+      The @function_tool body issues an HTTP request to a URL built from a
+      parameter or an interpolated string rather than a fixed literal. The
+      model supplies the argument values, so a prompt-injected conversation can
+      point the request at any host the agent process can reach — cloud
+      metadata services (169.254.169.254) that hand out IAM credentials,
+      loopback and link-local addresses, and internal-only APIs behind the
+      network boundary. The tool becomes a confused-deputy proxy for requests
+      the attacker could never make directly.
+    fix: >
+      Restrict the destination to an explicit host allow-list, or fix the base
+      URL and accept only a path/query parameter. After DNS resolution, reject
+      private, loopback, and link-local ranges, and forbid redirects to
+      addresses outside the allow-list. Pair this with an @input_guardrail that
+      rejects tool calls carrying raw URLs when the tool is not meant to browse.

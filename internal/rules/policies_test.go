@@ -639,6 +639,73 @@ def run(cmd: str) -> str:
     """Run."""
     return cmd.upper()
 `, nil, false},
+
+	// ─── CSDK-008 SSRF: Claude tool fetches a caller-controlled URL ──────────
+	{"CSDK-008 fires on requests.get with param URL", "CSDK-008", models.KindClaudeSDKTool, `
+import requests
+def fetch(url: str) -> str:
+    """Fetch a URL."""
+    return requests.get(url, timeout=10).text
+`, nil, true},
+	{"CSDK-008 silent on a literal URL", "CSDK-008", models.KindClaudeSDKTool, `
+import requests
+def fetch() -> str:
+    """Fetch a fixed URL."""
+    return requests.get("https://api.example.com/status", timeout=10).text
+`, nil, false},
+
+	// ─── OAI-016 SSRF: OpenAI tool fetches a caller-controlled URL ───────────
+	{"OAI-016 fires on httpx.get with f-string URL", "OAI-016", models.KindOpenAITool, `
+import httpx
+def fetch(host: str) -> str:
+    """Fetch."""
+    return httpx.get(f"https://{host}/data", timeout=10).text
+`, nil, true},
+	{"OAI-016 silent on a literal URL", "OAI-016", models.KindOpenAITool, `
+import httpx
+def fetch() -> str:
+    """Fetch."""
+    return httpx.get("https://api.example.com/data", timeout=10).text
+`, nil, false},
+
+	// ─── ADK-009 SSRF: ADK tool fetches a caller-controlled URL ──────────────
+	{"ADK-009 fires on requests.get with param URL", "ADK-009", models.KindADKFunctionTool, `
+import requests
+def fetch(url: str) -> str:
+    """Fetch."""
+    return requests.get(url, timeout=10).text
+`, nil, true},
+	{"ADK-009 silent on a literal URL", "ADK-009", models.KindADKFunctionTool, `
+import requests
+def fetch() -> str:
+    """Fetch."""
+    return requests.get("https://api.example.com", timeout=10).text
+`, nil, false},
+
+	// ─── ADK-010 ADK tool body spawns a subprocess ──────────────────────────
+	{"ADK-010 fires on subprocess.run", "ADK-010", models.KindADKFunctionTool, `
+import subprocess
+def run(cmd: str) -> str:
+    """Run."""
+    return subprocess.run([cmd], capture_output=True).stdout.decode()
+`, nil, true},
+	{"ADK-010 silent without a shell call", "ADK-010", models.KindADKFunctionTool, `
+def run(cmd: str) -> str:
+    """Run."""
+    return cmd.upper()
+`, nil, false},
+
+	// ─── ADK-011 ADK tool body calls eval/exec/compile ──────────────────────
+	{"ADK-011 fires on eval", "ADK-011", models.KindADKFunctionTool, `
+def calc(expr: str):
+    """Calc."""
+    return eval(expr)
+`, nil, true},
+	{"ADK-011 silent without eval/exec/compile", "ADK-011", models.KindADKFunctionTool, `
+def calc(expr: str) -> int:
+    """Calc."""
+    return int(expr) + 1
+`, nil, false},
 }
 
 // policyRepoRuleCases covers repo-scoped rules.

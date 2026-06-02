@@ -1,0 +1,35 @@
+policy:
+  id: google_adk_shell_safety
+  name: ADK tool shell invocation safety
+  category: google_adk
+  description: >
+    Rules covering FunctionTool-wrapped functions that spawn OS processes.
+    Process spawn from inside an ADK tool is a wide attack surface with no
+    framework-level sandbox.
+
+rules:
+  - id: ADK-010
+    title: Tool body spawns a subprocess
+    severity: high
+    confidence: 0.9
+    language: python
+    applies_to:
+      - adk_function_tool
+    scope: tool
+    match:
+      has_shell_call: true
+    explanation: >
+      The FunctionTool-wrapped body spawns an OS process. Exposing process
+      spawn to an LLM is a wide attack surface: command injection if any
+      argument flows from the model into a shell string, arbitrary code
+      execution if the command itself is model-supplied, and unbounded resource
+      use if no timeout is set. ADK provides no sandbox around tool execution —
+      the subprocess inherits the agent runtime's filesystem, environment, and
+      (on Cloud Run / Vertex AI) the attached service-account credentials.
+    fix: >
+      Replace process spawn with a typed library API where possible (shutil for
+      file ops, the cloud SDKs for platform calls). If subprocess is genuinely
+      required, pass argv as a list (never shell=True), set timeout=, gate the
+      call behind an explicit command allow-list, and run the agent under a
+      sandbox (container, seccomp profile, or restricted-user namespace).
+      Confine the working directory and drop env vars the tool does not need.

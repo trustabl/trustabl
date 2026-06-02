@@ -1,0 +1,35 @@
+policy:
+  id: google_adk_ssrf
+  name: ADK tool server-side request forgery
+  category: google_adk
+  description: >
+    Rules covering FunctionTool-wrapped functions that issue HTTP requests to
+    a non-literal destination URL — an SSRF vector into the ADK host's
+    network.
+
+rules:
+  - id: ADK-009
+    title: Tool fetches a caller-controlled URL (SSRF)
+    severity: high
+    confidence: 0.6
+    language: python
+    applies_to:
+      - adk_function_tool
+    scope: tool
+    match:
+      has_dynamic_url_call: true
+    explanation: >
+      This ADK tool issues an HTTP request to a URL built from a parameter or
+      an interpolated string rather than a fixed literal. The model chooses the
+      arguments passed to the tool, so an adversarial conversation can steer
+      the request at any host the ADK runtime can reach. On Cloud Run or Vertex
+      AI that includes the GCP metadata server (metadata.google.internal /
+      169.254.169.254), which vends service-account tokens — a direct path from
+      prompt injection to cloud credential theft — as well as internal VPC
+      services not exposed publicly.
+    fix: >
+      Constrain the destination to an explicit host allow-list, or fix the base
+      URL and accept only the path/query. After DNS resolution, reject private,
+      loopback, and link-local ranges, and on GCP block 169.254.169.254 /
+      metadata.google.internal explicitly. Disable redirects to addresses
+      outside the allow-list.

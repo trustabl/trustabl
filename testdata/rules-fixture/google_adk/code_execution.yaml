@@ -1,0 +1,36 @@
+policy:
+  id: google_adk_code_execution
+  name: ADK tool dynamic code execution
+  category: google_adk
+  description: >
+    Rules covering FunctionTool-wrapped functions that evaluate dynamic Python
+    code. eval/exec/compile inside an ADK tool is an arbitrary-code-execution
+    surface when any input flows from the model.
+
+rules:
+  - id: ADK-011
+    title: Tool body calls eval/exec/compile on dynamic input
+    severity: high
+    confidence: 0.9
+    language: python
+    applies_to:
+      - adk_function_tool
+    scope: tool
+    match:
+      has_code_exec_call: true
+    explanation: >
+      The FunctionTool-wrapped body invokes Python's eval, exec, or compile.
+      When any portion of the input flows from the model (directly or via
+      session state the model writes), the call is arbitrary code execution
+      inside the agent process. No OS-level sandbox stands between the call and
+      the runtime: imports, file handles, and the service-account credentials
+      in memory are all reachable from inside the evaluated string. An exec into
+      a restricted globals dict is still escapable through the __builtins__
+      chain unless explicitly stripped, and a model that controls the evaluated
+      code controls the agent.
+    fix: >
+      Remove eval/exec/compile from the tool. For arithmetic, ast.literal_eval
+      is safe; for richer expressions use a constrained interpreter (asteval,
+      RestrictedPython) only if genuinely required. If the tool is intentionally
+      a code-execution surface, run the evaluation in a separate single-use
+      process with seccomp, no network, and no filesystem write.
