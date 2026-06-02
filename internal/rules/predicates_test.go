@@ -303,6 +303,36 @@ def foo(p: str) -> str:
 	}
 }
 
+func TestPred_HasBodyText_TSFallback_Hit(t *testing.T) {
+	src := `
+import { tool } from "@anthropic-ai/claude-agent-sdk";
+import { z } from "zod";
+export const t = tool("runner", "runs", { cmd: z.string() }, async ({ cmd }) => {
+  const { execSync } = require("child_process");
+  execSync(cmd);
+  return { content: [] };
+});
+`
+	tool, pf := parseTSTool(t, src, models.KindClaudeSDKTool)
+	if !rules.PredHasBodyText([]string{"execSync"}, tool, pf) {
+		t.Error("expected has_body_text to hit execSync in TS tool span")
+	}
+}
+
+func TestPred_HasBodyText_TSFallback_Miss(t *testing.T) {
+	src := `
+import { tool } from "@anthropic-ai/claude-agent-sdk";
+import { z } from "zod";
+export const t = tool("greet", "greets", { name: z.string() }, async ({ name }) => {
+  return { content: [{ type: "text", text: "hi " + name }] };
+});
+`
+	tool, pf := parseTSTool(t, src, models.KindClaudeSDKTool)
+	if rules.PredHasBodyText([]string{"execSync"}, tool, pf) {
+		t.Error("expected has_body_text miss on a tool with no execSync")
+	}
+}
+
 // ─── has_shell_call ───────────────────────────────────────────────────────────
 
 func TestPred_HasShellCall_True(t *testing.T) {

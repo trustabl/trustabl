@@ -232,17 +232,39 @@ func PredNameHasPrefix(prefixes []string, t models.ToolDef) bool {
 }
 
 func PredHasBodyText(needles []string, t models.ToolDef, pf analysis.ParsedFile) bool {
-	root := analysis.FindFunctionNode(t, pf)
-	if root == nil {
-		return false
+	var body string
+	if root := analysis.FindFunctionNode(t, pf); root != nil {
+		body = astutil.NodeText(root, pf.Source)
+	} else {
+		// No Python function node (the TypeScript case). Fall back to the
+		// tool's source span [Line, EndLine], populated by TS discovery. The
+		// span covers the whole tool(...) call including its handler, which is
+		// what substring rules (fetch(, eval(, execSync, AbortSignal) need.
+		body = bodyTextFromSpan(pf.Source, t.Line, t.EndLine)
 	}
-	body := astutil.NodeText(root, pf.Source)
 	for _, needle := range needles {
 		if strings.Contains(body, needle) {
 			return true
 		}
 	}
 	return false
+}
+
+// bodyTextFromSpan returns the 1-based inclusive line range [start, end] of
+// src as a string, or "" if the range is invalid. Used when no AST function
+// node is available (TypeScript tools carry only line positions).
+func bodyTextFromSpan(src []byte, start, end int) string {
+	if start <= 0 || end < start {
+		return ""
+	}
+	lines := strings.Split(string(src), "\n")
+	if start > len(lines) {
+		return ""
+	}
+	if end > len(lines) {
+		end = len(lines)
+	}
+	return strings.Join(lines[start-1:end], "\n")
 }
 
 func PredParamNameMatches(expr ParamNameMatchExpr, t models.ToolDef) bool {
