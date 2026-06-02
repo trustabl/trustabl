@@ -1,6 +1,7 @@
 package rules_test
 
 import (
+	"context"
 	"testing"
 
 	"github.com/trustabl/trustabl/internal/analysis"
@@ -51,6 +52,52 @@ func parsePy(t *testing.T, src string, kind models.ToolKind) (models.ToolDef, an
 		Facts:          map[string]string{},
 	}
 	return tool, pf
+}
+
+// parseTSTool parses a TypeScript snippet and runs the TS tool discovery
+// matching `kind`, returning the first discovered tool plus its ParsedFile.
+// Mirrors parsePy for the TS body/fact predicates and the TS rule harness.
+func parseTSTool(t *testing.T, src string, kind models.ToolKind) (models.ToolDef, analysis.ParsedFile) {
+	t.Helper()
+	tree, err := astutil.NewTSParser().ParseCtx(context.Background(), nil, []byte(src))
+	if err != nil {
+		t.Fatalf("parse TS: %v", err)
+	}
+	pf := analysis.ParsedFile{RelPath: "src/a.ts", Tree: tree, Source: []byte(src)}
+	var tools []models.ToolDef
+	switch kind {
+	case models.KindClaudeSDKTool:
+		tools = analysis.DiscoverTSTools([]analysis.ParsedFile{pf}, func(string) {})
+	case models.KindOpenAITool:
+		tools = analysis.DiscoverTSOpenAITools([]analysis.ParsedFile{pf}, func(string) {})
+	default:
+		t.Fatalf("parseTSTool: unsupported kind %q", kind)
+	}
+	if len(tools) == 0 {
+		t.Fatal("parseTSTool: no tool discovered (check the import gate in the snippet)")
+	}
+	return tools[0], pf
+}
+
+func TestParseTSTool_Smoke(t *testing.T) {
+	src := `
+import { tool } from "@anthropic-ai/claude-agent-sdk";
+import { z } from "zod";
+export const t = tool("fetcher", "fetches", { url: z.string() }, async ({ url }) => {
+  const r = await fetch(url);
+  return { content: [] };
+});
+`
+	tool, pf := parseTSTool(t, src, models.KindClaudeSDKTool)
+	if tool.Language != models.LanguageTypeScript {
+		t.Errorf("Language = %q, want typescript", tool.Language)
+	}
+	if tool.EndLine < tool.Line {
+		t.Errorf("EndLine %d < Line %d (span needed by has_body_text fallback)", tool.EndLine, tool.Line)
+	}
+	if pf.Tree == nil {
+		t.Error("nil tree")
+	}
 }
 
 // ─── has_docstring ────────────────────────────────────────────────────────────
