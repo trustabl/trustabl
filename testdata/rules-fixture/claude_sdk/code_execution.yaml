@@ -45,9 +45,7 @@ rules:
       - claude_sdk_tool
     scope: tool
     match:
-      has_body_text:
-        - "eval("
-        - new Function(
+      has_code_exec_call: true
     explanation: >
       This TypeScript Claude SDK tool calls `eval()` or constructs a
       `new Function(...)`. With model- or caller-controlled input reaching the

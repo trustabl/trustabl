@@ -16,6 +16,17 @@ func tsHandlerFacts(handler *sitter.Node, src []byte) map[string]string {
 		return out
 	}
 	astutil.Walk(handler, func(n *sitter.Node) bool {
+		// new_expression: `new Function(...)` is NOT a call_expression; its
+		// constructor identifier is at ChildByFieldName("constructor").
+		// Verified tree-sitter node type: new_expression, field "constructor"
+		// returns the identifier node (text "Function").
+		if n.Type() == "new_expression" {
+			ctor := n.ChildByFieldName("constructor")
+			if ctor != nil && astutil.NodeText(ctor, src) == "Function" {
+				out["code_exec"] = "true"
+			}
+			return true
+		}
 		if n.Type() != "call_expression" {
 			return true
 		}
@@ -41,6 +52,10 @@ func tsHandlerFacts(handler *sitter.Node, src []byte) map[string]string {
 			"child_process.execFile", "child_process.execFileSync",
 			"child_process.fork":
 			out["shells_out"] = "true"
+		case "eval":
+			// Bare `eval` callee only — callee text for `retrieval(x)` is
+			// "retrieval", so this exact-match eliminates the false-positive.
+			out["code_exec"] = "true"
 		}
 		return true
 	})

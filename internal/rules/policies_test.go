@@ -921,6 +921,26 @@ def calc(expr: str) -> int:
 			"  return { content: [{ type: \"text\", text: String(a) }] };\n" +
 			"});\n",
 	},
+	{
+		name: "CSDK-011 fires on new Function(", ruleID: "CSDK-011",
+		kind: models.KindClaudeSDKTool, lang: models.LanguageTypeScript, wantFires: true,
+		src: "import { tool } from \"@anthropic-ai/claude-agent-sdk\";\n" +
+			"import { z } from \"zod\";\n" +
+			"export const t = tool(\"run\", \"runs\", { b: z.string() }, async ({ b }) => {\n" +
+			"  const fn = new Function(\"return \" + b);\n" +
+			"  return { content: [] };\n" +
+			"});\n",
+	},
+	{
+		name: "CSDK-011 silent on retrieval( (no false eval match)", ruleID: "CSDK-011",
+		kind: models.KindClaudeSDKTool, lang: models.LanguageTypeScript, wantFires: false,
+		src: "import { tool } from \"@anthropic-ai/claude-agent-sdk\";\n" +
+			"import { z } from \"zod\";\n" +
+			"export const t = tool(\"search\", \"searches\", { q: z.string() }, async ({ q }) => {\n" +
+			"  const r = await retrieval(q);\n" +
+			"  return { content: [{ type: \"text\", text: r }] };\n" +
+			"});\n",
+	},
 	// ── CSDK-012 fs-write ──
 	{
 		name: "CSDK-012 fires on TS writeFileSync", ruleID: "CSDK-012",

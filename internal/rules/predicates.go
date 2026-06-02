@@ -68,11 +68,20 @@ func PredHasShellCall(t models.ToolDef, pf analysis.ParsedFile) bool {
 	return found
 }
 
-// PredHasCodeExecCall reports whether the tool body invokes Python's dynamic
-// code-execution builtins (eval/exec/compile). It matches the bare builtin
-// callee only, so safe attribute calls like re.compile are not flagged — the
-// false positive that substring matching on "compile(" cannot avoid.
+// PredHasCodeExecCall reports whether the tool body invokes dynamic code
+// execution primitives. For TypeScript tools it reads the discovery-computed
+// "code_exec" fact (set by tsHandlerFacts for bare `eval(...)` callees and
+// `new Function(...)` expressions). For Python tools it walks the AST for
+// bare eval/exec/compile builtin callees — safe attribute calls like
+// re.compile are not flagged, the false positive that substring matching on
+// "compile(" cannot avoid.
 func PredHasCodeExecCall(t models.ToolDef, pf analysis.ParsedFile) bool {
+	// TypeScript tools carry the signal as a discovery-computed fact; the
+	// Python AST walk below does not understand the TS grammar. Branch on
+	// language so the Python path stays byte-identical.
+	if t.Language == models.LanguageTypeScript {
+		return t.Facts["code_exec"] == "true"
+	}
 	root := analysis.FindFunctionNode(t, pf)
 	if root == nil {
 		return false
