@@ -36,3 +36,26 @@ rules:
       ranges after DNS resolution, and disable redirects to addresses outside
       the allow-list. If the tool only ever talks to one service, hard-code the
       base URL and accept just the path or query parameters.
+
+  - id: CSDK-013
+    title: TypeScript Claude SDK tool fetches a caller-controlled URL (SSRF)
+    severity: high
+    confidence: 0.6
+    language: typescript
+    applies_to:
+      - claude_sdk_tool
+    scope: tool
+    match:
+      has_dynamic_url_call: true
+    explanation: >
+      This TypeScript Claude SDK tool issues an HTTP request to a URL built
+      from a tool argument or an interpolated string rather than a fixed
+      literal. Because the agent chooses tool arguments, a prompt-injected
+      conversation can drive the request at internal services the agent host
+      can reach — cloud metadata endpoints (169.254.169.254), loopback admin
+      APIs, and other targets the public internet cannot. This is server-side
+      request forgery.
+    fix: >
+      Validate the destination before fetching: resolve the host and reject
+      private, loopback, and link-local ranges; prefer an allowlist of exact
+      hosts. Do not pass raw tool-argument URLs to `fetch`/`axios`.

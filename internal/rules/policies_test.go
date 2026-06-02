@@ -942,6 +942,27 @@ def calc(expr: str) -> int:
 			"  return { content: [{ type: \"text\", text: p }] };\n" +
 			"});\n",
 	},
+	// ── CSDK-013 SSRF (dynamic_url fact) ──
+	{
+		name: "CSDK-013 fires on interpolated fetch URL", ruleID: "CSDK-013",
+		kind: models.KindClaudeSDKTool, lang: models.LanguageTypeScript, wantFires: true,
+		src: "import { tool } from \"@anthropic-ai/claude-agent-sdk\";\n" +
+			"import { z } from \"zod\";\n" +
+			"export const t = tool(\"f\", \"f\", { host: z.string() }, async ({ host }) => {\n" +
+			"  await fetch(`https://${host}/api`);\n" +
+			"  return { content: [] };\n" +
+			"});\n",
+	},
+	{
+		name: "CSDK-013 silent on literal fetch URL", ruleID: "CSDK-013",
+		kind: models.KindClaudeSDKTool, lang: models.LanguageTypeScript, wantFires: false,
+		src: "import { tool } from \"@anthropic-ai/claude-agent-sdk\";\n" +
+			"import { z } from \"zod\";\n" +
+			"export const t = tool(\"f\", \"f\", {}, async () => {\n" +
+			"  await fetch(\"https://example.com/api\");\n" +
+			"  return { content: [] };\n" +
+			"});\n",
+	},
 }
 
 // policyRepoRuleCases covers repo-scoped rules.
