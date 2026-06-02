@@ -521,6 +521,34 @@ def fetch() -> dict:
 	}
 }
 
+func TestPred_HasDynamicURLCall_TS(t *testing.T) {
+	hit := `
+import { tool } from "@anthropic-ai/claude-agent-sdk";
+import { z } from "zod";
+export const t = tool("f", "f", { host: z.string() }, async ({ host }) => {
+  await fetch(` + "`https://${host}/x`" + `);
+  return { content: [] };
+});
+`
+	tool, pf := parseTSTool(t, hit, models.KindClaudeSDKTool)
+	if !rules.PredHasDynamicURLCall(tool, pf) {
+		t.Error("expected dynamic-url predicate to fire on TS interpolated fetch")
+	}
+
+	miss := `
+import { tool } from "@anthropic-ai/claude-agent-sdk";
+import { z } from "zod";
+export const t = tool("f", "f", {}, async () => {
+  await fetch("https://example.com");
+  return { content: [] };
+});
+`
+	tool2, pf2 := parseTSTool(t, miss, models.KindClaudeSDKTool)
+	if rules.PredHasDynamicURLCall(tool2, pf2) {
+		t.Error("expected dynamic-url predicate silent on TS literal fetch")
+	}
+}
+
 // ─── call_without_kwarg ───────────────────────────────────────────────────────
 
 func TestPred_CallWithoutKwarg_True(t *testing.T) {

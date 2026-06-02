@@ -171,6 +171,12 @@ func PredHasWriteCall(t models.ToolDef, pf analysis.ParsedFile) bool {
 }
 
 func PredHasDynamicURLCall(t models.ToolDef, pf analysis.ParsedFile) bool {
+	// TypeScript tools carry the signal as a discovery-computed fact; the
+	// Python AST walk below does not understand the TS grammar. Branch on
+	// language so the Python path stays byte-identical.
+	if t.Language == models.LanguageTypeScript {
+		return t.Facts["dynamic_url"] == "true"
+	}
 	root := analysis.FindFunctionNode(t, pf)
 	if root == nil {
 		return false
