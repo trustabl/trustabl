@@ -45,4 +45,4 @@ jobs:
           path: .rules
 
       - name: Check fixture is in sync with production rules
-        run: RULES_REPO="$GITHUB_WORKSPACE/.rules" scripts/check-rules-sync.sh
+        run: RULES_REPO="$GITHUB_WORKSPACE/.rules" bash scripts/check-rules-sync.sh
