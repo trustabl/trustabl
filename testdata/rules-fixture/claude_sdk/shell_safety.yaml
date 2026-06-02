@@ -34,3 +34,30 @@ rules:
       timeout=, route through an explicit command allow-list, and run the agent
       under an OS sandbox. Keep shell-invoking logic out of model-callable tools
       where possible.
+
+  - id: CSDK-010
+    title: TypeScript Claude SDK tool shells out to the OS
+    severity: high
+    confidence: 0.7
+    language: typescript
+    applies_to:
+      - claude_sdk_tool
+    scope: tool
+    match:
+      has_body_text:
+        - child_process
+        - execSync(
+        - "exec("
+        - spawn(
+        - spawnSync(
+    explanation: >
+      This Claude Agent SDK tool, authored in TypeScript, invokes a
+      child-process API. Because the agent chooses the arguments it passes to
+      a tool, a prompt-injected conversation can steer those values into an
+      OS command. Shelling out from an agent-callable tool turns the tool into
+      an arbitrary-command primitive on the agent host.
+    fix: >
+      Avoid shelling out from agent-callable tools. If a subprocess is
+      unavoidable, pass arguments as an argv array (never a shell string),
+      drop `shell: true`, validate inputs against a strict allowlist, and run
+      under a sandbox with no ambient credentials.

@@ -38,3 +38,27 @@ rules:
     fix: >
       Resolve the path with `Path(...).resolve()` and assert it sits under an
       allowed root.
+
+  - id: CSDK-012
+    title: TypeScript Claude SDK tool writes to the filesystem
+    severity: medium
+    confidence: 0.5
+    language: typescript
+    applies_to:
+      - claude_sdk_tool
+    scope: tool
+    match:
+      has_body_text:
+        - writeFileSync(
+        - writeFile(
+        - createWriteStream(
+    explanation: >
+      This TypeScript Claude SDK tool writes to the filesystem. If the path or
+      contents derive from tool arguments, a prompt-injected agent can
+      overwrite arbitrary files reachable by the host process. (This is a
+      coarse signal — it flags any filesystem write, not only unnormalized
+      paths, because TS path-normalization analysis is not yet wired.)
+    fix: >
+      Confine writes to a dedicated working directory, resolve the final path
+      and verify it stays within that root before writing, and reject
+      absolute or `..`-containing inputs.

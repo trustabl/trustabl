@@ -228,14 +228,12 @@ func TestScanExamples_TSClaudeSDKMin_DiscoveryCounts(t *testing.T) {
 	if len(res.MCPServers) < 2 {
 		t.Errorf("expected at least 2 MCP servers (createSdkMcpServer + stdio config), got %d", len(res.MCPServers))
 	}
-	var meta004 int
+	// CSDK-010/011/012 now ship as TS-language Claude SDK rules, so META-004
+	// ("SDK detected but no rule applicable") should NOT fire for this corpus.
 	for _, f := range res.Findings {
 		if f.RuleID == "META-004" {
-			meta004++
+			t.Errorf("unexpected META-004 finding: TS Claude SDK rules (CSDK-010/011/012) now ship, so META-004 should not fire; finding: %+v", f)
 		}
-	}
-	if meta004 == 0 {
-		t.Errorf("expected META-004 (SDK detected but no rule applicable) since no TS-language rules ship yet; got 0 findings with that rule")
 	}
 }
 

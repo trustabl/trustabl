@@ -880,6 +880,68 @@ def calc(expr: str) -> int:
 			"  return 1;\n" +
 			"} });\n",
 	},
+
+	// ── CSDK-010 shell ──
+	{
+		name: "CSDK-010 fires on TS tool shelling out", ruleID: "CSDK-010",
+		kind: models.KindClaudeSDKTool, lang: models.LanguageTypeScript, wantFires: true,
+		src: "import { tool } from \"@anthropic-ai/claude-agent-sdk\";\n" +
+			"import { z } from \"zod\";\n" +
+			"export const t = tool(\"run\", \"runs\", { cmd: z.string() }, async ({ cmd }) => {\n" +
+			"  const { execSync } = require(\"child_process\");\n" +
+			"  execSync(cmd);\n" +
+			"  return { content: [] };\n" +
+			"});\n",
+	},
+	{
+		name: "CSDK-010 silent on pure tool", ruleID: "CSDK-010",
+		kind: models.KindClaudeSDKTool, lang: models.LanguageTypeScript, wantFires: false,
+		src: "import { tool } from \"@anthropic-ai/claude-agent-sdk\";\n" +
+			"import { z } from \"zod\";\n" +
+			"export const t = tool(\"add\", \"adds\", { a: z.number() }, async ({ a }) => {\n" +
+			"  return { content: [{ type: \"text\", text: String(a + 1) }] };\n" +
+			"});\n",
+	},
+	// ── CSDK-011 code-exec ──
+	{
+		name: "CSDK-011 fires on TS eval", ruleID: "CSDK-011",
+		kind: models.KindClaudeSDKTool, lang: models.LanguageTypeScript, wantFires: true,
+		src: "import { tool } from \"@anthropic-ai/claude-agent-sdk\";\n" +
+			"import { z } from \"zod\";\n" +
+			"export const t = tool(\"calc\", \"calc\", { e: z.string() }, async ({ e }) => {\n" +
+			"  return { content: [{ type: \"text\", text: String(eval(e)) }] };\n" +
+			"});\n",
+	},
+	{
+		name: "CSDK-011 silent without eval", ruleID: "CSDK-011",
+		kind: models.KindClaudeSDKTool, lang: models.LanguageTypeScript, wantFires: false,
+		src: "import { tool } from \"@anthropic-ai/claude-agent-sdk\";\n" +
+			"import { z } from \"zod\";\n" +
+			"export const t = tool(\"calc\", \"calc\", { a: z.number() }, async ({ a }) => {\n" +
+			"  return { content: [{ type: \"text\", text: String(a) }] };\n" +
+			"});\n",
+	},
+	// ── CSDK-012 fs-write ──
+	{
+		name: "CSDK-012 fires on TS writeFileSync", ruleID: "CSDK-012",
+		kind: models.KindClaudeSDKTool, lang: models.LanguageTypeScript, wantFires: true,
+		src: "import { tool } from \"@anthropic-ai/claude-agent-sdk\";\n" +
+			"import { z } from \"zod\";\n" +
+			"export const t = tool(\"save\", \"saves\", { p: z.string(), d: z.string() }, async ({ p, d }) => {\n" +
+			"  const fs = require(\"fs\");\n" +
+			"  fs.writeFileSync(p, d);\n" +
+			"  return { content: [] };\n" +
+			"});\n",
+	},
+	{
+		name: "CSDK-012 silent without write", ruleID: "CSDK-012",
+		kind: models.KindClaudeSDKTool, lang: models.LanguageTypeScript, wantFires: false,
+		src: "import { tool } from \"@anthropic-ai/claude-agent-sdk\";\n" +
+			"import { z } from \"zod\";\n" +
+			"export const t = tool(\"read\", \"reads\", { p: z.string() }, async ({ p }) => {\n" +
+			"  return { content: [{ type: \"text\", text: p }] };\n" +
+			"});\n",
+	},
 }
 
 // policyRepoRuleCases covers repo-scoped rules.

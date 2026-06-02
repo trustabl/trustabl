@@ -35,3 +35,25 @@ rules:
       surface, run the code in a separate, sandboxed, single-use process (no
       network, read-only filesystem, CPU/wall-clock caps) rather than in the
       agent process.
+
+  - id: CSDK-011
+    title: TypeScript Claude SDK tool evaluates dynamic code
+    severity: high
+    confidence: 0.9
+    language: typescript
+    applies_to:
+      - claude_sdk_tool
+    scope: tool
+    match:
+      has_body_text:
+        - "eval("
+        - new Function(
+    explanation: >
+      This TypeScript Claude SDK tool calls `eval()` or constructs a
+      `new Function(...)`. With model- or caller-controlled input reaching the
+      evaluated string, this is remote code execution inside the agent
+      process.
+    fix: >
+      Remove `eval`/`new Function`. Parse structured input with `JSON.parse`,
+      dispatch on a fixed map of allowed operations, and never construct
+      executable code from tool arguments.
