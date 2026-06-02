@@ -219,6 +219,17 @@ func FunctionParams(fn *sitter.Node, src []byte) []string {
 					out = append(out, NodeText(name, src))
 				}
 			}
+		case "list_splat_pattern", "dictionary_splat_pattern":
+			// *args / **kwargs. The bare name (without the * / ** prefix) is
+			// the splat pattern's identifier child. Surfacing it lets rules
+			// that key on a parameter named e.g. "kwargs" match a real
+			// **kwargs signature, not only a plain param literally so named.
+			if int(p.NamedChildCount()) > 0 {
+				name := p.NamedChild(0)
+				if name.Type() == "identifier" {
+					out = append(out, NodeText(name, src))
+				}
+			}
 		}
 	}
 	return out

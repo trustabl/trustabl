@@ -683,14 +683,10 @@ def fetch() -> str:
 `, nil, false},
 
 	// ─── CSDK-008 (team rule): **kwargs without explicit input_schema ────────
-	// KNOWN LIMITATION: the predicate is param_name_matches exact:[kwargs], but
-	// astutil.FunctionParams does NOT surface **kwargs splat params, so the rule
-	// fires only on a parameter literally named `kwargs`, not on real **kwargs.
-	// The team's rule does not detect what its title implies; capturing splat
-	// params is a separate engine change. The fire case below reflects actual
-	// current behavior.
-	{"CSDK-008 fires on a param named kwargs (no input_schema)", "CSDK-008", models.KindClaudeSDKTool, `
-def configure(kwargs):
+	// FunctionParams surfaces the **kwargs splat name, so the rule fires on a
+	// real **kwargs signature (not only a plain param literally named kwargs).
+	{"CSDK-008 fires on real **kwargs (no input_schema)", "CSDK-008", models.KindClaudeSDKTool, `
+def configure(**kwargs):
     """Configure."""
     return kwargs
 `, nil, true},
