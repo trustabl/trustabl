@@ -47,7 +47,7 @@ rules:
       has_body_text:
         - child_process
         - execSync(
-        - "exec("
+        - execFile(
         - spawn(
         - spawnSync(
     explanation: >
