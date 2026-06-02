@@ -44,7 +44,7 @@ same TS file extensions, gated on imports from `@openai/agents`,
 `LoopAgent` / `RoutedAgent` / `new FunctionTool({...})` / 13 hosted-tool
 classes / `subAgents` edges in the same TS file extensions, gated on
 imports from `@google/adk`). A first Claude SDK TypeScript rule pack ships (CSDK-010/011/012/013 tool
-rules; CSDK-120 agent rule) and OAI-016/017/019 cover OpenAI TS tools —
+rules; CSDK-120 agent rule) and OAI-016/017/019 cover OpenAI TS tools.
 TS Claude SDK and TS OpenAI repos no longer produce META-004.
 TS ADK repos still produce META-004 (no ADK TS rules yet). The scanner
 can also recognize JavaScript and Go *files* (they appear in
@@ -1132,7 +1132,7 @@ internal/
 │   ├── adk_hosted_tools.go      ADK built-in hosted-tool class set + classifier (ADKHostedToolClasses).
 │   ├── ts_discovery.go         TS Claude SDK tool() factory discovery (DiscoverTSTools).
 │   ├── ts_agents.go            TS AgentDef discovery (inline-in-query + typed-const).
-│   ├── ts_handler_facts.go      tsHandlerFacts (shared by all TS tool discovery): shells_out, http_call, dynamic_url (HTTP call whose URL argument is a non-literal — template literal / identifier / member expression — the SSRF signal).
+│   ├── ts_handler_facts.go      tsHandlerFacts (shared by all TS tool discovery): shells_out, http_call, dynamic_url (non-literal HTTP URL arg: the SSRF signal).
 │   ├── ts_mcp_servers.go       TS MCP server discovery (createSdkMcpServer + 4 config literals).
 │   ├── ts_adk_agents.go         Google ADK TS agent discovery (5 constructors).
 │   ├── ts_adk_hosted_tools.go   Google ADK TS hosted-tool class set (13 classes) + classifier.
@@ -1153,7 +1153,7 @@ internal/
 │   ├── schema.go                PolicyFile / RuleDef / MatchExpr types.
 │   ├── schema_version.go        SupportedSchemaVersion const (engine ↔ pack gate).
 │   ├── loader.go                Validating YAML loader (recursive walk; skips manifest.yaml).
-│   ├── predicates.go            One Pred* per detection primitive. TS-aware: PredHasBodyText falls back to the tool's [Line, EndLine] source span when no Python function_definition node is found (bodyTextFromSpan helper); PredHasDynamicURLCall branches on language — TypeScript reads the dynamic_url fact set by tsHandlerFacts, Python walks the AST.
+│   ├── predicates.go            One Pred* per detection primitive. TS-aware: PredHasBodyText uses [Line, EndLine] span fallback (bodyTextFromSpan) when no Python node is found; PredHasDynamicURLCall reads dynamic_url for TypeScript, walks the AST for Python.
 │   ├── evaluator.go             MatchExpr.Evaluate — recursive walker.
 │   └── rule_detector.go         RuleDetector adapter + LoadRegistry.
 │                                (No embed.go: rules are not embedded — see rulesource.)
