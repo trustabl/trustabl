@@ -29,6 +29,9 @@ func tsHandlerFacts(handler *sitter.Node, src []byte) map[string]string {
 			"axios.patch", "axios.request", "got", "got.get", "got.post",
 			"undici.fetch", "undici.request":
 			out["http_call"] = "true"
+			if urlArgIsDynamic(n, src) {
+				out["dynamic_url"] = "true"
+			}
 		case "execSync", "exec", "spawn", "spawnSync", "fork",
 			// Namespace-import / require shape: `child_process.exec(...)` from
 			// `import * as child_process` or `const child_process = require(...)`.
@@ -42,4 +45,48 @@ func tsHandlerFacts(handler *sitter.Node, src []byte) map[string]string {
 		return true
 	})
 	return out
+}
+
+// urlArgIsDynamic reports whether the first positional argument of an HTTP
+// call node is something other than a plain string literal — i.e. a template
+// string with substitutions, an identifier, a member expression, or a string
+// concatenation. Those are caller/model-controlled URLs (the SSRF signal).
+//
+// Verified tree-sitter node types (typescript grammar):
+//   - Plain string (`"..."` or `'...'`): type "string".
+//   - Template string (`` `...` ``): type "template_string"; backtick delimiters
+//     are anonymous children, so a plain backtick template with no ${...} has
+//     NamedChildCount() == 0, while one with substitutions has at least one
+//     "template_substitution" named child (NamedChildCount() > 0).
+//   - Identifier: type "identifier".
+//   - Member expression: type "member_expression".
+//   - Binary expression (concat): type "binary_expression".
+//   - Call expression: type "call_expression".
+//
+// The `arguments` field name is confirmed — call_expression uses ChildByFieldName("arguments")
+// throughout this package (see extractTSOpenAITool, extractTSADKTool).
+func urlArgIsDynamic(call *sitter.Node, src []byte) bool {
+	args := call.ChildByFieldName("arguments")
+	if args == nil {
+		return false
+	}
+	var arg *sitter.Node
+	if args.NamedChildCount() > 0 {
+		arg = args.NamedChild(0)
+	}
+	if arg == nil {
+		return false
+	}
+	switch arg.Type() {
+	case "string":
+		return false // plain literal URL — safe
+	case "template_string":
+		// A template with no ${...} substitution is effectively a literal.
+		// The backtick characters are anonymous (unnamed) children, so
+		// NamedChildCount() > 0 means there is at least one template_substitution.
+		return arg.NamedChildCount() > 0
+	default:
+		// identifier, member_expression, binary_expression (concat), call, etc.
+		return true
+	}
 }
