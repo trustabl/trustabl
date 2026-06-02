@@ -142,3 +142,25 @@ rules:
       essential. If it is essential, gate it with a PreToolUse hook that
       allowlists permitted hosts/URLs and blocks internal address ranges, and
       validate the task descriptions the lead agent passes down.
+
+  - id: CSDK-120
+    title: TypeScript Claude agent runs with permission prompts bypassed
+    severity: high
+    confidence: 0.7
+    language: typescript
+    applies_to:
+      - claude_agent_definition
+    scope: agent
+    match:
+      agent_kwarg_value:
+        kwarg: permissionMode
+        value: bypassPermissions
+    explanation: >
+      This TypeScript Claude agent sets permissionMode: "bypassPermissions",
+      disabling the human-in-the-loop confirmation for tool use. Combined with
+      filesystem- or shell-touching tools, a prompt-injected agent can take
+      irreversible actions with no gate.
+    fix: >
+      Use the default (prompting) permission mode, or a scoped allowedTools
+      allowlist with disallowedTools for dangerous built-ins. Reserve
+      bypassPermissions for sandboxed, non-production contexts.

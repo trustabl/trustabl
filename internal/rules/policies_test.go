@@ -1886,6 +1886,30 @@ var policyAgentRuleCases = []policyAgentCase{
 		},
 		models.RepoInventory{},
 		false},
+
+	// ─── CSDK-120 TS agent bypassPermissions ─────────────────────────────────
+	{"CSDK-120 fires on bypassPermissions TS agent", "CSDK-120",
+		models.AgentDef{
+			SDK:      models.SDKClaudeAgentSDK,
+			Class:    "AgentDefinition",
+			Language: models.LanguageTypeScript,
+			Name:     "worker",
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"permissionMode": {Value: &models.Expr{Kind: models.ExprLiteralString, Text: `"bypassPermissions"`}},
+			}},
+		},
+		models.RepoInventory{},
+		true},
+	{"CSDK-120 silent on TS agent without permissionMode", "CSDK-120",
+		models.AgentDef{
+			SDK:      models.SDKClaudeAgentSDK,
+			Class:    "AgentDefinition",
+			Language: models.LanguageTypeScript,
+			Name:     "worker",
+			Kwargs:   &models.KwargTree{Children: map[string]*models.KwargTree{}},
+		},
+		models.RepoInventory{},
+		false},
 }
 
 func TestPolicyAgentRules(t *testing.T) {
