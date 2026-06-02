@@ -324,12 +324,13 @@ func TestScanExamples_OpenAIAgentsJS_DiscoveryCounts(t *testing.T) {
 		}
 	}
 
-	// META-004 must fire: openai_agents SDK is detected (so the rule pack
-	// loads), but no shipped OAI rule applies — the tool/agent OAI rules
-	// declare `language: python` and so are skipped against TS entities, and
-	// the only repo-scope rule (OAI-201, also `language: python`) is gated by
-	// repoRuleDetector's language check against profile.Languages. OAI-201
-	// must NOT fire on this TS-only repo.
+	// META-004 must NOT fire here anymore: TypeScript OpenAI rules now ship
+	// (e.g. OAI-016/017/019, `language: typescript`), so at least one loaded
+	// detector's Applies() returns true for the TS tools/agents in this repo —
+	// the openai_agents pack IS applicable, even though this clean example
+	// happens to trigger none of those rules. (Before TS rules existed, META-004
+	// fired because only python OAI rules were loaded and none applied to TS.)
+	// OAI-201 (`language: python`) must still NOT fire on a TS-only repo.
 	var sawMETA004, sawOAI201 bool
 	for _, f := range res.Findings {
 		switch f.RuleID {
@@ -339,8 +340,8 @@ func TestScanExamples_OpenAIAgentsJS_DiscoveryCounts(t *testing.T) {
 			sawOAI201 = true
 		}
 	}
-	if !sawMETA004 {
-		t.Errorf("expected META-004 to fire on TS-only OpenAI repo (audited SDK, no applicable rule); got findings=%v", res.Findings)
+	if sawMETA004 {
+		t.Errorf("META-004 must NOT fire now that TS OpenAI rules ship (pack is applicable to TS entities); got findings=%v", res.Findings)
 	}
 	if sawOAI201 {
 		t.Errorf("OAI-201 declares language: python and must NOT fire on TS-only repo (regression in repoRuleDetector language gate); got findings=%v", res.Findings)

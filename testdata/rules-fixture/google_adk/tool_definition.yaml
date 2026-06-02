@@ -76,3 +76,29 @@ rules:
       refuse to call it at all when a better-named alternative is present.
     fix: >
       Rename to a verb-object form, e.g. `summarize_document`, `fetch_order`.
+
+  - id: ADK-009
+    title: FunctionTool body prints to stdout
+    severity: low
+    confidence: 0.7
+    language: python
+    applies_to:
+      - adk_function_tool
+    scope: tool
+    match:
+      has_body_text:
+        - print(
+    explanation: >
+      Google ADK FunctionTool runs inside the agent's process and shares its
+      stdout with the runtime. A wrapped function that calls `print(...)` for
+      debug tracing leaks raw arguments (paths, IDs, decoded blob contents)
+      into the same stream the runner uses for structured logs, mangles JSON
+      log lines, and can echo secrets pulled from `tool_context.state` into
+      terminal scrollback or container log shippers. The output is also not
+      addressable by the model — `print` writes go to the process, not to the
+      tool response, so the operator sees noise while the agent sees nothing.
+    fix: >
+      Delete debug `print` calls before shipping, or replace them with a
+      module logger (`logging.getLogger(__name__).debug(...)`) so the operator
+      can silence them with a level switch. If the data is meant for the
+      model, return it as part of the tool's structured result instead.

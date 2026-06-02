@@ -1,0 +1,44 @@
+policy:
+  id: claude_sdk_repo_hygiene
+  name: Repo hygiene
+  category: claude_sdk
+  description: >
+    Repository-scope rules covering the project-level scaffolding a Claude
+    Agent SDK codebase should ship with — agent-facing READMEs, hook scripts,
+    sandbox policies, and other components a Claude session relies on at cold
+    start.
+
+rules:
+  - id: CSDK-203
+    title: Repo ships Claude Agent SDK code without a CLAUDE.md
+    severity: low
+    confidence: 0.9
+    language: python
+    applies_to:
+      - claude_sdk
+    scope: repo
+    match:
+      all:
+        - repo_has_sdk_in_code:
+            - claude_agent_sdk
+        - not:
+            repo_component_present:
+              - claude_md
+    explanation: >
+      A repository that builds on the Claude Agent SDK but ships no top-level
+      CLAUDE.md leaves any Claude session that opens the repo with no
+      project-specific guidance. The conventions, build commands, test
+      runners, lint scripts, and "do not touch" boundaries a human maintainer
+      would describe in onboarding are absent, so the agent has to infer them
+      from the source on every session and frequently guesses wrong —
+      bypassing the project's lint, picking the wrong test command, or
+      violating commit conventions that were never written down anywhere it
+      could read. The cost compounds: each new contributor (human or agent)
+      reinvents the same wrong assumptions.
+    fix: >
+      Add a CLAUDE.md at the repository root documenting how to build, test,
+      and lint the project, the coding conventions Claude must respect, the
+      directories or files Claude must not modify, and any project-specific
+      safety guardrails (e.g. "never run migrations", "never push to main").
+      Treat it as the project's agent-facing README and keep it under version
+      control so reviewers see drift.

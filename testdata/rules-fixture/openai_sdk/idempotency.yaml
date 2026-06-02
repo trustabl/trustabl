@@ -41,3 +41,48 @@ rules:
       must also honor the key for this protection to be effective.
     fix: >
       Add an `idempotency_key: str` parameter and pass it to the backing API.
+
+  - id: OAI-019
+    title: TypeScript mutating tool has no idempotency key
+    severity: medium
+    confidence: 0.5
+    language: typescript
+    applies_to:
+      - openai_tool
+    scope: tool
+    match:
+      all:
+        - name_has_prefix:
+            - create_
+            - send_
+            - delete_
+            - post_
+            - update_
+            - refund_
+            - charge_
+            - issue_
+        - not:
+            has_body_text:
+              - idempot
+              - request_id
+              - requestId
+              - txn_id
+              - txnId
+              - correlation_id
+              - correlationId
+    explanation: >
+      An OpenAI Agents SDK tool authored in TypeScript whose name implies a
+      side effect (create_/send_/delete_/refund_/...) has no idempotency token
+      visible in its body. The SDK retries tool calls on timeouts and
+      ambiguous failures and the model itself will retry whenever a tool
+      result reads as inconclusive; without a key threaded through to the
+      backing API the same action fires twice, producing duplicate tickets,
+      payments, emails, or deletions. Provisional: this rule loads and
+      validates today but will not fire until the engine's TypeScript tool
+      parser ships.
+    fix: >
+      Add an `idempotencyKey: string` parameter to the tool's zod schema and
+      forward it to the underlying API (Stripe `Idempotency-Key` header,
+      REST `X-Request-ID`, GraphQL `clientMutationId`, etc.). If the backing
+      service does not honor idempotency keys, document the gap and dedupe
+      in your own store keyed by the token before issuing the call.

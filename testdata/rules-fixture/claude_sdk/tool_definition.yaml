@@ -77,3 +77,35 @@ rules:
       refuse to call it at all.
     fix: >
       Rename to a verb-object form, e.g. `summarize_invoice`, `refund_charge`.
+
+  - id: CSDK-008
+    title: Tool exposes **kwargs without explicit input_schema
+    severity: medium
+    confidence: 0.8
+    language: python
+    applies_to:
+      - claude_sdk_tool
+    scope: tool
+    match:
+      all:
+        - param_name_matches:
+            exact:
+              - kwargs
+        - not:
+            tool_decorator_kwarg_present:
+              - input_schema
+    explanation: >
+      The Claude Agent SDK derives a tool's JSON input schema from the
+      function signature. A tool whose accepted arguments live entirely under
+      `**kwargs` has no typed surface for the SDK to introspect, so the model
+      sees an empty parameter object and gets no signal about which keys to
+      send. Calls then either omit data the body requires or invent keys the
+      body does not handle, and the failure surfaces as a runtime KeyError at
+      invoke time instead of a clean schema-validation error before the tool
+      ever runs.
+    fix: >
+      Either declare each accepted parameter on the function signature with a
+      type annotation so the SDK can derive the schema, or pass an explicit
+      `input_schema=` to the `@tool` decorator — either a JSON Schema dict or
+      a Pydantic `BaseModel` subclass — so the contract published to the model
+      matches what the body actually reads from `kwargs`.

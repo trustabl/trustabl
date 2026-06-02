@@ -36,3 +36,41 @@ rules:
       surface (e.g. notebook-style), run the exec inside a separate process
       with seccomp + no network + no filesystem write, and treat the process
       as a single-use sacrificial sandbox.
+
+  - id: OAI-017
+    title: TypeScript tool body calls eval / new Function on dynamic input
+    severity: high
+    confidence: 0.9
+    language: typescript
+    applies_to:
+      - openai_tool
+    scope: tool
+    match:
+      has_body_text:
+        - eval(
+        - new Function(
+        - Function(
+    explanation: >
+      A TypeScript tool body invokes `eval()` or constructs a `new Function(...)`
+      from a string. When any portion of that string flows from the model
+      (directly, via tool arguments, or via session state the model writes to),
+      the call is arbitrary-code-execution inside the agent's Node / Worker /
+      browser runtime. No OS-level sandbox stands between the call and the
+      runtime's full capabilities: file I/O, env-var access, fetch credentials,
+      and the agent's own keys in memory are all reachable from the evaluated
+      string. Even a `with({})`-restricted scope is escapable through
+      globalThis, prototype chains, and the platform API surface unless
+      explicitly stripped. The miner-flagged `calculate` tool in the Claude
+      SDK template feeds a tool argument straight into `eval` to act as a math
+      evaluator — the canonical worst-case shape. Provisional: this rule loads
+      and validates today but will not fire until the engine's TypeScript tool
+      parser ships.
+    fix: >
+      Remove `eval` and `new Function` from the tool. For arithmetic, parse
+      the input with a hardened expression library (`mathjs`, `expr-eval`)
+      configured to disallow function calls and property access. If the tool
+      genuinely needs to run model-supplied code, isolate it: a separate
+      Worker with no bindings (no env, no KV, no secrets), a
+      `vm.createContext` with an empty global plus a CPU/memory/time limit,
+      or a sandboxed iframe with the network and storage origins stripped.
+      Treat the sandbox as single-use and discard it after every call.

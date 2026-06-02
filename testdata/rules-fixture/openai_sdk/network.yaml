@@ -67,3 +67,73 @@ rules:
       every urllib.request.urlopen call. Surface timeouts as a structured
       tool error the model can react to using failure_error_function (see
       OAI-004). OAI-005 covers the equivalent gap for requests/httpx callees.
+
+  - id: OAI-016
+    title: TypeScript tool fetch call has no AbortSignal timeout
+    severity: high
+    confidence: 0.6
+    language: typescript
+    applies_to:
+      - openai_tool
+    scope: tool
+    match:
+      all:
+        - has_body_text:
+            - fetch(
+        - not:
+            has_body_text:
+              - AbortSignal
+              - AbortController
+              - 'signal:'
+              - AbortSignal.timeout
+    explanation: >
+      An OpenAI Agents SDK tool authored in TypeScript calls `fetch()` without
+      attaching an AbortSignal. Node's and the browser's `fetch` have no
+      implicit timeout; a slow or unresponsive host blocks the tool's
+      `execute` callback indefinitely, which in turn blocks the agent's run
+      loop, consumes the conversation's wall-clock budget, and ties up the
+      worker that owns the request. The miner's examples include Cloudflare
+      Worker and realtime-agent templates that fetch from URLs interpolated
+      from tool arguments, so the gap also amplifies SSRF and exfiltration
+      impact: the call cannot be cancelled even when downstream behaviour
+      goes obviously wrong. Provisional: this rule loads and validates today
+      but will not fire until the engine's TypeScript tool parser ships.
+    fix: >
+      Attach an AbortSignal that fires after a bounded deadline. Modern
+      runtimes: `await fetch(url, { signal: AbortSignal.timeout(15_000) })`.
+      For runtimes without `AbortSignal.timeout`, create an `AbortController`,
+      schedule `controller.abort()` via `setTimeout`, pass `controller.signal`
+      to `fetch`, and clear the timer in a `finally` block. Surface the
+      resulting `AbortError` as a structured tool error the model can react
+      to (see OAI-004's `failure_error_function` for the Python equivalent).
+
+  - id: OAI-018
+    title: Tool builds outbound URL from non-literal value
+    severity: medium
+    confidence: 0.55
+    language: python
+    applies_to:
+      - openai_tool
+    scope: tool
+    match:
+      has_dynamic_url_call: true
+    explanation: >
+      An OpenAI Agents SDK tool builds its outbound HTTP URL from a
+      non-literal value — typically a tool parameter interpolated into an
+      f-string or concatenated onto a base URL. Because tool arguments are
+      produced by the model from conversation context (including prior tool
+      output and user input), an attacker who can shape that context can
+      steer the request to an attacker-controlled host or to an internal
+      address the agent's network egress can reach but the model was never
+      meant to touch. The same channel also leaks request bodies (auth
+      headers, JSON payloads, the model's reasoning) to whichever host the
+      URL resolves to, so the failure mode is both SSRF and data
+      exfiltration in one call.
+    fix: >
+      Treat the model-supplied value as untrusted input to URL construction.
+      Validate it against an allow-list of permitted hosts/path segments
+      before any HTTP client touches it, or look the value up against a
+      server-side registry and build the URL from the registry's trusted
+      entry. If the value is meant to be an opaque ID (e.g. a connection_id),
+      pass it as a query parameter or path segment of a fixed base URL and
+      reject characters that would let it escape that slot.

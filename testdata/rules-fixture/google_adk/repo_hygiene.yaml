@@ -1,0 +1,41 @@
+policy:
+  id: google_adk_repo_hygiene
+  name: Google ADK repo hygiene
+  category: google_adk
+  description: >
+    Repo-scoped hygiene rules for projects that use the Google ADK. Fire once
+    per scan against the repo manifest and inventory rather than per tool or
+    agent.
+
+rules:
+  - id: ADK-201
+    title: Google ADK project missing CLAUDE.md
+    severity: low
+    confidence: 0.9
+    language: python
+    applies_to:
+      - google_adk
+    scope: repo
+    match:
+      all:
+        - repo_has_sdk_in_code:
+            - google_adk
+        - not:
+            repo_component_present:
+              - claude_md
+    explanation: >
+      The project uses the Google ADK in code but ships no CLAUDE.md at the
+      repo root. When Claude Code (or any agent following the CLAUDE.md
+      convention) edits this repo, it has no project-specific guidance on
+      agent-class choices (LlmAgent vs SequentialAgent vs ParallelAgent vs
+      LoopAgent), sub_agents composition, FunctionTool wrapping conventions,
+      required guardrails, or the local test and build commands. The likely
+      consequence is generated code that violates the project's tool and
+      agent contracts because nothing in-tree teaches the agent the local
+      rules.
+    fix: >
+      Add a CLAUDE.md at the repo root. State which ADK agent classes the
+      project uses and why, how tools must be wrapped, any required guardrails
+      or sandboxing, and the exact test, lint, and build commands. Keep it
+      short and concrete so an editing agent can act on it without re-deriving
+      the conventions.

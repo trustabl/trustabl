@@ -8,7 +8,7 @@ policy:
     be steered at internal services the agent host can reach.
 
 rules:
-  - id: CSDK-008
+  - id: CSDK-009
     title: Tool fetches a caller-controlled URL (SSRF)
     severity: high
     confidence: 0.6

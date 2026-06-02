@@ -1,0 +1,41 @@
+policy:
+  id: openai_sdk_repo_hygiene
+  name: OpenAI Agents SDK repo hygiene
+  category: openai_sdk
+  description: >
+    Repo-scoped hygiene rules for projects that use the OpenAI Agents SDK.
+    Fire once per scan against the repo manifest and inventory rather than per
+    tool or agent.
+
+rules:
+  - id: OAI-202
+    title: OpenAI Agents project missing CLAUDE.md
+    severity: low
+    confidence: 0.9
+    language: python
+    applies_to:
+      - openai_agents
+    scope: repo
+    match:
+      all:
+        - repo_has_sdk_in_code:
+            - openai_agents
+        - not:
+            repo_component_present:
+              - claude_md
+    explanation: >
+      The project uses the OpenAI Agents SDK in code but ships no CLAUDE.md at
+      the repo root. When Claude Code (or any agent honoring the CLAUDE.md
+      convention) edits this repo, it has no project-specific guidance on
+      Agent vs SandboxAgent choice, handoff topology, required input/output
+      guardrails, tool_choice settings, or the local test and build commands.
+      The likely consequence is generated code that bypasses the project's
+      safety contracts because nothing in-tree teaches the agent the local
+      rules.
+    fix: >
+      Add a CLAUDE.md at the repo root. State whether the project uses Agent
+      or SandboxAgent, list required guardrails (input_guardrails,
+      output_guardrails) and tool_choice conventions, note any handoff or
+      tracing policy, and give the exact test, lint, and build commands. Keep
+      it short and concrete so an editing agent can act on it without
+      re-deriving the conventions.
