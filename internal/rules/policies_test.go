@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/trustabl/trustabl/internal/analysis"
 	"github.com/trustabl/trustabl/internal/analysis/detectors"
 	"github.com/trustabl/trustabl/internal/models"
 	"github.com/trustabl/trustabl/internal/rules"
@@ -99,9 +100,10 @@ type policyRuleCase struct {
 	name       string            // test subname
 	ruleID     string            // YAML rule ID under test
 	kind       models.ToolKind   // ToolKind for the synthetic tool
-	src        string            // Python snippet
+	src        string            // Python OR TypeScript snippet, per lang
 	toolConfig map[string]string // optional Config override (for decorator-kwarg rules)
 	wantFires  bool              // expected: rule fires for this snippet
+	lang       models.Language   // "" defaults to python (existing cases)
 }
 
 // policyAgentCase is one fire-or-silent test against a shipped agent-scoped rule.
@@ -133,89 +135,102 @@ type policySubagentCase struct {
 
 var policyRuleCases = []policyRuleCase{
 	// ─── CSDK-001 missing docstring ─────────────────────────────────────────
-	{"CSDK-001 fires on missing docstring", "CSDK-001", models.KindClaudeSDKTool, `
+	{name: "CSDK-001 fires on missing docstring", ruleID: "CSDK-001", kind: models.KindClaudeSDKTool, src: `
 def fetch_data(x: str) -> dict:
     return {}
-`, nil, true},
-	{"CSDK-001 silent with docstring", "CSDK-001", models.KindClaudeSDKTool, `
+`,
+		toolConfig: nil, wantFires: true},
+	{name: "CSDK-001 silent with docstring", ruleID: "CSDK-001", kind: models.KindClaudeSDKTool, src: `
 def fetch_data(x: str) -> dict:
     """Fetch some data."""
     return {}
-`, nil, false},
+`,
+		toolConfig: nil, wantFires: false},
 
 	// ─── CSDK-002 untyped params ────────────────────────────────────────────
-	{"CSDK-002 fires on untyped params", "CSDK-002", models.KindClaudeSDKTool, `
+	{name: "CSDK-002 fires on untyped params", ruleID: "CSDK-002", kind: models.KindClaudeSDKTool, src: `
 def fetch_data(x, y):
     """Does something."""
     return {}
-`, nil, true},
-	{"CSDK-002 silent with typed params", "CSDK-002", models.KindClaudeSDKTool, `
+`,
+		toolConfig: nil, wantFires: true},
+	{name: "CSDK-002 silent with typed params", ruleID: "CSDK-002", kind: models.KindClaudeSDKTool, src: `
 def fetch_data(x: str, y: int) -> dict:
     """Does something."""
     return {}
-`, nil, false},
-	{"CSDK-002 silent with no params", "CSDK-002", models.KindClaudeSDKTool, `
+`,
+		toolConfig: nil, wantFires: false},
+	{name: "CSDK-002 silent with no params", ruleID: "CSDK-002", kind: models.KindClaudeSDKTool, src: `
 def fetch_data() -> dict:
     """No params, no problem."""
     return {}
-`, nil, false},
+`,
+		toolConfig: nil, wantFires: false},
 
 	// ─── CSDK-003 network without timeout ───────────────────────────────────
-	{"CSDK-003 fires without timeout", "CSDK-003", models.KindClaudeSDKTool, `
+	{name: "CSDK-003 fires without timeout", ruleID: "CSDK-003", kind: models.KindClaudeSDKTool, src: `
 import requests
 def get_invoice(id: str) -> dict:
     """Fetch invoice."""
     return requests.get("https://api.example.com/invoice/" + id).json()
-`, nil, true},
-	{"CSDK-003 silent with timeout", "CSDK-003", models.KindClaudeSDKTool, `
+`,
+		toolConfig: nil, wantFires: true},
+	{name: "CSDK-003 silent with timeout", ruleID: "CSDK-003", kind: models.KindClaudeSDKTool, src: `
 import requests
 def get_invoice(id: str) -> dict:
     """Fetch invoice."""
     return requests.get("https://api.example.com/invoice/" + id, timeout=10).json()
-`, nil, false},
-	{"CSDK-003 silent on non-HTTP call", "CSDK-003", models.KindClaudeSDKTool, `
+`,
+		toolConfig: nil, wantFires: false},
+	{name: "CSDK-003 silent on non-HTTP call", ruleID: "CSDK-003", kind: models.KindClaudeSDKTool, src: `
 def get_data(cache_key: str) -> dict:
     """Read from cache."""
     return cache.fetch(cache_key)
-`, nil, false},
-	{"CSDK-003 fires on session-alias get without timeout", "CSDK-003", models.KindClaudeSDKTool, `
+`,
+		toolConfig: nil, wantFires: false},
+	{name: "CSDK-003 fires on session-alias get without timeout", ruleID: "CSDK-003", kind: models.KindClaudeSDKTool, src: `
 import requests
 def get_invoice(id: str) -> dict:
     """Fetch invoice."""
     s = requests.Session()
     return s.get("https://api.example.com/invoice/" + id).json()
-`, nil, true},
+`,
+		toolConfig: nil, wantFires: true},
 
 	// ─── CSDK-004 unsafe path ───────────────────────────────────────────────
-	{"CSDK-004 fires on path in open()", "CSDK-004", models.KindClaudeSDKTool, `
+	{name: "CSDK-004 fires on path in open()", ruleID: "CSDK-004", kind: models.KindClaudeSDKTool, src: `
 def read_file(file_path: str) -> str:
     """Read a file."""
     with open(file_path, "r") as f:
         return f.read()
-`, nil, true},
-	{"CSDK-004 silent with .resolve()", "CSDK-004", models.KindClaudeSDKTool, `
+`,
+		toolConfig: nil, wantFires: true},
+	{name: "CSDK-004 silent with .resolve()", ruleID: "CSDK-004", kind: models.KindClaudeSDKTool, src: `
 from pathlib import Path
 def read_file(file_path: str) -> str:
     """Read a file."""
     p = Path(file_path).resolve()
     with open(p, "r") as f:
         return f.read()
-`, nil, false},
-	{"CSDK-004 silent on non-pathish param", "CSDK-004", models.KindClaudeSDKTool, `
+`,
+		toolConfig: nil, wantFires: false},
+	{name: "CSDK-004 silent on non-pathish param", ruleID: "CSDK-004", kind: models.KindClaudeSDKTool, src: `
 def get_editor(editor_id: str) -> dict:
     """Get editor config."""
     return {"id": editor_id}
-`, nil, false},
+`,
+		toolConfig: nil, wantFires: false},
 
 	// ─── CSDK-005 raw exceptions ────────────────────────────────────────────
-	{"CSDK-005 fires on raise without try", "CSDK-005", models.KindClaudeSDKTool, `
+	{name: "CSDK-005 fires on raise without try", ruleID: "CSDK-005", kind: models.KindClaudeSDKTool, src: `
 def process(x: str) -> dict:
     """Process x."""
     if not x:
         raise ValueError("empty input")
     return {"x": x}
-`, nil, true},
-	{"CSDK-005 silent with try/except", "CSDK-005", models.KindClaudeSDKTool, `
+`,
+		toolConfig: nil, wantFires: true},
+	{name: "CSDK-005 silent with try/except", ruleID: "CSDK-005", kind: models.KindClaudeSDKTool, src: `
 def process(x: str) -> dict:
     """Process x."""
     try:
@@ -224,196 +239,226 @@ def process(x: str) -> dict:
         return {"x": x}
     except ValueError as e:
         return {"error": str(e)}
-`, nil, false},
+`,
+		toolConfig: nil, wantFires: false},
 
 	// ─── CSDK-006 idempotency ───────────────────────────────────────────────
-	{"CSDK-006 fires on mutating tool without key", "CSDK-006", models.KindClaudeSDKTool, `
+	{name: "CSDK-006 fires on mutating tool without key", ruleID: "CSDK-006", kind: models.KindClaudeSDKTool, src: `
 def create_order(customer_id: str, amount: float) -> dict:
     """Create an order."""
     return {"ok": True}
-`, nil, true},
-	{"CSDK-006 silent with idempotency key", "CSDK-006", models.KindClaudeSDKTool, `
+`,
+		toolConfig: nil, wantFires: true},
+	{name: "CSDK-006 silent with idempotency key", ruleID: "CSDK-006", kind: models.KindClaudeSDKTool, src: `
 def create_order(customer_id: str, amount: float, idempotency_key: str) -> dict:
     """Create an order."""
     return {"ok": True}
-`, nil, false},
-	{"CSDK-006 silent on non-mutating name", "CSDK-006", models.KindClaudeSDKTool, `
+`,
+		toolConfig: nil, wantFires: false},
+	{name: "CSDK-006 silent on non-mutating name", ruleID: "CSDK-006", kind: models.KindClaudeSDKTool, src: `
 def get_order(order_id: str) -> dict:
     """Fetch an order."""
     return {"id": order_id}
-`, nil, false},
+`,
+		toolConfig: nil, wantFires: false},
 
 	// ─── CSDK-007 ambiguous name ────────────────────────────────────────────
-	{"CSDK-007 fires on ambiguous name", "CSDK-007", models.KindClaudeSDKTool, `
+	{name: "CSDK-007 fires on ambiguous name", ruleID: "CSDK-007", kind: models.KindClaudeSDKTool, src: `
 def process(data: dict) -> dict:
     """Process data."""
     return data
-`, nil, true},
-	{"CSDK-007 silent on descriptive name", "CSDK-007", models.KindClaudeSDKTool, `
+`,
+		toolConfig: nil, wantFires: true},
+	{name: "CSDK-007 silent on descriptive name", ruleID: "CSDK-007", kind: models.KindClaudeSDKTool, src: `
 def summarize_invoice(invoice_id: str) -> dict:
     """Summarize an invoice."""
     return {}
-`, nil, false},
+`,
+		toolConfig: nil, wantFires: false},
 
 	// ─── OAI-001 missing docstring ───────────────────────────────────────────
-	{"OAI-001 fires on missing docstring", "OAI-001", models.KindOpenAITool, `
+	{name: "OAI-001 fires on missing docstring", ruleID: "OAI-001", kind: models.KindOpenAITool, src: `
 def fetch_data(x: str) -> dict:
     return {}
-`, nil, true},
-	{"OAI-001 silent with docstring", "OAI-001", models.KindOpenAITool, `
+`,
+		toolConfig: nil, wantFires: true},
+	{name: "OAI-001 silent with docstring", ruleID: "OAI-001", kind: models.KindOpenAITool, src: `
 def fetch_data(x: str) -> dict:
     """Fetch some data."""
     return {}
-`, nil, false},
+`,
+		toolConfig: nil, wantFires: false},
 
 	// ─── OAI-002 untyped params ─────────────────────────────────────────────
-	{"OAI-002 fires on untyped params", "OAI-002", models.KindOpenAITool, `
+	{name: "OAI-002 fires on untyped params", ruleID: "OAI-002", kind: models.KindOpenAITool, src: `
 def fetch_data(x, y):
     """Does something."""
     return {}
-`, nil, true},
-	{"OAI-002 silent with typed params", "OAI-002", models.KindOpenAITool, `
+`,
+		toolConfig: nil, wantFires: true},
+	{name: "OAI-002 silent with typed params", ruleID: "OAI-002", kind: models.KindOpenAITool, src: `
 def fetch_data(x: str, y: int) -> dict:
     """Does something."""
     return {}
-`, nil, false},
+`,
+		toolConfig: nil, wantFires: false},
 
 	// ─── OAI-003 strict_mode=False ──────────────────────────────────────────
-	{"OAI-003 fires when strict_mode=False in config", "OAI-003", models.KindOpenAITool, `
+	{name: "OAI-003 fires when strict_mode=False in config", ruleID: "OAI-003", kind: models.KindOpenAITool, src: `
 def fetch_data(x: str) -> dict:
     """Fetch data."""
     return {}
-`, map[string]string{"strict_mode": "False"}, true},
-	{"OAI-003 silent when strict_mode not set", "OAI-003", models.KindOpenAITool, `
+`,
+		toolConfig: map[string]string{"strict_mode": "False"}, wantFires: true},
+	{name: "OAI-003 silent when strict_mode not set", ruleID: "OAI-003", kind: models.KindOpenAITool, src: `
 def fetch_data(x: str) -> dict:
     """Fetch data."""
     return {}
-`, nil, false},
+`,
+		toolConfig: nil, wantFires: false},
 
 	// ─── OAI-004 no failure_error_function ──────────────────────────────────
-	{"OAI-004 fires when failure_error_function absent", "OAI-004", models.KindOpenAITool, `
+	{name: "OAI-004 fires when failure_error_function absent", ruleID: "OAI-004", kind: models.KindOpenAITool, src: `
 def fetch_data(x: str) -> dict:
     """Fetch data."""
     return {}
-`, nil, true},
-	{"OAI-004 silent when failure_error_function present", "OAI-004", models.KindOpenAITool, `
+`,
+		toolConfig: nil, wantFires: true},
+	{name: "OAI-004 silent when failure_error_function present", ruleID: "OAI-004", kind: models.KindOpenAITool, src: `
 def fetch_data(x: str) -> dict:
     """Fetch data."""
     return {}
-`, map[string]string{"failure_error_function": "handle_error"}, false},
+`,
+		toolConfig: map[string]string{"failure_error_function": "handle_error"}, wantFires: false},
 
 	// ─── OAI-005 network without timeout ────────────────────────────────────
-	{"OAI-005 fires without timeout", "OAI-005", models.KindOpenAITool, `
+	{name: "OAI-005 fires without timeout", ruleID: "OAI-005", kind: models.KindOpenAITool, src: `
 import requests
 def get_data(id: str) -> dict:
     """Get data."""
     return requests.get("https://api.example.com/" + id).json()
-`, nil, true},
-	{"OAI-005 silent with timeout", "OAI-005", models.KindOpenAITool, `
+`,
+		toolConfig: nil, wantFires: true},
+	{name: "OAI-005 silent with timeout", ruleID: "OAI-005", kind: models.KindOpenAITool, src: `
 import requests
 def get_data(id: str) -> dict:
     """Get data."""
     return requests.get("https://api.example.com/" + id, timeout=10).json()
-`, nil, false},
+`,
+		toolConfig: nil, wantFires: false},
 
 	// ─── OAI-006 unsafe path ────────────────────────────────────────────────
-	{"OAI-006 fires on path in open()", "OAI-006", models.KindOpenAITool, `
+	{name: "OAI-006 fires on path in open()", ruleID: "OAI-006", kind: models.KindOpenAITool, src: `
 def read_file(file_path: str) -> str:
     """Read a file."""
     with open(file_path, "r") as f:
         return f.read()
-`, nil, true},
-	{"OAI-006 silent with .resolve()", "OAI-006", models.KindOpenAITool, `
+`,
+		toolConfig: nil, wantFires: true},
+	{name: "OAI-006 silent with .resolve()", ruleID: "OAI-006", kind: models.KindOpenAITool, src: `
 from pathlib import Path
 def read_file(file_path: str) -> str:
     """Read a file."""
     p = Path(file_path).resolve()
     with open(p, "r") as f:
         return f.read()
-`, nil, false},
+`,
+		toolConfig: nil, wantFires: false},
 
 	// ─── ADK-001 missing docstring on FunctionTool wrap ──────────────────────
-	{"ADK-001 fires on missing docstring", "ADK-001", models.KindADKFunctionTool, `
+	{name: "ADK-001 fires on missing docstring", ruleID: "ADK-001", kind: models.KindADKFunctionTool, src: `
 def get_weather(city: str) -> str:
     return "sunny"
-`, nil, true},
-	{"ADK-001 silent with docstring", "ADK-001", models.KindADKFunctionTool, `
+`,
+		toolConfig: nil, wantFires: true},
+	{name: "ADK-001 silent with docstring", ruleID: "ADK-001", kind: models.KindADKFunctionTool, src: `
 def get_weather(city: str) -> str:
     """Look up the weather for a city."""
     return "sunny"
-`, nil, false},
+`,
+		toolConfig: nil, wantFires: false},
 
 	// ─── ADK-002 untyped params on FunctionTool wrap ─────────────────────────
-	{"ADK-002 fires on untyped params", "ADK-002", models.KindADKFunctionTool, `
+	{name: "ADK-002 fires on untyped params", ruleID: "ADK-002", kind: models.KindADKFunctionTool, src: `
 def get_weather(city):
     """Look up the weather."""
     return "sunny"
-`, nil, true},
-	{"ADK-002 silent on typed params", "ADK-002", models.KindADKFunctionTool, `
+`,
+		toolConfig: nil, wantFires: true},
+	{name: "ADK-002 silent on typed params", ruleID: "ADK-002", kind: models.KindADKFunctionTool, src: `
 def get_weather(city: str) -> str:
     """Look up the weather."""
     return "sunny"
-`, nil, false},
+`,
+		toolConfig: nil, wantFires: false},
 
 	// ─── ADK-003 network call without timeout ────────────────────────────────
-	{"ADK-003 fires on requests.get without timeout", "ADK-003", models.KindADKFunctionTool, `
+	{name: "ADK-003 fires on requests.get without timeout", ruleID: "ADK-003", kind: models.KindADKFunctionTool, src: `
 import requests
 
 def get_weather(city: str) -> str:
     """Look up the weather."""
     return requests.get("https://api.example.com/w/" + city).text
-`, nil, true},
-	{"ADK-003 silent with timeout", "ADK-003", models.KindADKFunctionTool, `
+`,
+		toolConfig: nil, wantFires: true},
+	{name: "ADK-003 silent with timeout", ruleID: "ADK-003", kind: models.KindADKFunctionTool, src: `
 import requests
 
 def get_weather(city: str) -> str:
     """Look up the weather."""
     return requests.get("https://api.example.com/w/" + city, timeout=10).text
-`, nil, false},
+`,
+		toolConfig: nil, wantFires: false},
 
 	// ─── alias + None coverage (OAI-005, ADK-003) ────────────────────────────
-	{"OAI-005 fires on session-alias get without timeout", "OAI-005", models.KindOpenAITool, `
+	{name: "OAI-005 fires on session-alias get without timeout", ruleID: "OAI-005", kind: models.KindOpenAITool, src: `
 import requests
 def fetch(url: str) -> str:
     """Fetch."""
     s = requests.Session()
     return s.get(url).text
-`, nil, true},
-	{"OAI-005 fires on timeout=None", "OAI-005", models.KindOpenAITool, `
+`,
+		toolConfig: nil, wantFires: true},
+	{name: "OAI-005 fires on timeout=None", ruleID: "OAI-005", kind: models.KindOpenAITool, src: `
 import requests
 def fetch(url: str) -> str:
     """Fetch."""
     return requests.get(url, timeout=None).text
-`, nil, true},
-	{"ADK-003 fires on session-alias get without timeout", "ADK-003", models.KindADKFunctionTool, `
+`,
+		toolConfig: nil, wantFires: true},
+	{name: "ADK-003 fires on session-alias get without timeout", ruleID: "ADK-003", kind: models.KindADKFunctionTool, src: `
 import requests
 def fetch(url: str) -> str:
     """Fetch."""
     s = requests.Session()
     return s.get(url).text
-`, nil, true},
+`,
+		toolConfig: nil, wantFires: true},
 
 	// ─── OAI-007 ambiguous name ──────────────────────────────────────────────
-	{"OAI-007 fires on ambiguous name", "OAI-007", models.KindOpenAITool, `
+	{name: "OAI-007 fires on ambiguous name", ruleID: "OAI-007", kind: models.KindOpenAITool, src: `
 def process(data: dict) -> dict:
     """Process data."""
     return data
-`, nil, true},
-	{"OAI-007 silent on descriptive name", "OAI-007", models.KindOpenAITool, `
+`,
+		toolConfig: nil, wantFires: true},
+	{name: "OAI-007 silent on descriptive name", ruleID: "OAI-007", kind: models.KindOpenAITool, src: `
 def summarize_invoice(invoice_id: str) -> dict:
     """Summarize an invoice."""
     return {}
-`, nil, false},
+`,
+		toolConfig: nil, wantFires: false},
 
 	// ─── OAI-008 raw exceptions ──────────────────────────────────────────────
-	{"OAI-008 fires on raise without try", "OAI-008", models.KindOpenAITool, `
+	{name: "OAI-008 fires on raise without try", ruleID: "OAI-008", kind: models.KindOpenAITool, src: `
 def process(x: str) -> dict:
     """Process x."""
     if not x:
         raise ValueError("empty input")
     return {"x": x}
-`, nil, true},
-	{"OAI-008 silent with try/except", "OAI-008", models.KindOpenAITool, `
+`,
+		toolConfig: nil, wantFires: true},
+	{name: "OAI-008 silent with try/except", ruleID: "OAI-008", kind: models.KindOpenAITool, src: `
 def process(x: str) -> dict:
     """Process x."""
     try:
@@ -422,316 +467,363 @@ def process(x: str) -> dict:
         return {"x": x}
     except ValueError as e:
         return {"error": str(e)}
-`, nil, false},
+`,
+		toolConfig: nil, wantFires: false},
 
 	// ─── OAI-009 idempotency ─────────────────────────────────────────────────
-	{"OAI-009 fires on mutating tool without key", "OAI-009", models.KindOpenAITool, `
+	{name: "OAI-009 fires on mutating tool without key", ruleID: "OAI-009", kind: models.KindOpenAITool, src: `
 def create_order(customer_id: str, amount: float) -> dict:
     """Create an order."""
     return {"ok": True}
-`, nil, true},
-	{"OAI-009 silent with idempotency key", "OAI-009", models.KindOpenAITool, `
+`,
+		toolConfig: nil, wantFires: true},
+	{name: "OAI-009 silent with idempotency key", ruleID: "OAI-009", kind: models.KindOpenAITool, src: `
 def create_order(customer_id: str, amount: float, idempotency_key: str) -> dict:
     """Create an order."""
     return {"ok": True}
-`, nil, false},
+`,
+		toolConfig: nil, wantFires: false},
 
 	// ─── OAI-010 print to stdout ─────────────────────────────────────────────
-	{"OAI-010 fires on print()", "OAI-010", models.KindOpenAITool, `
+	{name: "OAI-010 fires on print()", ruleID: "OAI-010", kind: models.KindOpenAITool, src: `
 def fetch(x: str) -> dict:
     """Fetch."""
     print("debug", x)
     return {}
-`, nil, true},
-	{"OAI-010 silent without print", "OAI-010", models.KindOpenAITool, `
+`,
+		toolConfig: nil, wantFires: true},
+	{name: "OAI-010 silent without print", ruleID: "OAI-010", kind: models.KindOpenAITool, src: `
 def fetch(x: str) -> dict:
     """Fetch."""
     return {}
-`, nil, false},
+`,
+		toolConfig: nil, wantFires: false},
 
 	// ─── OAI-011 urllib without timeout ──────────────────────────────────────
-	{"OAI-011 fires on urlopen without timeout", "OAI-011", models.KindOpenAITool, `
+	{name: "OAI-011 fires on urlopen without timeout", ruleID: "OAI-011", kind: models.KindOpenAITool, src: `
 import urllib.request
 def fetch(url: str) -> bytes:
     """Fetch."""
     return urllib.request.urlopen(url).read()
-`, nil, true},
-	{"OAI-011 silent with timeout", "OAI-011", models.KindOpenAITool, `
+`,
+		toolConfig: nil, wantFires: true},
+	{name: "OAI-011 silent with timeout", ruleID: "OAI-011", kind: models.KindOpenAITool, src: `
 import urllib.request
 def fetch(url: str) -> bytes:
     """Fetch."""
     return urllib.request.urlopen(url, timeout=10).read()
-`, nil, false},
+`,
+		toolConfig: nil, wantFires: false},
 
 	// ─── OAI-012 subprocess spawn ────────────────────────────────────────────
-	{"OAI-012 fires on subprocess.run", "OAI-012", models.KindOpenAITool, `
+	{name: "OAI-012 fires on subprocess.run", ruleID: "OAI-012", kind: models.KindOpenAITool, src: `
 import subprocess
 def run(cmd: str) -> str:
     """Run."""
     return subprocess.run([cmd], capture_output=True).stdout.decode()
-`, nil, true},
-	{"OAI-012 silent without subprocess", "OAI-012", models.KindOpenAITool, `
+`,
+		toolConfig: nil, wantFires: true},
+	{name: "OAI-012 silent without subprocess", ruleID: "OAI-012", kind: models.KindOpenAITool, src: `
 def run(cmd: str) -> str:
     """Run."""
     return cmd.upper()
-`, nil, false},
+`,
+		toolConfig: nil, wantFires: false},
 
 	// ─── OAI-013 dynamic code execution ──────────────────────────────────────
-	{"OAI-013 fires on eval", "OAI-013", models.KindOpenAITool, `
+	{name: "OAI-013 fires on eval", ruleID: "OAI-013", kind: models.KindOpenAITool, src: `
 def calc(expr: str):
     """Calc."""
     return eval(expr)
-`, nil, true},
-	{"OAI-013 silent without eval/exec/compile", "OAI-013", models.KindOpenAITool, `
+`,
+		toolConfig: nil, wantFires: true},
+	{name: "OAI-013 silent without eval/exec/compile", ruleID: "OAI-013", kind: models.KindOpenAITool, src: `
 def calc(expr: str) -> int:
     """Calc."""
     return int(expr) + 1
-`, nil, false},
+`,
+		toolConfig: nil, wantFires: false},
 
 	// ─── ADK-004 unsafe path ─────────────────────────────────────────────────
-	{"ADK-004 fires on path in open()", "ADK-004", models.KindADKFunctionTool, `
+	{name: "ADK-004 fires on path in open()", ruleID: "ADK-004", kind: models.KindADKFunctionTool, src: `
 def read_file(file_path: str) -> str:
     """Read a file."""
     with open(file_path, "r") as f:
         return f.read()
-`, nil, true},
-	{"ADK-004 silent with .resolve()", "ADK-004", models.KindADKFunctionTool, `
+`,
+		toolConfig: nil, wantFires: true},
+	{name: "ADK-004 silent with .resolve()", ruleID: "ADK-004", kind: models.KindADKFunctionTool, src: `
 from pathlib import Path
 def read_file(file_path: str) -> str:
     """Read a file."""
     p = Path(file_path).resolve()
     with open(p, "r") as f:
         return f.read()
-`, nil, false},
+`,
+		toolConfig: nil, wantFires: false},
 
 	// ─── ADK-005 raw exceptions ──────────────────────────────────────────────
-	{"ADK-005 fires on raise without try", "ADK-005", models.KindADKFunctionTool, `
+	{name: "ADK-005 fires on raise without try", ruleID: "ADK-005", kind: models.KindADKFunctionTool, src: `
 def process(x: str) -> dict:
     """Process x."""
     if not x:
         raise ValueError("empty input")
     return {"x": x}
-`, nil, true},
-	{"ADK-005 silent with try/except", "ADK-005", models.KindADKFunctionTool, `
+`,
+		toolConfig: nil, wantFires: true},
+	{name: "ADK-005 silent with try/except", ruleID: "ADK-005", kind: models.KindADKFunctionTool, src: `
 def process(x: str) -> dict:
     """Process x."""
     try:
         return {"x": x}
     except ValueError as e:
         return {"error": str(e)}
-`, nil, false},
+`,
+		toolConfig: nil, wantFires: false},
 
 	// ─── ADK-006 idempotency ─────────────────────────────────────────────────
-	{"ADK-006 fires on mutating tool without key", "ADK-006", models.KindADKFunctionTool, `
+	{name: "ADK-006 fires on mutating tool without key", ruleID: "ADK-006", kind: models.KindADKFunctionTool, src: `
 def create_order(customer_id: str, amount: float) -> dict:
     """Create an order."""
     return {"ok": True}
-`, nil, true},
-	{"ADK-006 silent with idempotency key", "ADK-006", models.KindADKFunctionTool, `
+`,
+		toolConfig: nil, wantFires: true},
+	{name: "ADK-006 silent with idempotency key", ruleID: "ADK-006", kind: models.KindADKFunctionTool, src: `
 def create_order(customer_id: str, amount: float, idempotency_key: str) -> dict:
     """Create an order."""
     return {"ok": True}
-`, nil, false},
+`,
+		toolConfig: nil, wantFires: false},
 
 	// ─── ADK-007 ambiguous name ──────────────────────────────────────────────
-	{"ADK-007 fires on ambiguous name", "ADK-007", models.KindADKFunctionTool, `
+	{name: "ADK-007 fires on ambiguous name", ruleID: "ADK-007", kind: models.KindADKFunctionTool, src: `
 def handle(data: dict) -> dict:
     """Handle data."""
     return data
-`, nil, true},
-	{"ADK-007 silent on descriptive name", "ADK-007", models.KindADKFunctionTool, `
+`,
+		toolConfig: nil, wantFires: true},
+	{name: "ADK-007 silent on descriptive name", ruleID: "ADK-007", kind: models.KindADKFunctionTool, src: `
 def fetch_order(order_id: str) -> dict:
     """Fetch an order."""
     return {}
-`, nil, false},
+`,
+		toolConfig: nil, wantFires: false},
 
 	// ADK-008 moved to agent scope (BashTool is a hosted tool on an LlmAgent) —
 	// see policyAgentRuleCases.
 
 	// ─── OAI-010 FP-safety: structured has_print_call ignores pprint ──────────
-	{"OAI-010 silent on pprint (not the print builtin)", "OAI-010", models.KindOpenAITool, `
+	{name: "OAI-010 silent on pprint (not the print builtin)", ruleID: "OAI-010", kind: models.KindOpenAITool, src: `
 from pprint import pprint
 def fetch(x: dict) -> dict:
     """Fetch."""
     pprint(x)
     return x
-`, nil, false},
+`,
+		toolConfig: nil, wantFires: false},
 
 	// ─── OAI-013 FP-safety: structured has_code_exec_call ignores re.compile ──
-	{"OAI-013 silent on re.compile (not the compile builtin)", "OAI-013", models.KindOpenAITool, `
+	{name: "OAI-013 silent on re.compile (not the compile builtin)", ruleID: "OAI-013", kind: models.KindOpenAITool, src: `
 import re
 def build(pattern: str):
     """Build."""
     return re.compile(pattern)
-`, nil, false},
+`,
+		toolConfig: nil, wantFires: false},
 
 	// ─── mcp_tool scope restored on CSDK tool-hygiene rules ──────────────────
 	// CSDK-001/002/003/007 apply to [claude_sdk_tool, mcp_tool]; these cases
 	// exercise the mcp_tool half that the fixture had drifted to drop.
-	{"CSDK-001 fires on MCP tool missing docstring", "CSDK-001", models.KindMCPTool, `
+	{name: "CSDK-001 fires on MCP tool missing docstring", ruleID: "CSDK-001", kind: models.KindMCPTool, src: `
 def fetch_data(x: str) -> dict:
     return {}
-`, nil, true},
-	{"CSDK-003 fires on MCP tool network call without timeout", "CSDK-003", models.KindMCPTool, `
+`,
+		toolConfig: nil, wantFires: true},
+	{name: "CSDK-003 fires on MCP tool network call without timeout", ruleID: "CSDK-003", kind: models.KindMCPTool, src: `
 import requests
 def get_invoice(id: str) -> dict:
     """Fetch invoice."""
     return requests.get("https://api.example.com/invoice/" + id).json()
-`, nil, true},
+`,
+		toolConfig: nil, wantFires: true},
 
 	// ─── OAI-014 privileged tool without needs_approval ──────────────────────
-	{"OAI-014 fires on shell tool with no needs_approval", "OAI-014", models.KindOpenAITool, `
+	{name: "OAI-014 fires on shell tool with no needs_approval", ruleID: "OAI-014", kind: models.KindOpenAITool, src: `
 import subprocess
 def run(cmd: str) -> str:
     """Run."""
     return subprocess.run([cmd], capture_output=True).stdout.decode()
-`, nil, true},
-	{"OAI-014 silent when needs_approval is set", "OAI-014", models.KindOpenAITool, `
+`,
+		toolConfig: nil, wantFires: true},
+	{name: "OAI-014 silent when needs_approval is set", ruleID: "OAI-014", kind: models.KindOpenAITool, src: `
 import subprocess
 def run(cmd: str) -> str:
     """Run."""
     return subprocess.run([cmd], capture_output=True).stdout.decode()
-`, map[string]string{"needs_approval": "True"}, false},
-	{"OAI-014 silent on a tool that is not privileged", "OAI-014", models.KindOpenAITool, `
+`,
+		toolConfig: map[string]string{"needs_approval": "True"}, wantFires: false},
+	{name: "OAI-014 silent on a tool that is not privileged", ruleID: "OAI-014", kind: models.KindOpenAITool, src: `
 def echo(x: str) -> str:
     """Echo."""
     return x
-`, nil, false},
+`,
+		toolConfig: nil, wantFires: false},
 
 	// ─── OAI-015 failure_error_function=None ─────────────────────────────────
-	{"OAI-015 fires when failure_error_function=None", "OAI-015", models.KindOpenAITool, `
+	{name: "OAI-015 fires when failure_error_function=None", ruleID: "OAI-015", kind: models.KindOpenAITool, src: `
 def fetch(x: str) -> dict:
     """Fetch."""
     return {}
-`, map[string]string{"failure_error_function": "None"}, true},
-	{"OAI-015 silent when failure_error_function is a real handler", "OAI-015", models.KindOpenAITool, `
+`,
+		toolConfig: map[string]string{"failure_error_function": "None"}, wantFires: true},
+	{name: "OAI-015 silent when failure_error_function is a real handler", ruleID: "OAI-015", kind: models.KindOpenAITool, src: `
 def fetch(x: str) -> dict:
     """Fetch."""
     return {}
-`, map[string]string{"failure_error_function": "handle_error"}, false},
-	{"OAI-015 silent when failure_error_function absent", "OAI-015", models.KindOpenAITool, `
+`,
+		toolConfig: map[string]string{"failure_error_function": "handle_error"}, wantFires: false},
+	{name: "OAI-015 silent when failure_error_function absent", ruleID: "OAI-015", kind: models.KindOpenAITool, src: `
 def fetch(x: str) -> dict:
     """Fetch."""
     return {}
-`, nil, false},
+`,
+		toolConfig: nil, wantFires: false},
 
 	// ─── CSDK-107 Claude tool body calls eval/exec/compile ───────────────────
-	{"CSDK-107 fires on exec", "CSDK-107", models.KindClaudeSDKTool, `
+	{name: "CSDK-107 fires on exec", ruleID: "CSDK-107", kind: models.KindClaudeSDKTool, src: `
 def run(code: str):
     """Run."""
     exec(code)
-`, nil, true},
-	{"CSDK-107 silent without eval/exec/compile", "CSDK-107", models.KindClaudeSDKTool, `
+`,
+		toolConfig: nil, wantFires: true},
+	{name: "CSDK-107 silent without eval/exec/compile", ruleID: "CSDK-107", kind: models.KindClaudeSDKTool, src: `
 def run(code: str) -> int:
     """Run."""
     return int(code) + 1
-`, nil, false},
+`,
+		toolConfig: nil, wantFires: false},
 
 	// ─── CSDK-108 Claude tool body spawns a subprocess ───────────────────────
-	{"CSDK-108 fires on subprocess.run", "CSDK-108", models.KindClaudeSDKTool, `
+	{name: "CSDK-108 fires on subprocess.run", ruleID: "CSDK-108", kind: models.KindClaudeSDKTool, src: `
 import subprocess
 def run(cmd: str) -> str:
     """Run."""
     return subprocess.run([cmd], capture_output=True).stdout.decode()
-`, nil, true},
-	{"CSDK-108 silent without a shell call", "CSDK-108", models.KindClaudeSDKTool, `
+`,
+		toolConfig: nil, wantFires: true},
+	{name: "CSDK-108 silent without a shell call", ruleID: "CSDK-108", kind: models.KindClaudeSDKTool, src: `
 def run(cmd: str) -> str:
     """Run."""
     return cmd.upper()
-`, nil, false},
+`,
+		toolConfig: nil, wantFires: false},
 
 	// ─── CSDK-009 SSRF: Claude tool fetches a caller-controlled URL ──────────
-	{"CSDK-009 fires on requests.get with param URL", "CSDK-009", models.KindClaudeSDKTool, `
+	{name: "CSDK-009 fires on requests.get with param URL", ruleID: "CSDK-009", kind: models.KindClaudeSDKTool, src: `
 import requests
 def fetch(url: str) -> str:
     """Fetch a URL."""
     return requests.get(url, timeout=10).text
-`, nil, true},
-	{"CSDK-009 silent on a literal URL", "CSDK-009", models.KindClaudeSDKTool, `
+`,
+		toolConfig: nil, wantFires: true},
+	{name: "CSDK-009 silent on a literal URL", ruleID: "CSDK-009", kind: models.KindClaudeSDKTool, src: `
 import requests
 def fetch() -> str:
     """Fetch a fixed URL."""
     return requests.get("https://api.example.com/status", timeout=10).text
-`, nil, false},
+`,
+		toolConfig: nil, wantFires: false},
 
 	// ─── ADK-012 SSRF: ADK tool fetches a caller-controlled URL ──────────────
-	{"ADK-012 fires on requests.get with param URL", "ADK-012", models.KindADKFunctionTool, `
+	{name: "ADK-012 fires on requests.get with param URL", ruleID: "ADK-012", kind: models.KindADKFunctionTool, src: `
 import requests
 def fetch(url: str) -> str:
     """Fetch."""
     return requests.get(url, timeout=10).text
-`, nil, true},
-	{"ADK-012 silent on a literal URL", "ADK-012", models.KindADKFunctionTool, `
+`,
+		toolConfig: nil, wantFires: true},
+	{name: "ADK-012 silent on a literal URL", ruleID: "ADK-012", kind: models.KindADKFunctionTool, src: `
 import requests
 def fetch() -> str:
     """Fetch."""
     return requests.get("https://api.example.com", timeout=10).text
-`, nil, false},
+`,
+		toolConfig: nil, wantFires: false},
 
 	// ─── OAI-018 SSRF (team rule): builds outbound URL from non-literal ──────
-	{"OAI-018 fires on httpx.get with f-string URL", "OAI-018", models.KindOpenAITool, `
+	{name: "OAI-018 fires on httpx.get with f-string URL", ruleID: "OAI-018", kind: models.KindOpenAITool, src: `
 import httpx
 def fetch(host: str) -> str:
     """Fetch."""
     return httpx.get(f"https://{host}/data", timeout=10).text
-`, nil, true},
-	{"OAI-018 silent on a literal URL", "OAI-018", models.KindOpenAITool, `
+`,
+		toolConfig: nil, wantFires: true},
+	{name: "OAI-018 silent on a literal URL", ruleID: "OAI-018", kind: models.KindOpenAITool, src: `
 import httpx
 def fetch() -> str:
     """Fetch."""
     return httpx.get("https://api.example.com/data", timeout=10).text
-`, nil, false},
+`,
+		toolConfig: nil, wantFires: false},
 
 	// ─── CSDK-008 (team rule): **kwargs without explicit input_schema ────────
 	// FunctionParams surfaces the **kwargs splat name, so the rule fires on a
 	// real **kwargs signature (not only a plain param literally named kwargs).
-	{"CSDK-008 fires on real **kwargs (no input_schema)", "CSDK-008", models.KindClaudeSDKTool, `
+	{name: "CSDK-008 fires on real **kwargs (no input_schema)", ruleID: "CSDK-008", kind: models.KindClaudeSDKTool, src: `
 def configure(**kwargs):
     """Configure."""
     return kwargs
-`, nil, true},
-	{"CSDK-008 silent on a typed param (no kwargs)", "CSDK-008", models.KindClaudeSDKTool, `
+`,
+		toolConfig: nil, wantFires: true},
+	{name: "CSDK-008 silent on a typed param (no kwargs)", ruleID: "CSDK-008", kind: models.KindClaudeSDKTool, src: `
 def configure(name: str):
     """Configure."""
     return name
-`, nil, false},
+`,
+		toolConfig: nil, wantFires: false},
 
 	// ─── ADK-009 (team rule): FunctionTool body prints to stdout ─────────────
-	{"ADK-009 fires on print()", "ADK-009", models.KindADKFunctionTool, `
+	{name: "ADK-009 fires on print()", ruleID: "ADK-009", kind: models.KindADKFunctionTool, src: `
 def report(x: str):
     """Report."""
     print(x)
-`, nil, true},
-	{"ADK-009 silent without print()", "ADK-009", models.KindADKFunctionTool, `
+`,
+		toolConfig: nil, wantFires: true},
+	{name: "ADK-009 silent without print()", ruleID: "ADK-009", kind: models.KindADKFunctionTool, src: `
 def report(x: str) -> str:
     """Report."""
     return x.upper()
-`, nil, false},
+`,
+		toolConfig: nil, wantFires: false},
 
 	// ─── ADK-010 ADK tool body spawns a subprocess ──────────────────────────
-	{"ADK-010 fires on subprocess.run", "ADK-010", models.KindADKFunctionTool, `
+	{name: "ADK-010 fires on subprocess.run", ruleID: "ADK-010", kind: models.KindADKFunctionTool, src: `
 import subprocess
 def run(cmd: str) -> str:
     """Run."""
     return subprocess.run([cmd], capture_output=True).stdout.decode()
-`, nil, true},
-	{"ADK-010 silent without a shell call", "ADK-010", models.KindADKFunctionTool, `
+`,
+		toolConfig: nil, wantFires: true},
+	{name: "ADK-010 silent without a shell call", ruleID: "ADK-010", kind: models.KindADKFunctionTool, src: `
 def run(cmd: str) -> str:
     """Run."""
     return cmd.upper()
-`, nil, false},
+`,
+		toolConfig: nil, wantFires: false},
 
 	// ─── ADK-011 ADK tool body calls eval/exec/compile ──────────────────────
-	{"ADK-011 fires on eval", "ADK-011", models.KindADKFunctionTool, `
+	{name: "ADK-011 fires on eval", ruleID: "ADK-011", kind: models.KindADKFunctionTool, src: `
 def calc(expr: str):
     """Calc."""
     return eval(expr)
-`, nil, true},
-	{"ADK-011 silent without eval/exec/compile", "ADK-011", models.KindADKFunctionTool, `
+`,
+		toolConfig: nil, wantFires: true},
+	{name: "ADK-011 silent without eval/exec/compile", ruleID: "ADK-011", kind: models.KindADKFunctionTool, src: `
 def calc(expr: str) -> int:
     """Calc."""
     return int(expr) + 1
-`, nil, false},
+`,
+		toolConfig: nil, wantFires: false},
 }
 
 // policyRepoRuleCases covers repo-scoped rules.
@@ -1686,7 +1778,13 @@ func TestPolicyRules(t *testing.T) {
 	for _, tc := range policyRuleCases {
 		t.Run(tc.name, func(t *testing.T) {
 			d := loadToolRule(t, tc.ruleID)
-			tool, pf := parsePy(t, tc.src, tc.kind)
+			var tool models.ToolDef
+			var pf analysis.ParsedFile
+			if tc.lang == models.LanguageTypeScript {
+				tool, pf = parseTSTool(t, tc.src, tc.kind)
+			} else {
+				tool, pf = parsePy(t, tc.src, tc.kind)
+			}
 			if tc.toolConfig != nil {
 				tool.Config = tc.toolConfig
 			}
@@ -1783,13 +1881,6 @@ func TestPolicyRules_AllRulesCovered(t *testing.T) {
 	var missing []string
 	for _, p := range policies {
 		for _, r := range p.Rules {
-			// The per-rule fire/silent harness builds Python tools/agents only.
-			// Rules for other languages (e.g. TypeScript) are load-validated by
-			// the loader but cannot be exercised until a per-language harness
-			// lands, so they are exempt from the fire/silent coverage guard.
-			if r.Language != "" && r.Language != models.LanguagePython {
-				continue
-			}
 			if !covered[r.ID] {
 				missing = append(missing, r.ID)
 			}
