@@ -144,9 +144,9 @@ rules:
       validate the task descriptions the lead agent passes down.
 
   - id: CSDK-120
-    title: TypeScript Claude agent runs with permission prompts bypassed
+    title: TypeScript AgentDefinition sets permissionMode to bypassPermissions
     severity: high
-    confidence: 0.7
+    confidence: 0.9
     language: typescript
     applies_to:
       - claude_agent_definition
@@ -156,11 +156,18 @@ rules:
         kwarg: permissionMode
         value: bypassPermissions
     explanation: >
-      This TypeScript Claude agent sets permissionMode: "bypassPermissions",
-      disabling the human-in-the-loop confirmation for tool use. Combined with
-      filesystem- or shell-touching tools, a prompt-injected agent can take
-      irreversible actions with no gate.
+      This TypeScript AgentDefinition sets permissionMode: "bypassPermissions",
+      which disables the SDK's interactive approval gate for every tool the agent
+      runs. Agents are dispatched autonomously in response to model-generated task
+      descriptions, so a prompt-injected or mis-scoped task reaches the agent's
+      tools — including Bash, Write, and Edit — with no human in the loop and no
+      per-call confirmation. This is the single highest-impact Claude-specific
+      misconfiguration: it removes the one control that stands between model output
+      and real side effects.
     fix: >
-      Use the default (prompting) permission mode, or a scoped allowedTools
-      allowlist with disallowedTools for dangerous built-ins. Reserve
-      bypassPermissions for sandboxed, non-production contexts.
+      Remove permissionMode: "bypassPermissions" unless this agent runs in a
+      fully sandboxed, non-interactive context you control (e.g. CI with no
+      secrets or network). If autonomous operation is required, pass
+      allowedTools or disallowedTools in the AgentDefinition constructor to
+      restrict the tool surface, and prefer a safe default permission mode
+      ("default" or "acceptEdits") scoped to a minimal tool set.

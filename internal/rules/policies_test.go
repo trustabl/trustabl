@@ -1898,6 +1898,11 @@ var policyAgentRuleCases = []policyAgentCase{
 			"const a: AgentDefinition = { description: \"x\", prompt: \"y\" };\n"),
 		models.RepoInventory{},
 		false},
+	{
+		name: "CSDK-120 silent on default permissionMode", ruleID: "CSDK-120", wantFires: false,
+		agent: parseTSAgentInline("import { query } from \"@anthropic-ai/claude-agent-sdk\";\n" +
+			"const a: AgentDefinition = { description: \"x\", prompt: \"y\", permissionMode: \"default\" };\n"),
+	},
 }
 
 func TestPolicyAgentRules(t *testing.T) {
