@@ -258,6 +258,14 @@ but never shipped; a rule that exists only in the rules repo ships but is
 untested (the engine's `TestPolicyRules_AllRulesCovered` guard only sees the
 fixture). Both are defects.
 
+This drift is now caught automatically: the `rules-sync` CI job
+(`.github/workflows/test.yml`) checks out `trustabl-rules` and runs
+[`scripts/check-rules-sync.sh`](scripts/check-rules-sync.sh), which fails the
+build on any fixture↔production divergence (a fixture-only file, a
+production-only file, or content drift — line endings ignored). Run it locally
+with `RULES_REPO=../trustabl-rules scripts/check-rules-sync.sh` before pushing a
+rule change to either repo.
+
 When changing a rule (add / remove / edit severity, confidence, match, text):
 
 1. Make the change in the **rules repo** (`../trustabl-rules/`) — that is what

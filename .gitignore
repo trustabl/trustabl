@@ -30,6 +30,9 @@ go.work.sum
 # Superpowers workflow artifacts (local-only plans/specs)
 /.superpowers/
 
+# trustabl-rules checkout used by the rules-sync CI job / local sync check
+/.rules/
+
 # Editor/IDE
 # .idea/
 # .vscode/

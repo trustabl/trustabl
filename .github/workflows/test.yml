@@ -29,3 +29,20 @@ jobs:
 
       - name: build
         run: go build ./cmd/trustabl
+
+  rules-sync:
+    # Fail if the in-repo rules fixture has drifted from the production
+    # trustabl-rules pack (a rule shipped but not mirrored, or vice versa).
+    # See CLAUDE.md "Two-repo rule model".
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout trustabl-rules
+        uses: actions/checkout@v4
+        with:
+          repository: trustabl/trustabl-rules
+          path: .rules
+
+      - name: Check fixture is in sync with production rules
+        run: RULES_REPO="$GITHUB_WORKSPACE/.rules" scripts/check-rules-sync.sh
