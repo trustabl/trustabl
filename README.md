@@ -180,9 +180,9 @@ Tool/agent AST discovery is wired for:
   edges — gated on imports from `@google/adk`). Handles
   `.ts` / `.tsx` / `.mts` / `.cts`
   with both `tree-sitter-typescript` and `tree-sitter-tsx` grammars.
-  Note: no TypeScript-specific rule pack ships yet; the engine detects
-  TS Claude SDK, TS OpenAI Agents SDK, and TS Google ADK shapes but the
-  inventory lands as `META-004` findings until SP2 ships TS rules.
+  TypeScript rule packs ship for Claude Agent SDK (CSDK-010/011/012/013
+  tool rules; CSDK-120 agent rule) and OpenAI Agents SDK (OAI-016/017/019);
+  TS Google ADK repos still produce `META-004` (no ADK TS rule pack yet).
 
 JavaScript and Go files are recognized by Recon (they appear in the
 file inventory and feed component discovery) but no AST parser for them

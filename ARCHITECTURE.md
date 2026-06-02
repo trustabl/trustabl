@@ -43,10 +43,10 @@ same TS file extensions, gated on imports from `@openai/agents`,
 (via `new LlmAgent({...})` / `SequentialAgent` / `ParallelAgent` /
 `LoopAgent` / `RoutedAgent` / `new FunctionTool({...})` / 13 hosted-tool
 classes / `subAgents` edges in the same TS file extensions, gated on
-imports from `@google/adk`). No TS-language rules
-ship yet (SP2) — TS Claude SDK repos produce a META-004 info finding for
-now (the SDK is detected and the policy pack loads, but no rule is
-applicable to TS inputs), and TS OpenAI and TS ADK repos do the same. The scanner
+imports from `@google/adk`). A first Claude SDK TypeScript rule pack ships (CSDK-010/011/012/013 tool
+rules; CSDK-120 agent rule) and OAI-016/017/019 cover OpenAI TS tools —
+TS Claude SDK and TS OpenAI repos no longer produce META-004.
+TS ADK repos still produce META-004 (no ADK TS rules yet). The scanner
 can also recognize JavaScript and Go *files* (they appear in
 `manifest.typescript_files` and friends) but has no AST parser for them.
 
@@ -345,9 +345,9 @@ For each language recon cleared, do the AST work and produce a `RepoInventory`:
 - **DiscoverTSTools** (`ts_discovery.go`) — TS Claude SDK `tool(name,
   description, zodSchema, handler, extras?)` factory calls. Captures `Name`
   (arg 0), `Description` (arg 1), `ParamNames` from the Zod schema top-level
-  keys, handler body facts via shared `tsHandlerFacts`, and extras flattened
-  into `Config`. Sets `VarName` from the enclosing `const x = tool(...)`
-  binding.
+  keys, handler body facts via shared `tsHandlerFacts` (`shells_out`,
+  `http_call`, `dynamic_url`), and extras flattened into `Config`. Sets
+  `VarName` from the enclosing `const x = tool(...)` binding.
 - **DiscoverTSAgents** (`ts_agents.go`) — TS Claude SDK agent shapes:
   one `AgentDef` per `query({...})` call (`Class="QueryMainAgent"`), each
   property under `options.agents` (`Class="AgentDefinition"`), and each
@@ -602,6 +602,11 @@ Shipped rules (one row per YAML rule entry):
 | CSDK-201 | repo     | claude_sdk | high     | `claude_sdk/repo.yaml`             | Project default permission mode bypasses approvals                                    |
 | CSDK-202 | repo     | claude_sdk | high     | `claude_sdk/repo.yaml`             | Session permission mode bypasses approvals                                            |
 | CSDK-203 | repo     | claude_sdk | low      | `claude_sdk/repo_hygiene.yaml`     | Repo ships Claude Agent SDK code without a CLAUDE.md                                  |
+| CSDK-010 | tool     | claude_sdk | high     | `claude_sdk/shell_safety.yaml`     | TypeScript tool body spawns a subprocess (`language: typescript`)                     |
+| CSDK-011 | tool     | claude_sdk | high     | `claude_sdk/code_execution.yaml`   | TypeScript tool body calls eval / new Function on dynamic input                       |
+| CSDK-012 | tool     | claude_sdk | high     | `claude_sdk/path_safety.yaml`      | TypeScript tool writes to the filesystem                                               |
+| CSDK-013 | tool     | claude_sdk | high     | `claude_sdk/ssrf.yaml`             | TypeScript tool fetches a caller-controlled URL (SSRF / dynamic URL)                  |
+| CSDK-120 | agent    | claude_sdk | high     | `claude_sdk/agent_safety.yaml`     | TypeScript AgentDefinition sets permissionMode to bypassPermissions                   |
 | OAI-001  | tool     | openai_sdk | low      | `openai_sdk/tool_definition.yaml`  | Tool function has no docstring                                                        |
 | OAI-002  | tool     | openai_sdk | medium   | `openai_sdk/tool_definition.yaml`  | Tool function has no type-annotated parameters                                        |
 | OAI-003  | tool     | openai_sdk | medium   | `openai_sdk/decorator_config.yaml` | Tool sets strict_mode=False                                                           |
@@ -1127,7 +1132,7 @@ internal/
 │   ├── adk_hosted_tools.go      ADK built-in hosted-tool class set + classifier (ADKHostedToolClasses).
 │   ├── ts_discovery.go         TS Claude SDK tool() factory discovery (DiscoverTSTools).
 │   ├── ts_agents.go            TS AgentDef discovery (inline-in-query + typed-const).
-│   ├── ts_handler_facts.go      tsHandlerFacts (shared by Claude TS and OpenAI TS tool discovery).
+│   ├── ts_handler_facts.go      tsHandlerFacts (shared by all TS tool discovery): shells_out, http_call, dynamic_url (HTTP call whose URL argument is a non-literal — template literal / identifier / member expression — the SSRF signal).
 │   ├── ts_mcp_servers.go       TS MCP server discovery (createSdkMcpServer + 4 config literals).
 │   ├── ts_adk_agents.go         Google ADK TS agent discovery (5 constructors).
 │   ├── ts_adk_hosted_tools.go   Google ADK TS hosted-tool class set (13 classes) + classifier.
@@ -1148,7 +1153,7 @@ internal/
 │   ├── schema.go                PolicyFile / RuleDef / MatchExpr types.
 │   ├── schema_version.go        SupportedSchemaVersion const (engine ↔ pack gate).
 │   ├── loader.go                Validating YAML loader (recursive walk; skips manifest.yaml).
-│   ├── predicates.go            One Pred* per detection primitive.
+│   ├── predicates.go            One Pred* per detection primitive. TS-aware: PredHasBodyText falls back to the tool's [Line, EndLine] source span when no Python function_definition node is found (bodyTextFromSpan helper); PredHasDynamicURLCall branches on language — TypeScript reads the dynamic_url fact set by tsHandlerFacts, Python walks the AST.
 │   ├── evaluator.go             MatchExpr.Evaluate — recursive walker.
 │   └── rule_detector.go         RuleDetector adapter + LoadRegistry.
 │                                (No embed.go: rules are not embedded — see rulesource.)
@@ -1362,9 +1367,11 @@ Coverage is split across three layers, each with a focused contract:
 2. **Per-rule fire/silent tests** ([policies_test.go](internal/rules/policies_test.go)).
    A table of `policyRuleCases` drives one fire and one silent case per
    shipped rule, loading the actual YAML from `testdata/rules-fixture/` via
-   `os.DirFS`.
-   `TestPolicyRules_AllRulesCovered` fails if any shipped rule lacks an
-   entry — adding a rule without test cases is therefore a build failure.
+   `os.DirFS`. Cases with `lang: typescript` are routed through `parseTSTool`
+   / `parseTSAgentInline` helpers that run real TS discovery; Python cases
+   use the existing Python parse path. `TestPolicyRules_AllRulesCovered` fails
+   if any shipped rule (including TypeScript rules) lacks an entry — adding a
+   rule without test cases is therefore a build failure regardless of language.
 3. **End-to-end sweep** ([scanner_test.go](internal/scanner/scanner_test.go)).
    `TestScanExamples_NoCrash` walks every immediate subdirectory of
    `testdata/corpus/` (skipping the `ToolBench` dataset) and runs `scanner.Run`
