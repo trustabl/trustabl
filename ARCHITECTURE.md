@@ -581,16 +581,25 @@ Shipped rules (one row per YAML rule entry):
 
 | Rule    | Scope | Category   | Severity | Source file                              | Notes                                                               |
 | ------- | ----- | ---------- | -------- | ---------------------------------------- | ------------------------------------------------------------------- |
-| CSDK-001 | tool | claude_sdk | low      | `claude_sdk/tool_definition.yaml`        | Missing docstring / description                                     |
-| CSDK-002 | tool | claude_sdk | medium   | `claude_sdk/tool_definition.yaml`        | Untyped parameters                                                  |
-| CSDK-003 | tool | claude_sdk | high     | `claude_sdk/network.yaml`                | HTTP call without `timeout=` kwarg                                  |
-| CSDK-004 | tool | claude_sdk | high     | `claude_sdk/path_safety.yaml`            | Path-like param flows to I/O without `.resolve()`/`realpath()`     |
-| CSDK-005 | tool | claude_sdk | medium   | `claude_sdk/error_handling.yaml`         | Raises with no try/except wrapping                                  |
+| CSDK-001 | tool | claude_sdk | low      | `claude_sdk/tool_definition.yaml`        | Tool has no description (docstring)                                  |
+| CSDK-002 | tool | claude_sdk | medium   | `claude_sdk/tool_definition.yaml`        | Tool parameters are not type-annotated                              |
+| CSDK-003 | tool | claude_sdk | high     | `claude_sdk/network.yaml`                | Network call has no `timeout=`                                      |
+| CSDK-004 | tool | claude_sdk | high     | `claude_sdk/path_safety.yaml`            | Path param flows to I/O without validation (`.resolve()`/`realpath()`) |
+| CSDK-005 | tool | claude_sdk | medium   | `claude_sdk/error_handling.yaml`         | Raises with no structured error contract                           |
 | CSDK-006 | tool | claude_sdk | medium   | `claude_sdk/idempotency.yaml`            | Mutating verb in name + no idempotency-key param                    |
 | CSDK-007 | tool | claude_sdk | low      | `claude_sdk/tool_definition.yaml`        | Ambiguous name (`process`, `handle`, `run`, …)                      |
+| CSDK-008 | tool | claude_sdk | high     | `claude_sdk/ssrf.yaml`                   | Tool fetches a caller-controlled URL (SSRF)                        |
 | CSDK-101 | agent | claude_sdk | high    | `claude_sdk/agent_safety.yaml`           | Claude `AgentDefinition` subagent granted the built-in `Bash` tool  |
 | CSDK-102 | agent | claude_sdk | high    | `claude_sdk/agent_safety.yaml`           | Claude `AgentDefinition` subagent granted the built-in `WebSearch` tool |
-| CSDK-110 | subagent | claude_sdk | high | `claude_sdk/subagent_safety.yaml`        | Subagent granted the built-in Bash tool                             |
+| CSDK-103 | agent | claude_sdk | high    | `claude_sdk/agent_safety.yaml`           | `AgentDefinition` sets `permissionMode: bypassPermissions`          |
+| CSDK-104 | agent | claude_sdk | high    | `claude_sdk/agent_safety.yaml`           | Claude subagent granted filesystem-write built-ins (`Write`/`Edit`) |
+| CSDK-105 | agent | claude_sdk | high    | `claude_sdk/agent_safety.yaml`           | Claude subagent granted the built-in `WebFetch` tool                |
+| CSDK-107 | tool | claude_sdk | high     | `claude_sdk/code_execution.yaml`         | Tool body calls `eval`/`exec`/`compile` on dynamic input           |
+| CSDK-108 | tool | claude_sdk | high     | `claude_sdk/shell_safety.yaml`           | Tool body spawns a subprocess                                       |
+| CSDK-110 | subagent | claude_sdk | high | `claude_sdk/subagent_safety.yaml`        | Subagent granted the built-in `Bash` tool                          |
+| CSDK-111 | subagent | claude_sdk | high | `claude_sdk/subagent_safety.yaml`        | Subagent granted filesystem-write or web-fetch built-ins           |
+| CSDK-201 | repo | claude_sdk | high     | `claude_sdk/repo.yaml`                   | Project `defaultMode` bypasses approvals (settings.json)           |
+| CSDK-202 | repo | claude_sdk | high     | `claude_sdk/repo.yaml`                   | `ClaudeAgentOptions(permission_mode=…)` bypasses approvals          |
 | OAI-001 | tool  | openai_sdk | low      | `openai_sdk/tool_definition.yaml`        | Tool function has no docstring                                      |
 | OAI-002 | tool  | openai_sdk | medium   | `openai_sdk/tool_definition.yaml`        | Tool has no type-annotated parameters                               |
 | OAI-003 | tool  | openai_sdk | medium   | `openai_sdk/decorator_config.yaml`       | `@function_tool(strict_mode=False)` — schema not enforced           |
@@ -598,32 +607,44 @@ Shipped rules (one row per YAML rule entry):
 | OAI-005 | tool  | openai_sdk | high     | `openai_sdk/network.yaml`                | HTTP call (requests/httpx) without `timeout=`                       |
 | OAI-006 | tool  | openai_sdk | high     | `openai_sdk/path_safety.yaml`            | Path-like param passed to I/O without normalization                 |
 | OAI-007 | tool  | openai_sdk | low      | `openai_sdk/tool_definition.yaml`        | Ambiguous name (`process`, `handle`, `run`, …)                      |
-| OAI-008 | tool  | openai_sdk | medium   | `openai_sdk/error_handling.yaml`         | Raises with no try/except wrapping                                  |
+| OAI-008 | tool  | openai_sdk | medium   | `openai_sdk/error_handling.yaml`         | Raises with no structured error contract                           |
 | OAI-009 | tool  | openai_sdk | medium   | `openai_sdk/idempotency.yaml`            | Mutating verb in name + no idempotency-key param                    |
 | OAI-010 | tool  | openai_sdk | low      | `openai_sdk/observability.yaml`          | Tool body prints to stdout for diagnostics                          |
 | OAI-011 | tool  | openai_sdk | high     | `openai_sdk/network.yaml`                | `urllib.request.urlopen` without `timeout=`                         |
 | OAI-012 | tool  | openai_sdk | high     | `openai_sdk/shell_safety.yaml`           | Tool body spawns a subprocess                                       |
 | OAI-013 | tool  | openai_sdk | high     | `openai_sdk/code_execution.yaml`         | Tool body calls `eval`/`exec`/`compile` on dynamic input            |
-| OAI-101 | agent | openai_sdk | high     | `openai_sdk/agent_safety.yaml`           | Agent with shell tools and no `input_guardrails`                    |
+| OAI-014 | tool  | openai_sdk | high     | `openai_sdk/approvals.yaml`              | Privileged tool has no `needs_approval` gate                       |
+| OAI-015 | tool  | openai_sdk | high     | `openai_sdk/decorator_config.yaml`       | `failure_error_function=None` — errors propagate raw                |
+| OAI-016 | tool  | openai_sdk | high     | `openai_sdk/ssrf.yaml`                   | Tool fetches a caller-controlled URL (SSRF)                        |
+| OAI-101 | agent | openai_sdk | high     | `openai_sdk/agent_safety.yaml`           | No `input_guardrails` + wires shell/filesystem-touching tools       |
 | OAI-102 | agent | openai_sdk | high     | `openai_sdk/agent_safety.yaml`           | `tool_use_behavior="stop_on_first_tool"` — first tool output is final response |
 | OAI-103 | agent | openai_sdk | high     | `openai_sdk/agent_safety.yaml`           | `tool_choice=required` + `reset_tool_choice=False` — unbounded loop risk |
-| OAI-104 | agent | openai_sdk | medium   | `openai_sdk/agent_safety.yaml`           | Bare `Agent` (not `SandboxAgent`) with shell-invoking tools         |
-| OAI-106 | agent | openai_sdk | high     | `openai_sdk/mcp_safety.yaml`             | Agent uses MCP servers without `input_guardrails`                   |
+| OAI-104 | agent | openai_sdk | medium   | `openai_sdk/agent_safety.yaml`           | Bare `Agent` (not `SandboxAgent`) with shell/filesystem-touching tools |
+| OAI-106 | agent | openai_sdk | high     | `openai_sdk/mcp_safety.yaml`             | Agent wires MCP servers without `input_guardrails`                  |
 | OAI-109 | agent | openai_sdk | high     | `openai_sdk/agent_safety.yaml`           | Agent uses `WebSearchTool` without `input_guardrails`               |
+| OAI-110 | agent | openai_sdk | high     | `openai_sdk/agent_safety.yaml`           | Agent wires a content-fetching tool without `output_guardrails`     |
+| OAI-111 | agent | openai_sdk | high     | `openai_sdk/approvals.yaml`              | Agent wires a privileged hosted tool without `needs_approval`       |
 | OAI-201 | repo  | openai_sdk | medium   | `openai_sdk/tracing.yaml`                | OpenAI Agents SDK present but no custom trace processor configured  |
 | ADK-001 | tool  | google_adk | low      | `google_adk/tool_definition.yaml`        | FunctionTool-wrapped function has no docstring                      |
 | ADK-002 | tool  | google_adk | medium   | `google_adk/tool_definition.yaml`        | FunctionTool-wrapped function has no type-annotated parameters      |
 | ADK-003 | tool  | google_adk | high     | `google_adk/network.yaml`                | HTTP call inside wrapped function body without `timeout=`           |
 | ADK-004 | tool  | google_adk | high     | `google_adk/path_safety.yaml`            | Path-like param used in I/O without normalization                   |
-| ADK-005 | tool  | google_adk | medium   | `google_adk/error_handling.yaml`         | Raises with no try/except wrapping                                  |
+| ADK-005 | tool  | google_adk | medium   | `google_adk/error_handling.yaml`         | Raises with no structured error contract                           |
 | ADK-006 | tool  | google_adk | medium   | `google_adk/idempotency.yaml`            | Mutating verb in name + no idempotency-key param                    |
 | ADK-007 | tool  | google_adk | low      | `google_adk/tool_definition.yaml`        | Ambiguous name (`process`, `handle`, `run`, …)                      |
-| ADK-008 | tool  | google_adk | high     | `google_adk/builtin_tools.yaml`          | `BashTool` without `block_shell_metacharacters=True`                |
+| ADK-009 | tool  | google_adk | high     | `google_adk/ssrf.yaml`                   | Tool fetches a caller-controlled URL (SSRF)                        |
+| ADK-010 | tool  | google_adk | high     | `google_adk/shell_safety.yaml`           | Tool body spawns a subprocess                                       |
+| ADK-011 | tool  | google_adk | high     | `google_adk/code_execution.yaml`         | Tool body calls `eval`/`exec`/`compile` on dynamic input            |
+| ADK-008 | agent | google_adk | high     | `google_adk/builtin_tools.yaml`          | Agent grants `BashTool` with no restrictive command policy          |
 | ADK-101 | agent | google_adk | medium   | `google_adk/agent_safety.yaml`           | `LlmAgent` with no `description=` (becomes unreachable in delegation) |
 | ADK-102 | agent | google_adk | high     | `google_adk/agent_safety.yaml`           | `LlmAgent` with `BashTool` and no `before_tool_callback=`           |
 | ADK-103 | agent | google_adk | high     | `google_adk/agent_safety.yaml`           | Sub-agent (target of someone's `sub_agents`) granted `BashTool`     |
 | ADK-104 | agent | google_adk | medium   | `google_adk/agent_safety.yaml`           | `LlmAgent` with no `safety_settings=` (Gemini content filters off)  |
 | ADK-105 | agent | google_adk | high     | `google_adk/agent_safety.yaml`           | `LlmAgent` with web-search built-in and no `before_tool_callback=`  |
+| ADK-106 | agent | google_adk | high     | `google_adk/agent_safety.yaml`           | Agent has a `code_executor` but no `before_model_callback=`         |
+| ADK-107 | agent | google_adk | high     | `google_adk/agent_safety.yaml`           | Agent grants `AgentTool` but no `before_tool_callback=`             |
+| ADK-108 | agent | google_adk | medium   | `google_adk/agent_safety.yaml`           | `LoopAgent` has no `max_iterations=`                                |
+| ADK-110 | agent | google_adk | medium   | `google_adk/agent_safety.yaml`           | Web-fetch via `UrlContextTool`/`LoadWebPage` without `before_tool_callback=` |
 
 ### Step 5 — Scoring ([internal/analysis/scoring.go](internal/analysis/scoring.go))
 
