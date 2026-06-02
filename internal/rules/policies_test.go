@@ -1889,25 +1889,13 @@ var policyAgentRuleCases = []policyAgentCase{
 
 	// ─── CSDK-120 TS agent bypassPermissions ─────────────────────────────────
 	{"CSDK-120 fires on bypassPermissions TS agent", "CSDK-120",
-		models.AgentDef{
-			SDK:      models.SDKClaudeAgentSDK,
-			Class:    "AgentDefinition",
-			Language: models.LanguageTypeScript,
-			Name:     "worker",
-			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
-				"permissionMode": {Value: &models.Expr{Kind: models.ExprLiteralString, Text: `"bypassPermissions"`}},
-			}},
-		},
+		parseTSAgentInline("import { query } from \"@anthropic-ai/claude-agent-sdk\";\n" +
+			"const a: AgentDefinition = { description: \"x\", prompt: \"y\", permissionMode: \"bypassPermissions\" };\n"),
 		models.RepoInventory{},
 		true},
 	{"CSDK-120 silent on TS agent without permissionMode", "CSDK-120",
-		models.AgentDef{
-			SDK:      models.SDKClaudeAgentSDK,
-			Class:    "AgentDefinition",
-			Language: models.LanguageTypeScript,
-			Name:     "worker",
-			Kwargs:   &models.KwargTree{Children: map[string]*models.KwargTree{}},
-		},
+		parseTSAgentInline("import { query } from \"@anthropic-ai/claude-agent-sdk\";\n" +
+			"const a: AgentDefinition = { description: \"x\", prompt: \"y\" };\n"),
 		models.RepoInventory{},
 		false},
 }

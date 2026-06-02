@@ -79,6 +79,22 @@ func parseTSTool(t *testing.T, src string, kind models.ToolKind) (models.ToolDef
 	return tools[0], pf
 }
 
+// parseTSAgentInline parses a TS snippet and returns the first discovered
+// Claude agent. For use in package-level agent-rule case tables (no *testing.T
+// available), so it panics rather than failing a test.
+func parseTSAgentInline(src string) models.AgentDef {
+	tree, err := astutil.NewTSParser().ParseCtx(context.Background(), nil, []byte(src))
+	if err != nil {
+		panic("parseTSAgentInline parse: " + err.Error())
+	}
+	pf := analysis.ParsedFile{RelPath: "src/a.ts", Tree: tree, Source: []byte(src)}
+	agents := analysis.DiscoverTSAgents([]analysis.ParsedFile{pf}, func(string) {})
+	if len(agents) == 0 {
+		panic("parseTSAgentInline: no agent discovered")
+	}
+	return agents[0]
+}
+
 func TestParseTSTool_Smoke(t *testing.T) {
 	src := `
 import { tool } from "@anthropic-ai/claude-agent-sdk";
