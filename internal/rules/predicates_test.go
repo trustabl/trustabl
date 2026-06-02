@@ -46,7 +46,7 @@ func parsePy(t *testing.T, src string, kind models.ToolKind) (models.ToolDef, an
 			EndLine:  astutil.NodeEndLine(fn),
 		},
 		Description:    doc,
-		HasTypedParams: astutil.FunctionHasTypedParams(fn),
+		HasTypedParams: astutil.FunctionHasTypedParams(fn, b),
 		ParamNames:     filtered,
 		Facts:          map[string]string{},
 	}

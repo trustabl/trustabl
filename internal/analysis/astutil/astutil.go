@@ -271,7 +271,7 @@ func KwargValue(call *sitter.Node, src []byte, name string) (value string, prese
 
 // FunctionHasTypedParams reports whether the function declares at least one
 // type-annotated parameter (excluding self/cls).
-func FunctionHasTypedParams(fn *sitter.Node) bool {
+func FunctionHasTypedParams(fn *sitter.Node, src []byte) bool {
 	if fn == nil {
 		return false
 	}
@@ -283,6 +283,16 @@ func FunctionHasTypedParams(fn *sitter.Node) bool {
 	for i := 0; i < count; i++ {
 		p := params.NamedChild(i)
 		if p.Type() == "typed_parameter" || p.Type() == "typed_default_parameter" {
+			// First named child is the identifier in both types.
+			if int(p.NamedChildCount()) > 0 {
+				name := p.NamedChild(0)
+				if name.Type() == "identifier" {
+					text := NodeText(name, src)
+					if text == "self" || text == "cls" {
+						continue
+					}
+				}
+			}
 			return true
 		}
 	}
