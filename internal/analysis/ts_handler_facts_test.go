@@ -1,20 +1,14 @@
 package analysis_test
 
 import (
-	"context"
 	"testing"
 
 	"github.com/trustabl/trustabl/internal/analysis"
-	"github.com/trustabl/trustabl/internal/analysis/astutil"
 )
 
 func tsToolFacts(t *testing.T, src string) map[string]string {
 	t.Helper()
-	tree, err := astutil.NewTSParser().ParseCtx(context.Background(), nil, []byte(src))
-	if err != nil {
-		t.Fatalf("parse: %v", err)
-	}
-	pf := analysis.ParsedFile{RelPath: "src/a.ts", Tree: tree, Source: []byte(src)}
+	pf := parseTSForTest(t, "src/a.ts", src)
 	tools := analysis.DiscoverTSTools([]analysis.ParsedFile{pf}, func(string) {})
 	if len(tools) == 0 {
 		t.Fatal("no tool discovered")
