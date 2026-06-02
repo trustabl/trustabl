@@ -824,6 +824,62 @@ def calc(expr: str) -> int:
     return int(expr) + 1
 `,
 		toolConfig: nil, wantFires: false},
+
+	// ── OAI-016: TS fetch without AbortSignal timeout (has_body_text) ──
+	{
+		name: "OAI-016 fires on TS fetch with no AbortSignal", ruleID: "OAI-016",
+		kind: models.KindOpenAITool, lang: models.LanguageTypeScript, wantFires: true,
+		src: "import { tool } from \"@openai/agents\";\n" +
+			"export const t = tool({ name: \"f\", description: \"f\", parameters: {}, execute: async () => {\n" +
+			"  const r = await fetch(\"https://example.com\");\n" +
+			"  return r.status;\n" +
+			"} });\n",
+	},
+	{
+		name: "OAI-016 silent when AbortSignal present", ruleID: "OAI-016",
+		kind: models.KindOpenAITool, lang: models.LanguageTypeScript, wantFires: false,
+		src: "import { tool } from \"@openai/agents\";\n" +
+			"export const t = tool({ name: \"f\", description: \"f\", parameters: {}, execute: async () => {\n" +
+			"  const r = await fetch(\"https://example.com\", { signal: AbortSignal.timeout(15000) });\n" +
+			"  return r.status;\n" +
+			"} });\n",
+	},
+
+	// ── OAI-017: TS eval / new Function (has_body_text) ──
+	{
+		name: "OAI-017 fires on TS eval", ruleID: "OAI-017",
+		kind: models.KindOpenAITool, lang: models.LanguageTypeScript, wantFires: true,
+		src: "import { tool } from \"@openai/agents\";\n" +
+			"export const t = tool({ name: \"f\", description: \"f\", parameters: {}, execute: async (a) => {\n" +
+			"  return eval(a.expr);\n" +
+			"} });\n",
+	},
+	{
+		name: "OAI-017 silent without eval", ruleID: "OAI-017",
+		kind: models.KindOpenAITool, lang: models.LanguageTypeScript, wantFires: false,
+		src: "import { tool } from \"@openai/agents\";\n" +
+			"export const t = tool({ name: \"f\", description: \"f\", parameters: {}, execute: async () => {\n" +
+			"  return 42;\n" +
+			"} });\n",
+	},
+
+	// ── OAI-019: TS mutating tool name without idempotency (name_has_prefix + not has_body_text) ──
+	{
+		name: "OAI-019 fires on create_ tool", ruleID: "OAI-019",
+		kind: models.KindOpenAITool, lang: models.LanguageTypeScript, wantFires: true,
+		src: "import { tool } from \"@openai/agents\";\n" +
+			"export const t = tool({ name: \"create_charge\", description: \"f\", parameters: {}, execute: async () => {\n" +
+			"  return 1;\n" +
+			"} });\n",
+	},
+	{
+		name: "OAI-019 silent on read tool", ruleID: "OAI-019",
+		kind: models.KindOpenAITool, lang: models.LanguageTypeScript, wantFires: false,
+		src: "import { tool } from \"@openai/agents\";\n" +
+			"export const t = tool({ name: \"get_status\", description: \"f\", parameters: {}, execute: async () => {\n" +
+			"  return 1;\n" +
+			"} });\n",
+	},
 }
 
 // policyRepoRuleCases covers repo-scoped rules.
