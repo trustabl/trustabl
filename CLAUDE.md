@@ -29,8 +29,9 @@ parses it as a token, it's `trustabl`.
 ## Detection model: four scopes
 
 Every rule is classified into exactly one of four scopes. The `scope:`
-field on a rule is REQUIRED for new rules; legacy rules without it default
-to `tool` (the historical behavior).
+field is REQUIRED on every rule — the loader rejects a rule with no
+`scope:` (there is no longer a default-to-`tool` fallback; that historical
+behavior was removed when the loader adopted strict decoding).
 
 - **`tool`** — fires per tool definition.
   - **Input**: a `ToolDef` — discovery produces these from a
@@ -73,8 +74,10 @@ to `tool` (the historical behavior).
   - **Examples**: project-wide tracing config has no custom processor;
     no `SandboxAgent` anywhere in a project that ships FS-touching tools.
 
-What older code calls `singleton: true` is `repo` scope in disguise.
-Promote to explicit `scope: repo` when touching those rules.
+What older code called `singleton: true` is `repo` scope. The `singleton`
+field no longer exists in the schema, and the loader uses strict decoding
+(`KnownFields(true)`), so a `singleton:` key is now a hard load error — use
+`scope: repo` instead.
 
 ## Scanning pipeline
 

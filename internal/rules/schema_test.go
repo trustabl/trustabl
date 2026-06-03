@@ -18,11 +18,11 @@ policy:
 rules:
   - id: TEST-001
     title: Test rule
+    scope: tool
     severity: low
     confidence: 0.9
     applies_to:
       - claude_sdk_tool
-    singleton: false
     match:
       not:
         has_docstring: true

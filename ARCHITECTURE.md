@@ -1241,10 +1241,10 @@ policy:
 rules:
   - id: CSDK-003
     title: Network call has no timeout
+    scope: tool
     severity: high
     confidence: 0.85
     applies_to: [claude_sdk_tool, mcp_tool]
-    singleton: false
     match:
       call_without_kwarg:
         callees: [requests.get, requests.post, ...]
@@ -1297,8 +1297,10 @@ emitted in both human and JSON output formats.
 
 `MatchExpr.Evaluate` is a recursive conjunctive walker:
 
-- An empty `MatchExpr` returns true (vacuously matches; useful for singleton
-  rules with no predicate body).
+- An empty `MatchExpr` returns true (vacuously matches; useful for a
+  `scope: repo` rule with no predicate body, gated solely by `applies_to`).
+  At tool/agent/subagent scope an empty match would fire on every instance, so
+  the loader rejects it there (see Loader contract below).
 - Every set field on a node contributes one boolean to a logical AND: all
   combinators, all primitives, and all nested struct predicates that are
   non-nil must hold for the node to match.
@@ -1329,6 +1331,10 @@ negation.
   clause and the rule would fire more broadly than authored. The per-scope
   predicate set (`predicatesByScope`) is the lockstep mirror of the four
   `Evaluate*` methods; the check recurses through `all`/`any`/`not`.
+- **Empty-match guard**: an empty top-level `match: {}` is vacuously true, so
+  it is accepted only at `scope: repo` (the fires-once singleton pattern). At
+  tool/agent/subagent scope it would fire on every instance — almost always a
+  forgotten predicate — so the loader rejects it.
 
 ### Rule source ([internal/rulesource/](internal/rulesource/))
 

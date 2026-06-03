@@ -114,7 +114,9 @@ rules:
 #
 #   • Every set field on a node is conjoined (logical AND). A node with two
 #     predicates means "BOTH must hold".
-#   • An empty `match: {}` is vacuously true. Useful with singleton rules.
+#   • An empty `match: {}` is vacuously true, firing on every instance of
+#     `applies_to`. Allowed ONLY at `scope: repo` (the fires-once pattern);
+#     the loader rejects an empty match at tool/agent/subagent scope.
 #   • Combinators (all/any/not) recurse into sub-expressions.
 #
 # The vocabulary below is exhaustive. If you need something not listed,
