@@ -100,18 +100,25 @@ func extractTSOpenAITool(call *sitter.Node, pf ParsedFile) (models.ToolDef, bool
 			td.Facts = facts
 		}
 	}
-	// Config: flatten the leaf kwargs that aren't already consumed above
+	// Config: flatten every non-consumed kwarg, including nested objects with
+	// dot-joined keys (matching the Claude path's flattenKwargs). The leaf-only
+	// loop this replaces silently dropped nested config like `annotations.*`.
 	consumed := map[string]bool{
 		"name": true, "description": true, "parameters": true, "execute": true,
 	}
+	cfg := map[string]string{}
 	for k, child := range kt.Children {
-		if consumed[k] || child.Value == nil {
+		if consumed[k] {
 			continue
 		}
-		if td.Config == nil {
-			td.Config = map[string]string{}
+		if child.Value != nil {
+			cfg[k] = child.Value.Text
+		} else {
+			flattenKwargs(k, child, cfg)
 		}
-		td.Config[k] = child.Value.Text
+	}
+	if len(cfg) > 0 {
+		td.Config = cfg
 	}
 	return td, true
 }

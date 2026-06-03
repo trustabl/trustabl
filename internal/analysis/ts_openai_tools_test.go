@@ -224,3 +224,31 @@ const x = tool({
 		t.Errorf("Config flatten incomplete: %+v", cfg)
 	}
 }
+
+func TestDiscoverTSOpenAITools_NestedConfigFlattens(t *testing.T) {
+	// Regression (TR-150): nested object kwargs must flatten into Config with
+	// dot-joined keys, matching the Claude path — not be dropped as the
+	// leaf-only loop did.
+	src := `
+import { tool } from "@openai/agents";
+const x = tool({
+  name: "x",
+  description: "d",
+  parameters: {},
+  execute: async () => "",
+  annotations: { readOnlyHint: true, nested: { deep: 1 } },
+});
+`
+	pf := parseTSForTest(t, "src/x.ts", src)
+	tools := analysis.DiscoverTSOpenAITools([]analysis.ParsedFile{pf}, nil)
+	if len(tools) != 1 {
+		t.Fatalf("got %d", len(tools))
+	}
+	cfg := tools[0].Config
+	if cfg["annotations.readOnlyHint"] != "true" {
+		t.Errorf("nested config not flattened: %+v", cfg)
+	}
+	if cfg["annotations.nested.deep"] != "1" {
+		t.Errorf("deeply-nested config not flattened: %+v", cfg)
+	}
+}

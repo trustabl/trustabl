@@ -170,3 +170,26 @@ const x = new FunctionTool({
 		t.Errorf("Config flatten missing isLongRunning, got: %+v", cfg)
 	}
 }
+
+func TestDiscoverTSADKTools_NestedConfigFlattens(t *testing.T) {
+	// Regression (TR-150): nested object kwargs flatten into Config with
+	// dot-joined keys instead of being dropped.
+	src := `
+import { FunctionTool } from "@google/adk";
+const x = new FunctionTool({
+  name: "x",
+  description: "d",
+  parameters: {},
+  execute: async () => "",
+  retry: { maxAttempts: 3 },
+});
+`
+	pf := parseTSForTest(t, "src/x.ts", src)
+	tools := analysis.DiscoverTSADKTools([]analysis.ParsedFile{pf}, nil)
+	if len(tools) != 1 {
+		t.Fatalf("got %d", len(tools))
+	}
+	if got := tools[0].Config["retry.maxAttempts"]; got != "3" {
+		t.Errorf("nested config not flattened: %+v", tools[0].Config)
+	}
+}
