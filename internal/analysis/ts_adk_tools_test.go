@@ -42,6 +42,36 @@ const computeSum = new FunctionTool({
 	if !tool.HasTypedParams {
 		t.Errorf("HasTypedParams should be true for non-empty parameters object")
 	}
+	if len(tool.ParamNames) != 2 || tool.ParamNames[0] != "a" || tool.ParamNames[1] != "b" {
+		t.Errorf("ParamNames = %v, want [a b]", tool.ParamNames)
+	}
+}
+
+func TestDiscoverTSADKTools_ZodParameters(t *testing.T) {
+	// Regression (TR-147): a Zod schema constructor as parameters must count as
+	// typed and enumerate its keys, same as the inline object-literal form.
+	src := `
+import { FunctionTool } from "@google/adk";
+import { z } from "zod";
+const t = new FunctionTool({
+  name: "geo",
+  description: "d",
+  parameters: z.object({ lat: z.number(), lon: z.number() }),
+  execute: async () => "",
+});
+`
+	pf := parseTSForTest(t, "src/tools.ts", src)
+	tools := analysis.DiscoverTSADKTools([]analysis.ParsedFile{pf}, nil)
+	if len(tools) != 1 {
+		t.Fatalf("got %d tools, want 1", len(tools))
+	}
+	got := tools[0]
+	if !got.HasTypedParams {
+		t.Errorf("HasTypedParams = false; Zod schema must count as typed")
+	}
+	if len(got.ParamNames) != 2 || got.ParamNames[0] != "lat" || got.ParamNames[1] != "lon" {
+		t.Errorf("ParamNames = %v, want [lat lon]", got.ParamNames)
+	}
 }
 
 func TestDiscoverTSADKTools_NoImportGate(t *testing.T) {

@@ -1,8 +1,6 @@
 package analysis
 
 import (
-	"sort"
-
 	sitter "github.com/smacker/go-tree-sitter"
 
 	"github.com/trustabl/trustabl/internal/analysis/astutil"
@@ -93,12 +91,13 @@ func extractTSADKTool(call *sitter.Node, pf ParsedFile) (models.ToolDef, bool) {
 		descChild.Value.Kind == models.ExprLiteralString {
 		td.Description = unquote(descChild.Value.Text)
 	}
-	if pChild := kt.Children["parameters"]; pChild != nil && len(pChild.Children) > 0 {
-		td.HasTypedParams = true
-		for k := range pChild.Children {
-			td.ParamNames = append(td.ParamNames, k)
+	// parameters: inline object literal OR Zod schema constructor — both mean
+	// typed params (see tsZodParamNames in ts_openai_tools.go).
+	if pNode := getObjectProperty(opts, "parameters", pf.Source); pNode != nil {
+		if names, typed := tsZodParamNames(pNode, pf.Source); typed {
+			td.HasTypedParams = true
+			td.ParamNames = names
 		}
-		sort.Strings(td.ParamNames) // map iteration order is nondeterministic; ParamNames is serialized
 	}
 	if execNode := getObjectProperty(opts, "execute", pf.Source); execNode != nil {
 		facts := tsHandlerFacts(execNode, pf.Source)

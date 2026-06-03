@@ -40,6 +40,54 @@ const computeSum = tool({
 	if tool.Language != models.LanguageTypeScript {
 		t.Errorf("Language = %q", tool.Language)
 	}
+	// Regression (TR-147): parameters: z.object({...}) is a call expression, not
+	// an inline object literal — it must still be recognized as typed params and
+	// its keys enumerated, otherwise "untyped params" rules false-fire on Zod.
+	if !tool.HasTypedParams {
+		t.Errorf("HasTypedParams = false; Zod z.object schema must count as typed")
+	}
+	if len(tool.ParamNames) != 2 || tool.ParamNames[0] != "a" || tool.ParamNames[1] != "b" {
+		t.Errorf("ParamNames = %v, want [a b]", tool.ParamNames)
+	}
+}
+
+func TestDiscoverTSOpenAITools_ZodParamShapes(t *testing.T) {
+	cases := []struct {
+		name      string
+		params    string
+		wantKeys  []string
+		wantTyped bool
+	}{
+		{"plain z.object", `z.object({ city: z.string() })`, []string{"city"}, true},
+		{"chained refinement", `z.object({ x: z.number(), y: z.number() }).strict()`, []string{"x", "y"}, true},
+		{"inline object literal", `{ inline: 1 }`, []string{"inline"}, true},
+		{"empty zod schema", `z.object({})`, nil, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			src := `import { tool } from "@openai/agents";
+import { z } from "zod";
+const t = tool({ name: "n", description: "d", parameters: ` + tc.params + `, execute: async () => "" });
+`
+			pf := parseTSForTest(t, "src/x.ts", src)
+			tools := analysis.DiscoverTSOpenAITools([]analysis.ParsedFile{pf}, nil)
+			if len(tools) != 1 {
+				t.Fatalf("got %d tools, want 1", len(tools))
+			}
+			got := tools[0]
+			if got.HasTypedParams != tc.wantTyped {
+				t.Errorf("HasTypedParams = %v, want %v", got.HasTypedParams, tc.wantTyped)
+			}
+			if len(got.ParamNames) != len(tc.wantKeys) {
+				t.Fatalf("ParamNames = %v, want %v", got.ParamNames, tc.wantKeys)
+			}
+			for i, k := range tc.wantKeys {
+				if got.ParamNames[i] != k {
+					t.Errorf("ParamNames[%d] = %q, want %q", i, got.ParamNames[i], k)
+				}
+			}
+		})
+	}
 }
 
 func TestDiscoverTSOpenAITools_NoImportGate(t *testing.T) {

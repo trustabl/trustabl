@@ -84,13 +84,14 @@ func extractTSOpenAITool(call *sitter.Node, pf ParsedFile) (models.ToolDef, bool
 		descChild.Value.Kind == models.ExprLiteralString {
 		td.Description = unquote(descChild.Value.Text)
 	}
-	// parameters: top-level keys become ParamNames
-	if pChild := kt.Children["parameters"]; pChild != nil && len(pChild.Children) > 0 {
-		td.HasTypedParams = true
-		for k := range pChild.Children {
-			td.ParamNames = append(td.ParamNames, k)
+	// parameters: either an inline object literal ({ city: ... }) or a Zod
+	// schema constructor (z.object({ city: ... })). Both shapes mean the tool
+	// has typed params; tsZodParamNames enumerates the keys for either.
+	if pNode := getObjectProperty(opts, "parameters", pf.Source); pNode != nil {
+		if names, typed := tsZodParamNames(pNode, pf.Source); typed {
+			td.HasTypedParams = true
+			td.ParamNames = names
 		}
-		sort.Strings(td.ParamNames) // map iteration order is nondeterministic; ParamNames is serialized
 	}
 	// execute: walk for body facts
 	if execNode := getObjectProperty(opts, "execute", pf.Source); execNode != nil {
@@ -113,6 +114,74 @@ func extractTSOpenAITool(call *sitter.Node, pf ParsedFile) (models.ToolDef, bool
 		td.Config[k] = child.Value.Text
 	}
 	return td, true
+}
+
+// tsZodParamNames extracts a TS tool's parameter names from the value node of
+// its `parameters:` property, handling the two real-world shapes:
+//
+//	parameters: { city: z.string() }      // inline object literal
+//	parameters: z.object({ city: ... })   // Zod schema constructor (a call)
+//
+// The bool reports whether the tool has typed params at all. A schema
+// constructor (any call expression) always implies typed params — even a
+// chained `z.object({...}).strict()` or a form whose keys cannot be read —
+// because the alternative (treating it as untyped) mass-false-positives the
+// "tool has untyped params" rules on idiomatic Zod tools. Names are sorted so
+// the serialized ParamNames slice is deterministic.
+func tsZodParamNames(params *sitter.Node, src []byte) (names []string, typed bool) {
+	if params == nil {
+		return nil, false
+	}
+	switch params.Type() {
+	case "object":
+		names = objectKeyNames(params, src)
+		return names, len(names) > 0
+	case "call_expression":
+		// Pull keys from the object literal passed to the innermost call
+		// (z.object({...})); a schema constructor means typed even if empty.
+		if obj := firstObjectArg(params); obj != nil {
+			names = objectKeyNames(obj, src)
+		}
+		return names, true
+	}
+	return nil, false
+}
+
+// objectKeyNames returns the sorted property-key names of a TS object literal.
+func objectKeyNames(obj *sitter.Node, src []byte) []string {
+	kt := astutil.TSObjectKwargs(obj, src)
+	if len(kt.Children) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(kt.Children))
+	for k := range kt.Children {
+		names = append(names, k)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// firstObjectArg returns the first object-literal argument of a call
+// expression, unwrapping chained method calls so that
+// `z.object({...}).strict().describe(...)` still yields the inner z.object's
+// object argument. Returns nil if no object-literal argument is found.
+func firstObjectArg(call *sitter.Node) *sitter.Node {
+	for call != nil && call.Type() == "call_expression" {
+		if args := call.ChildByFieldName("arguments"); args != nil {
+			for i := 0; i < int(args.NamedChildCount()); i++ {
+				if a := args.NamedChild(i); a.Type() == "object" {
+					return a
+				}
+			}
+		}
+		// Unwrap one chained call: `inner(...).method(...)` — descend to inner.
+		fn := call.ChildByFieldName("function")
+		if fn == nil || fn.Type() != "member_expression" {
+			break
+		}
+		call = fn.ChildByFieldName("object")
+	}
+	return nil
 }
 
 // unquote strips one leading/trailing quote pair from a JS string literal
