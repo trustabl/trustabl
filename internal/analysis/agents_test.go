@@ -739,6 +739,45 @@ func TestResolveEdges_TSADKSubAgentsCamelCase(t *testing.T) {
 	}
 }
 
+func TestResolveEdges_OpenAIPythonHandoffs(t *testing.T) {
+	// Regression (TR-146): Python OpenAI agents capture handoffs= in Kwargs but
+	// the edge was never turned into HandoffRefs, leaving PredAgentIsSubagentOfAny
+	// blind to every Python OpenAI handoff. handoffs=[multiply_agent] must
+	// resolve to the same-file target by its assignment-target variable name.
+	src := `from agents import Agent
+
+multiply_agent = Agent(name="Multiply Agent", instructions="x2")
+start_agent = Agent(
+    name="Start Agent",
+    instructions="hand off if odd",
+    handoffs=[multiply_agent],
+)
+`
+	pf := parsePyFile(t, "main.py", src)
+	inv := models.RepoInventory{Agents: analysis.DiscoverAgents([]analysis.ParsedFile{pf})}
+	analysis.ResolveEdges(&inv, []analysis.ParsedFile{pf})
+
+	var start *models.AgentDef
+	for i := range inv.Agents {
+		if inv.Agents[i].Name == "Start Agent" {
+			start = &inv.Agents[i]
+		}
+	}
+	if start == nil {
+		t.Fatalf("start agent not found; got %+v", inv.Agents)
+	}
+	if len(start.HandoffRefs) != 1 {
+		t.Fatalf("start.HandoffRefs: got %d, want 1", len(start.HandoffRefs))
+	}
+	ref := start.HandoffRefs[0]
+	if ref.External || ref.Resolved == nil {
+		t.Fatalf("handoffs=[multiply_agent] should resolve to same-file target, got %+v", ref)
+	}
+	if ref.Resolved.Name != "Multiply Agent" {
+		t.Errorf("resolved to wrong agent: %+v", ref.Resolved)
+	}
+}
+
 func TestResolveEdges_TSADKHostedToolAppendedToInventory(t *testing.T) {
 	// TS ADK agent carries a HostedToolRef from discovery; ResolveEdges
 	// should append a HostedToolDef{SDK: SDKGoogleADK} to inv.HostedTools

@@ -274,6 +274,24 @@ func ResolveEdges(inv *models.RepoInventory, parsed []ParsedFile) {
 			}
 		}
 
+		// handoffs= (OpenAI Agents SDK delegation). Captured in Kwargs but,
+		// unlike ADK's sub_agents=, was never turned into HandoffRefs — which
+		// left PredAgentIsSubagentOfAny blind to every Python OpenAI handoff
+		// edge. Append the referenced names as unresolved HandoffRefs; the
+		// language-agnostic resolve pass below (gated on len(HandoffRefs) > 0)
+		// wires them to same-file AgentDefs by Name or VarName. TS OpenAI
+		// handoffs are pre-populated at discovery (ts_openai_agents.go), so this
+		// kwarg walk is Python-only to avoid double-emitting. v1 limitation: a
+		// list item wrapped in the handoff(...) helper resolves to External
+		// rather than the target (bare agent refs are the common case).
+		if a.SDK == models.SDKOpenAIAgents && a.Language != models.LanguageTypeScript {
+			if hk := agentKwarg(a, "handoffs"); hk != nil && hk.Value != nil && hk.Value.Kind == models.ExprList {
+				for _, item := range hk.Value.List {
+					a.HandoffRefs = append(a.HandoffRefs, models.AgentRef{Name: item.Text})
+				}
+			}
+		}
+
 		resolveGuardKwarg(a, "input_guardrails", &a.InputGuards, guardsByFileSym[a.FilePath])
 		resolveGuardKwarg(a, "output_guardrails", &a.OutputGuards, guardsByFileSym[a.FilePath])
 
@@ -512,6 +530,17 @@ func discoverAgentsInFile(pf ParsedFile) []models.AgentDef {
 			kwargs.Children["name"].Value != nil &&
 			kwargs.Children["name"].Value.Kind == models.ExprLiteralString {
 			a.Name = strings.Trim(kwargs.Children["name"].Value.Text, `"'`)
+		}
+		// Capture the assignment-target identifier (e.g. `multiply_agent =
+		// Agent(...)`) so handoffs=[multiply_agent] references resolve by
+		// variable name even when the Python variable differs from the name=
+		// literal. Mirrors the ADK discovery (adk_agents.go); previously only
+		// ADK and TS agents recorded VarName, so Python OpenAI handoff edges
+		// could never resolve to their same-file target.
+		if p := n.Parent(); p != nil && p.Type() == "assignment" {
+			if l := p.ChildByFieldName("left"); l != nil && l.Type() == "identifier" {
+				a.VarName = astutil.NodeText(l, pf.Source)
+			}
 		}
 		// Claude's AgentDefinition has no name= kwarg — the agent is named by
 		// its enclosing dict key (agents={"researcher": AgentDefinition(...)})
