@@ -277,6 +277,17 @@ func finishScan(result models.ScanResult, jobErr error, f scanFlags) error {
 		fmt.Fprintf(os.Stderr,
 			"warning: %d of %d source files could not be parsed and were skipped; findings may be incomplete\n",
 			skipped, total)
+		// Name the skipped files (stderr only) so the warning is actionable, not
+		// just a count. Cap the list so a pathological repo can't flood stderr.
+		const maxShown = 10
+		names := result.Coverage.SkippedFiles
+		for i, n := range names {
+			if i == maxShown {
+				fmt.Fprintf(os.Stderr, "  ... and %d more\n", len(names)-maxShown)
+				break
+			}
+			fmt.Fprintf(os.Stderr, "  skipped: %s\n", n)
+		}
 	}
 
 	switch f.format {

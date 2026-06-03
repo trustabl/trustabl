@@ -243,6 +243,11 @@ type RepoInventory struct {
 type Coverage struct {
 	FilesParsed  int `json:"files_parsed"`  // source files successfully read AND parsed
 	FilesSkipped int `json:"files_skipped"` // source files attempted but skipped (read or parse error)
+	// SkippedFiles names the relative paths that were attempted but could not be
+	// read or parsed (the identities behind FilesSkipped). Sorted for
+	// determinism; omitted from JSON when empty. Lets the report say *which*
+	// files went unanalyzed, not just how many.
+	SkippedFiles []string `json:"skipped_files,omitempty"`
 }
 
 // ScanResult is the top-level output. JSON-serializable for CI.

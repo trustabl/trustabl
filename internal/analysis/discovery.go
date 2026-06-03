@@ -45,9 +45,16 @@ func DiscoverToolsFromParsed(parsed []ParsedFile) []models.ToolDef {
 //
 // A single function can be classified as both a tool AND a shell-invocation —
 // in that case it becomes KindClaudeSDKTool with a fact tagging the shell call.
-func DiscoverTools(manifest models.ScanManifest, onFile func(path string)) ([]models.ToolDef, []ParsedFile, error) {
+// The returned skipped slice names the relative paths that could not be read
+// or parsed. One bad file must not abort the scan, but the skip must not be
+// invisible either: the caller folds these into Coverage so the report can name
+// the files it did not analyze (a silent drop on a security tool is the "clean
+// report that isn't" failure mode). The error return is reserved for a future
+// fatal condition; it is always nil today.
+func DiscoverTools(manifest models.ScanManifest, onFile func(path string)) ([]models.ToolDef, []ParsedFile, []string, error) {
 	var tools []models.ToolDef
 	var parsed []ParsedFile
+	var skipped []string
 
 	// Reuse one parser across every file instead of allocating a fresh C parser
 	// per file (the prior astutil.Parse-per-file pattern). Parsers are reusable
@@ -61,19 +68,19 @@ func DiscoverTools(manifest models.ScanManifest, onFile func(path string)) ([]mo
 		abs := filepath.Join(manifest.RepoRoot, rel)
 		src, err := os.ReadFile(abs)
 		if err != nil {
+			skipped = append(skipped, rel) // unreadable (perms, races) — not analyzed
 			continue
 		}
 		tree, err := parser.ParseCtx(context.Background(), nil, src)
 		if err != nil {
-			// One unparseable file shouldn't fail the scan. Surface upstream
-			// via the result if needed; for now, skip silently.
+			skipped = append(skipped, rel) // unparseable — not analyzed
 			continue
 		}
 		pf := ParsedFile{RelPath: rel, Source: src, Tree: tree}
 		parsed = append(parsed, pf)
 		tools = append(tools, toolsInFile(pf)...)
 	}
-	return tools, parsed, nil
+	return tools, parsed, skipped, nil
 }
 
 func toolsInFile(pf ParsedFile) []models.ToolDef {

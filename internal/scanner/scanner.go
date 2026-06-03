@@ -108,7 +108,7 @@ func Run(cfg Config) (models.ScanResult, error) {
 	// Step 2: inventory (per-language AST; Python only for now)
 	rep.StartPhase("inventory", "Inventory")
 	rep.SetTotal(len(profile.Manifest.PythonFiles) + len(profile.Manifest.TypeScriptFiles))
-	tools, parsed, err := analysis.DiscoverTools(profile.Manifest, func(path string) {
+	tools, parsed, pySkipped, err := analysis.DiscoverTools(profile.Manifest, func(path string) {
 		rep.Advance(path)
 	})
 	if err != nil {
@@ -123,7 +123,7 @@ func Run(cfg Config) (models.ScanResult, error) {
 
 	// TS block: parse TypeScript files, then run TS-specific discovery
 	// (Claude SDK + OpenAI Agents + Google ADK).
-	tsFiles := parseTSFiles(profile.Manifest.TypeScriptFiles, profile.Manifest.RepoRoot, func(path string) {
+	tsFiles, tsSkipped := parseTSFiles(profile.Manifest.TypeScriptFiles, profile.Manifest.RepoRoot, func(path string) {
 		rep.Advance(path)
 	})
 
@@ -221,9 +221,14 @@ func Run(cfg Config) (models.ScanResult, error) {
 	// not yet AST-parsed, so they are not counted as attempted here.
 	filesParsed := len(parsed) + len(tsFiles)
 	filesAttempted := len(profile.Manifest.PythonFiles) + len(profile.Manifest.TypeScriptFiles)
+	// Name the skipped files (Python + TS), not just count them, so the report
+	// can say which inputs went unanalyzed. Sorted+deduped for determinism.
+	skippedFiles := append(append([]string{}, pySkipped...), tsSkipped...)
+	skippedFiles = sortedUnique(skippedFiles)
 	coverage := models.Coverage{
 		FilesParsed:  filesParsed,
 		FilesSkipped: filesAttempted - filesParsed,
+		SkippedFiles: skippedFiles,
 	}
 
 	return models.ScanResult{
@@ -382,6 +387,23 @@ func disablesDefaultTracing(pf analysis.ParsedFile) bool {
 }
 
 // languagesLabel renders a stable, comma-separated language list for progress.
+// sortedUnique returns the input sorted with duplicates removed. Used to make
+// the Coverage.SkippedFiles list deterministic.
+func sortedUnique(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	cp := append([]string{}, in...)
+	sort.Strings(cp)
+	out := cp[:0]
+	for i, s := range cp {
+		if i == 0 || s != cp[i-1] {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
 func languagesLabel(langs []models.Language) string {
 	if len(langs) == 0 {
 		return "no known languages"
@@ -398,10 +420,11 @@ func languagesLabel(langs []models.Language) string {
 // be read or parsed are silently skipped — one bad file should not abort the
 // scan. The optional onFile callback fires once per file attempted (progress
 // hook), mirroring the same callback convention used by analysis.DiscoverTools.
-func parseTSFiles(paths []string, root string, onFile func(string)) []analysis.ParsedFile {
+func parseTSFiles(paths []string, root string, onFile func(string)) ([]analysis.ParsedFile, []string) {
 	tsParser := astutil.NewTSParser()
 	tsxParser := astutil.NewTSXParser()
 	var out []analysis.ParsedFile
+	var skipped []string
 	for _, rel := range paths {
 		if onFile != nil {
 			onFile(rel)
@@ -409,6 +432,7 @@ func parseTSFiles(paths []string, root string, onFile func(string)) []analysis.P
 		full := filepath.Join(root, rel)
 		body, err := os.ReadFile(full)
 		if err != nil {
+			skipped = append(skipped, rel) // unreadable — not analyzed
 			continue
 		}
 		var parser *sitter.Parser
@@ -418,15 +442,17 @@ func parseTSFiles(paths []string, root string, onFile func(string)) []analysis.P
 		case "tsx":
 			parser = tsxParser
 		default:
+			skipped = append(skipped, rel) // unknown extension — not analyzed
 			continue
 		}
 		tree, err := parser.ParseCtx(context.Background(), nil, body)
 		if err != nil {
+			skipped = append(skipped, rel) // unparseable — not analyzed
 			continue
 		}
 		out = append(out, analysis.ParsedFile{RelPath: rel, Source: body, Tree: tree})
 	}
-	return out
+	return out, skipped
 }
 
 // scanID is derived from a stable identity label (RemoteURL for remote scans,

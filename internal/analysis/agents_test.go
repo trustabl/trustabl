@@ -298,7 +298,7 @@ def do_thing(x: str) -> str:
 		t.Fatal(err)
 	}
 	manifest := models.ScanManifest{RepoRoot: dir, PythonFiles: []string{"t.py"}}
-	tools, _, err := analysis.DiscoverTools(manifest, nil)
+	tools, _, _, err := analysis.DiscoverTools(manifest, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -310,6 +310,52 @@ def do_thing(x: str) -> str:
 	}
 	if tools[0].Config["name_override"] != `"my_tool"` {
 		t.Errorf("name_override = %q, want %q", tools[0].Config["name_override"], `"my_tool"`)
+	}
+}
+
+// TestDiscoverTools_ReportsSkippedFiles is the regression for TR-152: a
+// syntactically broken Python file must not abort the scan, AND must be named
+// in the returned skipped slice rather than silently dropped.
+func TestDiscoverTools_ReportsSkippedFiles(t *testing.T) {
+	good := `
+from agents import function_tool
+
+@function_tool
+def ok(x: str) -> str:
+    """ok"""
+    return x
+`
+	// A genuinely unparseable Python source (unterminated def / stray tokens).
+	broken := "def (((  : this is not python @@@\n    return\n"
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "good.py"), []byte(good), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "broken.py"), []byte(broken), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// "missing.py" is listed in the manifest but never written — an unreadable file.
+	manifest := models.ScanManifest{RepoRoot: dir, PythonFiles: []string{"good.py", "broken.py", "missing.py"}}
+
+	tools, _, skipped, err := analysis.DiscoverTools(manifest, nil)
+	if err != nil {
+		t.Fatalf("DiscoverTools must not abort on a bad file: %v", err)
+	}
+	// The good file still yields its tool — the scan was not aborted.
+	if len(tools) != 1 {
+		t.Fatalf("expected the good file's 1 tool, got %d", len(tools))
+	}
+	// The unreadable file must be named in skipped. (tree-sitter is
+	// error-tolerant and may still produce a tree for broken.py, so the
+	// unreadable missing.py is the deterministic skip to assert on.)
+	hasMissing := false
+	for _, s := range skipped {
+		if s == "missing.py" {
+			hasMissing = true
+		}
+	}
+	if !hasMissing {
+		t.Errorf("unreadable file not reported as skipped: %v", skipped)
 	}
 }
 
