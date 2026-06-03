@@ -21,13 +21,13 @@ Legend: ✅ full · ◐ partial · ❌ none · — N/A
 | SDK | Language | Scanning | Analysis (AST discovery) | Detection rules |
 |---|---|---|---|---|
 | **Claude Agent SDK** | Python | ✅ dep-scan + file inventory + `.claude/` & `.claude-plugin/` components | ✅ tools, agents, subagents (canonical + flat-collection shape fallback), skills (`SKILL.md`), slash commands, plugin manifests, settings, `ClaudeAgentOptions` session config | ✅ tool CSDK-001..009, 107, 108 (008 = `**kwargs` without input_schema, 009 = SSRF); agent CSDK-101..105; subagent CSDK-110, 111 (fire on pure-markdown collections); repo CSDK-201..203 (`defaultMode` / `permission_mode` bypass; 203 = SDK code without CLAUDE.md) |
-| **Claude Agent SDK** | TypeScript | ✅ dep-scan (`@anthropic-ai/claude-agent-sdk`) + file inventory + `.claude/` components | ✅ tools (`tool()` factory), agents (main thread `QueryMainAgent` per `query()` call + sub-agents inline-in-query + typed-const `AgentDefinition`), MCP servers (createSdkMcpServer + 4 config literals) | ◐ tool CSDK-010 (shell), 011 (eval/new Function), 012 (fs-write), 013 (SSRF / dynamic URL); agent CSDK-120 (permissionMode bypass) — first Claude TS pack; META-004 no longer fires |
+| **Claude Agent SDK** | TypeScript | ✅ dep-scan (`@anthropic-ai/claude-agent-sdk`) + file inventory + `.claude/` components | ✅ tools (`tool()` factory), agents (main thread `QueryMainAgent` per `query()` call + sub-agents inline-in-query + typed-const `AgentDefinition`), MCP servers (createSdkMcpServer + 4 config literals) | ◐ tool CSDK-010 (shell), 011 (eval/new Function), 012 (fs-write), 013 (SSRF / dynamic URL), 014 (no description), 016 (mutating tool no idempotency key); agent CSDK-120 (permissionMode bypass), 130 (`query()` main agent grants Bash), 131 (`query()` main agent grants write/fetch built-ins); META-004 no longer fires |
 | **OpenAI Agents SDK** | Python | ✅ dep-scan + file inventory | ✅ tools, hosted tools (11 classes), agents, MCP servers (3 transports + alias), guardrails, sessions | ✅ tool OAI-001..015, 018 (018 = SSRF / caller-controlled URL); agent OAI-101..104, 106, 109, 110, 111; repo OAI-201, 202 (202 = SDK code without CLAUDE.md) |
-| **OpenAI Agents SDK** | TypeScript | ✅ dep-scan (`@openai/agents` substring catches `-core` / `-openai`) + file inventory | ✅ tools (`tool({...})` factory), agents (`new Agent({...})` + `Agent.create(...)`), hosted tools (9 factories across `@openai/agents-core` and `@openai/agents-openai`), MCP servers (3 transports + `MCPServers` wrapper), guardrails (4 `defineX` factories), sessions (`MemorySession` / `OpenAIConversationsSession` / `OpenAIResponsesCompactionSession`) | ✅ tool OAI-016 (fetch without AbortSignal timeout), OAI-017 (eval / new Function), OAI-019 (mutating tool without idempotency) — first shipped TS-language rules, now with fire/silent cases in the per-rule harness |
+| **OpenAI Agents SDK** | TypeScript | ✅ dep-scan (`@openai/agents` substring catches `-core` / `-openai`) + file inventory | ✅ tools (`tool({...})` factory), agents (`new Agent({...})` + `Agent.create(...)`), hosted tools (9 factories across `@openai/agents-core` and `@openai/agents-openai`), MCP servers (3 transports + `MCPServers` wrapper), guardrails (4 `defineX` factories), sessions (`MemorySession` / `OpenAIConversationsSession` / `OpenAIResponsesCompactionSession`) | ✅ tool OAI-016 (fetch without AbortSignal timeout), OAI-017 (eval / new Function), OAI-019 (mutating tool without idempotency), OAI-022 (no description), OAI-024 (dynamic URL / SSRF); agent OAI-105 (content hosted-tool without inputGuardrails); all with fire/silent cases in the per-rule harness |
 | **MCP** | Python | ✅ tool registrations + config files | ◐ tool registrations only (no server-side resource/prompt discovery) | ❌ no dedicated pack (KindMCPTool is reachable by some CSDK rules' `applies_to`) |
 | **MCP** | TypeScript / Go / Rust | ❌ no MCP-specific recognition (file paths inventoried generically, no MCP parser or dep needles) | ❌ | ❌ |
 | **Google ADK** | Python | ✅ dep-scan (`google-adk`) + file inventory | ✅ LlmAgent (+ Agent alias), SequentialAgent, ParallelAgent, LoopAgent, LanggraphAgent; FunctionTool wrapping; 13 built-in hosted tools; sub_agents edges | ✅ tool ADK-001..007, 009..012 (009 = print to stdout, 010 = subprocess, 011 = eval/exec/compile, 012 = SSRF); agent ADK-008, 101..108, 110; repo ADK-201 (SDK code without CLAUDE.md) |
-| **Google ADK** | TypeScript | ✅ dep-scan (`@google/adk`) + file inventory | ✅ tools (`new FunctionTool({...})`), agents (5 constructors: LlmAgent + SequentialAgent + ParallelAgent + LoopAgent + RoutedAgent), hosted tools (13 classes), subAgents edges | ❌ no TS-language ADK rules yet (SP2) — META-004 fires |
+| **Google ADK** | TypeScript | ✅ dep-scan (`@google/adk`) + file inventory | ✅ tools (`new FunctionTool({...})`), agents (5 constructors: LlmAgent + SequentialAgent + ParallelAgent + LoopAgent + RoutedAgent), hosted tools (13 classes), subAgents edges | ◐ tool ADK-013 (no description), 015 (eval / new Function), 016 (SSRF / dynamic URL); agent ADK-109 (LlmAgent no description); first ADK TS pack; META-004 no longer fires |
 | **Google ADK** | Go / Java / Kotlin | ❌ | ❌ | ❌ |
 | **OpenShell** | Python | ✅ shell-invocation discovery + `openshell/*.yaml` policy files surfaced | ✅ `KindShellInvocation` tools → `RepoInventory.HasShellInvocations` (the "openshell" risk surface; not an SDK, never in `SDKsDetected`) | ❌ rules moved to closed-source companion project (no rule fires; no META finding — openshell is not treated as an unaudited SDK) |
 
@@ -169,7 +169,7 @@ not fire for it.
 
 | Gap | Effort sketch |
 |---|---|
-| **Claude SDK TypeScript rules** (`@anthropic-ai/claude-agent-sdk`) | First pack shipped: CSDK-010 (shell), 011 (eval/new Function), 012 (fs-write), 013 (SSRF/dynamic URL) as tool rules; CSDK-120 (permissionMode bypass) as an agent rule. The TS predicate machinery is in place (`has_body_text` line-span fallback, `dynamic_url` fact, `has_dynamic_url_call` language branch) and covered by the per-rule fire/silent harness. Remaining: breadth parity with the Python CSDK set (docstring, typed-params, timeout, path-safety, error-handling, idempotency, etc.) |
+| **Claude SDK TypeScript rules** (`@anthropic-ai/claude-agent-sdk`) | Shipped: tool CSDK-010 (shell), 011 (eval/new Function), 012 (fs-write), 013 (SSRF/dynamic URL), 014 (no description), 016 (mutating tool no idempotency key); agent CSDK-120 (permissionMode bypass), 130/131 (`query()` main-thread agent grants Bash / write-fetch built-ins). The TS predicate machinery is in place (`has_body_text` line-span fallback, `dynamic_url`/`code_exec` facts, `has_dynamic_url_call`/`has_code_exec_call` language branches) and covered by the per-rule fire/silent harness. Remaining breadth-parity gaps vs the Python CSDK set: typed-params (no viable TS predicate today, see note), network timeout (uses `has_body_text` substring), path-safety, error-handling. The `query()` main-thread agent surface (`claude_query_main`) is now audited by 130/131, which nothing previously checked |
 | **MCP cross-language** (TS, Rust, Go) | Two prerequisites are missing today: (1) MCP dep-scan needles in `internal/ingestion/normalizer.go` — currently only `claude-agent-sdk` / `claude_agent_sdk` / `openai-agents` / `@openai/agents` / `google-adk` / `@google/adk` are matched; there is no `@modelcontextprotocol/sdk` (npm), no `rmcp` / `anthropic-mcp` (Cargo), no Go MCP module needle. (2) per-language AST parsers and discovery for the SDK shapes (`Server.tool()` factory in TS, `#[tool]` macros in Rust, etc.). File paths are recorded by the generic walk but no MCP-specific extraction happens against them |
 | **MCP server-side completeness** | We discover tools registered with `@server.tool` etc., but don't extract `Prompt`, `Resource`, `Sampling` registrations — those exist in the spec and would be a small additional pass |
 
@@ -182,21 +182,23 @@ rationale, not as a binding roadmap.
    JS, and Google ADK JS — the same infra investment still covers the
    remaining TS targets (TS MCP servers). The discovery patterns are
    different per SDK but the AST plumbing is shared.
-2. **OpenAI Agents TS rule pack** — first rules have **shipped**: OAI-016
-   (fetch without AbortSignal timeout), OAI-017 (eval / new Function), OAI-019
-   (mutating tool without idempotency), all `language: typescript`. TS OpenAI
-   repos no longer produce META-004. The TS fire/silent harness (`parseTSTool` /
-   `parseTSAgentInline`) now exists and these rules are covered by it —
-   `TestPolicyRules_AllRulesCovered` enforces this for all rules including TS.
-   Remaining: TS analogues of the Python OAI-* rules (docstring/typed-params/
-   path/etc.).
-3. **Google ADK TS rule pack** is the parallel near-term move now that
-   TS ADK discovery is wired (SP2). The Python ADK-* rules
-   (ADK-001..007 tool, ADK-008/101..108/110 agent) have direct TS analogues —
-   retargeted at `new FunctionTool({...})` option-object args /
-   `new LlmAgent({...})` option-object kwargs instead of Python
-   `FunctionTool(symbol)` + constructor shapes — and would clear the
-   META-004 finding TS ADK repos currently produce.
+2. **OpenAI Agents TS rule pack** has **expanded**: OAI-016 (fetch without
+   AbortSignal timeout), OAI-017 (eval / new Function), OAI-019 (mutating tool
+   without idempotency), OAI-022 (no description), OAI-024 (dynamic URL / SSRF),
+   and agent OAI-105 (content hosted-tool without inputGuardrails), all
+   `language: typescript`. TS OpenAI repos no longer produce META-004. The TS
+   fire/silent harness (`parseTSTool` / `parseTSAgentInline` /
+   `parseTSOpenAIAgentInline`) covers them and `TestPolicyRules_AllRulesCovered`
+   enforces a case for every rule including TS. Remaining: TS analogues of the
+   Python OAI path-safety and decorator-config rules (some need new TS facts).
+3. **Google ADK TS rule pack** has **landed** (first ADK TS rules): tool
+   ADK-013 (no description), 015 (eval / new Function), 016 (SSRF / dynamic URL),
+   and agent ADK-109 (LlmAgent no description), retargeted at
+   `new FunctionTool({...})` / `new LlmAgent({...})` option-object shapes. TS ADK
+   repos no longer produce META-004. Remaining ADK parity gaps (shell-out,
+   typed-params, callback-gated agent rules) need new TS predicates/facts: the
+   `shells_out` fact is discovered but no predicate reads it for TS, and ADK JS
+   agent callback kwarg names need verification before porting ADK-102/105..107.
 4. **MCP rule pack** would be a small detection win — we already discover
    MCP tools, but no rules target them. Useful checks include "MCP tool
    without input schema" and "stdio MCP server with absolute path to a

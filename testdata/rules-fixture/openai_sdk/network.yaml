@@ -137,3 +137,30 @@ rules:
       entry. If the value is meant to be an opaque ID (e.g. a connection_id),
       pass it as a query parameter or path segment of a fixed base URL and
       reject characters that would let it escape that slot.
+
+  - id: OAI-024
+    title: TypeScript tool builds outbound URL from a non-literal value
+    severity: medium
+    confidence: 0.6
+    language: typescript
+    applies_to:
+      - openai_tool
+    scope: tool
+    match:
+      has_dynamic_url_call: true
+    explanation: >
+      This OpenAI Agents SDK tool authored in TypeScript constructs its outbound
+      HTTP URL from a non-literal value — a template-string substitution, an
+      identifier, or a concatenation — typically a tool argument the model
+      produced from conversation context. An attacker shaping that context can
+      redirect the request to an attacker-controlled host or to an internal
+      address the agent's egress can reach (SSRF), and can leak request bodies,
+      headers, and credentials to whichever host the URL resolves to. The fact is
+      recognized for the `fetch`/`axios`/`got`/`undici` clients by inspecting the
+      first argument; a plain string-literal URL does not fire.
+    fix: >
+      Treat the model-supplied value as untrusted URL input. Validate it against
+      an allow-list of permitted hosts and path segments before any HTTP client
+      touches it, or resolve an opaque ID against a server-side registry and build
+      the URL from the trusted entry. Reject characters that let the value escape
+      its intended path or query slot.

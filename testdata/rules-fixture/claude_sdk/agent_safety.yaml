@@ -171,3 +171,59 @@ rules:
       allowedTools or disallowedTools in the AgentDefinition constructor to
       restrict the tool surface, and prefer a safe default permission mode
       ("default" or "acceptEdits") scoped to a minimal tool set.
+
+  - id: CSDK-130
+    title: TypeScript query() main agent is granted the Bash tool
+    severity: high
+    confidence: 0.8
+    language: typescript
+    applies_to:
+      - claude_query_main
+    scope: agent
+    match:
+      agent_grants_builtin_tool:
+        - Bash
+    explanation: >
+      This `query(...)` call configures the main agent thread with "Bash" in
+      its `options.allowedTools`, granting the top-level agent arbitrary
+      shell-command execution. The main thread acts directly on model output in
+      the conversation loop, so a prompt-injected instruction reaches the OS
+      shell with no subagent boundary in between. This is the broadest privilege
+      a Claude TypeScript agent can hold, and unlike the AgentDefinition and
+      `.claude/agents` subagent rules, nothing else inspects the `query()` main
+      thread's tool grant.
+    fix: >
+      Remove "Bash" from `options.allowedTools` unless shell execution is
+      essential to the agent's task. If it is, pair it with a PreToolUse hook
+      that allowlists the exact commands permitted, and do not run the session
+      under permissionMode: "bypassPermissions".
+
+  - id: CSDK-131
+    title: TypeScript query() main agent is granted filesystem-write or web-fetch built-ins
+    severity: high
+    confidence: 0.75
+    language: typescript
+    applies_to:
+      - claude_query_main
+    scope: agent
+    match:
+      agent_grants_builtin_tool:
+        - Write
+        - Edit
+        - MultiEdit
+        - NotebookEdit
+        - WebFetch
+    explanation: >
+      This `query(...)` main agent's `options.allowedTools` includes a
+      filesystem-write built-in (Write/Edit/MultiEdit/NotebookEdit) or WebFetch.
+      Write access lets a prompt-injected main agent rewrite source,
+      configuration, or the `.claude/settings.json` that governs its own
+      permissions; WebFetch pulls attacker-controllable URL content straight
+      back into the loop, which is both a prompt-injection re-entry and a
+      server-side request forgery surface. On the main thread these run with no
+      subagent boundary and no SDK guardrail mechanism.
+    fix: >
+      Drop the write and fetch built-ins from `options.allowedTools` unless the
+      task requires them. Scope writes to a dedicated working directory, gate
+      them with a PreToolUse hook, and for fetching, allowlist permitted hosts
+      and block internal, loopback, and link-local address ranges.

@@ -109,3 +109,28 @@ rules:
       `input_schema=` to the `@tool` decorator — either a JSON Schema dict or
       a Pydantic `BaseModel` subclass — so the contract published to the model
       matches what the body actually reads from `kwargs`.
+
+  - id: CSDK-014
+    title: TypeScript Claude SDK tool has no description
+    severity: low
+    confidence: 0.9
+    language: typescript
+    applies_to:
+      - claude_sdk_tool
+    scope: tool
+    match:
+      has_docstring: false
+    explanation: >
+      The Claude Agent SDK passes a TypeScript tool's description — the second
+      argument to `tool(name, description, schema, handler)` — to the model as
+      the sole signal for when to invoke it. With an empty or missing
+      description the model must guess from the tool name alone, causing
+      mis-selection under ambiguous prompts: the tool is called for the wrong
+      job, or skipped when it was the right one. Unlike the Python SDK, which
+      derives the description from the function docstring, the TypeScript
+      factory takes it as an explicit argument, so omitting it is a silent gap
+      rather than a syntax error.
+    fix: >
+      Pass a clear one-line description as the second argument to
+      `tool(name, description, schema, handler)`, stating what the tool does,
+      what it returns, and when the model should reach for it.

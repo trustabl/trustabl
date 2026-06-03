@@ -595,10 +595,13 @@ func TestScanExamples_ADKJS_DiscoveryCounts(t *testing.T) {
 		}
 	}
 
-	// META-004 must fire: google_adk SDK detected, but no shipped ADK rule
-	// applies — the tool/agent ADK rules declare language: python and so
-	// are skipped against TS entities, and there's no repo-scope ADK rule
-	// currently. No ADK-* rule should fire on this TS-only repo.
+	// META-004 must NOT fire: the TS ADK rule pack now ships agent-scope rules
+	// (ADK-109, language: typescript) whose Applies() returns true for the TS
+	// LlmAgents discovered here, so google_adk is an "applicable" category and
+	// the coverage-gap signal is correctly suppressed. ADK-109 itself fires on
+	// the corpus agents that declare no description — the end-to-end proof that
+	// the TS ADK rules run against real discovered code, not just hand-built
+	// test inputs.
 	var sawMETA004 bool
 	var firedADKRules []string
 	for _, f := range res.Findings {
@@ -609,10 +612,10 @@ func TestScanExamples_ADKJS_DiscoveryCounts(t *testing.T) {
 			firedADKRules = append(firedADKRules, f.RuleID)
 		}
 	}
-	if !sawMETA004 {
-		t.Errorf("expected META-004 to fire on TS-only ADK repo (audited SDK, no applicable rule); got findings=%v", res.Findings)
+	if sawMETA004 {
+		t.Errorf("META-004 should NOT fire now that TS ADK rules apply to discovered TS agents; got findings=%v", res.Findings)
 	}
-	if len(firedADKRules) > 0 {
-		t.Errorf("no ADK-* rule should fire on TS-only repo (rules are language: python and engine repo-scope gate prevents leak); fired: %v", firedADKRules)
+	if len(firedADKRules) == 0 {
+		t.Errorf("expected ADK-109 to fire on the description-less TS LlmAgents in this corpus; got findings=%v", res.Findings)
 	}
 }

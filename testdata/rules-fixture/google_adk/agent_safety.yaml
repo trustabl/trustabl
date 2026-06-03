@@ -250,3 +250,28 @@ rules:
       Add a before_tool_callback that allow-lists permitted hosts/URLs and blocks
       internal address ranges before the fetch executes. Treat fetched content as
       untrusted and avoid passing it directly into further tool calls.
+
+  - id: ADK-109
+    title: TypeScript LlmAgent has no description
+    severity: medium
+    confidence: 0.85
+    language: typescript
+    applies_to:
+      - adk_llm_agent
+    scope: agent
+    match:
+      all:
+        - agent_class: [LlmAgent]
+        - agent_kwarg_missing: [description]
+    explanation: >
+      Google ADK routes delegation between agents using each LlmAgent's
+      `description`. When a parent agent decides whether to hand off to a child in
+      its `subAgents` tree, the model sees only the child's `description`. A
+      TypeScript LlmAgent constructed with no `description` becomes effectively
+      unreachable through delegation — it sits in the tree but the parent's model
+      has no signal to select it. This usually surfaces as a silent routing bug
+      where a sub-agent is never invoked.
+    fix: >
+      Pass a `description` in the `new LlmAgent({...})` options that names this
+      agent's role and the kind of input it handles. One sentence is enough; treat
+      it as documentation the parent agent's model reads to route.

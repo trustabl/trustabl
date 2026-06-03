@@ -44,3 +44,43 @@ rules:
     fix: >
       Add an `idempotency_key: str` parameter; verify the receiving API
       respects it.
+
+  - id: CSDK-016
+    title: TypeScript Claude SDK mutating tool has no idempotency key
+    severity: medium
+    confidence: 0.5
+    language: typescript
+    applies_to:
+      - claude_sdk_tool
+    scope: tool
+    match:
+      all:
+        - name_has_prefix:
+            - create
+            - send
+            - delete
+            - post
+            - update
+            - refund
+            - charge
+            - issue
+        - not:
+            param_name_matches:
+              contains:
+                - idempot
+              exact:
+                - requestId
+                - request_id
+                - txnId
+                - txn_id
+    explanation: >
+      This TypeScript tool's name implies a side effect (create/send/refund/…)
+      but its Zod schema exposes no idempotency parameter. Agents re-issue tool
+      calls after timeouts and ambiguous failures, so the same charge, send, or
+      delete can fire twice. Without a key the model and the SDK cannot make the
+      retry safe. The prefix set matches both `create_charge` and `createCharge`
+      naming, so it fires on idiomatic TypeScript tool names.
+    fix: >
+      Add an `idempotencyKey` (or `requestId`) field to the tool's Zod schema,
+      thread it to the downstream API, and confirm that API treats a repeated
+      key as a no-op rather than a second mutation.

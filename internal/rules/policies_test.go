@@ -881,6 +881,86 @@ def calc(expr: str) -> int:
 			"} });\n",
 	},
 
+	// ── OAI-022: TS tool has no description ──
+	{
+		name: "OAI-022 fires on empty description", ruleID: "OAI-022",
+		kind: models.KindOpenAITool, lang: models.LanguageTypeScript, wantFires: true,
+		src: "import { tool } from \"@openai/agents\";\n" +
+			"export const t = tool({ name: \"f\", description: \"\", parameters: {}, execute: async () => {\n" +
+			"  return 1;\n" +
+			"} });\n",
+	},
+	{
+		name: "OAI-022 silent when description present", ruleID: "OAI-022",
+		kind: models.KindOpenAITool, lang: models.LanguageTypeScript, wantFires: false,
+		src: "import { tool } from \"@openai/agents\";\n" +
+			"export const t = tool({ name: \"f\", description: \"fetches the weather\", parameters: {}, execute: async () => {\n" +
+			"  return 1;\n" +
+			"} });\n",
+	},
+
+	// ── OAI-024: TS tool builds outbound URL from non-literal value (dynamic_url fact) ──
+	{
+		name: "OAI-024 fires on interpolated fetch URL", ruleID: "OAI-024",
+		kind: models.KindOpenAITool, lang: models.LanguageTypeScript, wantFires: true,
+		src: "import { tool } from \"@openai/agents\";\n" +
+			"export const t = tool({ name: \"f\", description: \"f\", parameters: {}, execute: async (a) => {\n" +
+			"  const r = await fetch(`https://${a.host}/api`);\n" +
+			"  return r.status;\n" +
+			"} });\n",
+	},
+	{
+		name: "OAI-024 silent on literal fetch URL", ruleID: "OAI-024",
+		kind: models.KindOpenAITool, lang: models.LanguageTypeScript, wantFires: false,
+		src: "import { tool } from \"@openai/agents\";\n" +
+			"export const t = tool({ name: \"f\", description: \"f\", parameters: {}, execute: async () => {\n" +
+			"  const r = await fetch(\"https://example.com/api\");\n" +
+			"  return r.status;\n" +
+			"} });\n",
+	},
+
+	// ── ADK-013: TS FunctionTool has no description ──
+	{
+		name: "ADK-013 fires on empty description", ruleID: "ADK-013",
+		kind: models.KindADKFunctionTool, lang: models.LanguageTypeScript, wantFires: true,
+		src: "import { FunctionTool } from \"@google/adk\";\n" +
+			"const t = new FunctionTool({ name: \"sum\", description: \"\", parameters: { a: 0 }, execute: async ({ a }) => String(a) });\n",
+	},
+	{
+		name: "ADK-013 silent when description present", ruleID: "ADK-013",
+		kind: models.KindADKFunctionTool, lang: models.LanguageTypeScript, wantFires: false,
+		src: "import { FunctionTool } from \"@google/adk\";\n" +
+			"const t = new FunctionTool({ name: \"sum\", description: \"adds two numbers\", parameters: { a: 0 }, execute: async ({ a }) => String(a) });\n",
+	},
+
+	// ── ADK-015: TS FunctionTool evaluates dynamic code (code_exec fact) ──
+	{
+		name: "ADK-015 fires on eval", ruleID: "ADK-015",
+		kind: models.KindADKFunctionTool, lang: models.LanguageTypeScript, wantFires: true,
+		src: "import { FunctionTool } from \"@google/adk\";\n" +
+			"const t = new FunctionTool({ name: \"calc\", description: \"calc\", parameters: { e: \"\" }, execute: async ({ e }) => eval(e) });\n",
+	},
+	{
+		name: "ADK-015 silent without eval", ruleID: "ADK-015",
+		kind: models.KindADKFunctionTool, lang: models.LanguageTypeScript, wantFires: false,
+		src: "import { FunctionTool } from \"@google/adk\";\n" +
+			"const t = new FunctionTool({ name: \"calc\", description: \"calc\", parameters: { a: 0 }, execute: async ({ a }) => String(a + 1) });\n",
+	},
+
+	// ── ADK-016: TS FunctionTool fetches caller-controlled URL (dynamic_url fact) ──
+	{
+		name: "ADK-016 fires on interpolated fetch URL", ruleID: "ADK-016",
+		kind: models.KindADKFunctionTool, lang: models.LanguageTypeScript, wantFires: true,
+		src: "import { FunctionTool } from \"@google/adk\";\n" +
+			"const t = new FunctionTool({ name: \"f\", description: \"f\", parameters: { host: \"\" }, execute: async ({ host }) => { const r = await fetch(`https://${host}/api`); return r.status; } });\n",
+	},
+	{
+		name: "ADK-016 silent on literal fetch URL", ruleID: "ADK-016",
+		kind: models.KindADKFunctionTool, lang: models.LanguageTypeScript, wantFires: false,
+		src: "import { FunctionTool } from \"@google/adk\";\n" +
+			"const t = new FunctionTool({ name: \"f\", description: \"f\", parameters: { a: 0 }, execute: async () => { const r = await fetch(\"https://example.com/api\"); return r.status; } });\n",
+	},
+
 	// ── CSDK-010 shell ──
 	{
 		name: "CSDK-010 fires on TS tool shelling out", ruleID: "CSDK-010",
@@ -981,6 +1061,53 @@ def calc(expr: str) -> int:
 			"export const t = tool(\"f\", \"f\", {}, async () => {\n" +
 			"  await fetch(\"https://example.com/api\");\n" +
 			"  return { content: [] };\n" +
+			"});\n",
+	},
+	// ── CSDK-014 tool has no description ──
+	{
+		name: "CSDK-014 fires on TS tool with empty description", ruleID: "CSDK-014",
+		kind: models.KindClaudeSDKTool, lang: models.LanguageTypeScript, wantFires: true,
+		src: "import { tool } from \"@anthropic-ai/claude-agent-sdk\";\n" +
+			"import { z } from \"zod\";\n" +
+			"export const t = tool(\"save\", \"\", { p: z.string() }, async ({ p }) => {\n" +
+			"  return { content: [{ type: \"text\", text: p }] };\n" +
+			"});\n",
+	},
+	{
+		name: "CSDK-014 silent when description present", ruleID: "CSDK-014",
+		kind: models.KindClaudeSDKTool, lang: models.LanguageTypeScript, wantFires: false,
+		src: "import { tool } from \"@anthropic-ai/claude-agent-sdk\";\n" +
+			"import { z } from \"zod\";\n" +
+			"export const t = tool(\"save\", \"saves a note to disk\", { p: z.string() }, async ({ p }) => {\n" +
+			"  return { content: [{ type: \"text\", text: p }] };\n" +
+			"});\n",
+	},
+	// ── CSDK-016 mutating tool has no idempotency key ──
+	{
+		name: "CSDK-016 fires on camelCase mutating tool with no idempotency param", ruleID: "CSDK-016",
+		kind: models.KindClaudeSDKTool, lang: models.LanguageTypeScript, wantFires: true,
+		src: "import { tool } from \"@anthropic-ai/claude-agent-sdk\";\n" +
+			"import { z } from \"zod\";\n" +
+			"export const t = tool(\"createCharge\", \"charges a card\", { amount: z.number() }, async ({ amount }) => {\n" +
+			"  return { content: [{ type: \"text\", text: String(amount) }] };\n" +
+			"});\n",
+	},
+	{
+		name: "CSDK-016 silent when idempotency key present", ruleID: "CSDK-016",
+		kind: models.KindClaudeSDKTool, lang: models.LanguageTypeScript, wantFires: false,
+		src: "import { tool } from \"@anthropic-ai/claude-agent-sdk\";\n" +
+			"import { z } from \"zod\";\n" +
+			"export const t = tool(\"createCharge\", \"charges a card\", { amount: z.number(), idempotencyKey: z.string() }, async ({ amount }) => {\n" +
+			"  return { content: [{ type: \"text\", text: String(amount) }] };\n" +
+			"});\n",
+	},
+	{
+		name: "CSDK-016 silent on non-mutating tool name", ruleID: "CSDK-016",
+		kind: models.KindClaudeSDKTool, lang: models.LanguageTypeScript, wantFires: false,
+		src: "import { tool } from \"@anthropic-ai/claude-agent-sdk\";\n" +
+			"import { z } from \"zod\";\n" +
+			"export const t = tool(\"getBalance\", \"reads balance\", { id: z.string() }, async ({ id }) => {\n" +
+			"  return { content: [{ type: \"text\", text: id }] };\n" +
 			"});\n",
 	},
 }
@@ -1923,6 +2050,64 @@ var policyAgentRuleCases = []policyAgentCase{
 		agent: parseTSAgentInline("import { query } from \"@anthropic-ai/claude-agent-sdk\";\n" +
 			"const a: AgentDefinition = { description: \"x\", prompt: \"y\", permissionMode: \"default\" };\n"),
 	},
+
+	// ─── CSDK-130 query() main agent granted Bash ────────────────────────────
+	{"CSDK-130 fires when query main agent allows Bash", "CSDK-130",
+		parseTSAgentInline("import { query } from \"@anthropic-ai/claude-agent-sdk\";\n" +
+			"const a = query({ prompt: \"y\", options: { allowedTools: [\"Bash\", \"Read\"] } });\n"),
+		models.RepoInventory{},
+		true},
+	{"CSDK-130 silent when query main agent has no Bash", "CSDK-130",
+		parseTSAgentInline("import { query } from \"@anthropic-ai/claude-agent-sdk\";\n" +
+			"const a = query({ prompt: \"y\", options: { allowedTools: [\"Read\", \"Grep\"] } });\n"),
+		models.RepoInventory{},
+		false},
+
+	// ─── CSDK-131 query() main agent granted write/fetch built-ins ────────────
+	{"CSDK-131 fires when query main agent allows Write", "CSDK-131",
+		parseTSAgentInline("import { query } from \"@anthropic-ai/claude-agent-sdk\";\n" +
+			"const a = query({ prompt: \"y\", options: { allowedTools: [\"Read\", \"Write\"] } });\n"),
+		models.RepoInventory{},
+		true},
+	{"CSDK-131 fires when query main agent allows WebFetch", "CSDK-131",
+		parseTSAgentInline("import { query } from \"@anthropic-ai/claude-agent-sdk\";\n" +
+			"const a = query({ prompt: \"y\", options: { allowedTools: [\"WebFetch\"] } });\n"),
+		models.RepoInventory{},
+		true},
+	{"CSDK-131 silent when query main agent has only read tools", "CSDK-131",
+		parseTSAgentInline("import { query } from \"@anthropic-ai/claude-agent-sdk\";\n" +
+			"const a = query({ prompt: \"y\", options: { allowedTools: [\"Read\", \"Grep\"] } });\n"),
+		models.RepoInventory{},
+		false},
+
+	// ─── OAI-105 TS agent content hosted-tool without inputGuardrails ─────────
+	{"OAI-105 fires on webSearchTool agent with no inputGuardrails", "OAI-105",
+		parseTSOpenAIAgentInline("import { Agent, webSearchTool } from \"@openai/agents\";\n" +
+			"const a = new Agent({ name: \"x\", instructions: \"y\", tools: [webSearchTool()] });\n"),
+		models.RepoInventory{},
+		true},
+	{"OAI-105 silent when inputGuardrails present", "OAI-105",
+		parseTSOpenAIAgentInline("import { Agent, webSearchTool } from \"@openai/agents\";\n" +
+			"const a = new Agent({ name: \"x\", instructions: \"y\", tools: [webSearchTool()], inputGuardrails: [g] });\n"),
+		models.RepoInventory{},
+		false},
+	{"OAI-105 silent when no content hosted tool", "OAI-105",
+		parseTSOpenAIAgentInline("import { Agent } from \"@openai/agents\";\n" +
+			"const a = new Agent({ name: \"x\", instructions: \"y\", tools: [] });\n"),
+		models.RepoInventory{},
+		false},
+
+	// ─── ADK-109 TS LlmAgent has no description ───────────────────────────────
+	{"ADK-109 fires on TS LlmAgent with no description", "ADK-109",
+		parseTSADKAgentInline("import { LlmAgent } from \"@google/adk\";\n" +
+			"const a = new LlmAgent({ name: \"x\", model: \"gemini-2.0-flash\" });\n"),
+		models.RepoInventory{},
+		true},
+	{"ADK-109 silent when TS LlmAgent has description", "ADK-109",
+		parseTSADKAgentInline("import { LlmAgent } from \"@google/adk\";\n" +
+			"const a = new LlmAgent({ name: \"x\", model: \"gemini-2.0-flash\", description: \"routes billing questions\" });\n"),
+		models.RepoInventory{},
+		false},
 }
 
 func TestPolicyAgentRules(t *testing.T) {

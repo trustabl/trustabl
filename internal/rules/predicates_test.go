@@ -70,6 +70,8 @@ func parseTSTool(t *testing.T, src string, kind models.ToolKind) (models.ToolDef
 		tools = analysis.DiscoverTSTools([]analysis.ParsedFile{pf}, func(string) {})
 	case models.KindOpenAITool:
 		tools = analysis.DiscoverTSOpenAITools([]analysis.ParsedFile{pf}, func(string) {})
+	case models.KindADKFunctionTool:
+		tools = analysis.DiscoverTSADKTools([]analysis.ParsedFile{pf}, func(string) {})
 	default:
 		t.Fatalf("parseTSTool: unsupported kind %q", kind)
 	}
@@ -91,6 +93,39 @@ func parseTSAgentInline(src string) models.AgentDef {
 	agents := analysis.DiscoverTSAgents([]analysis.ParsedFile{pf}, func(string) {})
 	if len(agents) == 0 {
 		panic("parseTSAgentInline: no agent discovered")
+	}
+	return agents[0]
+}
+
+// parseTSOpenAIAgentInline parses a TS snippet and returns the first discovered
+// OpenAI Agents SDK agent. HostedToolRefs are pre-resolved during discovery, so
+// no ResolveEdges pass is needed for hosted-tool-class rules. Panics (no
+// *testing.T available in package-level case tables).
+func parseTSOpenAIAgentInline(src string) models.AgentDef {
+	tree, err := astutil.NewTSParser().ParseCtx(context.Background(), nil, []byte(src))
+	if err != nil {
+		panic("parseTSOpenAIAgentInline parse: " + err.Error())
+	}
+	pf := analysis.ParsedFile{RelPath: "src/a.ts", Tree: tree, Source: []byte(src)}
+	agents := analysis.DiscoverTSOpenAIAgents([]analysis.ParsedFile{pf}, func(string) {})
+	if len(agents) == 0 {
+		panic("parseTSOpenAIAgentInline: no agent discovered")
+	}
+	return agents[0]
+}
+
+// parseTSADKAgentInline parses a TS snippet and returns the first discovered
+// Google ADK agent. Panics (no *testing.T available in package-level case
+// tables).
+func parseTSADKAgentInline(src string) models.AgentDef {
+	tree, err := astutil.NewTSParser().ParseCtx(context.Background(), nil, []byte(src))
+	if err != nil {
+		panic("parseTSADKAgentInline parse: " + err.Error())
+	}
+	pf := analysis.ParsedFile{RelPath: "src/a.ts", Tree: tree, Source: []byte(src)}
+	agents := analysis.DiscoverTSADKAgents([]analysis.ParsedFile{pf}, func(string) {})
+	if len(agents) == 0 {
+		panic("parseTSADKAgentInline: no agent discovered")
 	}
 	return agents[0]
 }

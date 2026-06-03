@@ -164,3 +164,32 @@ rules:
       or an OutputGuardrail instance) and wire it via output_guardrails=[...]
       on the Agent(...) constructor. It should inspect the final output for
       data exfiltration and unsafe content before it is returned.
+
+  - id: OAI-105
+    title: TypeScript agent wires a content-fetching hosted tool without inputGuardrails
+    severity: high
+    confidence: 0.8
+    language: typescript
+    applies_to:
+      - openai_agent
+    scope: agent
+    match:
+      all:
+        - agent_uses_hosted_tool_class: [webSearchTool, fileSearchTool, hostedMcpTool]
+        - agent_kwarg_list_empty: [inputGuardrails]
+    explanation: >
+      This OpenAI Agents SDK agent authored in TypeScript wires a content-fetching
+      hosted tool (`webSearchTool`, `fileSearchTool`, or `hostedMcpTool`) but
+      configures no `inputGuardrails`. These tools pull untrusted external
+      content — web pages, indexed files, or MCP-advertised tool output — that can
+      carry prompt-injection payloads. With no input guardrail screening what
+      reaches the model, injected instructions can hijack the agent into
+      exfiltrating data or invoking other tools. The rule requires a resolved
+      hosted-tool reference, so an agent with an opaque (non-literal) options
+      object cannot trip it on the empty-list clause alone.
+    fix: >
+      Add at least one guardrail built with `defineInputGuardrail(...)` that
+      validates user input and resolved tool context before the model runs, and
+      wire it via `inputGuardrails: [...]` on the `Agent({...})` constructor. Pin
+      MCP servers to trusted endpoints and treat web and file results as untrusted
+      data.

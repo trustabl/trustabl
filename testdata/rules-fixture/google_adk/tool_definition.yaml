@@ -102,3 +102,27 @@ rules:
       module logger (`logging.getLogger(__name__).debug(...)`) so the operator
       can silence them with a level switch. If the data is meant for the
       model, return it as part of the tool's structured result instead.
+
+  - id: ADK-013
+    title: TypeScript FunctionTool has no description
+    severity: low
+    confidence: 0.8
+    language: typescript
+    applies_to:
+      - adk_function_tool
+    scope: tool
+    match:
+      has_docstring: false
+    explanation: >
+      Google ADK for TypeScript exposes a FunctionTool to the model using the
+      `description` field in its options object. The model reads that string
+      verbatim to decide whether and how to call the tool. A FunctionTool
+      constructed with no `description` (or an empty one) gives the model no
+      signal about the tool's purpose, so it will under-call the tool or call it
+      with wrong arguments. Unlike Python ADK, which derives the description from
+      the function docstring, the TypeScript SDK takes it as an explicit option,
+      so omitting it is a silent gap rather than a syntax error.
+    fix: >
+      Pass a one-sentence `description` in the `new FunctionTool({...})` options
+      that names what the tool does, the inputs it expects, and what it returns.
+      Write it for the model, not for a human reader.

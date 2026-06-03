@@ -34,3 +34,30 @@ rules:
       RestrictedPython) only if genuinely required. If the tool is intentionally
       a code-execution surface, run the evaluation in a separate single-use
       process with seccomp, no network, and no filesystem write.
+
+  - id: ADK-015
+    title: TypeScript FunctionTool body evaluates dynamic code
+    severity: high
+    confidence: 0.9
+    language: typescript
+    applies_to:
+      - adk_function_tool
+    scope: tool
+    match:
+      has_code_exec_call: true
+    explanation: >
+      This FunctionTool's `execute` handler calls `eval(...)` or constructs a
+      `new Function(...)`. When any portion of the evaluated string flows from
+      the model (directly through a tool argument, or indirectly through session
+      state the model writes), the call becomes arbitrary JavaScript execution
+      inside the agent's Node process. There is no SDK-level sandbox: the
+      evaluated code reaches `process.env` (API keys, Vertex credentials), the
+      filesystem, the network, and the `require`/`import` graph. A model that
+      controls the evaluated string controls the agent.
+    fix: >
+      Remove `eval` / `new Function` from the tool. For arithmetic or expression
+      evaluation use a constrained parser rather than the JavaScript evaluator. If
+      dynamic execution is genuinely required, run it in an isolated worker (a
+      `worker_threads` worker with no network or filesystem, or a separate
+      single-use sandboxed process) and never pass model-controlled strings into
+      the global evaluator.
