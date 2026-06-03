@@ -245,7 +245,7 @@ func buildTool(fn *sitter.Node, pf ParsedFile, kind models.ToolKind) models.Tool
 			EndLine:  astutil.NodeEndLine(fn),
 		},
 		Description:    astutil.FunctionDocstring(fn, pf.Source),
-		HasTypedParams: astutil.FunctionHasTypedParams(fn),
+		HasTypedParams: astutil.FunctionHasTypedParams(fn, pf.Source),
 		ParamNames:     filtered,
 		Facts:          facts,
 	}

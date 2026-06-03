@@ -131,3 +131,28 @@ func TestKwargValue(t *testing.T) {
 		})
 	}
 }
+
+func TestFunctionHasTypedParams(t *testing.T) {
+	cases := []struct {
+		name string
+		code string
+		want bool
+	}{
+		{"no-params", "def f():\n    pass", false},
+		{"untyped-params", "def f(a, b):\n    pass", false},
+		{"typed-param", "def f(a: int, b):\n    pass", true},
+		{"typed-self-only", "def f(self: MyClass, b):\n    pass", false},
+		{"typed-self-and-other-typed", "def f(self: MyClass, b: int):\n    pass", true},
+		{"typed-cls-only", "def f(cls: MyClass, b):\n    pass", false},
+		{"typed-cls-and-other-typed", "def f(cls: MyClass, b: int):\n    pass", true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			fn := parseFirstFunc(t, c.code)
+			got := FunctionHasTypedParams(fn, []byte(c.code))
+			if got != c.want {
+				t.Errorf("FunctionHasTypedParams = %v, want %v for code:\n%s", got, c.want, c.code)
+			}
+		})
+	}
+}
