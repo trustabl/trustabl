@@ -158,6 +158,16 @@ func runScan(target string, f scanFlags) error {
 	}
 	done := make(chan scanOutcome, 1)
 	go func() {
+		// Convert a panic in the scan into a clean error on the channel. Without
+		// this, an unrecovered panic in this goroutine tears down the whole
+		// process with a raw stack trace; here it surfaces as a normal scan
+		// failure (exit 2) and lets the TTY reporter shut down first.
+		defer func() {
+			if r := recover(); r != nil {
+				rep.Done()
+				done <- scanOutcome{err: fmt.Errorf("scan panicked: %v", r)}
+			}
+		}()
 		result, err := resolveAndScan(&cfg, f, rep)
 		rep.Done()
 		done <- scanOutcome{result, err}
