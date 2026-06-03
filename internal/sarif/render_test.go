@@ -316,6 +316,56 @@ func TestRender_ShapesACompleteDocument(t *testing.T) {
 	}
 }
 
+func TestRender_SkippedFilesEmitWarningNotification(t *testing.T) {
+	// Regression (TR-156): incomplete parse coverage must be visible in SARIF as
+	// a warning notification; ExecutionSuccessful stays true (the run completed).
+	sr := models.ScanResult{
+		ScanID:   "scan_cov",
+		Repo:     "C:/work/myrepo",
+		Manifest: models.ScanManifest{RepoRoot: "C:/work/myrepo"},
+		Coverage: models.Coverage{
+			FilesParsed:  8,
+			FilesSkipped: 2,
+			SkippedFiles: []string{"a.py", "b.ts"},
+		},
+	}
+	out := Render(sr, "0.0.0-test")
+	var log Log
+	if err := json.Unmarshal(out, &log); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	inv := log.Runs[0].Invocations[0]
+	if !inv.ExecutionSuccessful {
+		t.Error("ExecutionSuccessful should stay true; coverage is signalled via a warning, not a run failure")
+	}
+	var warn *Notification
+	for i := range inv.ToolExecutionNotifications {
+		if inv.ToolExecutionNotifications[i].Level == "warning" {
+			warn = &inv.ToolExecutionNotifications[i]
+		}
+	}
+	if warn == nil {
+		t.Fatalf("expected a warning notification for skipped files, got %+v", inv.ToolExecutionNotifications)
+	}
+	if !strings.Contains(warn.Message.Text, "2 of 10") {
+		t.Errorf("warning text = %q, want it to mention 2 of 10 files", warn.Message.Text)
+	}
+}
+
+func TestRender_NoSkippedFilesNoWarning(t *testing.T) {
+	sr := models.ScanResult{Manifest: models.ScanManifest{RepoRoot: "."}}
+	out := Render(sr, "0.0.0-test")
+	var log Log
+	if err := json.Unmarshal(out, &log); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	for _, n := range log.Runs[0].Invocations[0].ToolExecutionNotifications {
+		if n.Level == "warning" {
+			t.Errorf("clean coverage must not emit a warning notification: %+v", n)
+		}
+	}
+}
+
 func TestRender_RuleCatalogSortedAndIndexed(t *testing.T) {
 	// Determinism: rules sorted by ID; result.ruleIndex must point at the
 	// matching sorted entry.

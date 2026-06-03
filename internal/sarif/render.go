@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/url"
 	"sort"
 	"strings"
@@ -314,9 +315,29 @@ func buildRun(sr models.ScanResult, toolVersion string) Run {
 	}
 
 	// Notifications.
-	notifications := make([]Notification, 0, len(notifyFindings))
+	notifications := make([]Notification, 0, len(notifyFindings)+1)
 	for _, f := range notifyFindings {
 		notifications = append(notifications, notificationFromFinding(f, indexByID[f.RuleID]))
+	}
+	// Surface incomplete parse coverage as a warning notification. We do NOT
+	// flip ExecutionSuccessful to false: per the SARIF spec that means the run
+	// did not complete (it crashed/errored), whereas here the run finished and
+	// produced results — some inputs just could not be analyzed. The warning is
+	// the honest signal so a consumer never reads a partial scan as a clean,
+	// complete one. Appended last; the META notifications above are already in
+	// deterministic order, and skipped_files is pre-sorted.
+	if sr.Coverage.FilesSkipped > 0 {
+		notifications = append(notifications, Notification{
+			Level: "warning",
+			Message: Message{Text: fmt.Sprintf(
+				"%d of %d source files could not be parsed and were skipped; findings may be incomplete",
+				sr.Coverage.FilesSkipped, sr.Coverage.FilesParsed+sr.Coverage.FilesSkipped)},
+			Properties: map[string]any{
+				"files_skipped": sr.Coverage.FilesSkipped,
+				"files_parsed":  sr.Coverage.FilesParsed,
+				"skipped_files": sr.Coverage.SkippedFiles,
+			},
+		})
 	}
 
 	run := Run{
@@ -335,6 +356,9 @@ func buildRun(sr models.ScanResult, toolVersion string) Run {
 		}},
 		AutomationDetails: &AutomationDetails{ID: sr.ScanID},
 		Invocations: []Invocation{{
+			// True: the run completed and produced results. Incomplete *coverage*
+			// (skipped files) is signalled via a warning notification above, not
+			// by claiming the run failed. See the coverage-warning block.
 			ExecutionSuccessful:        true,
 			ToolExecutionNotifications: notifications,
 		}},
