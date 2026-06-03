@@ -210,6 +210,34 @@ rules:
 	}
 }
 
+// TestLoad_RejectsEmptyMatchAtToolScope guards the footgun side of the empty
+// match: at a per-instance scope an empty match fires on every tool/agent/
+// subagent, which is almost always a forgotten predicate. The loader must reject
+// it (only repo scope, the singleton pattern, may have an empty match).
+func TestLoad_RejectsEmptyMatchAtToolScope(t *testing.T) {
+	const emptyToolMatch = `
+policy:
+  id: test
+  name: Test
+  category: openai_sdk
+  description: x
+rules:
+  - id: TEST-301
+    title: Tool rule with no predicate body
+    scope: tool
+    severity: medium
+    confidence: 0.8
+    applies_to: [openai_tool]
+    match: {}
+    explanation: x
+    fix: x
+`
+	_, err := rules.Load(makeFS(map[string]string{"bad.yaml": emptyToolMatch}))
+	if err == nil || !strings.Contains(err.Error(), "empty match") {
+		t.Fatalf("expected empty-match-at-tool-scope rejection, got %v", err)
+	}
+}
+
 // TestLoad_AcceptsInScopePredicates is the companion: a rule using only its own
 // scope's predicates (plus scope-agnostic combinators) loads cleanly.
 func TestLoad_AcceptsInScopePredicates(t *testing.T) {

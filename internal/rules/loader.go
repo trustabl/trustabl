@@ -163,6 +163,15 @@ func Load(fsys fs.FS) ([]PolicyFile, error) {
 				if bad := rule.Match.outOfScopePredicates(rule.Scope); len(bad) > 0 {
 					errs = append(errs, fmt.Errorf("%s: match predicate(s) [%s] are not valid for scope %q", tag, strings.Join(bad, ", "), rule.Scope))
 				}
+				// An empty top-level match is vacuously true, so it fires on EVERY
+				// instance of its applies_to kinds. That is only meaningful at repo
+				// scope (the "fires once, gated solely by applies_to" singleton
+				// pattern). At a per-instance scope it is a finding-spam footgun —
+				// almost always a forgotten predicate — so reject it rather than
+				// flooding every tool/agent/subagent with the finding.
+				if rule.Scope != models.ScopeRepo && rule.Match.isEmpty() {
+					errs = append(errs, fmt.Errorf("%s: empty match is only allowed at repo scope; a %s-scoped rule with no predicate fires on every %s", tag, rule.Scope, rule.Scope))
+				}
 			}
 			// Scope-INDEPENDENT checks: these do not depend on the rule's scope,
 			// so they run unconditionally — a bad token or degenerate combinator
