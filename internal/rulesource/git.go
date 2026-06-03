@@ -106,14 +106,22 @@ func cloneInto(ctx context.Context, url string, refName plumbing.ReferenceName, 
 
 	dest := packDir(cacheDir, sha)
 	// A concurrent process may have already materialized this exact pack. A
-	// pack is immutable once named by its commit, so an existing dest is
-	// authoritative — keep it and discard our temp clone.
-	if _, statErr := os.Stat(dest); statErr == nil {
+	// COMPLETE pack is immutable once named by its commit, so keep it and
+	// discard our temp clone. A dest that exists WITHOUT the completeness marker
+	// is a partial pack (e.g. an interrupted prune) — remove it so our fresh,
+	// complete clone can take its place rather than being silently trusted.
+	if packExists(cacheDir, sha) {
 		return sha, nil
 	}
+	_ = os.RemoveAll(dest)
+	// Write the sentinel into the temp clone as the LAST step before the rename,
+	// so the installed pack atomically appears complete (dir + marker together).
+	if err := markPackComplete(tmp); err != nil {
+		return "", &fatalResolveError{fmt.Errorf("mark rules pack complete: %w", err)}
+	}
 	if err := os.Rename(tmp, dest); err != nil {
-		if _, statErr := os.Stat(dest); statErr == nil {
-			return sha, nil // lost the rename race; existing pack is the same commit
+		if packExists(cacheDir, sha) {
+			return sha, nil // lost the rename race; existing complete pack is the same commit
 		}
 		return "", &fatalResolveError{fmt.Errorf("install rules pack: %w", err)}
 	}

@@ -108,7 +108,11 @@ Resolution order:
    resolve returns, so deleting it mid-read would fail that scan (notably on
    Windows). Fresh entries are therefore spared; only genuinely stale packs and
    abandoned temp-clone dirs from prior runs are removed. The cache still
-   converges to one pack between runs because the same SHA is reused.
+   converges to one pack between runs because the same SHA is reused. Each
+   installed pack carries a `.complete` sentinel written as the last step of the
+   clone (before the atomic rename); `packExists` requires it, and pruning
+   deletes the sentinel *first*, so a pack left half-deleted by an interrupted
+   prune is markerless and re-cloned rather than trusted as a thinned ruleset.
 
 The pack's `manifest.yaml` declares a `schema_version`; resolution rejects a
 pack whose version is incompatible with the engine's

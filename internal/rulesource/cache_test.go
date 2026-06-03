@@ -23,8 +23,16 @@ func TestPackExists(t *testing.T) {
 	if err := os.MkdirAll(packDir(cache, "abc123"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	// A directory without the completeness marker is a partial pack and must be
+	// reported absent.
+	if packExists(cache, "abc123") {
+		t.Error("packExists true for a markerless (partial) pack")
+	}
+	if err := markPackComplete(packDir(cache, "abc123")); err != nil {
+		t.Fatal(err)
+	}
 	if !packExists(cache, "abc123") {
-		t.Error("packExists false for present pack")
+		t.Error("packExists false for a complete (marked) pack")
 	}
 }
 
@@ -32,6 +40,9 @@ func TestPruneCache_KeepsOnlyCurrent(t *testing.T) {
 	cache := t.TempDir()
 	for _, sha := range []string{"aaa", "bbb", "ccc"} {
 		if err := os.MkdirAll(packDir(cache, sha), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := markPackComplete(packDir(cache, sha)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -78,7 +89,12 @@ func TestPruneCache_GraceWindowProtectsRecentPacks(t *testing.T) {
 		if err := os.MkdirAll(packDir(cache, sha), 0o755); err != nil {
 			t.Fatal(err)
 		}
+		if err := markPackComplete(packDir(cache, sha)); err != nil {
+			t.Fatal(err)
+		}
 	}
+	// Backdate "stale" AFTER writing its marker, so the dir mtime (which the
+	// grace window reads) is genuinely old.
 	old := time.Now().Add(-2 * pruneGraceWindow)
 	if err := os.Chtimes(packDir(cache, "stale"), old, old); err != nil {
 		t.Fatal(err)

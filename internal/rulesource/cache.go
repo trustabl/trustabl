@@ -23,10 +23,36 @@ func packDir(cacheDir, sha string) string {
 	return filepath.Join(cacheDir, sha)
 }
 
-// packExists reports whether a pack for sha is already cloned in the cache.
+// completeMarker is the sentinel file written as the final step of installing a
+// pack (see cloneInto). packExists requires it, and pruneCache deletes it FIRST
+// (before RemoveAll), so a pack left half-deleted by an interrupted prune has no
+// marker and is treated as absent — re-cloned — rather than trusted as a
+// silently-thinned ruleset. Not a .yaml, so the loader's walk ignores it.
+const completeMarker = ".complete"
+
+// markPackComplete writes the completeness sentinel into packDirPath. Called on
+// the temp clone dir just before the atomic rename, so the installed pack
+// carries the marker.
+func markPackComplete(packDirPath string) error {
+	f, err := os.Create(filepath.Join(packDirPath, completeMarker))
+	if err != nil {
+		return err
+	}
+	return f.Close()
+}
+
+// packExists reports whether a *complete* pack for sha is cached: the directory
+// exists AND carries the completeness marker. A markerless directory is a
+// partial pack (e.g. an interrupted prior prune) and is reported absent so the
+// caller re-clones rather than loading a thinned ruleset.
 func packExists(cacheDir, sha string) bool {
-	info, err := os.Stat(packDir(cacheDir, sha))
-	return err == nil && info.IsDir()
+	dir := packDir(cacheDir, sha)
+	info, err := os.Stat(dir)
+	if err != nil || !info.IsDir() {
+		return false
+	}
+	_, err = os.Stat(filepath.Join(dir, completeMarker))
+	return err == nil
 }
 
 // currentFile names the cache's "current" pointer — a text file holding the
@@ -71,6 +97,10 @@ func pruneCache(cacheDir, keep string) {
 		if info, err := e.Info(); err == nil && time.Since(info.ModTime()) < pruneGraceWindow {
 			continue
 		}
+		// Delete the completeness sentinel FIRST: if the subsequent RemoveAll is
+		// interrupted, the remnant has no marker and packExists distrusts it
+		// (re-clone) instead of loading a half-deleted pack.
+		_ = os.Remove(filepath.Join(cacheDir, e.Name(), completeMarker))
 		_ = os.RemoveAll(filepath.Join(cacheDir, e.Name()))
 	}
 }
