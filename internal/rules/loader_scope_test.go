@@ -46,6 +46,69 @@ rules:
 	}
 }
 
+// TestLoad_ScopeIndependentChecksRunOnInvalidScope proves the batch-all-errors
+// intent (TR-154): a bad repo_has_sdk_in_code token is reported even when the
+// rule's scope is invalid, because that check does not depend on the scope.
+func TestLoad_ScopeIndependentChecksRunOnInvalidScope(t *testing.T) {
+	const badScopeAndToken = `
+policy:
+  id: test
+  name: Test
+  category: openai_sdk
+  description: x
+rules:
+  - id: TEST-001
+    title: Invalid scope plus a category token where an SDK token is required
+    scope: bogus
+    severity: high
+    confidence: 0.8
+    applies_to: [openai_agents]
+    match:
+      repo_has_sdk_in_code: [claude_sdk]
+    explanation: x
+    fix: x
+`
+	_, err := rules.Load(makeFS(map[string]string{"bad.yaml": badScopeAndToken}))
+	if err == nil {
+		t.Fatal("expected errors, got nil")
+	}
+	if !strings.Contains(err.Error(), "unknown scope") {
+		t.Errorf("expected the unknown-scope error, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "repo_has_sdk_in_code") {
+		t.Errorf("a bad SDK token must be reported even with an invalid scope, got: %v", err)
+	}
+}
+
+// TestLoad_ScopeRequiredMessageListsSubagent guards the message fix (TR-154):
+// the required-scope error must list all four scopes, including subagent.
+func TestLoad_ScopeRequiredMessageListsSubagent(t *testing.T) {
+	const noScope = `
+policy:
+  id: test
+  name: Test
+  category: claude_sdk
+  description: x
+rules:
+  - id: TEST-001
+    title: Missing scope
+    severity: low
+    confidence: 0.8
+    applies_to: [claude_sdk_tool]
+    match:
+      has_docstring: true
+    explanation: x
+    fix: x
+`
+	_, err := rules.Load(makeFS(map[string]string{"bad.yaml": noScope}))
+	if err == nil {
+		t.Fatal("expected error for missing scope, got nil")
+	}
+	if !strings.Contains(err.Error(), "subagent") {
+		t.Errorf("required-scope message must list subagent, got: %v", err)
+	}
+}
+
 // TestLoad_RejectsOutOfScopePredicateNested proves the check recurses into
 // combinators — an out-of-scope predicate hidden under not:/all:/any: is still
 // dead at evaluation and must be rejected.

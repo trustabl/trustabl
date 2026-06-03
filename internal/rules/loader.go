@@ -135,10 +135,15 @@ func Load(fsys fs.FS) ([]PolicyFile, error) {
 				}
 			}
 			if rule.Scope == "" {
-				errs = append(errs, fmt.Errorf("%s: scope is required (tool|agent|repo)", tag))
+				errs = append(errs, fmt.Errorf("%s: scope is required (tool|agent|repo|subagent)", tag))
 			} else if !models.ValidScope(rule.Scope) {
 				errs = append(errs, fmt.Errorf("%s: unknown scope %q (allowed: tool, agent, repo, subagent)", tag, rule.Scope))
 			}
+			// Scope-DEPENDENT checks: these need a known scope to evaluate
+			// (validAppliesToForScope and outOfScopePredicates both take the
+			// scope as input), so they can only run once the scope is valid. A
+			// rule with a broken scope surfaces its predicate errors on the next
+			// run, after the scope typo is fixed.
 			if models.ValidScope(rule.Scope) {
 				for _, kind := range rule.AppliesTo {
 					if !validAppliesToForScope(rule.Scope, kind) {
@@ -151,19 +156,23 @@ func Load(fsys fs.FS) ([]PolicyFile, error) {
 				if bad := rule.Match.outOfScopePredicates(rule.Scope); len(bad) > 0 {
 					errs = append(errs, fmt.Errorf("%s: match predicate(s) [%s] are not valid for scope %q", tag, strings.Join(bad, ", "), rule.Scope))
 				}
-				// repo_has_sdk_in_code matches RepoInventory.SDKsDetected, which
-				// holds SDK-enum tokens (claude_agent_sdk, openai_agents, ...) —
-				// NOT the category tokens used by applies_to (claude_sdk, ...).
-				// A category token here silently never matches, so the rule
-				// never fires. Reject it at load time.
-				for _, sdk := range rule.Match.repoSDKInCodeValues() {
-					if !validRepoHasSDKInCode(sdk) {
-						errs = append(errs, fmt.Errorf("%s: repo_has_sdk_in_code value %q is not a known SDK token (want one of: claude_agent_sdk, openai_agents, google_adk, mcp, openshell)", tag, sdk))
-					}
+			}
+			// Scope-INDEPENDENT checks: these do not depend on the rule's scope,
+			// so they run unconditionally — a bad token or degenerate combinator
+			// must still be reported when the scope is missing/invalid, honoring
+			// the batch-all-errors-in-one-run intent.
+			//
+			// repo_has_sdk_in_code matches RepoInventory.SDKsDetected, which holds
+			// SDK-enum tokens (claude_agent_sdk, openai_agents, ...) — NOT the
+			// category tokens used by applies_to (claude_sdk, ...). A category
+			// token here silently never matches, so the rule never fires.
+			for _, sdk := range rule.Match.repoSDKInCodeValues() {
+				if !validRepoHasSDKInCode(sdk) {
+					errs = append(errs, fmt.Errorf("%s: repo_has_sdk_in_code value %q is not a known SDK token (want one of: claude_agent_sdk, openai_agents, google_adk, mcp, openshell)", tag, sdk))
 				}
 			}
-			// Scope-agnostic: a degenerate combinator (empty any/all list, or
-			// not: over an empty expression) is an authoring mistake, not intent.
+			// A degenerate combinator (empty any/all list, or not: over an empty
+			// expression) is an authoring mistake, not intent.
 			if degen := rule.Match.degenerateCombinators(); len(degen) > 0 {
 				errs = append(errs, fmt.Errorf("%s: degenerate match combinator(s): %s", tag, strings.Join(degen, ", ")))
 			}
