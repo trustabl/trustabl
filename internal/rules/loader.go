@@ -151,6 +151,16 @@ func Load(fsys fs.FS) ([]PolicyFile, error) {
 				if bad := rule.Match.outOfScopePredicates(rule.Scope); len(bad) > 0 {
 					errs = append(errs, fmt.Errorf("%s: match predicate(s) [%s] are not valid for scope %q", tag, strings.Join(bad, ", "), rule.Scope))
 				}
+				// repo_has_sdk_in_code matches RepoInventory.SDKsDetected, which
+				// holds SDK-enum tokens (claude_agent_sdk, openai_agents, ...) —
+				// NOT the category tokens used by applies_to (claude_sdk, ...).
+				// A category token here silently never matches, so the rule
+				// never fires. Reject it at load time.
+				for _, sdk := range rule.Match.repoSDKInCodeValues() {
+					if !validRepoHasSDKInCode(sdk) {
+						errs = append(errs, fmt.Errorf("%s: repo_has_sdk_in_code value %q is not a known SDK token (want one of: claude_agent_sdk, openai_agents, google_adk, mcp, openshell)", tag, sdk))
+					}
+				}
 			}
 			// Scope-agnostic: a degenerate combinator (empty any/all list, or
 			// not: over an empty expression) is an authoring mistake, not intent.
@@ -175,6 +185,19 @@ func Load(fsys fs.FS) ([]PolicyFile, error) {
 		return nil, errors.Join(errs...)
 	}
 	return policies, nil
+}
+
+// validRepoHasSDKInCode reports whether tok is a value RepoInventory.SDKsDetected
+// can actually hold. These are the SDK-enum tokens (plus the "openshell"
+// risk-surface label handled specially by PredRepoHasSDKInCode), deliberately
+// distinct from the category tokens accepted by applies_to at repo scope.
+func validRepoHasSDKInCode(tok string) bool {
+	switch tok {
+	case string(models.SDKClaudeAgentSDK), string(models.SDKOpenAIAgents),
+		string(models.SDKGoogleADK), string(models.SDKMCP), "openshell":
+		return true
+	}
+	return false
 }
 
 func validAppliesToForScope(scope models.Scope, kind string) bool {

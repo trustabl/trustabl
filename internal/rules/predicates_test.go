@@ -634,44 +634,6 @@ def get_invoice(id: str) -> dict:
 	}
 }
 
-// ─── call_with_kwarg_value ────────────────────────────────────────────────────
-
-func TestPred_CallWithKwargValue_True(t *testing.T) {
-	tool, pf := parsePy(t, `
-import subprocess
-def run(name: str) -> str:
-    """Run."""
-    subprocess.run(f"cmd {name}", shell=True)
-    return "done"
-`, models.KindShellInvocation)
-	expr := rules.CallWithKwargValueExpr{
-		CalleePrefix: "subprocess.",
-		Kwarg:        "shell",
-		Value:        "True",
-	}
-	if !rules.PredCallWithKwargValue(expr, tool, pf) {
-		t.Error("expected CallWithKwargValue true for shell=True")
-	}
-}
-
-func TestPred_CallWithKwargValue_False(t *testing.T) {
-	tool, pf := parsePy(t, `
-import subprocess
-def run(name: str) -> str:
-    """Run."""
-    subprocess.run(["cmd", name])
-    return "done"
-`, models.KindShellInvocation)
-	expr := rules.CallWithKwargValueExpr{
-		CalleePrefix: "subprocess.",
-		Kwarg:        "shell",
-		Value:        "True",
-	}
-	if rules.PredCallWithKwargValue(expr, tool, pf) {
-		t.Error("expected CallWithKwargValue false for list-form call")
-	}
-}
-
 // ─── tool decorator predicates ────────────────────────────────────────────────
 
 func TestPredToolDecoratorKwargValue(t *testing.T) {
@@ -807,30 +769,26 @@ func TestPredAgentUsesToolKind(t *testing.T) {
 	if rules.PredAgentUsesToolKind([]string{"shell_invocation"}, webOnly, inv) {
 		t.Error("expected hosted WebSearchTool NOT to match shell_invocation")
 	}
-}
 
-func TestPredAgentHandoffToClass(t *testing.T) {
-	sub := &models.AgentDef{Class: "Agent", Language: models.LanguagePython}
-	a := models.AgentDef{Language: models.LanguagePython, HandoffRefs: []models.AgentRef{{Resolved: sub}}}
-	if !rules.PredAgentHandoffToClass([]string{"Agent"}, a) {
-		t.Error("expected match")
+	// E3: a decorated tool (Kind openai_tool) that shells out carries a
+	// structural shells_out fact; shell_invocation must match it even though
+	// its Kind is not shell_invocation.
+	shellDecorated := &models.ToolDef{Kind: models.KindOpenAITool,
+		Facts: map[string]string{"shells_out": "true"}}
+	aDec := models.AgentDef{Language: models.LanguagePython,
+		ToolRefs: []models.ToolRef{{Resolved: shellDecorated}}}
+	if !rules.PredAgentUsesToolKind([]string{"shell_invocation"}, aDec, inv) {
+		t.Error("expected decorated tool with shells_out fact to match shell_invocation")
 	}
-	if rules.PredAgentHandoffToClass([]string{"SandboxAgent"}, a) {
-		t.Error("expected no match")
+	pureDecorated := &models.ToolDef{Kind: models.KindOpenAITool, Facts: map[string]string{}}
+	aPure := models.AgentDef{Language: models.LanguagePython,
+		ToolRefs: []models.ToolRef{{Resolved: pureDecorated}}}
+	if rules.PredAgentUsesToolKind([]string{"shell_invocation"}, aPure, inv) {
+		t.Error("expected non-shelling decorated tool NOT to match shell_invocation")
 	}
 }
 
 // ─── repo predicates ──────────────────────────────────────────────────────────
-
-func TestPredRepoHasSDKDep(t *testing.T) {
-	p := models.RepoProfile{SDKDeps: []models.SDKDep{{Name: "openai-agents"}}}
-	if !rules.PredRepoHasSDKDep([]string{"openai-agents"}, p) {
-		t.Error("expected match")
-	}
-	if rules.PredRepoHasSDKDep([]string{"langgraph"}, p) {
-		t.Error("expected no match")
-	}
-}
 
 func TestPredRepoHasSDKInCode(t *testing.T) {
 	inv := models.RepoInventory{SDKsDetected: []models.SDK{models.SDKOpenAIAgents}}

@@ -270,6 +270,60 @@ rules:
 	}
 }
 
+func TestLoad_RejectsCategoryTokenInRepoHasSDKInCode(t *testing.T) {
+	// repo_has_sdk_in_code matches SDK-enum tokens (claude_agent_sdk), NOT the
+	// category token (claude_sdk) used by applies_to. A category token here
+	// silently never matches; the loader must reject it.
+	fs := makeFS(map[string]string{
+		"test/rule.yaml": `
+policy:
+  id: test
+  name: Test
+  category: claude_sdk
+rules:
+  - id: TEST-201
+    title: Repo rule with wrong SDK token
+    scope: repo
+    severity: low
+    confidence: 0.5
+    applies_to: [claude_sdk]
+    match:
+      repo_has_sdk_in_code: [claude_sdk]
+    explanation: x
+    fix: x
+`,
+	})
+	_, err := rules.Load(fs)
+	if err == nil || !strings.Contains(err.Error(), "repo_has_sdk_in_code") {
+		t.Fatalf("expected repo_has_sdk_in_code token error, got %v", err)
+	}
+}
+
+func TestLoad_AcceptsSDKEnumTokenInRepoHasSDKInCode(t *testing.T) {
+	fs := makeFS(map[string]string{
+		"test/rule.yaml": `
+policy:
+  id: test
+  name: Test
+  category: claude_sdk
+rules:
+  - id: TEST-201
+    title: Repo rule with correct SDK token
+    scope: repo
+    severity: low
+    confidence: 0.5
+    applies_to: [claude_sdk]
+    match:
+      repo_has_sdk_in_code: [claude_agent_sdk]
+    explanation: x
+    fix: x
+`,
+	})
+	if _, err := rules.Load(fs); err != nil {
+		t.Fatalf("expected clean load for valid SDK-enum token, got %v", err)
+	}
+}
+
 func TestLoad_SkipsManifestYAML(t *testing.T) {
 	// A pack FS with a root manifest.yaml alongside a real policy file. Load
 	// must ignore manifest.yaml, not try to decode it as a policy.

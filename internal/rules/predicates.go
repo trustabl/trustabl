@@ -41,6 +41,13 @@ func PredHasTryExcept(t models.ToolDef, pf analysis.ParsedFile) bool {
 }
 
 func PredHasShellCall(t models.ToolDef, pf analysis.ParsedFile) bool {
+	// TypeScript tools carry the signal as a discovery-computed fact (set by
+	// tsHandlerFacts for child_process / exec / spawn callees); the Python AST
+	// walk below does not understand the TS grammar. Branch on language so the
+	// Python path stays byte-identical.
+	if t.Language == models.LanguageTypeScript {
+		return t.Facts["shells_out"] == "true"
+	}
 	root := analysis.FindFunctionNode(t, pf)
 	if root == nil {
 		return false
@@ -139,6 +146,12 @@ func PredHasPrintCall(t models.ToolDef, pf analysis.ParsedFile) bool {
 }
 
 func PredHasWriteCall(t models.ToolDef, pf analysis.ParsedFile) bool {
+	// TypeScript tools carry the signal as a discovery-computed fact (set by
+	// tsHandlerFacts for writeFile / writeFileSync / createWriteStream /
+	// appendFile callees). Branch on language so the Python path is unchanged.
+	if t.Language == models.LanguageTypeScript {
+		return t.Facts["writes_fs"] == "true"
+	}
 	root := analysis.FindFunctionNode(t, pf)
 	if root == nil {
 		return false
@@ -348,67 +361,6 @@ func PredCallWithoutKwarg(expr CallWithoutKwargExpr, t models.ToolDef, pf analys
 		value, present := astutil.KwargValue(n, pf.Source, expr.Missing)
 		if !present || value == "None" {
 			found = true
-		}
-		return !found
-	})
-	return found
-}
-
-func PredCallWithKwargValue(expr CallWithKwargValueExpr, t models.ToolDef, pf analysis.ParsedFile) bool {
-	root := analysis.FindFunctionNode(t, pf)
-	if root == nil {
-		return false
-	}
-	calleeSet := make(map[string]struct{}, len(expr.Callees))
-	for _, c := range expr.Callees {
-		calleeSet[c] = struct{}{}
-	}
-	found := false
-	astutil.Walk(root, func(n *sitter.Node) bool {
-		if found {
-			return false
-		}
-		if n.Type() != "call" {
-			return true
-		}
-		fn := n.ChildByFieldName("function")
-		if fn == nil {
-			return true
-		}
-		callee := astutil.NodeText(fn, pf.Source)
-		matches := false
-		if _, ok := calleeSet[callee]; ok {
-			matches = true
-		}
-		if !matches && expr.CalleePrefix != "" && strings.HasPrefix(callee, expr.CalleePrefix) {
-			matches = true
-		}
-		if !matches {
-			return true
-		}
-		args := n.ChildByFieldName("arguments")
-		if args == nil {
-			return true
-		}
-		// Only the call's DIRECT keyword arguments count — descending into a
-		// nested argument's own call would attribute its kwargs to this call
-		// (the same nested-attribution bug fixed in astutil.KwargValue).
-		argc := int(args.NamedChildCount())
-		for i := 0; i < argc; i++ {
-			kn := args.NamedChild(i)
-			if kn.Type() != "keyword_argument" {
-				continue
-			}
-			kname := kn.ChildByFieldName("name")
-			kval := kn.ChildByFieldName("value")
-			if kname == nil || kval == nil {
-				continue
-			}
-			if astutil.NodeText(kname, pf.Source) == expr.Kwarg &&
-				astutil.NodeText(kval, pf.Source) == expr.Value {
-				found = true
-				break
-			}
 		}
 		return !found
 	})
@@ -663,6 +615,15 @@ func PredAgentUsesToolKind(kinds []string, a models.AgentDef, inv models.RepoInv
 			if string(ref.Resolved.Kind) == k {
 				return true
 			}
+			// A decorated tool (Kind openai_tool / claude_sdk_tool /
+			// adk_function_tool) that shells out is not Kind shell_invocation,
+			// but its body still gives the agent shell reach. Discovery stamps
+			// a structural shells_out fact (Python in buildTool, TS in
+			// tsHandlerFacts); honor it so shell_invocation also matches the
+			// common @function_tool-wraps-subprocess shape.
+			if k == "shell_invocation" && ref.Resolved.Facts["shells_out"] == "true" {
+				return true
+			}
 		}
 	}
 	// Hosted tools carry no ToolDef; map their class to a synthetic kind so a
@@ -691,20 +652,6 @@ func PredAgentGrantsBuiltinTool(names []string, a models.AgentDef) bool {
 		got := strings.Trim(ref.Name, `"'`)
 		for _, want := range names {
 			if got == want {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func PredAgentHandoffToClass(classes []string, a models.AgentDef) bool {
-	for _, ref := range a.HandoffRefs {
-		if ref.Resolved == nil {
-			continue
-		}
-		for _, c := range classes {
-			if ref.Resolved.Class == c {
 				return true
 			}
 		}
@@ -829,17 +776,6 @@ func PredSubagentGrantsTool(s models.SubagentDef, names []string) bool {
 }
 
 // ─── repo predicates ──────────────────────────────────────────────────────────
-
-func PredRepoHasSDKDep(names []string, p models.RepoProfile) bool {
-	for _, dep := range p.SDKDeps {
-		for _, n := range names {
-			if dep.Name == n {
-				return true
-			}
-		}
-	}
-	return false
-}
 
 func PredRepoHasSDKInCode(sdks []string, inv models.RepoInventory) bool {
 	for _, want := range sdks {

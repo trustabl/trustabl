@@ -46,10 +46,7 @@ rules:
       - openai_tool
     scope: tool
     match:
-      has_body_text:
-        - eval(
-        - new Function(
-        - Function(
+      has_code_exec_call: true
     explanation: >
       A TypeScript tool body invokes `eval()` or constructs a `new Function(...)`
       from a string. When any portion of that string flows from the model
@@ -62,9 +59,7 @@ rules:
       globalThis, prototype chains, and the platform API surface unless
       explicitly stripped. The miner-flagged `calculate` tool in the Claude
       SDK template feeds a tool argument straight into `eval` to act as a math
-      evaluator — the canonical worst-case shape. Provisional: this rule loads
-      and validates today but will not fire until the engine's TypeScript tool
-      parser ships.
+      evaluator — the canonical worst-case shape.
     fix: >
       Remove `eval` and `new Function` from the tool. For arithmetic, parse
       the input with a hardened expression library (`mathjs`, `expr-eval`)

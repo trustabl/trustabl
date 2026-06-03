@@ -43,7 +43,7 @@ func tsHandlerFacts(handler *sitter.Node, src []byte) map[string]string {
 			if urlArgIsDynamic(n, src) {
 				out["dynamic_url"] = "true"
 			}
-		case "execSync", "exec", "spawn", "spawnSync", "fork",
+		case "execSync", "exec", "execFile", "execFileSync", "spawn", "spawnSync", "fork",
 			// Namespace-import / require shape: `child_process.exec(...)` from
 			// `import * as child_process` or `const child_process = require(...)`.
 			// The bare cases above catch the destructured `const { exec } = ...`.
@@ -52,6 +52,15 @@ func tsHandlerFacts(handler *sitter.Node, src []byte) map[string]string {
 			"child_process.execFile", "child_process.execFileSync",
 			"child_process.fork":
 			out["shells_out"] = "true"
+		case "writeFile", "writeFileSync", "appendFile", "appendFileSync",
+			"createWriteStream",
+			// Namespace-import shape: `fs.writeFileSync(...)` /
+			// `fsPromises.writeFile(...)`. The bare cases above catch the
+			// destructured `const { writeFileSync } = require("fs")` form.
+			"fs.writeFile", "fs.writeFileSync", "fs.appendFile",
+			"fs.appendFileSync", "fs.createWriteStream",
+			"fsPromises.writeFile", "fsPromises.appendFile":
+			out["writes_fs"] = "true"
 		case "eval":
 			// Bare `eval` callee only — callee text for `retrieval(x)` is
 			// "retrieval", so this exact-match eliminates the false-positive.

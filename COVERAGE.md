@@ -169,7 +169,7 @@ not fire for it.
 
 | Gap | Effort sketch |
 |---|---|
-| **Claude SDK TypeScript rules** (`@anthropic-ai/claude-agent-sdk`) | Shipped: tool CSDK-010 (shell), 011 (eval/new Function), 012 (fs-write), 013 (SSRF/dynamic URL), 014 (no description), 016 (mutating tool no idempotency key); agent CSDK-120 (permissionMode bypass), 130/131 (`query()` main-thread agent grants Bash / write-fetch built-ins). The TS predicate machinery is in place (`has_body_text` line-span fallback, `dynamic_url`/`code_exec` facts, `has_dynamic_url_call`/`has_code_exec_call` language branches) and covered by the per-rule fire/silent harness. Remaining breadth-parity gaps vs the Python CSDK set: typed-params (no viable TS predicate today, see note), network timeout (uses `has_body_text` substring), path-safety, error-handling. The `query()` main-thread agent surface (`claude_query_main`) is now audited by 130/131, which nothing previously checked |
+| **Claude SDK TypeScript rules** (`@anthropic-ai/claude-agent-sdk`) | Shipped: tool CSDK-010 (shell), 011 (eval/new Function), 012 (fs-write), 013 (SSRF/dynamic URL), 014 (no description), 016 (mutating tool no idempotency key); agent CSDK-120 (permissionMode bypass), 130/131 (`query()` main-thread agent grants Bash / write-fetch built-ins). The TS predicate machinery is in place (structural `shells_out`/`writes_fs`/`dynamic_url`/`code_exec` facts read by `has_shell_call`/`has_write_call`/`has_dynamic_url_call`/`has_code_exec_call` language branches, plus a `has_body_text` line-span substring fallback kept only for inherently *textual-absence* checks) and covered by the per-rule fire/silent harness. CSDK-010 (shell) and CSDK-012 (fs-write) now match structurally, not by substring. Remaining breadth-parity gaps vs the Python CSDK set: typed-params (no viable TS predicate today, see note), network timeout and idempotency (intentionally still `has_body_text` — they test for the *absence* of a textual marker, which has no call-shape), error-handling. The `query()` main-thread agent surface (`claude_query_main`) is now audited by 130/131, which nothing previously checked |
 | **MCP cross-language** (TS, Rust, Go) | Two prerequisites are missing today: (1) MCP dep-scan needles in `internal/ingestion/normalizer.go` — currently only `claude-agent-sdk` / `claude_agent_sdk` / `openai-agents` / `@openai/agents` / `google-adk` / `@google/adk` are matched; there is no `@modelcontextprotocol/sdk` (npm), no `rmcp` / `anthropic-mcp` (Cargo), no Go MCP module needle. (2) per-language AST parsers and discovery for the SDK shapes (`Server.tool()` factory in TS, `#[tool]` macros in Rust, etc.). File paths are recorded by the generic walk but no MCP-specific extraction happens against them |
 | **MCP server-side completeness** | We discover tools registered with `@server.tool` etc., but don't extract `Prompt`, `Resource`, `Sampling` registrations — those exist in the spec and would be a small additional pass |
 
@@ -195,10 +195,12 @@ rationale, not as a binding roadmap.
    ADK-013 (no description), 015 (eval / new Function), 016 (SSRF / dynamic URL),
    and agent ADK-109 (LlmAgent no description), retargeted at
    `new FunctionTool({...})` / `new LlmAgent({...})` option-object shapes. TS ADK
-   repos no longer produce META-004. Remaining ADK parity gaps (shell-out,
-   typed-params, callback-gated agent rules) need new TS predicates/facts: the
-   `shells_out` fact is discovered but no predicate reads it for TS, and ADK JS
-   agent callback kwarg names need verification before porting ADK-102/105..107.
+   repos no longer produce META-004. `has_shell_call` and `has_write_call` now
+   read the `shells_out` / `writes_fs` facts for TS (so a TS ADK shell-out or
+   fs-write rule is now expressible structurally). Remaining ADK parity gaps
+   (typed-params, callback-gated agent rules) still need new TS predicates: ADK
+   JS agent callback kwarg names need verification before porting
+   ADK-102/105..107.
 4. **MCP rule pack** would be a small detection win — we already discover
    MCP tools, but no rules target them. Useful checks include "MCP tool
    without input schema" and "stdio MCP server with absolute path to a

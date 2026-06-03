@@ -86,8 +86,7 @@ rules:
       - adk_function_tool
     scope: tool
     match:
-      has_body_text:
-        - print(
+      has_print_call: true
     explanation: >
       Google ADK FunctionTool runs inside the agent's process and shares its
       stdout with the runtime. A wrapped function that calls `print(...)` for

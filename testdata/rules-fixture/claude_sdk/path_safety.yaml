@@ -48,10 +48,7 @@ rules:
       - claude_sdk_tool
     scope: tool
     match:
-      has_body_text:
-        - writeFileSync(
-        - writeFile(
-        - createWriteStream(
+      has_write_call: true
     explanation: >
       This TypeScript Claude SDK tool writes to the filesystem. If the path or
       contents derive from tool arguments, a prompt-injected agent can

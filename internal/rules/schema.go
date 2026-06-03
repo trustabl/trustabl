@@ -61,7 +61,6 @@ type MatchExpr struct {
 	// Nested struct predicates (tool scope)
 	ParamNameMatches              *ParamNameMatchExpr                `yaml:"param_name_matches,omitempty"`
 	CallWithoutKwarg              *CallWithoutKwargExpr              `yaml:"call_without_kwarg,omitempty"`
-	CallWithKwargValue            *CallWithKwargValueExpr            `yaml:"call_with_kwarg_value,omitempty"`
 	CallUsesUnnormalizedPathParam *CallUsesUnnormalizedPathParamExpr `yaml:"call_uses_unnormalized_path_param,omitempty"`
 
 	// Tool-scope decorator predicates
@@ -76,7 +75,6 @@ type MatchExpr struct {
 	AgentKwargValue             *AgentKwargValueExpr      `yaml:"agent_kwarg_value,omitempty"`
 	AgentUsesToolKind           []string                  `yaml:"agent_uses_tool_kind,omitempty"`
 	AgentGrantsBuiltinTool      []string                  `yaml:"agent_grants_builtin_tool,omitempty"`
-	AgentHandoffToClass         []string                  `yaml:"agent_handoff_to_class,omitempty"`
 	AgentUsesHostedToolClass    []string                  `yaml:"agent_uses_hosted_tool_class,omitempty"`
 	AgentIsSubagentOfAny        *bool                     `yaml:"agent_is_subagent_of_any,omitempty"`
 	AgentHostedToolKwargPresent *HostedToolKwargExpr      `yaml:"agent_hosted_tool_kwarg_present,omitempty"`
@@ -86,7 +84,6 @@ type MatchExpr struct {
 	SubagentGrantsTool []string `yaml:"subagent_grants_tool,omitempty"`
 
 	// Repo-scope predicates
-	RepoHasSDKDep                     []string `yaml:"repo_has_sdk_dep,omitempty"`
 	RepoHasSDKInCode                  []string `yaml:"repo_has_sdk_in_code,omitempty"`
 	RepoHasAgentClass                 []string `yaml:"repo_has_agent_class,omitempty"`
 	RepoHasNoAgentClass               []string `yaml:"repo_has_no_agent_class,omitempty"`
@@ -135,14 +132,6 @@ type ParamNameMatchExpr struct {
 type CallWithoutKwargExpr struct {
 	Callees []string `yaml:"callees"`
 	Missing string   `yaml:"missing"`
-}
-
-// CallWithKwargValueExpr fires when a matching call has kwarg == value.
-type CallWithKwargValueExpr struct {
-	CalleePrefix string   `yaml:"callee_prefix,omitempty"`
-	Callees      []string `yaml:"callees,omitempty"`
-	Kwarg        string   `yaml:"kwarg"`
-	Value        string   `yaml:"value"`
 }
 
 // CallUsesUnnormalizedPathParamExpr fires when a path-like param flows to an

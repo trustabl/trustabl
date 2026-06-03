@@ -200,17 +200,6 @@ rules:
 #       missing: timeout                              REQUIRED. The kwarg name.
 #
 #
-#   call_with_kwarg_value:
-#       Fires if a matching call has kwarg == value (literal text comparison
-#       against the source — booleans are written as the strings "True"/"False").
-#       Use either callees, callee_prefix, or both.
-#
-#       callees:       [os.system]       OPTIONAL. Exact-match list.
-#       callee_prefix: subprocess.       OPTIONAL. Prefix match.
-#       kwarg:         shell             REQUIRED.
-#       value:         "True"            REQUIRED. Literal text — quote bool/None.
-#
-#
 #   call_uses_unnormalized_path_param:
 #       Per-param path-flow check. Tracks WHICH params have been normalized
 #       — fires only on params that flow into a matching call AND have NOT
@@ -271,9 +260,6 @@ rules:
 #       whose tools= holds built-in tool names ("Bash", "Write") that resolve
 #       to no in-repo ToolDef.
 #
-#   agent_handoff_to_class: [Agent, SandboxAgent, ...]
-#       Fires when any of the agent's resolved HandoffRefs has the given class.
-#
 #   agent_uses_hosted_tool_class: [BashTool, WebSearchTool, ...]
 #       Returns true if the agent's HostedToolRefs include any of the named
 #       hosted-tool classes (e.g. BashTool, WebSearchTool, GoogleSearchTool).
@@ -311,10 +297,6 @@ rules:
 #
 # ━━━ REPO-SCOPE PREDICATES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # (used only in scope: repo rules; match runs once per scan)
-#
-#   repo_has_sdk_dep: [openai-agents, claude-agent-sdk, ...]
-#       Fires when RepoProfile.SDKDeps contains a dep with the given name.
-#       Populated by ingestion.Recon from pyproject.toml / requirements.txt etc.
 #
 #   repo_has_sdk_in_code: [openai_agents, claude_agent_sdk, openshell, mcp]
 #       Fires when RepoInventory.SDKsDetected contains the given SDK value.

@@ -201,13 +201,17 @@ production-grade, in priority order:
   `aiohttp.ClientSession.<method>` — so aiohttp aliasing is wired in the engine
   but a rule pack must list `aiohttp.<method>` callees to benefit. `requests`
   and `httpx` aliasing work end-to-end with existing callee lists.
-- **(c) Include `HostedToolRefs` + decorated shell tools in the agent
-  shell-tool rules.** `agent_uses_tool_kind: [shell_invocation]` (OAI-101,
-  OAI-104) only matches a *bare, undecorated* function in `tools=`. A
-  `@function_tool` that shells out is `KindOpenAITool`, and the SDK's hosted
-  shell tools (`ShellTool`, `LocalShellTool`, `CodeInterpreterTool`) live in
-  `HostedToolRefs`, which `PredAgentUsesToolKind` never iterates. The rules
-  miss the common shapes their titles promise.
+- **(c) Hosted + decorated shell tools in the agent shell-tool rules — DONE.**
+  `agent_uses_tool_kind: [shell_invocation]` (OAI-101, OAI-104) now matches
+  three shapes, not just a bare undecorated function: (1) a bare
+  `KindShellInvocation` function; (2) the SDK's hosted shell tools
+  (`ShellTool`, `LocalShellTool`, `CodeInterpreterTool`, `ApplyPatchTool`,
+  ADK `BashTool`) via the `hostedClassToKind` map over `HostedToolRefs`; and
+  (3) a *decorated* tool (`@function_tool` / `tool()`) that shells out —
+  discovery stamps a structural `shells_out` fact on the `ToolDef` (Python in
+  `buildTool`, TS in `tsHandlerFacts`) and `PredAgentUsesToolKind` honors it
+  for `shell_invocation`. Residual: the agent rules still only key on shell
+  reach, not the broader "filesystem-touching" half their titles also name.
 - **(d) Source-level fire/silent fixtures.** Per-rule cases in
   `policies_test.go` feed hand-constructed typed inputs, so they prove
   predicate logic but not discovery → detection end-to-end. Add fixtures

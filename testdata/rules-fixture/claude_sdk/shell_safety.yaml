@@ -44,12 +44,7 @@ rules:
       - claude_sdk_tool
     scope: tool
     match:
-      has_body_text:
-        - child_process
-        - execSync(
-        - execFile(
-        - spawn(
-        - spawnSync(
+      has_shell_call: true
     explanation: >
       This Claude Agent SDK tool, authored in TypeScript, invokes a
       child-process API. Because the agent chooses the arguments it passes to

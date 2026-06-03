@@ -216,6 +216,18 @@ func buildTool(fn *sitter.Node, pf ParsedFile, kind models.ToolKind) models.Tool
 		filtered = append(filtered, p)
 	}
 
+	facts := map[string]string{}
+	// Stamp a structural shells_out fact so agent-scope rules can tell that a
+	// decorated tool (Kind openai_tool / claude_sdk_tool / adk_function_tool)
+	// shells out, without re-parsing. TS discovery already sets this via
+	// tsHandlerFacts; this is the Python equivalent. Without it,
+	// agent_uses_tool_kind:[shell_invocation] only catches BARE shell functions
+	// (KindShellInvocation), missing the common @function_tool-wraps-subprocess
+	// shape the agent shell-tool rules (OAI-101/104) promise to flag.
+	if pythonBodyShellsOut(fn, pf.Source) {
+		facts["shells_out"] = "true"
+	}
+
 	return models.ToolDef{
 		Name:     name,
 		Kind:     kind,
@@ -228,6 +240,34 @@ func buildTool(fn *sitter.Node, pf ParsedFile, kind models.ToolKind) models.Tool
 		Description:    astutil.FunctionDocstring(fn, pf.Source),
 		HasTypedParams: astutil.FunctionHasTypedParams(fn),
 		ParamNames:     filtered,
-		Facts:          map[string]string{},
+		Facts:          facts,
 	}
+}
+
+// pythonBodyShellsOut reports whether the function body invokes an OS shell
+// primitive (subprocess.*, os.system, os.popen, os.spawn*). Mirrors the callee
+// set in rules.PredHasShellCall; kept here (not imported) because rules imports
+// analysis, not the reverse.
+func pythonBodyShellsOut(fn *sitter.Node, src []byte) bool {
+	found := false
+	astutil.Walk(fn, func(n *sitter.Node) bool {
+		if found {
+			return false
+		}
+		if n.Type() != "call" {
+			return true
+		}
+		callee := n.ChildByFieldName("function")
+		if callee == nil {
+			return true
+		}
+		c := astutil.NodeText(callee, src)
+		if strings.HasPrefix(c, "subprocess.") || c == "os.system" || c == "os.popen" ||
+			strings.HasPrefix(c, "os.spawn") {
+			found = true
+			return false
+		}
+		return true
+	})
+	return found
 }
