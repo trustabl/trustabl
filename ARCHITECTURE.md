@@ -562,8 +562,14 @@ Pipeline at startup:
    uniqueness, then wraps each `RuleDef` whose category matches an SDK in
    `SDKsDetected` as a `ToolRuleDetector`, `AgentRuleDetector`,
    `RepoRuleDetector`, or `SubagentRuleDetector` based on the rule's `scope:`
-   field. (Tests that want every shipped rule loaded unconditionally use
-   `rules.LoadRegistry(fsys)` instead — same loader, no SDK filter.)
+   field. If the pack decodes cleanly but carries **zero rules total**
+   (unfiltered — an empty or truncated checkout), `LoadFor` returns
+   `ErrNoRulesInPack`, which `main` maps to exit 2; the engine never runs
+   rule-less. This is distinct from "the repo's SDKs have no matching pack",
+   where the unfiltered pack is non-empty and the SDK filter legitimately
+   narrows it (possibly to just openshell). (Tests that want every shipped rule
+   loaded unconditionally use `rules.LoadRegistry(fsys)` instead — same loader,
+   no SDK filter, no zero-rules guard.)
 3. Each detector's `Detect` evaluates the rule's `MatchExpr` against the
    typed input; on a match it emits one `Finding` populated from the rule's
    metadata.

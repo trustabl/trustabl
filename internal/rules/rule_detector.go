@@ -1,12 +1,19 @@
 package rules
 
 import (
+	"errors"
 	"io/fs"
 
 	"github.com/trustabl/trustabl/internal/analysis"
 	"github.com/trustabl/trustabl/internal/analysis/detectors"
 	"github.com/trustabl/trustabl/internal/models"
 )
+
+// ErrNoRulesInPack signals that the resolved, schema-compatible rule pack
+// contains zero rules. The engine must never run rule-less — a clean report
+// produced from no rules is worse than no report — so callers map this to a
+// hard exit 2, the same outcome as no-pack / incompatible-pack.
+var ErrNoRulesInPack = errors.New("rule pack contains no rules")
 
 // toolRuleDetector adapts a tool-scoped RuleDef into a ToolDetector.
 type toolRuleDetector struct{ rule RuleDef }
@@ -214,6 +221,20 @@ func LoadFor(fsys fs.FS, sdks []models.SDK) (*detectors.Registry, error) {
 	all, err := Load(fsys)
 	if err != nil {
 		return nil, err
+	}
+	// Guard the "engine never runs rule-less" contract at the pack level. A
+	// pack that resolves and is schema-compatible but carries zero rules (an
+	// empty or truncated checkout) must hard-fail rather than silently report a
+	// clean bill of health. This counts the UNFILTERED rule total, so it stays
+	// distinct from the legitimate "repo's SDKs have no matching pack" case
+	// below — there `all` is non-empty and the SDK filter narrows it (possibly
+	// to just openshell), which must still succeed.
+	totalRules := 0
+	for _, p := range all {
+		totalRules += len(p.Rules)
+	}
+	if totalRules == 0 {
+		return nil, ErrNoRulesInPack
 	}
 	var tool []detectors.ToolDetector
 	var agent []detectors.AgentDetector

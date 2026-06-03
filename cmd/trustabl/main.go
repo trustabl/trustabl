@@ -9,7 +9,8 @@
 //
 //	0  no findings ≥ medium
 //	1  findings ≥ medium present (or scan completed with findings + --strict)
-//	2  scanner / I/O error
+//	2  scanner / I/O error, or no usable rules (none resolved, incompatible
+//	   schema, or a resolved pack that contains zero rules)
 package main
 
 import (
@@ -239,6 +240,13 @@ func finishScan(result models.ScanResult, jobErr error, f scanFlags) error {
 				"No usable rules found: none cached locally and none could be fetched.")
 			fmt.Fprintln(os.Stderr,
 				`Run "trustabl rules pull" to download the rule packs.`)
+			return exitCodeError{2}
+		}
+		if errors.Is(jobErr, rules.ErrNoRulesInPack) {
+			fmt.Fprintln(os.Stderr,
+				"No usable rules: the resolved rule pack contains zero rules.")
+			fmt.Fprintln(os.Stderr,
+				`The rules repository may be empty or truncated. Run "trustabl rules pull" to refresh.`)
 			return exitCodeError{2}
 		}
 		// A generic error was already surfaced to the user by the reporter's
