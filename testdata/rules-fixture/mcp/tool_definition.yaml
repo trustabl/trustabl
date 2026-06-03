@@ -81,3 +81,24 @@ rules:
       tools from other servers in the same session.
     fix: >
       Rename to a verb-object form, e.g. `summarize_invoice`, `fetch_weather`.
+
+  - id: MCP-011
+    title: TypeScript MCP tool has no description
+    severity: low
+    confidence: 0.85
+    language: typescript
+    applies_to:
+      - mcp_tool
+    scope: tool
+    match:
+      has_docstring: false
+    explanation: >
+      An MCP server authored in TypeScript registers each tool with
+      `server.registerTool(name, {description, inputSchema}, handler)`. With no
+      `description` (or one built from a non-literal expression, captured as
+      empty), every connecting model loses the primary signal for deciding
+      whether to call the tool, causing wrong-tool or skipped calls across all
+      clients of the server.
+    fix: >
+      Provide a concise `description` string in the registration config stating
+      what the tool does and when a model should call it.

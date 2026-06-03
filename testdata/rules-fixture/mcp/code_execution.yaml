@@ -33,3 +33,23 @@ rules:
       surface, run the code in a separate sandboxed single-use process (no
       network, read-only filesystem, CPU/wall-clock caps), not in the server
       process.
+
+  - id: MCP-014
+    title: TypeScript MCP tool evaluates dynamic code
+    severity: high
+    confidence: 0.9
+    language: typescript
+    applies_to:
+      - mcp_tool
+    scope: tool
+    match:
+      has_code_exec_call: true
+    explanation: >
+      This MCP tool handler, authored in TypeScript, calls `eval()` or
+      constructs a `new Function(...)`. With model- or caller-controlled input
+      reaching the evaluated string, this is remote code execution inside the
+      MCP server process.
+    fix: >
+      Remove `eval`/`new Function`. Parse structured input with `JSON.parse`,
+      dispatch on a fixed map of allowed operations, and never construct
+      executable code from tool arguments.

@@ -34,3 +34,27 @@ rules:
       fixed base URL with only a path parameter), reject requests to private,
       loopback, and link-local IP ranges after DNS resolution, and disable
       redirects to addresses outside the allow-list.
+
+  - id: MCP-013
+    title: TypeScript MCP tool fetches a caller-controlled URL (SSRF)
+    severity: high
+    confidence: 0.6
+    language: typescript
+    applies_to:
+      - mcp_tool
+    scope: tool
+    match:
+      has_dynamic_url_call: true
+    explanation: >
+      This MCP tool handler, authored in TypeScript, issues an HTTP request to a
+      URL built from a tool argument or an interpolated string rather than a
+      fixed literal. Because a connecting model chooses tool arguments, a
+      prompt-injected conversation can drive the request at internal services the
+      server host can reach — cloud metadata endpoints (169.254.169.254),
+      loopback admin APIs, and other targets the public internet cannot. This is
+      server-side request forgery.
+    fix: >
+      Validate the destination before fetching: resolve the host and reject
+      private, loopback, and link-local ranges; prefer an allowlist of exact
+      hosts, or resolve an opaque ID against a server-side registry and build the
+      URL from the trusted entry.

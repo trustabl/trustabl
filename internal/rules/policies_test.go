@@ -780,6 +780,74 @@ def run_cmd(name: str) -> str:
 `,
 		toolConfig: nil, wantFires: false},
 
+	// ── MCP TypeScript rules (@modelcontextprotocol/sdk server authoring) ──
+	{
+		name: "MCP-011 fires on empty description", ruleID: "MCP-011",
+		kind: models.KindMCPTool, lang: models.LanguageTypeScript, wantFires: true,
+		src: "import { McpServer } from \"@modelcontextprotocol/sdk/server/mcp.js\";\n" +
+			"const server = new McpServer({ name: \"s\", version: \"1.0.0\" });\n" +
+			"server.registerTool(\"search\", { description: \"\", inputSchema: { q: z.string() } }, async ({ q }) => ({ content: [] }));\n",
+	},
+	{
+		name: "MCP-011 silent when description present", ruleID: "MCP-011",
+		kind: models.KindMCPTool, lang: models.LanguageTypeScript, wantFires: false,
+		src: "import { McpServer } from \"@modelcontextprotocol/sdk/server/mcp.js\";\n" +
+			"const server = new McpServer({ name: \"s\", version: \"1.0.0\" });\n" +
+			"server.registerTool(\"search\", { description: \"Search the docs\", inputSchema: { q: z.string() } }, async ({ q }) => ({ content: [] }));\n",
+	},
+	{
+		name: "MCP-012 fires on TS tool shelling out", ruleID: "MCP-012",
+		kind: models.KindMCPTool, lang: models.LanguageTypeScript, wantFires: true,
+		src: "import { McpServer } from \"@modelcontextprotocol/sdk/server/mcp.js\";\n" +
+			"const server = new McpServer({ name: \"s\", version: \"1.0.0\" });\n" +
+			"server.registerTool(\"run\", { description: \"run\", inputSchema: { cmd: z.string() } }, async ({ cmd }) => {\n" +
+			"  const { execSync } = require(\"child_process\");\n" +
+			"  execSync(cmd);\n" +
+			"  return { content: [] };\n" +
+			"});\n",
+	},
+	{
+		name: "MCP-012 silent on pure tool", ruleID: "MCP-012",
+		kind: models.KindMCPTool, lang: models.LanguageTypeScript, wantFires: false,
+		src: "import { McpServer } from \"@modelcontextprotocol/sdk/server/mcp.js\";\n" +
+			"const server = new McpServer({ name: \"s\", version: \"1.0.0\" });\n" +
+			"server.registerTool(\"run\", { description: \"run\", inputSchema: { x: z.string() } }, async ({ x }) => ({ content: [{ type: \"text\", text: x }] }));\n",
+	},
+	{
+		name: "MCP-013 fires on interpolated fetch URL", ruleID: "MCP-013",
+		kind: models.KindMCPTool, lang: models.LanguageTypeScript, wantFires: true,
+		src: "import { McpServer } from \"@modelcontextprotocol/sdk/server/mcp.js\";\n" +
+			"const server = new McpServer({ name: \"s\", version: \"1.0.0\" });\n" +
+			"server.registerTool(\"f\", { description: \"f\", inputSchema: { host: z.string() } }, async ({ host }) => {\n" +
+			"  const r = await fetch(`https://${host}/api`);\n" +
+			"  return { content: [{ type: \"text\", text: String(r.status) }] };\n" +
+			"});\n",
+	},
+	{
+		name: "MCP-013 silent on literal fetch URL", ruleID: "MCP-013",
+		kind: models.KindMCPTool, lang: models.LanguageTypeScript, wantFires: false,
+		src: "import { McpServer } from \"@modelcontextprotocol/sdk/server/mcp.js\";\n" +
+			"const server = new McpServer({ name: \"s\", version: \"1.0.0\" });\n" +
+			"server.registerTool(\"f\", { description: \"f\", inputSchema: { x: z.string() } }, async () => {\n" +
+			"  const r = await fetch(\"https://example.com/api\");\n" +
+			"  return { content: [{ type: \"text\", text: String(r.status) }] };\n" +
+			"});\n",
+	},
+	{
+		name: "MCP-014 fires on TS eval", ruleID: "MCP-014",
+		kind: models.KindMCPTool, lang: models.LanguageTypeScript, wantFires: true,
+		src: "import { McpServer } from \"@modelcontextprotocol/sdk/server/mcp.js\";\n" +
+			"const server = new McpServer({ name: \"s\", version: \"1.0.0\" });\n" +
+			"server.registerTool(\"calc\", { description: \"calc\", inputSchema: { e: z.string() } }, async ({ e }) => eval(e));\n",
+	},
+	{
+		name: "MCP-014 silent without eval", ruleID: "MCP-014",
+		kind: models.KindMCPTool, lang: models.LanguageTypeScript, wantFires: false,
+		src: "import { McpServer } from \"@modelcontextprotocol/sdk/server/mcp.js\";\n" +
+			"const server = new McpServer({ name: \"s\", version: \"1.0.0\" });\n" +
+			"server.registerTool(\"calc\", { description: \"calc\", inputSchema: { a: z.number() } }, async ({ a }) => ({ content: [{ type: \"text\", text: String(a + 1) }] }));\n",
+	},
+
 	// ─── OAI-014 privileged tool without needs_approval ──────────────────────
 	{name: "OAI-014 fires on shell tool with no needs_approval", ruleID: "OAI-014", kind: models.KindOpenAITool, src: `
 import subprocess

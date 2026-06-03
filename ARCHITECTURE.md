@@ -43,11 +43,14 @@ same TS file extensions, gated on imports from `@openai/agents`,
 (via `new LlmAgent({...})` / `SequentialAgent` / `ParallelAgent` /
 `LoopAgent` / `RoutedAgent` / `new FunctionTool({...})` / 13 hosted-tool
 classes / `subAgents` edges in the same TS file extensions, gated on
-imports from `@google/adk`). TypeScript rule packs now ship for all three
-SDKs: Claude SDK (CSDK-010/011/012/013/014/016 tool rules, CSDK-120/130/131
-agent rules), OpenAI Agents (OAI-016/017/019/022/024 tool rules, OAI-105 agent
-rule), and Google ADK (ADK-013/015/016 tool rules, ADK-109 agent rule). A TS
-repo for any of the three no longer produces a blanket META-004; the full
+imports from `@google/adk`). MCP-proper servers authored with
+`@modelcontextprotocol/sdk` (`new McpServer(...)` + `registerTool` / `tool`)
+are discovered in TS via `ts_mcp_proper.go`. TypeScript rule packs now ship for
+all four SDK surfaces: Claude SDK (CSDK-010/011/012/013/014/016 tool rules,
+CSDK-120/130/131 agent rules), OpenAI Agents (OAI-016/017/019/022/024 tool
+rules, OAI-105 agent rule), Google ADK (ADK-013/015/016 tool rules, ADK-109
+agent rule), and MCP (MCP-011/012/013/014 tool rules). A TS
+repo for any of these no longer produces a blanket META-004; the full
 per-SDK/language matrix lives in COVERAGE.md. The scanner
 can also recognize JavaScript and Go *files* (they appear in
 `manifest.typescript_files` and friends) but has no AST parser for them.
@@ -373,7 +376,18 @@ For each language recon cleared, do the AST work and produce a `RepoInventory`:
   servers: `createSdkMcpServer({...})` calls plus object literals in
   `options.mcpServers` discriminated by `type:` into
   `McpStdioServerConfig` / `McpSSEServerConfig` / `McpHttpServerConfig` /
-  `McpSdkServerConfigWithInstance`.
+  `McpSdkServerConfigWithInstance`. This is the Claude *client-side* server
+  config (emits `MCPServerDef`), NOT MCP-proper server authoring.
+- **DiscoverTSMCPProper** (`ts_mcp_proper.go`) — MCP *server authoring* with
+  `@modelcontextprotocol/sdk`: tracks variables bound to `new McpServer(...)` /
+  `new Server(...)` (import-gated to `.../server/{mcp,index}.js`), then emits a
+  `ToolDef{Kind: mcp_tool, Language: typescript}` per `registerTool(name,
+  config, handler)` and legacy `tool(...)` call on a tracked server var.
+  Reuses `tsZodParamNames` (from `inputSchema`) and `tsHandlerFacts` (handler
+  body facts). Receiver-aware so a non-server `.tool(...)` is not
+  mis-attributed. Emitting `KindMCPTool` routes through the existing
+  `SDKMCP` → `mcp` pack plumbing. Low-level `Server` + `setRequestHandler`
+  tools are not extracted (gap).
 - **DiscoverTSOpenAITools** (`ts_openai_tools.go`) — `tool({...})` factory calls
   from `@openai/agents` / `-core` / `-openai`. Captures `name`/`description`
   (registered name), `parameters` top-level keys as `ParamNames`, handler body
@@ -709,6 +723,10 @@ Shipped rules (one row per YAML rule entry):
 | MCP-008  | tool     | mcp        | high     | `mcp/ssrf.yaml`                    | MCP tool fetches a caller-controlled URL (SSRF)                                       |
 | MCP-009  | tool     | mcp        | high     | `mcp/code_execution.yaml`          | MCP tool body calls eval/exec/compile on dynamic input                               |
 | MCP-010  | tool     | mcp        | high     | `mcp/shell_safety.yaml`            | MCP tool body spawns a subprocess                                                     |
+| MCP-011  | tool     | mcp        | low      | `mcp/tool_definition.yaml`         | TypeScript MCP tool has no description (`language: typescript`)                       |
+| MCP-012  | tool     | mcp        | high     | `mcp/shell_safety.yaml`            | TypeScript MCP tool spawns a subprocess                                               |
+| MCP-013  | tool     | mcp        | high     | `mcp/ssrf.yaml`                    | TypeScript MCP tool fetches a caller-controlled URL (SSRF)                            |
+| MCP-014  | tool     | mcp        | high     | `mcp/code_execution.yaml`          | TypeScript MCP tool evaluates dynamic code (eval / new Function)                      |
 
 > **MCP-tool coverage moved to a dedicated `mcp` category (2026-06-03).** The
 > Python CSDK rules CSDK-001/002/003/004/005/006/007/009/107/108 previously

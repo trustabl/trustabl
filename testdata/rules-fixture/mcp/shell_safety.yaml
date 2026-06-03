@@ -32,3 +32,25 @@ rules:
       pass argv as a list (never shell=True), set timeout=, route through an
       explicit command allow-list, and run the server under an OS sandbox with
       no ambient credentials.
+
+  - id: MCP-012
+    title: TypeScript MCP tool spawns a subprocess
+    severity: high
+    confidence: 0.7
+    language: typescript
+    applies_to:
+      - mcp_tool
+    scope: tool
+    match:
+      has_shell_call: true
+    explanation: >
+      This MCP tool handler, authored in TypeScript, invokes a child-process API
+      (child_process exec/execSync/spawn). Because a connecting model chooses the
+      arguments passed to the tool, a prompt-injected conversation can steer
+      those values into an OS command. Shelling out from a model-callable MCP
+      tool turns the server into an arbitrary-command primitive on its host.
+    fix: >
+      Avoid shelling out from MCP tools. If a subprocess is unavoidable, pass
+      arguments as an argv array (never a shell string), drop `shell: true`,
+      validate inputs against a strict allowlist, and run under a sandbox with no
+      ambient credentials.
