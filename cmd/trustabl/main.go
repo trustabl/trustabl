@@ -259,8 +259,15 @@ func finishScan(result models.ScanResult, jobErr error, f scanFlags) error {
 				"The rules are newer than this Trustabl build can evaluate "+
 					"(this engine supports rule schema version up to %d).\n",
 				rules.SupportedSchemaVersion)
+			fmt.Fprintln(os.Stderr, "Fix it one of two ways:")
 			fmt.Fprintln(os.Stderr,
-				"Upgrade Trustabl, or use --rules-ref to pin an older compatible rules version.")
+				"  - Upgrade Trustabl to a build that supports the newer schema, or")
+			fmt.Fprintf(os.Stderr,
+				"  - Pin an older rules branch or tag whose pack targets schema <=%d:\n"+
+					"      trustabl scan <path> --rules-ref <branch-or-tag>\n"+
+					"    (--rules-ref resolves branches and tags only, not commit SHAs,\n"+
+					"     so a compatible branch or tag must exist in the rules repo).\n",
+				rules.SupportedSchemaVersion)
 			return exitCodeError{2}
 		}
 		if errors.Is(jobErr, rulesource.ErrNoRules) {

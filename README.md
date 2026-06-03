@@ -374,6 +374,39 @@ populates it; each subsequent scan checks for an update first (unless
 `--no-rules-update`), falling back to the cached rules if the fetch
 fails.
 
+### "no schema-compatible rules available"
+
+This means the resolved rule pack targets a newer rule-schema version than
+your Trustabl binary understands (the engine gates packs on
+`schema_version`; see `internal/rules/schema_version.go`). The fallback to
+cached rules can only help when a *compatible* pack is already cached — if
+the only cached pack is the too-new one, the scan exits 2.
+
+Two fixes:
+
+- **Upgrade Trustabl** to a build that supports the newer schema (the usual
+  fix — the binary is simply behind the rules repo).
+- **Pin an older rules branch or tag** whose pack targets a schema your build
+  supports:
+
+  ```bash
+  trustabl scan ./repo --rules-ref <branch-or-tag>
+  ```
+
+  `--rules-ref` resolves **branches and tags only** — not raw commit SHAs — so
+  a compatible ref must already exist in the rules repo. If every branch is
+  on the newer schema, tag a known-good older commit there first and pin that
+  tag:
+
+  ```bash
+  # in the rules repo, at the newest commit whose manifest.yaml schema_version
+  # is <= what your build supports (git log -p -- manifest.yaml shows each bump)
+  git tag schema-8 <sha> && git push origin schema-8
+  ```
+
+  `--no-rules-update` does **not** help here: it is cache-only, so if your
+  cache already holds the too-new pack the scan still fails.
+
 ## Where the code lives
 
 | Pipeline node      | Code path                                |
