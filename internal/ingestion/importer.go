@@ -37,7 +37,7 @@ type Source struct {
 //
 // Discipline: callers MUST `defer src.Cleanup()` even on local paths. The
 // no-op cleanup avoids a branching defer at every call site.
-func Resolve(target string, prog CloneProgress) (*Source, error) {
+func Resolve(ctx context.Context, target string, prog CloneProgress) (*Source, error) {
 	if target == "" {
 		return nil, errors.New("empty target")
 	}
@@ -46,7 +46,7 @@ func Resolve(target string, prog CloneProgress) (*Source, error) {
 		if err := validateRemoteScheme(target); err != nil {
 			return nil, err
 		}
-		return cloneRemote(target, prog)
+		return cloneRemote(ctx, target, prog)
 	}
 	return openLocal(target)
 }
@@ -107,7 +107,7 @@ func openLocal(target string) (*Source, error) {
 	}, nil
 }
 
-func cloneRemote(remoteURL string, prog CloneProgress) (*Source, error) {
+func cloneRemote(ctx context.Context, remoteURL string, prog CloneProgress) (*Source, error) {
 	tmp, err := os.MkdirTemp("", "trustabl-clone-*")
 	if err != nil {
 		return nil, fmt.Errorf("mktmp: %w", err)
@@ -115,8 +115,10 @@ func cloneRemote(remoteURL string, prog CloneProgress) (*Source, error) {
 	cleanup := func() { _ = os.RemoveAll(tmp) }
 
 	// Bound the whole clone (both the plumbing fetch and the PlainClone
-	// fallback) so a hung remote cannot stall the scan indefinitely.
-	ctx, cancel := context.WithTimeout(context.Background(), cloneTimeout)
+	// fallback) so a hung remote cannot stall the scan indefinitely. Derive from
+	// the caller's context so an interrupt also aborts an in-flight clone, not
+	// just the timeout.
+	ctx, cancel := context.WithTimeout(ctx, cloneTimeout)
 	defer cancel()
 
 	// Primary path: a plumbing-level shallow fetch that reports an accurate

@@ -8,17 +8,20 @@
 // Exit codes:
 //
 //	0  no findings ≥ medium
-//	1  findings ≥ medium present (or scan completed with findings + --strict)
+//	1  findings ≥ medium present (or findings ≥ low with --strict; info/META
+//	   findings never raise the exit code)
 //	2  scanner / I/O error, or no usable rules (none resolved, incompatible
 //	   schema, or a resolved pack that contains zero rules)
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
@@ -111,7 +114,7 @@ func newScanCommand() *cobra.Command {
 	cmd.Flags().StringVar(&f.format, "format", "human",
 		"output format: human|json|sarif")
 	cmd.Flags().BoolVar(&f.strict, "strict", false,
-		"exit 1 if any finding is present, regardless of severity")
+		"exit 1 on any finding of low severity or higher (info/META signals never fail)")
 	cmd.Flags().BoolVar(&f.noColor, "no-color", false,
 		"disable colored output")
 	cmd.Flags().StringVar(&f.rulesRepo, "rules-repo", "",
@@ -152,6 +155,13 @@ func runScan(target string, f scanFlags) error {
 	// goroutine (the buffer means the goroutine never blocks even if we bail on
 	// an interrupt before receiving).
 	rep := progress.NewTTY(os.Stderr)
+	// Cancel the scan when the user interrupts the TTY. Without this the scan
+	// goroutine would be abandoned and os.Exit (below) would skip its deferred
+	// temp-dir cleanup, orphaning the trustabl-clone-* dir on every interrupted
+	// remote scan.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cfg.Ctx = ctx
 	type scanOutcome struct {
 		result models.ScanResult
 		err    error
@@ -175,6 +185,14 @@ func runScan(target string, f scanFlags) error {
 	if err := rep.Run(); err != nil {
 		if errors.Is(err, progress.ErrInterrupted) {
 			fmt.Fprintln(os.Stderr, "Scan interrupted.")
+			// Signal the scan goroutine to stop, then give it a brief window to
+			// return so its deferred src.Cleanup() removes the clone temp dir.
+			// Bounded so a wedged scan can't hold the process open indefinitely.
+			cancel()
+			select {
+			case <-done:
+			case <-time.After(3 * time.Second):
+			}
 			return exitCodeError{2}
 		}
 		return err
@@ -337,13 +355,18 @@ func emitSARIF(result models.ScanResult) error {
 }
 
 func exitCode(result models.ScanResult, strict bool) int {
-	if strict && len(result.Findings) > 0 {
-		return 1
-	}
 	for _, f := range result.Findings {
 		switch f.Severity {
 		case models.SeverityMedium, models.SeverityHigh, models.SeverityCritical:
 			return 1
+		case models.SeverityLow:
+			// --strict tightens the gate to any genuine finding, but still floors
+			// at low. info/META signals (an opaque agent, an unused dep, an
+			// unaudited SDK) are not defects, so they must not fail a --strict CI
+			// run on an otherwise-clean repo.
+			if strict {
+				return 1
+			}
 		}
 	}
 	return 0

@@ -1198,10 +1198,12 @@ var policyRepoRuleCases = []policyRepoCase{
 		},
 		false},
 
-	// ─── CSDK-203 / ADK-201 / OAI-202 (team rules): SDK code but no CLAUDE.md ─
+	// ─── CSDK-203 / ADK-201 / OAI-202 (team rules): SDK code but no agent doc ─
 	// repo_has_sdk_in_code reads inv.SDKsDetected; repo_component_present reads
-	// profile.Manifest.Components. Fire = SDK present AND no claude_md component.
-	{"CSDK-203 fires when Claude SDK code has no CLAUDE.md", "CSDK-203",
+	// profile.Manifest.Components. Fire = SDK present AND neither an agents_md
+	// NOR a claude_md component. Either AGENTS.md (vendor-neutral) or CLAUDE.md
+	// silences the rule.
+	{"CSDK-203 fires when Claude SDK code has no agent-guidance doc", "CSDK-203",
 		models.RepoProfile{Languages: []models.Language{models.LanguagePython}},
 		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKClaudeAgentSDK}},
 		true},
@@ -1212,7 +1214,14 @@ var policyRepoRuleCases = []policyRepoCase{
 		},
 		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKClaudeAgentSDK}},
 		false},
-	{"ADK-201 fires when ADK code has no CLAUDE.md", "ADK-201",
+	{"CSDK-203 silent when AGENTS.md present", "CSDK-203",
+		models.RepoProfile{
+			Languages: []models.Language{models.LanguagePython},
+			Manifest:  models.ScanManifest{Components: []models.AgentComponent{{Kind: models.ComponentAgentsMd}}},
+		},
+		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKClaudeAgentSDK}},
+		false},
+	{"ADK-201 fires when ADK code has no agent-guidance doc", "ADK-201",
 		models.RepoProfile{Languages: []models.Language{models.LanguagePython}},
 		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKGoogleADK}},
 		true},
@@ -1223,7 +1232,14 @@ var policyRepoRuleCases = []policyRepoCase{
 		},
 		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKGoogleADK}},
 		false},
-	{"OAI-202 fires when OpenAI code has no CLAUDE.md", "OAI-202",
+	{"ADK-201 silent when AGENTS.md present", "ADK-201",
+		models.RepoProfile{
+			Languages: []models.Language{models.LanguagePython},
+			Manifest:  models.ScanManifest{Components: []models.AgentComponent{{Kind: models.ComponentAgentsMd}}},
+		},
+		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKGoogleADK}},
+		false},
+	{"OAI-202 fires when OpenAI code has no agent-guidance doc", "OAI-202",
 		models.RepoProfile{Languages: []models.Language{models.LanguagePython}},
 		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKOpenAIAgents}},
 		true},
@@ -1231,6 +1247,13 @@ var policyRepoRuleCases = []policyRepoCase{
 		models.RepoProfile{
 			Languages: []models.Language{models.LanguagePython},
 			Manifest:  models.ScanManifest{Components: []models.AgentComponent{{Kind: models.ComponentClaudeMd}}},
+		},
+		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKOpenAIAgents}},
+		false},
+	{"OAI-202 silent when AGENTS.md present", "OAI-202",
+		models.RepoProfile{
+			Languages: []models.Language{models.LanguagePython},
+			Manifest:  models.ScanManifest{Components: []models.AgentComponent{{Kind: models.ComponentAgentsMd}}},
 		},
 		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKOpenAIAgents}},
 		false},

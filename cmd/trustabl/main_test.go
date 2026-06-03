@@ -185,6 +185,14 @@ func TestExitCode(t *testing.T) {
 			strict:   true,
 			want:     0,
 		},
+		{
+			// --strict floors at low: info/META signals (opaque agent, unused
+			// dep, unaudited SDK) must not fail an otherwise-clean CI run.
+			name:     "strict with only info findings exits 0",
+			findings: []models.Finding{finding(models.SeverityInfo)},
+			strict:   true,
+			want:     0,
+		},
 	}
 
 	for _, tt := range tests {

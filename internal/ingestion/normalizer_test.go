@@ -366,6 +366,47 @@ func TestNormalize_PluginSlashCommandsClassified(t *testing.T) {
 	}
 }
 
+// TestNormalize_AgentGuidanceDocsClassified verifies that both the Claude Code
+// convention (CLAUDE.md) and the cross-vendor convention (AGENTS.md) are
+// classified as their distinct component kinds. The repo-hygiene rules
+// (CSDK-203 / OAI-202 / ADK-201) treat either as satisfying the
+// "ships agent guidance" check, so discovery must surface both.
+func TestNormalize_AgentGuidanceDocsClassified(t *testing.T) {
+	dir := t.TempDir()
+	mustWrite := func(rel, content string) {
+		t.Helper()
+		full := filepath.Join(dir, rel)
+		if err := os.MkdirAll(filepath.Dir(full), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mustWrite("CLAUDE.md", "# Claude guidance\n")
+	mustWrite("AGENTS.md", "# Agent guidance\n")
+	mustWrite("README.md", "# Not a guidance doc\n")
+
+	src := &Source{RootPath: dir}
+	m, err := Normalize(src, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kinds := map[string]models.ComponentKind{}
+	for _, c := range m.Components {
+		kinds[c.Path] = c.Kind
+	}
+	if got := kinds["CLAUDE.md"]; got != models.ComponentClaudeMd {
+		t.Errorf("CLAUDE.md: got kind %q, want %q", got, models.ComponentClaudeMd)
+	}
+	if got := kinds["AGENTS.md"]; got != models.ComponentAgentsMd {
+		t.Errorf("AGENTS.md: got kind %q, want %q", got, models.ComponentAgentsMd)
+	}
+	if got, found := kinds["README.md"]; found {
+		t.Errorf("README.md should not be classified as a guidance doc, got %q", got)
+	}
+}
+
 func TestDetectSDKDeps_TSGoogleADKFromPackageJSON(t *testing.T) {
 	dir := t.TempDir()
 	pkg := `{

@@ -42,6 +42,12 @@ type Config struct {
 
 	// Progress receives real-time phase events. Nil means no progress output.
 	Progress progress.Reporter
+
+	// Ctx, when non-nil, cancels the scan. The CLI ties this to its interrupt
+	// handler so a Ctrl-C aborts the run at the next phase boundary and lets the
+	// deferred temp-dir cleanup fire before the process exits. Nil means an
+	// uncancellable scan (context.Background()).
+	Ctx context.Context
 }
 
 // Run executes the full pipeline. The returned ScanResult is what gets
@@ -50,6 +56,10 @@ func Run(cfg Config) (models.ScanResult, error) {
 	rep := cfg.Progress
 	if rep == nil {
 		rep = progress.NewNop()
+	}
+	ctx := cfg.Ctx
+	if ctx == nil {
+		ctx = context.Background()
 	}
 
 	// Step 0: resolve the target. For a remote target this shallow-clones to a
@@ -67,7 +77,7 @@ func Run(cfg Config) (models.ScanResult, error) {
 	if remote {
 		prog = rep
 	}
-	src, err := ingestion.Resolve(cfg.Target, prog)
+	src, err := ingestion.Resolve(ctx, cfg.Target, prog)
 	if err != nil {
 		if remote {
 			rep.Fatal(err)
@@ -77,6 +87,14 @@ func Run(cfg Config) (models.ScanResult, error) {
 	defer src.Cleanup()
 	if remote {
 		rep.EndPhase(cfg.Target)
+	}
+	// Cancellation checkpoint. The expensive phases below (recon walk, per-language
+	// AST, analysis) have no internal cancellation, but checking here — right after
+	// the clone, the one step that creates the temp dir src.Cleanup removes — means
+	// an interrupt that lands during or just after the clone returns promptly and
+	// runs the deferred cleanup instead of orphaning a trustabl-clone-* dir.
+	if err := ctx.Err(); err != nil {
+		return models.ScanResult{}, err
 	}
 
 	repoLabel := src.RemoteURL
@@ -158,6 +176,34 @@ func Run(cfg Config) (models.ScanResult, error) {
 	// Google ADK TS
 	tools = append(tools, analysis.DiscoverTSADKTools(tsFiles, nil)...)
 	agents = append(agents, analysis.DiscoverTSADKAgents(tsFiles, nil)...)
+
+	// Canonicalize tool/agent order before anything reads them. Discovery appends
+	// in walk order (Python -> ADK -> TS), which is deterministic only by accident
+	// of single-threaded lexical traversal — the same assumption the rest of the
+	// pipeline refuses to rely on (scanID re-sorts every file list; HostedTools,
+	// MCPServers, Subagents, Skills are all explicitly sorted). These two slices
+	// flow verbatim into ScanResult, so an unsorted order is a latent break of the
+	// byte-stable-report contract. Sort by (FilePath, Line, Name). This MUST run
+	// before ResolveEdges below: ResolveEdges stores *ToolDef/*AgentDef pointers
+	// into these backing arrays, so reordering afterward would dangle them.
+	sort.Slice(tools, func(i, j int) bool {
+		if tools[i].FilePath != tools[j].FilePath {
+			return tools[i].FilePath < tools[j].FilePath
+		}
+		if tools[i].Line != tools[j].Line {
+			return tools[i].Line < tools[j].Line
+		}
+		return tools[i].Name < tools[j].Name
+	})
+	sort.Slice(agents, func(i, j int) bool {
+		if agents[i].FilePath != agents[j].FilePath {
+			return agents[i].FilePath < agents[j].FilePath
+		}
+		if agents[i].Line != agents[j].Line {
+			return agents[i].Line < agents[j].Line
+		}
+		return agents[i].Name < agents[j].Name
+	})
 
 	inventory := models.RepoInventory{
 		Tools:      tools,

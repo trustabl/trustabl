@@ -310,8 +310,9 @@ rules:
 #   repo_component_present: [mcp_config, hook_script, claude_md, ...]
 #       Fires when any Component in Manifest.Components has the given kind.
 #       Allowed values match models.ComponentKind: mcp_config, claude_md,
-#       claude_settings, subagent, slash_command, hook_script, sandbox_policy,
-#       system_prompt, dependency_manifest, claude_agent_definition.
+#       agents_md, claude_settings, subagent, slash_command, hook_script,
+#       sandbox_policy, system_prompt, dependency_manifest,
+#       claude_agent_definition.
 #
 #   repo_uses_default_tracing: true | false
 #       Fires when the scanner's derived UsesDefaultTracing flag matches.

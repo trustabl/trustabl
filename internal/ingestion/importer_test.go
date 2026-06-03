@@ -1,6 +1,7 @@
 package ingestion
 
 import (
+	"context"
 	"strings"
 	"testing"
 )
@@ -27,7 +28,7 @@ func TestValidateRemoteScheme(t *testing.T) {
 func TestResolve_RejectsUnsafeScheme(t *testing.T) {
 	// git:// parses as remote (scheme+host) so it reaches the scheme gate, which
 	// must reject it before any clone is attempted.
-	_, err := Resolve("git://example.com/repo.git", nil)
+	_, err := Resolve(context.Background(), "git://example.com/repo.git", nil)
 	if err == nil || !strings.Contains(err.Error(), "unsupported remote transport") {
 		t.Fatalf("Resolve(git://...) = %v, want unsupported-transport error", err)
 	}

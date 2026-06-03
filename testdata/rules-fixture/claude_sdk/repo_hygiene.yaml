@@ -10,7 +10,7 @@ policy:
 
 rules:
   - id: CSDK-203
-    title: Repo ships Claude Agent SDK code without a CLAUDE.md
+    title: Repo ships Claude Agent SDK code without an agent-guidance doc (AGENTS.md/CLAUDE.md)
     severity: low
     confidence: 0.9
     language: python
@@ -23,22 +23,23 @@ rules:
             - claude_agent_sdk
         - not:
             repo_component_present:
+              - agents_md
               - claude_md
     explanation: >
-      A repository that builds on the Claude Agent SDK but ships no top-level
-      CLAUDE.md leaves any Claude session that opens the repo with no
-      project-specific guidance. The conventions, build commands, test
-      runners, lint scripts, and "do not touch" boundaries a human maintainer
-      would describe in onboarding are absent, so the agent has to infer them
-      from the source on every session and frequently guesses wrong —
-      bypassing the project's lint, picking the wrong test command, or
-      violating commit conventions that were never written down anywhere it
-      could read. The cost compounds: each new contributor (human or agent)
-      reinvents the same wrong assumptions.
+      A repository that builds on the Claude Agent SDK but ships no agent-guidance
+      doc — CLAUDE.md (the Claude Code convention) or AGENTS.md (the cross-vendor
+      one) — leaves any coding agent that opens the repo with no project-specific
+      guidance. The conventions, build commands, test runners, lint scripts, and
+      "do not touch" boundaries a human maintainer would describe in onboarding
+      are absent, so the agent has to infer them from the source on every session
+      and frequently guesses wrong — bypassing the project's lint, picking the
+      wrong test command, or violating commit conventions that were never written
+      down anywhere it could read. The cost compounds: each new contributor
+      (human or agent) reinvents the same wrong assumptions.
     fix: >
-      Add a CLAUDE.md at the repository root documenting how to build, test,
-      and lint the project, the coding conventions Claude must respect, the
-      directories or files Claude must not modify, and any project-specific
-      safety guardrails (e.g. "never run migrations", "never push to main").
-      Treat it as the project's agent-facing README and keep it under version
-      control so reviewers see drift.
+      Add a CLAUDE.md (or an AGENTS.md) at the repository root documenting how to
+      build, test, and lint the project, the coding conventions the agent must
+      respect, the directories or files it must not modify, and any
+      project-specific safety guardrails (e.g. "never run migrations", "never
+      push to main"). Treat it as the project's agent-facing README and keep it
+      under version control so reviewers see drift.

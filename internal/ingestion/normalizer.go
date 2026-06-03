@@ -300,12 +300,19 @@ func discoverComponents(root string, m models.ScanManifest, onFile func(string))
 		}
 	}
 
-	// CLAUDE.md (system-prompt / context for Claude Code agents). Match the
-	// canonical name and the lower-case variant; .md base name only.
+	// Agent-guidance docs at the repo root. CLAUDE.md is the Claude Code
+	// convention; AGENTS.md is the cross-vendor standard (OpenAI, Cursor, and
+	// others read it). Both are the in-repo contract an editing agent reads
+	// before acting, so the repo-hygiene rules treat either as satisfying the
+	// "ships agent guidance" check. Match the canonical name and the lower-case
+	// variant; .md base name only.
 	for _, p := range m.MarkdownFiles {
 		base := filepath.Base(p)
-		if base == "CLAUDE.md" || base == "claude.md" {
+		switch base {
+		case "CLAUDE.md", "claude.md":
 			out = append(out, models.AgentComponent{Kind: models.ComponentClaudeMd, Path: p})
+		case "AGENTS.md", "agents.md":
+			out = append(out, models.AgentComponent{Kind: models.ComponentAgentsMd, Path: p})
 		}
 	}
 

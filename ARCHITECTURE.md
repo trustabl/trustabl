@@ -43,10 +43,12 @@ same TS file extensions, gated on imports from `@openai/agents`,
 (via `new LlmAgent({...})` / `SequentialAgent` / `ParallelAgent` /
 `LoopAgent` / `RoutedAgent` / `new FunctionTool({...})` / 13 hosted-tool
 classes / `subAgents` edges in the same TS file extensions, gated on
-imports from `@google/adk`). A first Claude SDK TypeScript rule pack ships (CSDK-010/011/012/013 tool
-rules; CSDK-120 agent rule) and OAI-016/017/019 cover OpenAI TS tools.
-TS Claude SDK and TS OpenAI repos no longer produce META-004.
-TS ADK repos still produce META-004 (no ADK TS rules yet). The scanner
+imports from `@google/adk`). TypeScript rule packs now ship for all three
+SDKs: Claude SDK (CSDK-010/011/012/013/014/016 tool rules, CSDK-120/130/131
+agent rules), OpenAI Agents (OAI-016/017/019/022/024 tool rules, OAI-105 agent
+rule), and Google ADK (ADK-013/015/016 tool rules, ADK-109 agent rule). A TS
+repo for any of the three no longer produces a blanket META-004; the full
+per-SDK/language matrix lives in COVERAGE.md. The scanner
 can also recognize JavaScript and Go *files* (they appear in
 `manifest.typescript_files` and friends) but has no AST parser for them.
 
@@ -447,6 +449,7 @@ tools. Component kinds:
 | --------------------- | -------------------------------------------------------------- |
 | `mcp_config`          | `mcp.json`, `mcp_servers.json`, `claude_desktop_config.json`   |
 | `claude_md`           | `CLAUDE.md` / `claude.md` at any depth                         |
+| `agents_md`           | `AGENTS.md` / `agents.md` at any depth (vendor-neutral)        |
 | `claude_settings`     | `.claude/settings.json`, `.claude/settings.local.json`         |
 | `subagent`            | `.claude/agents/*.md` at any path depth                        |
 | `skill`               | `SKILL.md` at any depth (`.claude/skills/`, plugin `skills/`, nested) |
@@ -507,8 +510,11 @@ than just text matching.
    that previously consumed these tools moved to a closed-source companion
    project.
 
-Each `ToolDef` carries `Language: python` (set unconditionally today —
-discovery is python-only).
+Each `ToolDef` carries a `Language`. Tools discovered by the Python pass in
+`discovery.go` carry `Language: python`; the TypeScript discovery in `ts_*.go`
+(`ts_discovery.go`, `ts_openai_tools.go`, `ts_adk_tools.go`) sets
+`Language: typescript`. The docstring/param extraction described below is the
+Python path; the TS paths populate the same fields from their own AST shapes.
 
 The function's docstring is extracted via `astutil.FunctionDocstring`, which
 calls `stripPythonStringLiteral` to handle prefixes (r/b/u/f and 2-char
@@ -594,8 +600,10 @@ the AST. Every `Finding` MUST carry an `Explanation`, `SuggestedFix`, and
 rule that omits them.
 
 The `Registry` supports `Subset(...categories)` for `--detectors` filtering.
-Output is reproducible: detectors run in stable order, findings sorted by
-`(RuleID, FilePath, Line)`.
+Output is reproducible: detectors run in stable order, findings are sorted by
+the total order `(RuleID, FilePath, Line, ToolName, Title)` and then
+adjacent-deduped, so neither entity-iteration order nor a doubly-reported hit
+can leak into the byte-stable report.
 
 Shipped rules (one row per YAML rule entry):
 
@@ -621,12 +629,16 @@ Shipped rules (one row per YAML rule entry):
 | CSDK-111 | subagent | claude_sdk | high     | `claude_sdk/subagent_safety.yaml`  | Subagent granted filesystem-write or web-fetch built-ins                              |
 | CSDK-201 | repo     | claude_sdk | high     | `claude_sdk/repo.yaml`             | Project default permission mode bypasses approvals                                    |
 | CSDK-202 | repo     | claude_sdk | high     | `claude_sdk/repo.yaml`             | Session permission mode bypasses approvals                                            |
-| CSDK-203 | repo     | claude_sdk | low      | `claude_sdk/repo_hygiene.yaml`     | Repo ships Claude Agent SDK code without a CLAUDE.md                                  |
+| CSDK-203 | repo     | claude_sdk | low      | `claude_sdk/repo_hygiene.yaml`     | Claude Agent SDK code with no agent-guidance doc (AGENTS.md/CLAUDE.md)                |
 | CSDK-010 | tool     | claude_sdk | high     | `claude_sdk/shell_safety.yaml`     | TypeScript tool body spawns a subprocess (`language: typescript`)                     |
 | CSDK-011 | tool     | claude_sdk | high     | `claude_sdk/code_execution.yaml`   | TypeScript tool body calls eval / new Function on dynamic input                       |
 | CSDK-012 | tool     | claude_sdk | high     | `claude_sdk/path_safety.yaml`      | TypeScript tool writes to the filesystem                                               |
 | CSDK-013 | tool     | claude_sdk | high     | `claude_sdk/ssrf.yaml`             | TypeScript tool fetches a caller-controlled URL (SSRF / dynamic URL)                  |
 | CSDK-120 | agent    | claude_sdk | high     | `claude_sdk/agent_safety.yaml`     | TypeScript AgentDefinition sets permissionMode to bypassPermissions                   |
+| CSDK-014 | tool     | claude_sdk | low      | `claude_sdk/tool_definition.yaml`  | TypeScript Claude SDK tool has no description                                         |
+| CSDK-016 | tool     | claude_sdk | medium   | `claude_sdk/idempotency.yaml`      | TypeScript Claude SDK mutating tool has no idempotency key                            |
+| CSDK-130 | agent    | claude_sdk | high     | `claude_sdk/agent_safety.yaml`     | TypeScript query() main agent is granted the Bash tool                                |
+| CSDK-131 | agent    | claude_sdk | high     | `claude_sdk/agent_safety.yaml`     | TypeScript query() main agent is granted filesystem-write or web-fetch built-ins      |
 | OAI-001  | tool     | openai_sdk | low      | `openai_sdk/tool_definition.yaml`  | Tool function has no docstring                                                        |
 | OAI-002  | tool     | openai_sdk | medium   | `openai_sdk/tool_definition.yaml`  | Tool function has no type-annotated parameters                                        |
 | OAI-003  | tool     | openai_sdk | medium   | `openai_sdk/decorator_config.yaml` | Tool sets strict_mode=False                                                           |
@@ -646,16 +658,19 @@ Shipped rules (one row per YAML rule entry):
 | OAI-017  | tool     | openai_sdk | high     | `openai_sdk/code_execution.yaml`   | TypeScript tool body calls eval / new Function on dynamic input                       |
 | OAI-018  | tool     | openai_sdk | medium   | `openai_sdk/network.yaml`          | Tool builds outbound URL from non-literal value                                       |
 | OAI-019  | tool     | openai_sdk | medium   | `openai_sdk/idempotency.yaml`      | TypeScript mutating tool has no idempotency key                                       |
+| OAI-022  | tool     | openai_sdk | low      | `openai_sdk/tool_definition.yaml`  | TypeScript tool has no description                                                    |
+| OAI-024  | tool     | openai_sdk | medium   | `openai_sdk/network.yaml`          | TypeScript tool builds outbound URL from a non-literal value                          |
 | OAI-101  | agent    | openai_sdk | high     | `openai_sdk/agent_safety.yaml`     | Agent has no input_guardrails AND wires shell or filesystem-touching tools            |
 | OAI-102  | agent    | openai_sdk | high     | `openai_sdk/agent_safety.yaml`     | Agent uses tool_use_behavior="stop_on_first_tool"                                     |
 | OAI-103  | agent    | openai_sdk | high     | `openai_sdk/agent_safety.yaml`     | tool_choice="required" combined with reset_tool_choice=False                          |
 | OAI-104  | agent    | openai_sdk | medium   | `openai_sdk/agent_safety.yaml`     | Raw Agent (not SandboxAgent) wires shell or filesystem-touching tools                 |
+| OAI-105  | agent    | openai_sdk | high     | `openai_sdk/agent_safety.yaml`     | TypeScript agent wires a content-fetching hosted tool without inputGuardrails         |
 | OAI-106  | agent    | openai_sdk | high     | `openai_sdk/mcp_safety.yaml`       | Agent wires MCP servers without input_guardrails                                      |
 | OAI-109  | agent    | openai_sdk | high     | `openai_sdk/agent_safety.yaml`     | Agent uses WebSearchTool without input_guardrails                                     |
 | OAI-110  | agent    | openai_sdk | high     | `openai_sdk/agent_safety.yaml`     | Agent wires a content-fetching tool without output_guardrails                         |
 | OAI-111  | agent    | openai_sdk | high     | `openai_sdk/approvals.yaml`        | Agent wires a privileged hosted tool without needs_approval                           |
 | OAI-201  | repo     | openai_sdk | medium   | `openai_sdk/tracing.yaml`          | Project uses default OpenAI tracing                                                   |
-| OAI-202  | repo     | openai_sdk | low      | `openai_sdk/repo_hygiene.yaml`     | OpenAI Agents project missing CLAUDE.md                                               |
+| OAI-202  | repo     | openai_sdk | low      | `openai_sdk/repo_hygiene.yaml`     | OpenAI Agents project with no agent-guidance doc (AGENTS.md/CLAUDE.md)                |
 | ADK-001  | tool     | google_adk | low      | `google_adk/tool_definition.yaml`  | FunctionTool-wrapped function has no docstring                                        |
 | ADK-002  | tool     | google_adk | medium   | `google_adk/tool_definition.yaml`  | FunctionTool-wrapped function has no type-annotated parameters                        |
 | ADK-003  | tool     | google_adk | high     | `google_adk/network.yaml`          | Network call has no timeout                                                           |
@@ -668,6 +683,9 @@ Shipped rules (one row per YAML rule entry):
 | ADK-010  | tool     | google_adk | high     | `google_adk/shell_safety.yaml`     | Tool body spawns a subprocess                                                         |
 | ADK-011  | tool     | google_adk | high     | `google_adk/code_execution.yaml`   | Tool body calls eval/exec/compile on dynamic input                                    |
 | ADK-012  | tool     | google_adk | high     | `google_adk/ssrf.yaml`             | Tool fetches a caller-controlled URL (SSRF)                                           |
+| ADK-013  | tool     | google_adk | low      | `google_adk/tool_definition.yaml`  | TypeScript FunctionTool has no description                                            |
+| ADK-015  | tool     | google_adk | high     | `google_adk/code_execution.yaml`   | TypeScript FunctionTool body evaluates dynamic code                                   |
+| ADK-016  | tool     | google_adk | high     | `google_adk/ssrf.yaml`             | TypeScript FunctionTool fetches a caller-controlled URL (SSRF)                        |
 | ADK-101  | agent    | google_adk | medium   | `google_adk/agent_safety.yaml`     | LlmAgent has no description                                                           |
 | ADK-102  | agent    | google_adk | high     | `google_adk/agent_safety.yaml`     | Agent with BashTool has no before_tool_callback                                       |
 | ADK-103  | agent    | google_adk | high     | `google_adk/agent_safety.yaml`     | Sub-agent is granted BashTool                                                         |
@@ -676,8 +694,9 @@ Shipped rules (one row per YAML rule entry):
 | ADK-106  | agent    | google_adk | high     | `google_adk/agent_safety.yaml`     | Agent has a code_executor but no before_model_callback                                |
 | ADK-107  | agent    | google_adk | high     | `google_adk/agent_safety.yaml`     | Agent grants AgentTool but has no before_tool_callback                                |
 | ADK-108  | agent    | google_adk | medium   | `google_adk/agent_safety.yaml`     | LoopAgent has no max_iterations                                                       |
+| ADK-109  | agent    | google_adk | medium   | `google_adk/agent_safety.yaml`     | TypeScript LlmAgent has no description                                                |
 | ADK-110  | agent    | google_adk | medium   | `google_adk/agent_safety.yaml`     | Agent fetches web content via UrlContextTool/LoadWebPage without before_tool_callback |
-| ADK-201  | repo     | google_adk | low      | `google_adk/repo_hygiene.yaml`     | Google ADK project missing CLAUDE.md                                                  |
+| ADK-201  | repo     | google_adk | low      | `google_adk/repo_hygiene.yaml`     | Google ADK project with no agent-guidance doc (AGENTS.md/CLAUDE.md)                   |
 
 ### Step 5 — Scoring ([internal/analysis/scoring.go](internal/analysis/scoring.go))
 
@@ -911,7 +930,7 @@ ScanManifest {
 }
 
 AgentComponent {
-    Kind     ComponentKind  // mcp_config | claude_md | claude_settings | subagent | ...
+    Kind     ComponentKind  // mcp_config | claude_md | agents_md | claude_settings | subagent | ...
     Path     string         // forward-slash relative to repo root
     Language Language       // set for code components, empty for configs/prompts
     Note     string

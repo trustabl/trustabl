@@ -115,7 +115,8 @@ flowchart LR
    / `Pipfile` / `poetry.lock` / `package.json` for the
    `claude-agent-sdk` / `@anthropic-ai/claude-agent-sdk` / `openai-agents` /
    `@openai/agents` / `google-adk` / `@google/adk` needles), the file inventory, and
-   discovered agent components (MCP configs, hook scripts, `CLAUDE.md`,
+   discovered agent components (MCP configs, hook scripts, `CLAUDE.md` and
+   `AGENTS.md` guidance docs,
    `.claude/agents/*.md` subagents at any depth, `SKILL.md` skills,
    slash commands at both `.claude/commands/*.md` and
    `<plugin-root>/commands/*.md`, `.claude-plugin/{plugin,marketplace}.json`
@@ -180,9 +181,12 @@ Tool/agent AST discovery is wired for:
   edges — gated on imports from `@google/adk`). Handles
   `.ts` / `.tsx` / `.mts` / `.cts`
   with both `tree-sitter-typescript` and `tree-sitter-tsx` grammars.
-  TypeScript rule packs ship for Claude Agent SDK (CSDK-010/011/012/013
-  tool rules; CSDK-120 agent rule) and OpenAI Agents SDK (OAI-016/017/019);
-  TS Google ADK repos still produce `META-004` (no ADK TS rule pack yet).
+  TypeScript rule packs ship for all three SDKs: Claude Agent SDK
+  (CSDK-010/011/012/013/014/016 tool rules; CSDK-120/130/131 agent rules),
+  OpenAI Agents SDK (OAI-016/017/019/022/024 tool rules; OAI-105 agent rule),
+  and Google ADK (ADK-013/015/016 tool rules; ADK-109 agent rule). A TS repo
+  for any of the three no longer produces a blanket `META-004`; see
+  `COVERAGE.md` for the full matrix.
 
 JavaScript and Go files are recognized by Recon (they appear in the
 file inventory and feed component discovery) but no AST parser for them

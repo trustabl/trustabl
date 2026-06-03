@@ -1,10 +1,21 @@
 // Package inference is the BYOK proxy + cache from architecture §2.
 //
-// The interface and cache are wired; LLM enrichment is opt-in and runs only
-// when an API key is provided. Wire `anthropic-sdk-go` into Call() to enable
-// the enrichment pass (CSDK-005 "raw exceptions" is the most useful first
-// target — its rule is pattern-easy but the *fix* prescription benefits from
-// LLM context).
+// NON-FUNCTIONAL PLACEHOLDER — do not mistake this for working infrastructure.
+// As of today this package is a scaffold: the types and method shapes exist, but
+// Call() makes no LLM call (it returns ErrLLMDisabled with no key and a
+// "not implemented" error with one), and Router is never instantiated by the
+// scan pipeline — nothing outside this package's own tests calls New(). The
+// consequence to know: cache.put is unreachable in a real run, so the cache-hit
+// branch in Call() can never be taken in production. The "no network call
+// without a key" guarantee therefore holds only vacuously (it makes no call at
+// all). Treat the cache as inert until the LLM path lands.
+//
+// To make it real: wire `anthropic-sdk-go` into Call() (CSDK-005 "raw
+// exceptions" is the most useful first target — its rule is pattern-easy but the
+// *fix* prescription benefits from LLM context), call cache.put on success, and
+// instantiate the Router from the scanner. Discipline: every Call MUST honor the
+// cache, and the cache key MUST include the model name once we route across
+// models (see the TODO in Call).
 package inference
 
 import (

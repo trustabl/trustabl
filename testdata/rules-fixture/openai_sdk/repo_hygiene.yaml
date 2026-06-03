@@ -9,7 +9,7 @@ policy:
 
 rules:
   - id: OAI-202
-    title: OpenAI Agents project missing CLAUDE.md
+    title: OpenAI Agents project ships no agent-guidance doc (AGENTS.md/CLAUDE.md)
     severity: low
     confidence: 0.9
     language: python
@@ -22,19 +22,22 @@ rules:
             - openai_agents
         - not:
             repo_component_present:
+              - agents_md
               - claude_md
     explanation: >
-      The project uses the OpenAI Agents SDK in code but ships no CLAUDE.md at
-      the repo root. When Claude Code (or any agent honoring the CLAUDE.md
-      convention) edits this repo, it has no project-specific guidance on
-      Agent vs SandboxAgent choice, handoff topology, required input/output
-      guardrails, tool_choice settings, or the local test and build commands.
-      The likely consequence is generated code that bypasses the project's
-      safety contracts because nothing in-tree teaches the agent the local
-      rules.
+      The project uses the OpenAI Agents SDK in code but ships no agent-guidance
+      doc (AGENTS.md or CLAUDE.md) at the repo root. AGENTS.md is the
+      cross-vendor convention an editing coding agent reads before it acts; with
+      neither file present, any agent that opens this repo has no
+      project-specific guidance on Agent vs SandboxAgent choice, handoff
+      topology, required input/output guardrails, tool_choice settings, or the
+      local test and build commands. The likely consequence is generated code
+      that bypasses the project's safety contracts because nothing in-tree
+      teaches the agent the local rules.
     fix: >
-      Add a CLAUDE.md at the repo root. State whether the project uses Agent
-      or SandboxAgent, list required guardrails (input_guardrails,
+      Add an AGENTS.md at the repo root (the cross-vendor standard; a CLAUDE.md
+      also satisfies this rule). State whether the project uses Agent or
+      SandboxAgent, list required guardrails (input_guardrails,
       output_guardrails) and tool_choice conventions, note any handoff or
       tracing policy, and give the exact test, lint, and build commands. Keep
       it short and concrete so an editing agent can act on it without

@@ -138,6 +138,13 @@ func (r *Registry) Run(profile models.RepoProfile, inv models.RepoInventory, par
 		}
 		out = append(out, safeDetect(d.RuleID(), d.Category(), func() []models.Finding { return d.Detect(profile, inv) })...)
 	}
+	// Sort on a total order, then dedup. (RuleID, FilePath, Line) alone is not a
+	// total order — two findings from the same rule attributed to the same
+	// file+line but a different surface (ToolName) or message (Title) would tie
+	// and fall back to entity-iteration order, leaking that order into the
+	// byte-stable report. ToolName then Title close the tie; an adjacent-dedup
+	// pass then drops exact duplicates so the same hit reported twice (e.g. a tool
+	// resolved from two agents) cannot bloat the report non-deterministically.
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].RuleID != out[j].RuleID {
 			return out[i].RuleID < out[j].RuleID
@@ -145,9 +152,26 @@ func (r *Registry) Run(profile models.RepoProfile, inv models.RepoInventory, par
 		if out[i].FilePath != out[j].FilePath {
 			return out[i].FilePath < out[j].FilePath
 		}
-		return out[i].Line < out[j].Line
+		if out[i].Line != out[j].Line {
+			return out[i].Line < out[j].Line
+		}
+		if out[i].ToolName != out[j].ToolName {
+			return out[i].ToolName < out[j].ToolName
+		}
+		return out[i].Title < out[j].Title
 	})
-	return out
+	deduped := out[:0]
+	for i, f := range out {
+		if i > 0 {
+			p := out[i-1]
+			if f.RuleID == p.RuleID && f.FilePath == p.FilePath && f.Line == p.Line &&
+				f.ToolName == p.ToolName && f.Title == p.Title {
+				continue
+			}
+		}
+		deduped = append(deduped, f)
+	}
+	return deduped
 }
 
 // ApplicableCategories returns the set of detector categories that had at

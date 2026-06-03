@@ -9,7 +9,7 @@ policy:
 
 rules:
   - id: ADK-201
-    title: Google ADK project missing CLAUDE.md
+    title: Google ADK project ships no agent-guidance doc (AGENTS.md/CLAUDE.md)
     severity: low
     confidence: 0.9
     language: python
@@ -22,20 +22,21 @@ rules:
             - google_adk
         - not:
             repo_component_present:
+              - agents_md
               - claude_md
     explanation: >
-      The project uses the Google ADK in code but ships no CLAUDE.md at the
-      repo root. When Claude Code (or any agent following the CLAUDE.md
-      convention) edits this repo, it has no project-specific guidance on
-      agent-class choices (LlmAgent vs SequentialAgent vs ParallelAgent vs
+      The project uses the Google ADK in code but ships no agent-guidance doc
+      (AGENTS.md or CLAUDE.md) at the repo root. AGENTS.md is the cross-vendor
+      convention an editing coding agent reads before it acts; with neither file
+      present, any agent that opens this repo has no project-specific guidance
+      on agent-class choices (LlmAgent vs SequentialAgent vs ParallelAgent vs
       LoopAgent), sub_agents composition, FunctionTool wrapping conventions,
       required guardrails, or the local test and build commands. The likely
-      consequence is generated code that violates the project's tool and
-      agent contracts because nothing in-tree teaches the agent the local
-      rules.
+      consequence is generated code that violates the project's tool and agent
+      contracts because nothing in-tree teaches the agent the local rules.
     fix: >
-      Add a CLAUDE.md at the repo root. State which ADK agent classes the
-      project uses and why, how tools must be wrapped, any required guardrails
-      or sandboxing, and the exact test, lint, and build commands. Keep it
-      short and concrete so an editing agent can act on it without re-deriving
-      the conventions.
+      Add an AGENTS.md at the repo root (the cross-vendor standard; a CLAUDE.md
+      also satisfies this rule). State which ADK agent classes the project uses
+      and why, how tools must be wrapped, any required guardrails or sandboxing,
+      and the exact test, lint, and build commands. Keep it short and concrete
+      so an editing agent can act on it without re-deriving the conventions.

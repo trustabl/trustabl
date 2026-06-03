@@ -110,6 +110,7 @@ type ComponentKind string
 const (
 	ComponentMCPConfig             ComponentKind = "mcp_config"
 	ComponentClaudeMd              ComponentKind = "claude_md"
+	ComponentAgentsMd              ComponentKind = "agents_md" // AGENTS.md — vendor-neutral agent-guidance doc
 	ComponentClaudeSettings        ComponentKind = "claude_settings"
 	ComponentSubagent              ComponentKind = "subagent"
 	ComponentSlashCommand          ComponentKind = "slash_command"
