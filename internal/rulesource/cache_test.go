@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestPackDir_PerSHA(t *testing.T) {
@@ -41,6 +42,15 @@ func TestPruneCache_KeepsOnlyCurrent(t *testing.T) {
 	if err := writeCurrent(cache, "bbb"); err != nil {
 		t.Fatal(err)
 	}
+	// Backdate the non-kept entries past the grace window so they are eligible
+	// for pruning (freshly created dirs are protected — see the grace-window
+	// test below).
+	old := time.Now().Add(-2 * pruneGraceWindow)
+	for _, name := range []string{"aaa", "ccc", ".tmp-clone-123"} {
+		if err := os.Chtimes(filepath.Join(cache, name), old, old); err != nil {
+			t.Fatal(err)
+		}
+	}
 
 	pruneCache(cache, "bbb")
 
@@ -55,6 +65,35 @@ func TestPruneCache_KeepsOnlyCurrent(t *testing.T) {
 	}
 	if sha, ok := readCurrent(cache); !ok || sha != "bbb" {
 		t.Errorf("current pointer damaged: got (%q, %v), want (bbb, true)", sha, ok)
+	}
+}
+
+func TestPruneCache_GraceWindowProtectsRecentPacks(t *testing.T) {
+	// Regression (TR-149): a non-kept pack with a recent mtime may belong to a
+	// concurrent in-flight scan that reads its files lazily via os.DirFS after
+	// Resolve returns. Pruning it would fail that scan (notably on Windows), so
+	// the grace window must spare it; only genuinely stale packs are pruned.
+	cache := t.TempDir()
+	for _, sha := range []string{"fresh", "stale", "keep"} {
+		if err := os.MkdirAll(packDir(cache, sha), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	old := time.Now().Add(-2 * pruneGraceWindow)
+	if err := os.Chtimes(packDir(cache, "stale"), old, old); err != nil {
+		t.Fatal(err)
+	}
+
+	pruneCache(cache, "keep")
+
+	if !packExists(cache, "keep") {
+		t.Error("kept pack was removed")
+	}
+	if !packExists(cache, "fresh") {
+		t.Error("recent (concurrent-scan) pack was pruned; grace window not honored")
+	}
+	if packExists(cache, "stale") {
+		t.Error("stale pack was not pruned")
 	}
 }
 

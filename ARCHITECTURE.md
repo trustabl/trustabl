@@ -102,8 +102,13 @@ Resolution order:
 4. After a successful resolve, the cache is pruned to a single active pack —
    the `<sha>/` for the newly recorded `current` plus the `current` pointer
    itself are kept; every other pack directory (and any stale `.tmp-clone-*`
-   from interrupted clones) is removed. Pruning is best-effort, so a pack a
-   concurrent scan still holds open is left for next time.
+   from interrupted clones) is removed. Pruning is best-effort and skips any
+   entry modified within a grace window (`pruneGraceWindow`, 30 min): a pack a
+   concurrent scan just materialized is read lazily via `os.DirFS` *after*
+   resolve returns, so deleting it mid-read would fail that scan (notably on
+   Windows). Fresh entries are therefore spared; only genuinely stale packs and
+   abandoned temp-clone dirs from prior runs are removed. The cache still
+   converges to one pack between runs because the same SHA is reused.
 
 The pack's `manifest.yaml` declares a `schema_version`; resolution rejects a
 pack whose version is incompatible with the engine's

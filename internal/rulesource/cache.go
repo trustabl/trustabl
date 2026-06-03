@@ -4,7 +4,19 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
+
+// pruneGraceWindow is how recently a non-kept cache entry must have been
+// modified to be spared from pruning. It protects packs (and in-progress
+// temp-clone dirs) that a concurrent scan may still be materializing or
+// reading: the resolved pack's files are read lazily via os.DirFS *after*
+// Resolve returns, so deleting a freshly created pack out from under another
+// in-flight scan fails that scan (notably on Windows, where a file deleted
+// before it is read errors rather than surviving via an open handle). It is
+// far longer than any scan takes, and because the same SHA is reused via
+// packExists, the cache still converges to a single pack between runs.
+const pruneGraceWindow = 30 * time.Minute
 
 // packDir is the cache subdirectory for one resolved commit SHA.
 func packDir(cacheDir, sha string) string {
@@ -50,6 +62,14 @@ func pruneCache(cacheDir, keep string) {
 	for _, e := range entries {
 		if !e.IsDir() || e.Name() == keep {
 			continue // keep the active pack; the `current` file is not a dir
+		}
+		// Spare entries modified within the grace window — a concurrent scan may
+		// still be reading or materializing them. Genuinely stale packs and
+		// abandoned temp-clone dirs from prior runs have old mtimes and are
+		// pruned. If the mtime can't be read, fall through to pruning (the prior
+		// best-effort behavior).
+		if info, err := e.Info(); err == nil && time.Since(info.ModTime()) < pruneGraceWindow {
+			continue
 		}
 		_ = os.RemoveAll(filepath.Join(cacheDir, e.Name()))
 	}
