@@ -1,0 +1,34 @@
+policy:
+  id: mcp_shell_safety
+  name: MCP shell invocation safety
+  category: mcp
+  description: >
+    Rules covering MCP tool handlers that spawn OS processes. Process spawn
+    from inside a tool a connecting model can call exposes the server host's
+    shell with no runtime sandbox.
+
+rules:
+  - id: MCP-010
+    title: Tool body spawns a subprocess
+    severity: high
+    confidence: 0.7
+    language: python
+    applies_to:
+      - mcp_tool
+    scope: tool
+    match:
+      has_shell_call: true
+    explanation: >
+      The tool handler spawns an OS process (subprocess.*, os.system, os.popen,
+      or os.spawn*). Exposing process spawn to a connecting model is a wide
+      attack surface: command injection if any argument flows from a tool
+      argument into a shell string, arbitrary execution if the command itself is
+      caller-supplied, and unbounded resource use with no timeout. The MCP
+      runtime provides no sandbox; the subprocess inherits the server host's
+      filesystem, environment, and network credentials. Some tools legitimately
+      shell out, so this is a strong signal to review, not an automatic defect.
+    fix: >
+      Prefer a typed library API over shelling out. If a subprocess is required,
+      pass argv as a list (never shell=True), set timeout=, route through an
+      explicit command allow-list, and run the server under an OS sandbox with
+      no ambient credentials.

@@ -631,21 +631,154 @@ def build(pattern: str):
 `,
 		toolConfig: nil, wantFires: false},
 
-	// ─── mcp_tool scope restored on CSDK tool-hygiene rules ──────────────────
-	// CSDK-001/002/003/007 apply to [claude_sdk_tool, mcp_tool]; these cases
-	// exercise the mcp_tool half that the fixture had drifted to drop.
-	{name: "CSDK-001 fires on MCP tool missing docstring", ruleID: "CSDK-001", kind: models.KindMCPTool, src: `
-def fetch_data(x: str) -> dict:
+	// ─── MCP pack (category mcp, applies_to [mcp_tool]) ──────────────────────
+	// The mcp pack owns all mcp_tool coverage; the CSDK rules no longer list
+	// mcp_tool. Each MCP rule needs a fire + silent case here.
+	{name: "MCP-001 fires on missing description", ruleID: "MCP-001", kind: models.KindMCPTool, src: `
+def search_docs(query: str) -> dict:
     return {}
 `,
 		toolConfig: nil, wantFires: true},
-	{name: "CSDK-003 fires on MCP tool network call without timeout", ruleID: "CSDK-003", kind: models.KindMCPTool, src: `
+	{name: "MCP-001 silent with docstring", ruleID: "MCP-001", kind: models.KindMCPTool, src: `
+def search_docs(query: str) -> dict:
+    """Search the docs."""
+    return {}
+`,
+		toolConfig: nil, wantFires: false},
+
+	{name: "MCP-002 fires on untyped params", ruleID: "MCP-002", kind: models.KindMCPTool, src: `
+def search_docs(query, limit):
+    """Search."""
+    return {}
+`,
+		toolConfig: nil, wantFires: true},
+	{name: "MCP-002 silent with typed params", ruleID: "MCP-002", kind: models.KindMCPTool, src: `
+def search_docs(query: str, limit: int) -> dict:
+    """Search."""
+    return {}
+`,
+		toolConfig: nil, wantFires: false},
+
+	{name: "MCP-003 fires on ambiguous name", ruleID: "MCP-003", kind: models.KindMCPTool, src: `
+def process(data: dict) -> dict:
+    """Process data."""
+    return data
+`,
+		toolConfig: nil, wantFires: true},
+	{name: "MCP-003 silent on descriptive name", ruleID: "MCP-003", kind: models.KindMCPTool, src: `
+def summarize_invoice(invoice_id: str) -> dict:
+    """Summarize an invoice."""
+    return {}
+`,
+		toolConfig: nil, wantFires: false},
+
+	{name: "MCP-004 fires without timeout", ruleID: "MCP-004", kind: models.KindMCPTool, src: `
 import requests
 def get_invoice(id: str) -> dict:
     """Fetch invoice."""
     return requests.get("https://api.example.com/invoice/" + id).json()
 `,
 		toolConfig: nil, wantFires: true},
+	{name: "MCP-004 silent with timeout", ruleID: "MCP-004", kind: models.KindMCPTool, src: `
+import requests
+def get_invoice(id: str) -> dict:
+    """Fetch invoice."""
+    return requests.get("https://api.example.com/invoice/" + id, timeout=10).json()
+`,
+		toolConfig: nil, wantFires: false},
+
+	{name: "MCP-005 fires on path in open()", ruleID: "MCP-005", kind: models.KindMCPTool, src: `
+def read_file(file_path: str) -> str:
+    """Read a file."""
+    with open(file_path, "r") as f:
+        return f.read()
+`,
+		toolConfig: nil, wantFires: true},
+	{name: "MCP-005 silent with .resolve()", ruleID: "MCP-005", kind: models.KindMCPTool, src: `
+from pathlib import Path
+def read_file(file_path: str) -> str:
+    """Read a file."""
+    p = Path(file_path).resolve()
+    with open(p, "r") as f:
+        return f.read()
+`,
+		toolConfig: nil, wantFires: false},
+
+	{name: "MCP-006 fires on raise without try", ruleID: "MCP-006", kind: models.KindMCPTool, src: `
+def do_thing(x: str) -> dict:
+    """Do a thing."""
+    if not x:
+        raise ValueError("empty input")
+    return {"x": x}
+`,
+		toolConfig: nil, wantFires: true},
+	{name: "MCP-006 silent with try/except", ruleID: "MCP-006", kind: models.KindMCPTool, src: `
+def do_thing(x: str) -> dict:
+    """Do a thing."""
+    try:
+        if not x:
+            raise ValueError("empty")
+        return {"x": x}
+    except ValueError as e:
+        return {"error": str(e)}
+`,
+		toolConfig: nil, wantFires: false},
+
+	{name: "MCP-007 fires on mutating tool without key", ruleID: "MCP-007", kind: models.KindMCPTool, src: `
+def create_order(customer_id: str, amount: float) -> dict:
+    """Create an order."""
+    return {"ok": True}
+`,
+		toolConfig: nil, wantFires: true},
+	{name: "MCP-007 silent with idempotency key", ruleID: "MCP-007", kind: models.KindMCPTool, src: `
+def create_order(customer_id: str, amount: float, idempotency_key: str) -> dict:
+    """Create an order."""
+    return {"ok": True}
+`,
+		toolConfig: nil, wantFires: false},
+
+	{name: "MCP-008 fires on dynamic URL", ruleID: "MCP-008", kind: models.KindMCPTool, src: `
+import requests
+def fetch(path: str) -> dict:
+    """Fetch."""
+    return requests.get("https://api.example.com/" + path, timeout=5).json()
+`,
+		toolConfig: nil, wantFires: true},
+	{name: "MCP-008 silent on literal URL", ruleID: "MCP-008", kind: models.KindMCPTool, src: `
+import requests
+def fetch_status() -> dict:
+    """Fetch status."""
+    return requests.get("https://api.example.com/status", timeout=5).json()
+`,
+		toolConfig: nil, wantFires: false},
+
+	{name: "MCP-009 fires on eval", ruleID: "MCP-009", kind: models.KindMCPTool, src: `
+def calc(expr: str) -> float:
+    """Evaluate."""
+    return eval(expr)
+`,
+		toolConfig: nil, wantFires: true},
+	{name: "MCP-009 silent without eval", ruleID: "MCP-009", kind: models.KindMCPTool, src: `
+import ast
+def calc(expr: str) -> float:
+    """Evaluate."""
+    return ast.literal_eval(expr)
+`,
+		toolConfig: nil, wantFires: false},
+
+	{name: "MCP-010 fires on subprocess", ruleID: "MCP-010", kind: models.KindMCPTool, src: `
+import subprocess
+def run_cmd(name: str) -> str:
+    """Run a command."""
+    return subprocess.run([name], capture_output=True).stdout.decode()
+`,
+		toolConfig: nil, wantFires: true},
+	{name: "MCP-010 silent without subprocess", ruleID: "MCP-010", kind: models.KindMCPTool, src: `
+def run_cmd(name: str) -> str:
+    """Run a command."""
+    return name
+`,
+		toolConfig: nil, wantFires: false},
 
 	// ─── OAI-014 privileged tool without needs_approval ──────────────────────
 	{name: "OAI-014 fires on shell tool with no needs_approval", ruleID: "OAI-014", kind: models.KindOpenAITool, src: `

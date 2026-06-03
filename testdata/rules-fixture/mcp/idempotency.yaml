@@ -1,0 +1,46 @@
+policy:
+  id: mcp_idempotency
+  name: MCP mutating-tool idempotency
+  category: mcp
+  description: >
+    Rules that flag mutating MCP tools (create/send/refund/...) without an
+    idempotency key. Clients retry tool calls under timeouts and ambiguous
+    failures; without a key the same side effect can fire twice.
+
+rules:
+  - id: MCP-007
+    title: Mutating tool has no idempotency key
+    severity: medium
+    confidence: 0.55
+    language: python
+    applies_to:
+      - mcp_tool
+    scope: tool
+    match:
+      all:
+        - name_has_prefix:
+            - create_
+            - send_
+            - delete_
+            - post_
+            - update_
+            - refund_
+            - charge_
+            - issue_
+        - not:
+            param_name_matches:
+              contains:
+                - idempot
+              exact:
+                - request_id
+                - txn_id
+    explanation: >
+      The tool name signals a side effect (create/send/refund/…). MCP clients
+      retry tool calls under timeouts and ambiguous failures, and the same
+      model may be driven to repeat an action; without an idempotency key the
+      handler executes the mutation twice — a duplicate charge, order, or
+      message.
+    fix: >
+      Accept an idempotency key parameter (idempotency_key / request_id) and
+      de-duplicate server-side so a retried call is a no-op after the first
+      success.

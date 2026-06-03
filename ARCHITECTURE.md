@@ -699,6 +699,25 @@ Shipped rules (one row per YAML rule entry):
 | ADK-109  | agent    | google_adk | medium   | `google_adk/agent_safety.yaml`     | TypeScript LlmAgent has no description                                                |
 | ADK-110  | agent    | google_adk | medium   | `google_adk/agent_safety.yaml`     | Agent fetches web content via UrlContextTool/LoadWebPage without before_tool_callback |
 | ADK-201  | repo     | google_adk | low      | `google_adk/repo_hygiene.yaml`     | Google ADK project with no agent-guidance doc (AGENTS.md/CLAUDE.md)                   |
+| MCP-001  | tool     | mcp        | low      | `mcp/tool_definition.yaml`         | MCP tool has no description                                                           |
+| MCP-002  | tool     | mcp        | medium   | `mcp/tool_definition.yaml`         | MCP tool parameters are not type-annotated                                            |
+| MCP-003  | tool     | mcp        | low      | `mcp/tool_definition.yaml`         | Ambiguous MCP tool name                                                               |
+| MCP-004  | tool     | mcp        | high     | `mcp/network.yaml`                 | Network call in MCP tool handler has no timeout                                       |
+| MCP-005  | tool     | mcp        | high     | `mcp/path_safety.yaml`             | Path parameter used in I/O without validation                                         |
+| MCP-006  | tool     | mcp        | medium   | `mcp/error_handling.yaml`          | MCP tool raises exceptions without a structured error contract                        |
+| MCP-007  | tool     | mcp        | medium   | `mcp/idempotency.yaml`             | Mutating MCP tool has no idempotency key                                              |
+| MCP-008  | tool     | mcp        | high     | `mcp/ssrf.yaml`                    | MCP tool fetches a caller-controlled URL (SSRF)                                       |
+| MCP-009  | tool     | mcp        | high     | `mcp/code_execution.yaml`          | MCP tool body calls eval/exec/compile on dynamic input                               |
+| MCP-010  | tool     | mcp        | high     | `mcp/shell_safety.yaml`            | MCP tool body spawns a subprocess                                                     |
+
+> **MCP-tool coverage moved to a dedicated `mcp` category (2026-06-03).** The
+> Python CSDK rules CSDK-001/002/003/004/005/006/007/009/107/108 previously
+> listed `mcp_tool` in `applies_to`; that token was stripped from all ten so MCP
+> tools are audited only by the `mcp` pack (which loads whenever any MCP tool is
+> discovered, so pure-MCP repos are now covered and mixed Claude+MCP repos no
+> longer double-fire). The `mcp` category is accepted by the loader's
+> category allow-list (`internal/rules/loader.go`); `SDKMCP` already routed to
+> the `mcp` category via `LoadFor`, so no other wiring changed.
 
 ### Step 5 — Scoring ([internal/analysis/scoring.go](internal/analysis/scoring.go))
 
