@@ -230,11 +230,12 @@ When a repo declares agents from multiple SDKs side by side, each agent
 is checked against the rules for the SDK that declared it. No
 cross-SDK casting.
 
-## Two-repo rule model (rules vs engine)
+## Three-repo rule model (engine vs rules vs rulebook)
 
-Trustabl is split across **two repositories**. Internalize this before
-touching rules — getting it wrong silently ships untested rules or
-test-passes rules users never receive.
+Trustabl is split across **three repositories**. Internalize this before
+touching rules — getting it wrong silently ships untested rules, test-passes
+rules users never receive, or ships rules with no defensible grounding behind
+them.
 
 - **Engine repo** (this one, `github.com/trustabl/trustabl`): the scanner
   binary. Owns discovery, the rule **schema** (`internal/rules/schema.go` +
@@ -244,6 +245,40 @@ test-passes rules users never receive.
   `rulesource.DefaultRepoURL`): the `.yaml` rule packs + `manifest.yaml`.
   This is what `trustabl scan` clones and runs at scan time. It is the
   **production source of rules**.
+- **Rulebook repo** (`https://github.com/trustabl/trustabl-rulebook`):
+  **documentation only, ships no YAML rules.** This is the **home for every
+  rule's defensible grounding** — one rationale doc per YAML pack at
+  `docs/Policy/<category>/<topic>.md`, each carrying the threat model,
+  citations, severity/confidence defense, and known gaps. See
+  [Rule grounding lives in the rulebook, not the schema](#rule-grounding-lives-in-the-rulebook-not-the-schema)
+  below. Local sibling checkout: `../trustabl-rulebook`.
+
+### Rule grounding lives in the rulebook, not the schema
+
+**Do NOT add a `references` / `cwe` / `owasp` / citation field to `RuleDef`.**
+The rule schema is intentionally lean — `RuleDef` carries only ID, Title,
+Scope, Severity, Confidence, Language, AppliesTo, Match, Explanation, Fix.
+Detection rules answer *"does this pattern exist"* (proven mechanically by the
+AST predicate); they deliberately do not carry the evidence for *"why this
+pattern is dangerous."* That evidence — the citations and threat model that
+defend a finding against a skeptical researcher — lives entirely in the
+**rulebook rationale doc**, which has the room and structure for it that a YAML
+field never would.
+
+Each rationale doc has machine-checked YAML front-matter (`policy_id`,
+`category`, `topic`, and a `rules:` list whose `severity`/`confidence`/`scope`
+**must equal the shipped YAML** — `tools/check_rulebook.py` fails CI on
+divergence, on a shipped rule with no doc, and on a documented rule that no
+longer exists). It then defends each rule in prose: what we detect (mapped to
+the actual predicate), why it is flaggable (mechanism, not assertion), the
+real-world consequence, a severity defense, a confidence-gap analysis, an
+adversarial "what this does not cover" (FP/evasion scenarios), and a full
+safe-code recommendation. `references` are **OWASP LLM Top 10:2025 IDs**
+(`LLM01`–`LLM10`, a closed set) plus an editorial `fix_type` (`config` |
+`code`); both are editorial-only — the engine does not model them, so the gate
+validates their shape but cannot cross-check them. The authoring contract is
+[`docs/policy-rationale-doc-template-guide.md`](https://github.com/trustabl/trustabl-rulebook)
+in that repo.
 
 Inside the engine repo, **`testdata/rules-fixture/`** is a copy of the rules
 repo's packs, injected via `os.DirFS` so `go test` can validate rules without
@@ -274,9 +309,21 @@ When changing a rule (add / remove / edit severity, confidence, match, text):
 3. Add/update the rule's fire + silent cases in
    `internal/rules/policies_test.go` (the `TestPolicyRules_AllRulesCovered`
    guard fails the build if a fixture rule has no case).
-4. `go test ./...` here must pass.
-5. Commit and push the rules repo (the user pushes engine commits manually;
-   confirm before pushing either).
+4. **Update the paired rulebook rationale doc** in `../trustabl-rulebook/`
+   (`docs/Policy/<category>/<topic>.md`) — its front-matter
+   `severity`/`confidence`/`scope` must match the new YAML, and a *new* rule
+   needs a full rule-by-rule defense block with its OWASP `references`. The
+   rulebook's `tools/check_rulebook.py` gate fails on a shipped rule with no
+   doc. A rule shipped without grounding is the defect this whole model exists
+   to prevent.
+5. `go test ./...` here must pass.
+6. Commit and push the rules repo **and** the rulebook (the user pushes engine
+   commits manually; confirm before pushing any of the three).
+
+> **Known live gap (2026-06-03):** the rulebook documents 72 rules but
+> production ships 77 — the 5 Claude TS rules (CSDK-010/011/012/013/120) have
+> no rationale doc yet, so `check_rulebook.py` would fail against the live pack.
+> Backfilling these is the standing first task before any rule expansion.
 
 The rule-authoring contract (required fields, ID conventions, per-scope
 `applies_to` values, framing discipline) lives in
