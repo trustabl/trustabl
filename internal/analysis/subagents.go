@@ -23,7 +23,9 @@ import (
 //     emitted in pass 1 is tested against a tight shape gate
 //     (name + tools|model) to catch flat collections such as
 //     categories/<NN>/*.md (VoltAgent layout). Generic docs with frontmatter
-//     but no subagent fields are silently excluded.
+//     but no subagent fields are silently excluded, as are SKILL.md, files
+//     under .claude/commands/, and template scaffolding (TEMPLATE.md /
+//     *-template.md) whose subagent-shaped frontmatter is a fill-in example.
 //
 // Dedup is by relative path; the final slice is sorted by FilePath.
 func DiscoverSubagents(manifest models.ScanManifest) []models.SubagentDef {
@@ -101,9 +103,21 @@ func parseSubagentFile(repoRoot, relPath string) (models.SubagentDef, bool) {
 }
 
 // isSubagentCandidatePath excludes paths that belong to other artifact kinds so
-// the shape fallback does not double-claim a skill or slash command.
+// the shape fallback does not double-claim a skill or slash command, or report
+// scaffolding as a live subagent.
 func isSubagentCandidatePath(p string) bool {
-	if filepath.Base(p) == "SKILL.md" {
+	base := filepath.Base(p)
+	if base == "SKILL.md" {
+		return false
+	}
+	// Template / scaffolding files carry subagent-shaped frontmatter (name +
+	// tools/model) as a fill-in example, not a real declaration. Without this
+	// skip the fallback reports them as live subagents (seen on
+	// alirezarezvani/claude-skills: agents/personas/TEMPLATE.md,
+	// templates/agent-template.md). Scoped to the fallback only — a file the
+	// author placed under .claude/agents/ is handled by pass 1 and trusted.
+	lower := strings.ToLower(base)
+	if lower == "template.md" || strings.HasSuffix(lower, "-template.md") {
 		return false
 	}
 	if strings.HasPrefix(p, ".claude/commands/") || strings.Contains(p, "/.claude/commands/") {

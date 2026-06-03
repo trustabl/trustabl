@@ -297,6 +297,46 @@ func TestSubagents_FallbackExcludesSkillAndCommand(t *testing.T) {
 	}
 }
 
+func TestSubagents_FallbackExcludesTemplates(t *testing.T) {
+	dir := t.TempDir()
+	// Scaffolding files carry subagent-shaped frontmatter (name + tools/model)
+	// as a fill-in example, not a real subagent. The flat-collection fallback
+	// must not report them as live subagents (observed on alirezarezvani/
+	// claude-skills: agents/personas/TEMPLATE.md, templates/agent-template.md).
+	writeFixture(t, dir, "agents/personas/TEMPLATE.md", "---\nname: Agent Name\ntools: Read, Bash\n---\n")
+	writeFixture(t, dir, "templates/agent-template.md", "---\nname: cs-agent-name\ntools: Read\nmodel: sonnet\n---\n")
+	// A genuine flat-collection subagent that SHOULD still be picked up.
+	writeFixture(t, dir, "agents/real.md", "---\nname: real\ntools: Read\n---\n")
+	manifest := models.ScanManifest{
+		RepoRoot: dir,
+		MarkdownFiles: []string{
+			"agents/personas/TEMPLATE.md",
+			"templates/agent-template.md",
+			"agents/real.md",
+		},
+	}
+	got := analysis.DiscoverSubagents(manifest)
+	if len(got) != 1 || got[0].Name != "real" {
+		t.Fatalf("fallback must exclude TEMPLATE.md and *-template.md scaffolding; got %+v", got)
+	}
+}
+
+func TestSubagents_TemplateUnderCanonicalAgentsStillDiscovered(t *testing.T) {
+	dir := t.TempDir()
+	// The template skip is scoped to the flat-collection fallback. A file under
+	// the canonical .claude/agents/ path is an explicit declaration the author
+	// placed there; pass 1 still reports it regardless of name.
+	writeFixture(t, dir, ".claude/agents/TEMPLATE.md", "---\nname: starter\ndescription: D\ntools: Read\n---\n")
+	manifest := models.ScanManifest{
+		RepoRoot:   dir,
+		Components: []models.AgentComponent{{Kind: models.ComponentSubagent, Path: ".claude/agents/TEMPLATE.md"}},
+	}
+	got := analysis.DiscoverSubagents(manifest)
+	if len(got) != 1 || got[0].Name != "starter" {
+		t.Fatalf("canonical-path file must not be template-filtered; got %+v", got)
+	}
+}
+
 func TestSubagents_NoDoubleCountCanonicalAndMarkdown(t *testing.T) {
 	dir := t.TempDir()
 	writeFixture(t, dir, ".claude/agents/a.md", "---\nname: a\ndescription: D\ntools: Read\n---\n")

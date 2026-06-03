@@ -275,9 +275,11 @@ For each language recon cleared, do the AST work and produce a `RepoInventory`:
   — monorepos that nest agent projects under `agent/.claude/agents/` or
   `packages/x/.claude/agents/` are handled). Pass 2 is a **frontmatter-shape
   fallback** over every `manifest.MarkdownFiles` entry not already emitted: a
-  markdown file that is not a `SKILL.md` and not under `.claude/commands/`, with
-  frontmatter carrying a `name` and at least one of `tools`/`model`, is treated
-  as a subagent. This catches flat collections (e.g.
+  markdown file that is not a `SKILL.md`, not under `.claude/commands/`, and not
+  template scaffolding (`TEMPLATE.md` / `*-template.md`, whose subagent-shaped
+  frontmatter is a fill-in example, not a live declaration), with frontmatter
+  carrying a `name` and at least one of `tools`/`model`, is treated as a
+  subagent. This catches flat collections (e.g.
   `VoltAgent/awesome-claude-code-subagents` stores 150+ subagents under
   `categories/<NN>/*.md`, never `.claude/agents/`). The shape gate is
   deliberately tight to avoid mislabelling generic docs; canonical-path files
