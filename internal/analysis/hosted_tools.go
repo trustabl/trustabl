@@ -2,6 +2,7 @@ package analysis
 
 import (
 	"sort"
+	"strings"
 
 	"github.com/trustabl/trustabl/internal/models"
 )
@@ -59,13 +60,25 @@ func hostedKwargTree(callItem models.Expr) *models.KwargTree {
 	return &models.KwargTree{Children: callItem.CallKwargs}
 }
 
+// calleeName extracts the bare callee class name from a call's source text.
+// It strips the argument list (everything from the first '(') and any
+// module/attribute qualifier, so `agents.WebSearchTool()` ->  `WebSearchTool`
+// and `mcp.MCPServerStdio(...)` -> `MCPServerStdio`. Hosted-tool, ADK
+// hosted-tool, and MCP-server class sets are all keyed by the bare class name,
+// so without stripping the qualifier a valid module- or alias-prefixed call
+// would fall through to an `external` ref instead of being classified.
 func calleeName(callText string) string {
+	name := callText
 	for i, r := range callText {
 		if r == '(' {
-			return callText[:i]
+			name = callText[:i]
+			break
 		}
 	}
-	return callText
+	if dot := strings.LastIndexByte(name, '.'); dot >= 0 {
+		name = name[dot+1:]
+	}
+	return name
 }
 
 // sortHostedTools sorts hs in-place by (FilePath, Line, Class) and returns a
