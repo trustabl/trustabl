@@ -171,7 +171,15 @@ func Run(cfg Config) (models.ScanResult, error) {
 		HasShellInvocations: deriveHasShellInvocations(tools),
 		UsesDefaultTracing:  computeUsesDefaultTracing(parsed),
 	}
-	analysis.ResolveEdges(&inventory, append(parsed, tsFiles...))
+	// Combine the Python and TS parsed files into one explicitly-allocated slice.
+	// Using append(parsed, tsFiles...) inline would be unsafe if DiscoverTools ever
+	// returned a slice with spare capacity: two separate appends from the same base
+	// would alias the same backing array and could be mutated out from under each
+	// other. Allocate once, reuse for both ResolveEdges and registry.Run.
+	allParsed := make([]analysis.ParsedFile, 0, len(parsed)+len(tsFiles))
+	allParsed = append(allParsed, parsed...)
+	allParsed = append(allParsed, tsFiles...)
+	analysis.ResolveEdges(&inventory, allParsed)
 	inventory.Subagents = analysis.DiscoverSubagents(profile.Manifest)
 	inventory.Skills = analysis.DiscoverSkills(profile.Manifest)
 	inventory.SlashCommands = analysis.DiscoverSlashCommands(profile.Manifest)
@@ -202,7 +210,6 @@ func Run(cfg Config) (models.ScanResult, error) {
 	// Step 4: analysis
 	rep.StartPhase("analysis", "Analysis")
 	rep.SetTotal(len(inventory.Tools) + len(inventory.Agents))
-	allParsed := append(parsed, tsFiles...)
 	ruleFindings := registry.Run(profile, inventory, allParsed, func(label string) {
 		rep.Advance(label)
 	})
