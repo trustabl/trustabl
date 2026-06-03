@@ -8,6 +8,16 @@ to follow Semantic Versioning once it reaches 1.0.
 
 ### Added
 
+- **`trustabl llm provider` — provider switching.** New subcommand group for
+  managing which LLM provider is active:
+  - `trustabl llm provider set <provider>` — switch the active provider;
+    auto-creates an entry with a per-provider default model if not yet
+    configured (`anthropic → claude-haiku-4-5`, `openai → gpt-4.1-nano`,
+    `google → gemini-2.5-flash-lite`). Prints a key hint when a new provider
+    is created.
+  - `trustabl llm provider list` — list all configured providers; active
+    provider marked with `*`.
+
 - **`trustabl llm` — LLM provider configuration.** New command group for
   managing LLM provider keys and models, stored at
   `~/.config/trustabl/keys.json` (mode 0600, atomic write):

@@ -375,6 +375,8 @@ trustabl llm key set sk-ant-api03-...      # set key non-interactively
 trustabl llm key get                       # show masked key for active provider
 trustabl llm key delete                    # delete key with confirmation prompt
 trustabl llm model set claude-sonnet-4-6   # change model for active provider
+trustabl llm provider set openai           # switch active provider (auto-creates entry)
+trustabl llm provider list                 # list configured providers
 ```
 
 Rules are cached under your OS cache dir (`os.UserCacheDir()`, e.g.

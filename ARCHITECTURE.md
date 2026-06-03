@@ -1536,7 +1536,12 @@ take it absent a concrete distribution requirement.
 
 - **LLM enrichment is opt-in.** `internal/llm/` owns key storage
   (`~/.config/trustabl/keys.json`, mode 0600) and is managed via
-  `trustabl llm` (list / key set|get|delete / model set).
+  `trustabl llm` (list / key set|get|delete / model set / provider set|list).
+  The package exposes `Load`/`Save` (atomic write, mode 0600), `SetActive`
+  (switches active provider, auto-creates entry with a per-provider default
+  model), `ValidateKey`, and `MaskKey`. A `defaultModels` map supplies
+  fast/cheap defaults per known provider (`anthropic → claude-haiku-4-5`,
+  `openai → gpt-4.1-nano`, `google → gemini-2.5-flash-lite`).
   `internal/inference/router.go` defines the BYOK call interface;
   `Call()` returns `ErrLLMDisabled` when no key is configured.
   Rule-based detection runs fully without a key and makes no network
