@@ -134,26 +134,58 @@ func toolsInFile(pf ParsedFile) []models.ToolDef {
 // "@function_tool" via substring).
 func kindFromDecorators(decs []*sitter.Node, src []byte) models.ToolKind {
 	for _, d := range decs {
-		text := astutil.NodeText(d, src)
-		lower := strings.ToLower(text)
+		// Match on the decorator's resolved callee path (e.g. "function_tool",
+		// "agent.tool", "server.tool", "app.register_tool"), not a substring of
+		// the raw decorator text. Substring matching mis-fired: "@tool" is a
+		// prefix of "@tool_registry.register" and "@toolbar", so unrelated user
+		// decorators were classified as Claude-SDK tools and triggered tool rules
+		// on code that is not a tool at all.
+		callee := decoratorCallee(d, src)
+		if callee == "" {
+			continue
+		}
+		last := callee
+		if i := strings.LastIndex(callee, "."); i >= 0 {
+			last = callee[i+1:]
+		}
 		switch {
-		// OpenAI Agents SDK — `@function_tool` and `@function_tool(...)`.
-		case strings.Contains(lower, "@function_tool"):
+		// OpenAI Agents SDK — `@function_tool` / `@function_tool(...)`, bare or
+		// module-qualified (`agents.function_tool`).
+		case callee == "function_tool" || last == "function_tool":
 			return models.KindOpenAITool
-		// Claude Agent SDK conventions. Real names are still in flux —
-		// CSDK is pre-1.0. Expand this list as the SDK stabilizes.
-		case strings.Contains(lower, "@tool"),
-			strings.Contains(lower, "@claude_tool"),
-			strings.Contains(lower, "@agent.tool"),
-			strings.Contains(lower, "claude_agent_sdk"):
+		// Claude Agent SDK conventions. Real names are still in flux — CSDK is
+		// pre-1.0. Expand this list as the SDK stabilizes.
+		case callee == "tool" || callee == "claude_tool" || last == "claude_tool",
+			callee == "agent.tool",
+			strings.Contains(callee, "claude_agent_sdk"):
 			return models.KindClaudeSDKTool
-		case strings.Contains(lower, "@server.tool"),
-			strings.Contains(lower, "@mcp.tool"),
-			strings.Contains(lower, ".register_tool"):
+		// MCP registrations.
+		case callee == "server.tool" || callee == "mcp.tool",
+			last == "register_tool":
 			return models.KindMCPTool
 		}
 	}
 	return models.KindUnknown
+}
+
+// decoratorCallee returns the dotted callee path of a decorator, stripped of any
+// call arguments: "@function_tool" → "function_tool", "@server.tool" →
+// "server.tool", "@app.register_tool(x)" → "app.register_tool". Returns "" for a
+// nil or non-decorator node.
+func decoratorCallee(d *sitter.Node, src []byte) string {
+	if d == nil || d.Type() != "decorator" {
+		return ""
+	}
+	expr := d.NamedChild(0)
+	if expr == nil {
+		return ""
+	}
+	// `@deco(args)` — unwrap the call to its function (the callee identifier or
+	// attribute), discarding the arguments.
+	if expr.Type() == "call" {
+		expr = expr.ChildByFieldName("function")
+	}
+	return astutil.NodeText(expr, src)
 }
 
 // callsShell returns true if any descendant of fn is a call to

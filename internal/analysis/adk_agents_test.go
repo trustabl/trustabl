@@ -87,6 +87,24 @@ a = Agent(name="oai_agent")
 	}
 }
 
+func TestDiscoverADKAgents_ImportGateIgnoresSubstringInComment(t *testing.T) {
+	// The import gate must be AST-based, not a raw-source substring scan. A file
+	// that only mentions "from google.adk" in a comment or string literal (e.g. a
+	// migration note) but actually imports OpenAI's Agent must NOT have its
+	// Agent() calls misclassified as ADK.
+	src := `# Ported from google.adk: see "from google.adk.agents import LlmAgent"
+from agents import Agent
+
+note = "import google.adk.agents was the old way"
+a = Agent(name="oai_agent")
+`
+	pf := parsePyFile(t, "main.py", src)
+	agents := analysis.DiscoverADKAgents([]analysis.ParsedFile{pf})
+	if len(agents) != 0 {
+		t.Errorf("got %d ADK agents from a file that only mentions google.adk in text, want 0", len(agents))
+	}
+}
+
 func TestDiscoverADKAgents_OpaqueOnSplat(t *testing.T) {
 	src := `from google.adk.agents import LlmAgent
 

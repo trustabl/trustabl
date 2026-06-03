@@ -36,10 +36,51 @@ func DiscoverADKAgents(files []ParsedFile) []models.AgentDef {
 	return out
 }
 
+// fileImportsGoogleADK reports whether pf actually imports the google.adk
+// package via a real import statement. A raw-source substring scan was wrong:
+// a comment, docstring, or string literal that merely mentions "from google.adk"
+// would defeat the import gate and cause every Agent(...) call in the file to be
+// misclassified as an ADK agent (colliding with OpenAI's identically-named
+// class). Walk the AST and inspect import nodes instead, matching the precise,
+// AST-based discipline of collectAgentImports.
 func fileImportsGoogleADK(pf ParsedFile) bool {
-	src := string(pf.Source)
-	return strings.Contains(src, "from google.adk") ||
-		strings.Contains(src, "import google.adk")
+	found := false
+	astutil.Walk(pf.Tree.RootNode(), func(n *sitter.Node) bool {
+		if found {
+			return false
+		}
+		switch n.Type() {
+		case "import_from_statement":
+			// from google.adk[.x] import ...
+			if isGoogleADKModule(astutil.NodeText(n.ChildByFieldName("module_name"), pf.Source)) {
+				found = true
+			}
+		case "import_statement":
+			// import google.adk[.x] [as y]
+			for i := 0; i < int(n.ChildCount()); i++ {
+				c := n.Child(i)
+				switch c.Type() {
+				case "dotted_name":
+					if isGoogleADKModule(astutil.NodeText(c, pf.Source)) {
+						found = true
+					}
+				case "aliased_import":
+					if isGoogleADKModule(astutil.NodeText(c.ChildByFieldName("name"), pf.Source)) {
+						found = true
+					}
+				}
+			}
+		}
+		return true
+	})
+	return found
+}
+
+// isGoogleADKModule reports whether a dotted module path is google.adk or a
+// submodule of it (google.adk.agents, google.adk.tools, …) — but not an
+// unrelated package that merely shares the prefix text (google.adkx).
+func isGoogleADKModule(mod string) bool {
+	return mod == "google.adk" || strings.HasPrefix(mod, "google.adk.")
 }
 
 func discoverADKAgentsInFile(pf ParsedFile) []models.AgentDef {
