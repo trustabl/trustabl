@@ -6,6 +6,26 @@ import (
 	sitter "github.com/smacker/go-tree-sitter"
 )
 
+func TestNodeText_OutOfRangeIsSafe(t *testing.T) {
+	// Regression (TR-160): a node parsed from a longer source, then sliced
+	// against a shorter/mismatched src, must clamp rather than panic the scan.
+	tree, err := Parse([]byte("x = 12345"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := tree.RootNode()
+	short := []byte("x") // shorter than root.EndByte()
+	if got := NodeText(root, short); len(got) > len(short) {
+		t.Errorf("NodeText returned %q (len %d) > len(src) %d; not clamped", got, len(got), len(short))
+	}
+	if NodeText(root, nil) != "" {
+		t.Error("NodeText over nil src should be empty")
+	}
+	if NodeText(nil, []byte("abc")) != "" {
+		t.Error("nil node should return empty")
+	}
+}
+
 func parseFirstCall(t *testing.T, src string) *sitter.Node {
 	t.Helper()
 	tree, err := Parse([]byte(src))

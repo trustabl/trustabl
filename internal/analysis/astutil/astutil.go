@@ -32,11 +32,25 @@ func Parse(src []byte) (*sitter.Tree, error) {
 }
 
 // NodeText returns the source bytes a node spans, as a string.
+//
+// NodeText is a shared primitive called on nodes parsed from src, but the
+// signature cannot enforce that the node and the bytes actually came from the
+// same parse. A node whose offsets exceed len(src) (mismatched or truncated
+// source) would otherwise panic the entire scan on an out-of-range slice, so
+// the offsets are clamped defensively: an inverted or wholly out-of-range span
+// yields "", and an overlong end is clamped to len(src).
 func NodeText(n *sitter.Node, src []byte) string {
 	if n == nil {
 		return ""
 	}
-	return string(src[n.StartByte():n.EndByte()])
+	start, end := int(n.StartByte()), int(n.EndByte())
+	if start < 0 || start > len(src) || end < start {
+		return ""
+	}
+	if end > len(src) {
+		end = len(src)
+	}
+	return string(src[start:end])
 }
 
 // NodeLine returns the 1-indexed start line of a node.
