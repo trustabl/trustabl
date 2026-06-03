@@ -85,8 +85,6 @@ type MatchExpr struct {
 
 	// Repo-scope predicates
 	RepoHasSDKInCode                  []string `yaml:"repo_has_sdk_in_code,omitempty"`
-	RepoHasAgentClass                 []string `yaml:"repo_has_agent_class,omitempty"`
-	RepoHasNoAgentClass               []string `yaml:"repo_has_no_agent_class,omitempty"`
 	RepoComponentPresent              []string `yaml:"repo_component_present,omitempty"`
 	RepoUsesDefaultTracing            *bool    `yaml:"repo_uses_default_tracing,omitempty"`
 	RepoClaudeDefaultModeIs           []string `yaml:"repo_claude_default_mode_is,omitempty"`

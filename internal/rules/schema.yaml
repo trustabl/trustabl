@@ -305,13 +305,6 @@ rules:
 #       SDKsDetected — it routes to RepoInventory.HasShellInvocations (true
 #       when a Python function calls subprocess.* / os.system / os.popen).
 #
-#   repo_has_agent_class: [Agent, SandboxAgent, AgentDefinition]
-#       Fires when any AgentDef in the inventory has the given class.
-#
-#   repo_has_no_agent_class: [SandboxAgent, ...]
-#       Fires when NO AgentDef in the inventory has the given class. Negation
-#       of repo_has_agent_class; useful for "you have FS tools but no sandbox".
-#
 #   repo_component_present: [mcp_config, hook_script, claude_md, ...]
 #       Fires when any Component in Manifest.Components has the given kind.
 #       Allowed values match models.ComponentKind: mcp_config, claude_md,

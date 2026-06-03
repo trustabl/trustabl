@@ -795,21 +795,6 @@ func PredRepoHasSDKInCode(sdks []string, inv models.RepoInventory) bool {
 	return false
 }
 
-func PredRepoHasAgentClass(classes []string, inv models.RepoInventory) bool {
-	for _, a := range inv.Agents {
-		for _, c := range classes {
-			if a.Class == c {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func PredRepoHasNoAgentClass(classes []string, inv models.RepoInventory) bool {
-	return !PredRepoHasAgentClass(classes, inv)
-}
-
 func PredRepoComponentPresent(kinds []string, p models.RepoProfile) bool {
 	for _, c := range p.Manifest.Components {
 		for _, k := range kinds {

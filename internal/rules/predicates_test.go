@@ -813,26 +813,6 @@ func TestPredRepoHasSDKInCode_OpenshellRoutesToShellInvocations(t *testing.T) {
 	}
 }
 
-func TestPredRepoHasAgentClass(t *testing.T) {
-	inv := models.RepoInventory{Agents: []models.AgentDef{{Class: "Agent", Language: models.LanguagePython}}}
-	if !rules.PredRepoHasAgentClass([]string{"Agent"}, inv) {
-		t.Error("expected match")
-	}
-	if rules.PredRepoHasAgentClass([]string{"SandboxAgent"}, inv) {
-		t.Error("expected no match")
-	}
-}
-
-func TestPredRepoHasNoAgentClass(t *testing.T) {
-	inv := models.RepoInventory{Agents: []models.AgentDef{{Class: "Agent", Language: models.LanguagePython}}}
-	if rules.PredRepoHasNoAgentClass([]string{"Agent"}, inv) {
-		t.Error("expected false when Agent exists")
-	}
-	if !rules.PredRepoHasNoAgentClass([]string{"SandboxAgent"}, inv) {
-		t.Error("expected true when SandboxAgent absent")
-	}
-}
-
 func TestPredRepoComponentPresent(t *testing.T) {
 	p := models.RepoProfile{Manifest: models.ScanManifest{
 		Components: []models.AgentComponent{{Kind: models.ComponentMCPConfig, Path: "mcp.json"}},

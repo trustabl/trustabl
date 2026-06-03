@@ -99,12 +99,6 @@ func (e MatchExpr) EvaluateRepo(p models.RepoProfile, inv models.RepoInventory) 
 	if len(e.RepoHasSDKInCode) > 0 && !PredRepoHasSDKInCode(e.RepoHasSDKInCode, inv) {
 		return false
 	}
-	if len(e.RepoHasAgentClass) > 0 && !PredRepoHasAgentClass(e.RepoHasAgentClass, inv) {
-		return false
-	}
-	if len(e.RepoHasNoAgentClass) > 0 && !PredRepoHasNoAgentClass(e.RepoHasNoAgentClass, inv) {
-		return false
-	}
 	if len(e.RepoComponentPresent) > 0 && !PredRepoComponentPresent(e.RepoComponentPresent, p) {
 		return false
 	}
@@ -271,13 +265,13 @@ var predicatesByScope = map[models.Scope]map[string]bool{
 		"name_in": true, "name_has_prefix": true, "has_body_text": true,
 		"param_name_matches": true, "call_without_kwarg": true,
 		"call_uses_unnormalized_path_param": true,
-		"tool_decorator_kwarg_value": true, "tool_decorator_kwarg_present": true,
+		"tool_decorator_kwarg_value":        true, "tool_decorator_kwarg_present": true,
 	},
 	models.ScopeAgent: {
 		"agent_class": true, "agent_kwarg_present": true, "agent_kwarg_missing": true,
 		"agent_kwarg_list_empty": true, "agent_kwarg_value": true,
 		"agent_uses_tool_kind": true, "agent_grants_builtin_tool": true,
-		"agent_uses_hosted_tool_class": true,
+		"agent_uses_hosted_tool_class":    true,
 		"agent_is_subagent_of_any":        true,
 		"agent_hosted_tool_kwarg_present": true, "agent_hosted_tool_kwarg_value": true,
 	},
@@ -285,8 +279,7 @@ var predicatesByScope = map[models.Scope]map[string]bool{
 		"subagent_grants_tool": true,
 	},
 	models.ScopeRepo: {
-		"repo_has_sdk_in_code": true,
-		"repo_has_agent_class": true, "repo_has_no_agent_class": true,
+		"repo_has_sdk_in_code":   true,
 		"repo_component_present": true, "repo_uses_default_tracing": true,
 		"repo_claude_default_mode_is":            true,
 		"repo_claude_options_permission_mode_is": true,
@@ -339,8 +332,6 @@ func (e MatchExpr) setPredicateNames() []string {
 	add(len(e.SubagentGrantsTool) > 0, "subagent_grants_tool")
 	// Repo scope
 	add(len(e.RepoHasSDKInCode) > 0, "repo_has_sdk_in_code")
-	add(len(e.RepoHasAgentClass) > 0, "repo_has_agent_class")
-	add(len(e.RepoHasNoAgentClass) > 0, "repo_has_no_agent_class")
 	add(len(e.RepoComponentPresent) > 0, "repo_component_present")
 	add(e.RepoUsesDefaultTracing != nil, "repo_uses_default_tracing")
 	add(len(e.RepoClaudeDefaultModeIs) > 0, "repo_claude_default_mode_is")
