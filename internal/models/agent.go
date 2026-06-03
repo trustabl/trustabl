@@ -39,6 +39,7 @@ type ExprKind string
 const (
 	ExprLiteralString ExprKind = "literal_string"
 	ExprLiteralInt    ExprKind = "literal_int"
+	ExprLiteralFloat  ExprKind = "literal_float"
 	ExprLiteralBool   ExprKind = "literal_bool"
 	ExprLiteralNone   ExprKind = "literal_none"
 	ExprNameRef       ExprKind = "name_ref"

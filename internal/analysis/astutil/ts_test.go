@@ -80,7 +80,7 @@ import { z } from "zod";
 }
 
 func TestTSObjectKwargs_FlatLiterals(t *testing.T) {
-	src := []byte(`const x = { name: "alice", count: 3, ok: true, missing: null };`)
+	src := []byte(`const x = { name: "alice", count: 3, temp: 0.7, hexv: 0xff, ok: true, missing: null };`)
 	p := astutil.NewTSParser()
 	tree, _ := p.ParseCtx(context.Background(), nil, src)
 	obj := findFirstObjectLiteral(tree.RootNode())
@@ -101,6 +101,10 @@ func TestTSObjectKwargs_FlatLiterals(t *testing.T) {
 	}
 	checkLeaf("name", models.ExprLiteralString, `"alice"`)
 	checkLeaf("count", models.ExprLiteralInt, "3")
+	// Regression (TR-157): a float literal must be ExprLiteralFloat, not Int;
+	// a hex literal has no decimal point and stays Int.
+	checkLeaf("temp", models.ExprLiteralFloat, "0.7")
+	checkLeaf("hexv", models.ExprLiteralInt, "0xff")
 	checkLeaf("ok", models.ExprLiteralBool, "true")
 	checkLeaf("missing", models.ExprLiteralNone, "null")
 }

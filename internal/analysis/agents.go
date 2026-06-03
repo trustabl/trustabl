@@ -604,6 +604,8 @@ func exprFromNode(n *sitter.Node, src []byte) *models.KwargTree {
 		e.Kind = models.ExprLiteralString
 	case "integer":
 		e.Kind = models.ExprLiteralInt
+	case "float":
+		e.Kind = models.ExprLiteralFloat
 	case "true", "false":
 		e.Kind = models.ExprLiteralBool
 	case "none":

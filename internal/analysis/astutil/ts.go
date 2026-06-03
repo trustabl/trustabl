@@ -199,7 +199,17 @@ func classifyTSExpr(n *sitter.Node, src []byte) *models.Expr {
 	case "string":
 		return &models.Expr{Kind: models.ExprLiteralString, Text: text}
 	case "number":
-		return &models.Expr{Kind: models.ExprLiteralInt, Text: text}
+		// tree-sitter lexes ints and floats as one "number" node, so the only
+		// reliable non-integer marker is a decimal point. Hex (0xff), binary,
+		// octal, and exponent-without-point (1e3) literals are integer-valued
+		// and stay ExprLiteralInt; 1.5 / 1.5e3 are ExprLiteralFloat. Without
+		// this, a rule branching on ExprLiteralInt to mean "an integer" would
+		// mis-handle every float.
+		kind := models.ExprLiteralInt
+		if strings.ContainsRune(text, '.') {
+			kind = models.ExprLiteralFloat
+		}
+		return &models.Expr{Kind: kind, Text: text}
 	case "true", "false":
 		return &models.Expr{Kind: models.ExprLiteralBool, Text: text}
 	case "null", "undefined":
