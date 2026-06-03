@@ -252,24 +252,10 @@ func ResolveEdges(inv *models.RepoInventory, parsed []ParsedFile) {
 		if a.SDK == models.SDKGoogleADK && a.Language != models.LanguageTypeScript {
 			subKwarg := agentKwarg(a, "sub_agents")
 			if subKwarg != nil && subKwarg.Value != nil && subKwarg.Value.Kind == models.ExprList {
-				agentsByName := map[string]*models.AgentDef{}
-				for j := range inv.Agents {
-					if inv.Agents[j].FilePath != a.FilePath {
-						continue
-					}
-					// Key by both the name= literal and the assignment-target
-					// variable, because sub_agents=[X] references the variable
-					// while findings attribute to the name= value.
-					if n := inv.Agents[j].Name; n != "" {
-						agentsByName[n] = &inv.Agents[j]
-					}
-					if v := inv.Agents[j].VarName; v != "" {
-						agentsByName[v] = &inv.Agents[j]
-					}
-				}
+				lookup := buildSameFileAgentLookup(inv, a.FilePath)
 				for _, item := range subKwarg.Value.List {
 					ref := models.AgentRef{Name: item.Text}
-					if target, ok := agentsByName[item.Text]; ok {
+					if target := lookup.resolve(item.Text); target != nil {
 						ref.Resolved = target
 					} else {
 						ref.External = true
@@ -333,24 +319,13 @@ func ResolveEdges(inv *models.RepoInventory, parsed []ParsedFile) {
 		// one pass (and never leaves Resolved==nil && External==false), so
 		// this language-agnostic pass only fires for pre-populated refs.
 		if len(a.HandoffRefs) > 0 {
-			agentsByName := map[string]*models.AgentDef{}
-			for j := range inv.Agents {
-				if inv.Agents[j].FilePath != a.FilePath {
-					continue
-				}
-				if n := inv.Agents[j].Name; n != "" {
-					agentsByName[n] = &inv.Agents[j]
-				}
-				if v := inv.Agents[j].VarName; v != "" {
-					agentsByName[v] = &inv.Agents[j]
-				}
-			}
+			lookup := buildSameFileAgentLookup(inv, a.FilePath)
 			for j := range a.HandoffRefs {
 				ref := &a.HandoffRefs[j]
 				if ref.Resolved != nil || ref.External {
 					continue
 				}
-				if target, ok := agentsByName[ref.Name]; ok {
+				if target := lookup.resolve(ref.Name); target != nil {
 					ref.Resolved = target
 				} else {
 					ref.External = true
@@ -468,6 +443,59 @@ func ResolveEdges(inv *models.RepoInventory, parsed []ParsedFile) {
 type agentImport struct {
 	SDK   models.SDK
 	Class string
+}
+
+// sameFileAgentLookup indexes the agents declared in one file by their
+// assignment-target variable (VarName) and their name= literal (Name), kept in
+// SEPARATE maps. A handoff / sub_agents reference in source is a variable far
+// more often than a name literal (sub_agents=[researcher] references the var),
+// so resolve() tries VarName first and falls back to Name. Merging both key
+// spaces into one map let one agent's VarName silently overwrite a *different*
+// agent's Name and misattribute the edge — a wrong finding, since agent-scoped
+// rules query these edges. First-write-wins within each map preserves the
+// deterministic index order.
+type sameFileAgentLookup struct {
+	byVar  map[string]*models.AgentDef
+	byName map[string]*models.AgentDef
+}
+
+func buildSameFileAgentLookup(inv *models.RepoInventory, filePath string) sameFileAgentLookup {
+	l := sameFileAgentLookup{
+		byVar:  map[string]*models.AgentDef{},
+		byName: map[string]*models.AgentDef{},
+	}
+	for j := range inv.Agents {
+		if inv.Agents[j].FilePath != filePath {
+			continue
+		}
+		if v := inv.Agents[j].VarName; v != "" {
+			if _, exists := l.byVar[v]; !exists {
+				l.byVar[v] = &inv.Agents[j]
+			}
+		}
+		if n := inv.Agents[j].Name; n != "" {
+			if _, exists := l.byName[n]; !exists {
+				l.byName[n] = &inv.Agents[j]
+			}
+		}
+	}
+	return l
+}
+
+// resolve returns the same-file agent a reference points at, preferring a
+// variable (assignment-target) match over a name= literal match. Returns nil
+// when the reference matches neither (the caller marks it External).
+func (l sameFileAgentLookup) resolve(ref string) *models.AgentDef {
+	if ref == "" {
+		return nil
+	}
+	if target, ok := l.byVar[ref]; ok {
+		return target
+	}
+	if target, ok := l.byName[ref]; ok {
+		return target
+	}
+	return nil
 }
 
 func collectAgentImports(pf ParsedFile) map[string]agentImport {

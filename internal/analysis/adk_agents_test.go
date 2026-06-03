@@ -242,6 +242,43 @@ parent = SequentialAgent(name="parent", sub_agents=[child])
 	}
 }
 
+func TestResolveEdges_ADKSubAgentVarNameCollision(t *testing.T) {
+	// A sub_agents=[worker] reference is a *variable* reference. When a different
+	// agent carries name="worker", the reference must still resolve to the agent
+	// assigned to the worker variable, not the decoy whose name= literal collides.
+	// The old merged-map lookup let the name= entry overwrite the variable entry
+	// (or vice-versa, by declaration order) and misattributed the edge.
+	src := `from google.adk.agents import LlmAgent, SequentialAgent
+
+worker = LlmAgent(name="real_worker")
+decoy = LlmAgent(name="worker")
+parent = SequentialAgent(name="parent", sub_agents=[worker])
+`
+	pf := parsePyFile(t, "main.py", src)
+	inv := models.RepoInventory{Agents: analysis.DiscoverADKAgents([]analysis.ParsedFile{pf})}
+	analysis.ResolveEdges(&inv, []analysis.ParsedFile{pf})
+
+	var parent *models.AgentDef
+	for i := range inv.Agents {
+		if inv.Agents[i].Name == "parent" {
+			parent = &inv.Agents[i]
+		}
+	}
+	if parent == nil {
+		t.Fatal("parent agent not found")
+	}
+	if len(parent.HandoffRefs) != 1 {
+		t.Fatalf("parent.HandoffRefs: got %d, want 1", len(parent.HandoffRefs))
+	}
+	got := parent.HandoffRefs[0].Resolved
+	if got == nil {
+		t.Fatal("sub_agents=[worker] did not resolve")
+	}
+	if got.Name != "real_worker" {
+		t.Errorf("sub_agents=[worker] resolved to name=%q, want real_worker (the worker variable, not the name=worker decoy)", got.Name)
+	}
+}
+
 func TestResolveEdges_ADKAgentToolNoTransitive(t *testing.T) {
 	src := `from google.adk.agents import LlmAgent
 from google.adk.tools import AgentTool
