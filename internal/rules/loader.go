@@ -26,6 +26,13 @@ func Load(fsys fs.FS) ([]PolicyFile, error) {
 		if err != nil {
 			return err
 		}
+		// Never descend a VCS metadata directory. A cached pack is a git clone,
+		// so its root contains a .git/ tree; any *.yaml that happens to live
+		// under it is repo plumbing, not a policy, and must not be loaded as a
+		// rule. Skip the whole subtree.
+		if d.IsDir() && d.Name() == ".git" {
+			return fs.SkipDir
+		}
 		// manifest.yaml at the pack root carries schema metadata, not a
 		// policy. The rulesource package reads it; the loader skips it.
 		if !d.IsDir() && strings.HasSuffix(path, ".yaml") && path != "manifest.yaml" {

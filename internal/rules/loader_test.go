@@ -355,3 +355,37 @@ rules:
 		t.Fatalf("len(policies) = %d, want 1 (manifest.yaml must be skipped)", len(policies))
 	}
 }
+
+func TestLoad_SkipsGitDir(t *testing.T) {
+	// A cached pack is a git clone, so its root contains a .git/ tree. Any
+	// *.yaml that lives under .git/ is VCS plumbing, not a policy, and must
+	// never be decoded as a rule. The real policy alongside it still loads.
+	fsys := fstest.MapFS{
+		".git/config":               &fstest.MapFile{Data: []byte("[core]\n")},
+		".git/refs/heads/main.yaml": &fstest.MapFile{Data: []byte("not: a policy\n")},
+		"claude_sdk/x.yaml": &fstest.MapFile{Data: []byte(`policy:
+  id: p
+  name: P
+  category: claude_sdk
+  description: d
+rules:
+  - id: X-001
+    title: t
+    scope: tool
+    severity: low
+    confidence: 0.5
+    applies_to: [claude_sdk_tool]
+    match:
+      has_docstring: true
+    explanation: e
+    fix: f
+`)},
+	}
+	policies, err := rules.Load(fsys)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if len(policies) != 1 {
+		t.Fatalf("len(policies) = %d, want 1 (.git/ subtree must be skipped)", len(policies))
+	}
+}

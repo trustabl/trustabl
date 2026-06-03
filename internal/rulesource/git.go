@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/go-git/go-git/v5"
@@ -114,6 +115,13 @@ func cloneInto(ctx context.Context, url string, refName plumbing.ReferenceName, 
 		return sha, nil
 	}
 	_ = os.RemoveAll(dest)
+	// Drop the .git tree before installing the pack: the cached pack only needs
+	// the tracked rule files, not the full clone history. Leaving .git in place
+	// bloats every cached SHA and ships VCS plumbing that the loader would have
+	// to defend against. Best-effort — if go-git still holds open handles (can
+	// happen on Windows), the loader independently skips any .git/ subtree, so a
+	// residual .git never poisons rule loading.
+	_ = os.RemoveAll(filepath.Join(tmp, ".git"))
 	// Write the sentinel into the temp clone as the LAST step before the rename,
 	// so the installed pack atomically appears complete (dir + marker together).
 	if err := markPackComplete(tmp); err != nil {
