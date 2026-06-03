@@ -1051,7 +1051,10 @@ ScanResult {
 record, and both output formats render from it (the human summary lists
 findings and readiness; `--format json` marshals the struct directly).
 
-`ScanID` is derived deterministically from the repo label, every inventoried
+`ScanID` is derived deterministically from a stable identity label (the
+`RemoteURL` for a remote scan, or the target's **basename** for a local scan —
+never the absolute mount point, so the same repo checked out at different paths
+yields the same ID), every inventoried
 file list (Python, TypeScript, JavaScript, YAML, JSON, Markdown — each sorted
 independently and folded in with a label so OS-walk order never leaks and a
 TS-only or markdown-only repo gets an honest ID), and the resolved rules
@@ -1406,10 +1409,12 @@ not expected to trigger every rule. Per-rule correctness lives in
 
 Two invariants are load-bearing for the user-facing experience:
 
-1. **Same inputs → same `ScanID`.** Derived from the repo label, every
+1. **Same inputs → same `ScanID`.** Derived from a stable identity label
+   (`RemoteURL`, or the local target's basename — not the absolute path), every
    inventoried file list (Python, TypeScript, JavaScript, YAML, JSON, Markdown —
    each sorted independently and folded in under a label), and the resolved
-   rules version, so file ordering from the OS walk does not leak into the ID.
+   rules version, so neither file ordering from the OS walk nor the machine-
+   specific mount point leaks into the ID.
    Folding all file lists — not just Python — keeps the ID honest for TS-only
    and markdown-only repos, where a Python-only ID would collide across
    materially different scans. Because the rules version is folded in, a scan

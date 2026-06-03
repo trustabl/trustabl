@@ -52,6 +52,67 @@ func TestScanDeterministic(t *testing.T) {
 	}
 }
 
+// TestScanID_StableAcrossPaths asserts that the same repo content scanned at
+// two different absolute paths (same basename, different parent dir) yields the
+// same ScanID — the ID must not fold the machine-specific mount point.
+// Regression for TR-151. The display-only Repo field still differs.
+func TestScanID_StableAcrossPaths(t *testing.T) {
+	_, thisFile, _, _ := runtime.Caller(0)
+	fixture := filepath.Join(filepath.Dir(thisFile), "..", "..", "testdata", "deterministic-fixture")
+
+	mk := func() string {
+		dst := filepath.Join(t.TempDir(), "repo")
+		if err := copyDir(t, fixture, dst); err != nil {
+			t.Fatalf("copy fixture: %v", err)
+		}
+		return dst
+	}
+	a, b := mk(), mk()
+	if a == b {
+		t.Fatal("expected two distinct paths")
+	}
+
+	cfg := scanner.Config{RulesFS: rulesFixtureFS(t), RulesVersion: "fixedsha"}
+	ca, cb := cfg, cfg
+	ca.Target, cb.Target = a, b
+	ra, err := scanner.Run(ca)
+	if err != nil {
+		t.Fatalf("run a: %v", err)
+	}
+	rb, err := scanner.Run(cb)
+	if err != nil {
+		t.Fatalf("run b: %v", err)
+	}
+	if ra.ScanID != rb.ScanID {
+		t.Errorf("ScanID folds the mount point: %q (%s) vs %q (%s)", ra.ScanID, a, rb.ScanID, b)
+	}
+	if ra.Repo == rb.Repo {
+		t.Errorf("expected distinct display Repo labels (full paths), both %q", ra.Repo)
+	}
+}
+
+func copyDir(t *testing.T, src, dst string) error {
+	t.Helper()
+	return filepath.WalkDir(src, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+		target := filepath.Join(dst, rel)
+		if d.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(target, data, 0o644)
+	})
+}
+
 // TestScanDeterministic_LocationFields is a belt-and-suspenders assertion that
 // every entity's Location (FilePath, Line, EndLine) is identical across two
 // consecutive runs. The existing TestScanDeterministic covers this indirectly

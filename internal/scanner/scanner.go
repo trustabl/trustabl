@@ -84,6 +84,18 @@ func Run(cfg Config) (models.ScanResult, error) {
 		repoLabel = src.RootPath
 	}
 
+	// idLabel is the *stable* identity component folded into ScanID. For a
+	// remote scan it is the canonical RemoteURL; for a local scan it is the
+	// target's basename, NOT its absolute path — so the same repo content
+	// checked out at two different paths (or cloned into a fresh trustabl-clone
+	// temp dir) yields the same ScanID. The absolute path stays in the
+	// display-only Repo field. Folding the mount point would make the ID
+	// machine-dependent, breaking the "same inputs -> same ScanID" contract.
+	idLabel := src.RemoteURL
+	if idLabel == "" {
+		idLabel = filepath.Base(src.RootPath)
+	}
+
 	// Step 1: recon (cheap, no AST)
 	rep.StartPhase("recon", "Recon")
 	profile, err := ingestion.Recon(src, func(path string) { rep.Advance(path) })
@@ -215,7 +227,7 @@ func Run(cfg Config) (models.ScanResult, error) {
 	}
 
 	return models.ScanResult{
-		ScanID:              scanID(repoLabel, profile.Manifest, cfg.RulesVersion),
+		ScanID:              scanID(idLabel, profile.Manifest, cfg.RulesVersion),
 		Repo:                repoLabel,
 		Languages:           profile.Languages,
 		SDKs:                inventory.SDKsDetected,
@@ -417,12 +429,15 @@ func parseTSFiles(paths []string, root string, onFile func(string)) []analysis.P
 	return out
 }
 
-// scanID is derived from the repo label, the sorted set of Python files, and
-// the rules version, so the same inputs always produce the same ID. Including
-// the rules version means a different rule pack yields a distinct, honest ID.
-func scanID(repoLabel string, manifest models.ScanManifest, rulesVersion string) string {
+// scanID is derived from a stable identity label (RemoteURL for remote scans,
+// the target's basename for local scans — never the absolute mount point), the
+// sorted set of inventoried files, and the rules version, so the same inputs
+// always produce the same ID regardless of where the repo is checked out.
+// Including the rules version means a different rule pack yields a distinct,
+// honest ID.
+func scanID(idLabel string, manifest models.ScanManifest, rulesVersion string) string {
 	h := sha256.New()
-	h.Write([]byte(repoLabel))
+	h.Write([]byte(idLabel))
 	// Fold every inventoried file list so the ID is honest about all scanned
 	// inputs, not just Python — the engine now does first-class TypeScript /
 	// JavaScript discovery and markdown / JSON / YAML config scanning. Each list
