@@ -4,6 +4,38 @@ All notable changes to Trustabl are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project aims
 to follow Semantic Versioning once it reaches 1.0.
 
+## [0.1.2] - 2026-06-03
+
+### Added
+
+- **`AGENTS.md` as a vendor-neutral repo-hygiene signal.** The scanner now
+  discovers `AGENTS.md` alongside `CLAUDE.md`; the repo-guidance rules
+  (`CSDK-203` / `OAI-202` / `ADK-201`) accept either file and fire only when
+  neither is present, so a repo that documents its agents in `AGENTS.md` is no
+  longer flagged.
+
+### Changed
+
+- **Interrupt cleanup.** Ctrl-C during a scan now cancels the in-flight work and
+  drains it, so the rules-clone temp directory is removed instead of being
+  leaked on interrupt.
+- **`--strict` floors at low severity.** `info`/`META` findings no longer fail
+  the build under `--strict`; only real findings gate CI.
+- **Clearer schema-incompatibility error.** When a resolved rule pack targets a
+  schema the engine cannot evaluate, the CLI now explains what to do (including
+  `--rules-ref` troubleshooting) instead of failing opaquely.
+- Determinism hardening: tools and agents are sorted by `(FilePath, Line, Name)`
+  before edge resolution, and findings carry a total-order sort with adjacent
+  dedup, so the report stays byte-stable regardless of walk order.
+
+### Fixed
+
+- **Subagent discovery no longer reports scaffolding as live agents.** The
+  flat-collection fallback now skips `TEMPLATE.md` and `*-template.md` files,
+  whose subagent-shaped frontmatter is a fill-in example rather than a real
+  declaration. Files placed under the canonical `.claude/agents/` path are
+  unaffected.
+
 ## [0.1.1] - 2026-06-01
 
 ### Added
