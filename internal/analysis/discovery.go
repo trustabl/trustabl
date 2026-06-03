@@ -243,10 +243,13 @@ func extractDecoratorKwargs(dec *sitter.Node, src []byte) map[string]string {
 	return config
 }
 
-func buildTool(fn *sitter.Node, pf ParsedFile, kind models.ToolKind) models.ToolDef {
-	name := astutil.FunctionName(fn, pf.Source)
-	params := astutil.FunctionParams(fn, pf.Source)
-	// Drop `self`/`cls`.
+// toolParamNames returns a function's parameter names with the implicit
+// receiver (`self`/`cls`) dropped. A tool registered as a method still parses as
+// a function_definition, so without this strip a phantom `self` param leaks into
+// ParamNames and skews any param-counting tool rule (untyped-params, arity).
+// Shared by every Python tool-discovery path so they agree on the param list.
+func toolParamNames(fn *sitter.Node, src []byte) []string {
+	params := astutil.FunctionParams(fn, src)
 	filtered := params[:0]
 	for _, p := range params {
 		if p == "self" || p == "cls" {
@@ -254,6 +257,12 @@ func buildTool(fn *sitter.Node, pf ParsedFile, kind models.ToolKind) models.Tool
 		}
 		filtered = append(filtered, p)
 	}
+	return filtered
+}
+
+func buildTool(fn *sitter.Node, pf ParsedFile, kind models.ToolKind) models.ToolDef {
+	name := astutil.FunctionName(fn, pf.Source)
+	filtered := toolParamNames(fn, pf.Source)
 
 	facts := map[string]string{}
 	// Stamp a structural shells_out fact so agent-scope rules can tell that a

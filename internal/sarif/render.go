@@ -283,9 +283,18 @@ func buildRun(sr models.ScanResult, toolVersion string) Run {
 	sortFindings(notifyFindings)
 
 	// Build the referenced rule catalog from the first Finding seen for each
-	// rule. Sort by ID for determinism.
+	// rule. Iterate the already-sorted result/notify slices, NOT the raw
+	// sr.Findings: a descriptor's content (language tag, title, help text) is
+	// taken from the "first" finding per rule, so drawing it from unsorted input
+	// would let upstream ordering perturb the emitted bytes — the exact thing the
+	// renderer claims to own. Together the two slices partition every finding.
 	firstByRule := map[string]models.Finding{}
-	for _, f := range sr.Findings {
+	for _, f := range resultFindings {
+		if _, ok := firstByRule[f.RuleID]; !ok {
+			firstByRule[f.RuleID] = f
+		}
+	}
+	for _, f := range notifyFindings {
 		if _, ok := firstByRule[f.RuleID]; !ok {
 			firstByRule[f.RuleID] = f
 		}

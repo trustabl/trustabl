@@ -196,7 +196,7 @@ func discoverADKToolsInFile(pf ParsedFile) []models.ToolDef {
 			},
 			Description:    astutil.FunctionDocstring(fnDef, pf.Source),
 			HasTypedParams: astutil.FunctionHasTypedParams(fnDef, pf.Source),
-			ParamNames:     astutil.FunctionParams(fnDef, pf.Source),
+			ParamNames:     toolParamNames(fnDef, pf.Source),
 		})
 		return true
 	})
