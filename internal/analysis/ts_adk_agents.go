@@ -139,7 +139,16 @@ func populateTSADKToolRefs(a *models.AgentDef, opts *sitter.Node, pf ParsedFile,
 					Class:    def.Class,
 					DefIndex: -1, // appended to inv.HostedTools by ResolveEdges
 				})
+			} else {
+				// Inline `new FunctionTool({...})` or any other unrecognized
+				// constructor: cannot be wired to a ToolDef edge by symbol, so the
+				// tool set is not fully enumerable. Mark Opaque (same signal as the
+				// non-array tools case above) so "agent has no tools" rules don't
+				// false-fire. TODO(v2): resolve the inline tool by call-site.
+				a.Opaque = true
 			}
+		case "call_expression":
+			a.Opaque = true
 		case "identifier":
 			a.ToolRefs = append(a.ToolRefs, models.ToolRef{Name: astutil.NodeText(item, pf.Source)})
 		}

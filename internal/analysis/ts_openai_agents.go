@@ -169,7 +169,18 @@ func populateTSOpenAIToolRefs(a *models.AgentDef, opts *sitter.Node, pf ParsedFi
 					Class:    canon,
 					DefIndex: -1,
 				})
+			} else {
+				// An inline user-tool factory (tools: [tool({...})]) or any other
+				// unrecognized call: discovery cannot wire it to a ToolDef edge by
+				// symbol, so the agent's tool set is not fully enumerable. Mark
+				// Opaque (the same signal used above when tools is not an array
+				// literal) so "agent has no tools" rules don't false-fire on an
+				// agent that does own a tool. TODO(v2): resolve the inline tool to
+				// a precise edge by its call-site location.
+				a.Opaque = true
 			}
+		case "new_expression":
+			a.Opaque = true
 		case "identifier":
 			a.ToolRefs = append(a.ToolRefs, models.ToolRef{Name: astutil.NodeText(item, pf.Source)})
 		}

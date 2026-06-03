@@ -124,6 +124,27 @@ const r = new Agent({
 	}
 }
 
+func TestDiscoverTSOpenAIAgents_InlineToolMarksOpaque(t *testing.T) {
+	// Regression (TR-158): an inline tool({...}) in tools: cannot be wired to a
+	// ToolDef edge by symbol, so the agent must be marked Opaque rather than
+	// appearing to own zero tools.
+	src := `
+import { Agent, tool } from "@openai/agents";
+const r = new Agent({
+  name: "x",
+  tools: [tool({ name: "inline", description: "d", parameters: {}, execute: async () => "" })],
+});
+`
+	pf := parseTSForTest(t, "src/a.ts", src)
+	got := analysis.DiscoverTSOpenAIAgents([]analysis.ParsedFile{pf}, nil)
+	if len(got) != 1 {
+		t.Fatalf("got %d", len(got))
+	}
+	if !got[0].Opaque {
+		t.Error("agent with an inline tool({...}) must be Opaque, got Opaque=false")
+	}
+}
+
 func TestDiscoverTSOpenAIAgents_ToolHandoffGuardrailMCPRefs(t *testing.T) {
 	src := `
 import { Agent } from "@openai/agents";

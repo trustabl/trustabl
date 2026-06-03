@@ -42,6 +42,26 @@ const r = new LlmAgent({
 	}
 }
 
+func TestDiscoverTSADKAgents_InlineToolMarksOpaque(t *testing.T) {
+	// Regression (TR-158): an inline new FunctionTool({...}) in tools: cannot be
+	// wired to a ToolDef edge by symbol, so the agent must be marked Opaque.
+	src := `
+import { LlmAgent, FunctionTool } from "@google/adk";
+const r = new LlmAgent({
+  name: "x",
+  tools: [new FunctionTool({ name: "inline", description: "d", parameters: {}, execute: async () => "" })],
+});
+`
+	pf := parseTSForTest(t, "src/a.ts", src)
+	got := analysis.DiscoverTSADKAgents([]analysis.ParsedFile{pf}, nil)
+	if len(got) != 1 {
+		t.Fatalf("got %d", len(got))
+	}
+	if !got[0].Opaque {
+		t.Error("agent with an inline new FunctionTool({...}) must be Opaque")
+	}
+}
+
 func TestDiscoverTSADKAgents_AllFiveAgentClasses(t *testing.T) {
 	src := `
 import { LlmAgent, SequentialAgent, ParallelAgent, LoopAgent, RoutedAgent }
