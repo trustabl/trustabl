@@ -171,21 +171,27 @@ func Normalize(src *Source, onFile func(string)) (models.ScanManifest, error) {
 			onFile(rel)
 		}
 
+		// Classify by extension off the slash-normalized rel, lowercased, so an
+		// uppercase extension (Agent.PY, Tool.TS, CLAUDE.MD) on a case-insensitive
+		// filesystem (Windows/macOS) is still recognized rather than silently
+		// dropped from the manifest. Matching the OS-native `path` here was both
+		// case-sensitive and inconsistent with the rel that gets stored.
+		lower := strings.ToLower(rel)
 		switch {
-		case strings.HasSuffix(path, ".py"):
+		case strings.HasSuffix(lower, ".py"):
 			manifest.PythonFiles = append(manifest.PythonFiles, rel)
-		case strings.HasSuffix(path, ".ts"),
-			strings.HasSuffix(path, ".tsx"),
-			strings.HasSuffix(path, ".mts"),
-			strings.HasSuffix(path, ".cts"):
+		case strings.HasSuffix(lower, ".ts"),
+			strings.HasSuffix(lower, ".tsx"),
+			strings.HasSuffix(lower, ".mts"),
+			strings.HasSuffix(lower, ".cts"):
 			manifest.TypeScriptFiles = append(manifest.TypeScriptFiles, rel)
-		case strings.HasSuffix(path, ".js"), strings.HasSuffix(path, ".jsx"), strings.HasSuffix(path, ".mjs"):
+		case strings.HasSuffix(lower, ".js"), strings.HasSuffix(lower, ".jsx"), strings.HasSuffix(lower, ".mjs"):
 			manifest.JavaScriptFiles = append(manifest.JavaScriptFiles, rel)
-		case strings.HasSuffix(path, ".yaml"), strings.HasSuffix(path, ".yml"):
+		case strings.HasSuffix(lower, ".yaml"), strings.HasSuffix(lower, ".yml"):
 			manifest.YAMLFiles = append(manifest.YAMLFiles, rel)
-		case strings.HasSuffix(path, ".json"):
+		case strings.HasSuffix(lower, ".json"):
 			manifest.JSONFiles = append(manifest.JSONFiles, rel)
-		case strings.HasSuffix(path, ".md"):
+		case strings.HasSuffix(lower, ".md"):
 			manifest.MarkdownFiles = append(manifest.MarkdownFiles, rel)
 		}
 		return nil

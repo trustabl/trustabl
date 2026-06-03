@@ -187,6 +187,48 @@ func TestNormalize_CollectsMTSAndCTS(t *testing.T) {
 	}
 }
 
+func TestNormalize_UppercaseExtensionsClassified(t *testing.T) {
+	// Regression: extension classification must be case-insensitive. On a
+	// case-insensitive filesystem (Windows/macOS) a source file can legitimately
+	// have an uppercase extension; matching it case-sensitively silently dropped
+	// it from the manifest, creating a coverage hole the scanner never reported.
+	dir := t.TempDir()
+	for _, name := range []string{"Agent.PY", "Tool.TS", "Readme.MD", "Config.YAML", "Data.JSON", "Bundle.JS"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(""), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	src := &Source{RootPath: dir}
+	m, err := Normalize(src, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	checks := []struct {
+		name string
+		got  []string
+		ext  string
+	}{
+		{"python", m.PythonFiles, "Agent.PY"},
+		{"typescript", m.TypeScriptFiles, "Tool.TS"},
+		{"markdown", m.MarkdownFiles, "Readme.MD"},
+		{"yaml", m.YAMLFiles, "Config.YAML"},
+		{"json", m.JSONFiles, "Data.JSON"},
+		{"javascript", m.JavaScriptFiles, "Bundle.JS"},
+	}
+	for _, c := range checks {
+		found := false
+		for _, f := range c.got {
+			if f == c.ext {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("%s: expected %q to be classified, got %v", c.name, c.ext, c.got)
+		}
+	}
+}
+
 func TestNormalize_NestedClaudeAgentsClassified(t *testing.T) {
 	dir := t.TempDir()
 	mustWrite := func(rel, content string) {
