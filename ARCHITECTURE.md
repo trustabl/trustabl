@@ -343,8 +343,10 @@ For each language recon cleared, do the AST work and produce a `RepoInventory`:
   `SequentialAgent(...)`, `ParallelAgent(...)`, `LoopAgent(...)`,
   `LanggraphAgent(...)`, and the `Agent(...)` alias (normalized to `LlmAgent`
   in the emitted `AgentDef.Class`) in files that import from `google.adk`.
-  The import gate prevents the bare `Agent` class name from colliding with
-  OpenAI's identically-named class. All constructor kwargs are captured into a
+  The import gate is AST-based — it walks `import` / `from … import` nodes, so
+  a comment or string literal that merely mentions `google.adk` does not trip
+  it — and prevents the bare `Agent` class name from colliding with OpenAI's
+  identically-named class. All constructor kwargs are captured into a
   typed `KwargTree`; `Agent(**config)` or `sub_agents=<non-literal>` sets
   `Opaque=true`.
 - **DiscoverADKTools** (`adk_agents.go`) — finds `FunctionTool(symbol)` calls
@@ -476,19 +478,22 @@ Two-pass discovery over each Python file. tree-sitter is used because we need
 structural recognition (decorator nodes, function bodies, call shapes) rather
 than just text matching.
 
-1. **Decorated functions.** A `decorated_definition` is classified by the
-   decorator-substring matcher in `kindFromDecorators`:
+1. **Decorated functions.** A `decorated_definition` is classified in
+   `kindFromDecorators` by each decorator's *resolved callee path* (the
+   identifier or dotted attribute after `@`, with any call arguments stripped),
+   not by a substring of the raw decorator text:
 
-   | Pattern in decorator text         | ToolKind              | Notes                       |
+   | Decorator callee                  | ToolKind              | Notes                       |
    | --------------------------------- | --------------------- | --------------------------- |
-   | `@function_tool` (any args)       | `KindOpenAITool`      | OpenAI Agents SDK           |
-   | `@tool`, `@claude_tool`, `@agent.tool`, `claude_agent_sdk` | `KindClaudeSDKTool` | Claude Agent SDK (pre-1.0 — names still in flux) |
-   | `@server.tool`, `@mcp.tool`, `.register_tool` | `KindMCPTool`         | MCP server registrations    |
+   | `function_tool` (any args)        | `KindOpenAITool`      | OpenAI Agents SDK           |
+   | `tool`, `claude_tool`, `agent.tool`, or a callee containing `claude_agent_sdk` | `KindClaudeSDKTool` | Claude Agent SDK (pre-1.0 — names still in flux) |
+   | `server.tool`, `mcp.tool`, `*.register_tool` | `KindMCPTool`  | MCP server registrations    |
    | (none of the above)               | `KindUnknown`         | Falls through to shell pass |
 
-   Order matters: `@function_tool` is matched before `@tool` so the broader
-   substring doesn't capture the more specific OpenAI decorator. Discovery
-   is conservative — when in doubt, return `KindUnknown` and let the
+   Matching the exact callee rather than a substring is what keeps unrelated
+   user decorators (`@tool_registry.register`, `@toolbar`) from being
+   misclassified as Claude-SDK tools and firing tool rules on non-tool code.
+   Discovery is conservative — when in doubt, return `KindUnknown` and let the
    function be considered for shell discovery.
 
 2. **Bare functions that shell out.** Any `function_definition` not already

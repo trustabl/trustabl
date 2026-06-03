@@ -4,7 +4,7 @@ Coverage matrix for Trustabl's static analysis: which agent SDKs (and which
 languages) we currently scan, analyse, and detect against. This file is the
 at-a-glance reference; `ARCHITECTURE.md` has the implementation detail.
 
-_Last reviewed: 2026-06-03 (HEAD `ef9d94d`)._
+_Last reviewed: 2026-06-03 (HEAD `5f2d3f4`)._
 
 > **Note:** Detection rules are not shipped in the binary. They live in the
 > separate `trustabl-rules` git repository
@@ -40,7 +40,7 @@ Discovery sources: `internal/analysis/discovery.go`, `agents.go`, `subagents.go`
 
 | Construct | Recognition |
 |---|---|
-| Tools | Decorators: `@tool`, `@claude_tool`, `@agent.tool`, any decorator containing the substring `claude_agent_sdk`. Captures: function name, params, type annotations, docstring, decorator kwargs |
+| Tools | Decorators matched by resolved callee path: `@tool`, `@claude_tool`, `@agent.tool`, or a decorator whose callee contains `claude_agent_sdk`. Exact-callee matching (not substring), so unrelated decorators like `@toolbar` / `@tool_registry.register` no longer misclassify as tools. Captures: function name, params, type annotations, docstring, decorator kwargs |
 | Agents | `AgentDefinition(...)` constructor calls. Captures every kwarg into a typed `KwargTree`: `name`, `description`, `prompt`, `tools`, `disallowedTools`, `permissionMode`, `mcpServers`, `skills`, `memory`, `maxTurns`, `background`, `effort`, `initialPrompt`. Typed accessors expose `tools`/`disallowedTools`/`permissionMode`/`mcpServers` without reaching into the tree |
 | Subagents | **Hybrid** discovery: canonical `.claude/agents/*.md` (any path depth, monorepo-safe) PLUS a frontmatter-shape fallback over all markdown files (gate: `name` + `tools`/`model`, excluding `SKILL.md` and `.claude/commands/`) that catches flat collections like `VoltAgent/awesome-claude-code-subagents` (subagents under `categories/<NN>/*.md`). Captures `name`, `description`, `tools` (verbatim) + `ToolGrants` (parsed grammar: bare / `Bash(...)` / `mcp__server__tool`), `disallowedTools`, `model`, `permissionMode`, `mcpServers`, `skills`, `isolation`, `HasHooks`. Files without frontmatter or without a `name:` are skipped. Audited by subagent-scope rules — CSDK-110 ("Subagent granted the built-in Bash tool") and CSDK-111 ("Subagent granted filesystem-write or web-fetch built-ins") are the shipped rules; predicate `subagent_grants_tool: [Bash]` matches parsed grants (so `Bash(...)` matches `Bash`). Subagent presence alone marks the repo as `claude_agent_sdk` (no SDK code required), so the pack loads and CSDK-110/111 fire on pure-markdown collections. Subagent rules carry no `language:` field (markdown frontmatter, language-agnostic) |
 | Skills | `SKILL.md` (basename, any depth: `.claude/skills/<name>/SKILL.md`, plugin `skills/`, nested). Parses `name`, `description`, `allowed-tools` (space-separated or YAML-list → `ToolGrants`), `argument-hint`, `disable-model-invocation`. No rules target skills yet — surfaced in inventory/JSON |
@@ -112,9 +112,10 @@ helper) are processed.
 
 Discovery sources: `internal/analysis/adk_agents.go` (agents and FunctionTool-wrapped
 tools), `internal/analysis/adk_hosted_tools.go` (built-in hosted tool classes).
-Import gate: only files containing `from google.adk` or `import google.adk` are
-processed, which prevents the bare `Agent` class name from colliding with OpenAI's
-identically-named class.
+Import gate (AST-based): only files that actually import `google.adk` via an
+`import` / `from … import` statement are processed — a comment or string literal
+that merely mentions the module does not trip the gate — which prevents the bare
+`Agent` class name from colliding with OpenAI's identically-named class.
 
 | Construct | Recognition |
 |---|---|
