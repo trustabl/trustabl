@@ -322,8 +322,12 @@ func extractInlineAgentsFromQuery(call *sitter.Node, pf ParsedFile) []models.Age
 				Line:     int(prop.StartPoint().Row) + 1,
 				EndLine:  int(prop.EndPoint().Row) + 1,
 			},
-			Name:          name,
-			MCPServerRefs: mcpRefs,
+			Name: name,
+			// Clone per agent: assigning the shared mcpRefs header to every
+			// sub-agent aliases one backing array across them, so a later append
+			// to one agent's MCPServerRefs (e.g. in ResolveEdges) could silently
+			// mutate its siblings. Each agent owns its own copy.
+			MCPServerRefs: append([]models.MCPServerRef(nil), mcpRefs...),
 		}
 		if valNode.Type() != "object" {
 			agent.Opaque = true

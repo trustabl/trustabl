@@ -785,6 +785,24 @@ func TestResolveEdges_TSADKSubAgentsCamelCase(t *testing.T) {
 	}
 }
 
+func TestResolveEdges_DoesNotMutateCallerSlice(t *testing.T) {
+	// ResolveEdges sorts internally for deterministic iteration but must not
+	// reorder the caller's slice in place (it works on a copy).
+	mk := func(name string) analysis.ParsedFile { return parsePyFile(t, name, "x = 1\n") }
+	parsed := []analysis.ParsedFile{mk("z.py"), mk("a.py"), mk("m.py")}
+	before := []string{parsed[0].RelPath, parsed[1].RelPath, parsed[2].RelPath}
+
+	inv := models.RepoInventory{}
+	analysis.ResolveEdges(&inv, parsed)
+
+	after := []string{parsed[0].RelPath, parsed[1].RelPath, parsed[2].RelPath}
+	for i := range before {
+		if before[i] != after[i] {
+			t.Fatalf("ResolveEdges reordered the caller slice: before %v, after %v", before, after)
+		}
+	}
+}
+
 func TestResolveEdges_OpenAIPythonHandoffs(t *testing.T) {
 	// Regression (TR-146): Python OpenAI agents capture handoffs= in Kwargs but
 	// the edge was never turned into HandoffRefs, leaving PredAgentIsSubagentOfAny

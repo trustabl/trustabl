@@ -44,6 +44,11 @@ func DiscoverSessions(files []ParsedFile) []models.SessionUse {
 // HandoffRefs / InputGuards / OutputGuards against the inventory. Sets
 // Resolved when the symbol is found, External=true otherwise.
 func ResolveEdges(inv *models.RepoInventory, parsed []ParsedFile) {
+	// Sort a COPY: ResolveEdges only needs deterministic internal iteration
+	// order, but the caller passes a slice (e.g. append(parsed, tsFiles...)) it
+	// does not expect to be reordered. Mutating a caller-owned argument as a
+	// hidden side effect is a footgun the signature doesn't advertise.
+	parsed = append([]ParsedFile(nil), parsed...)
 	sort.Slice(parsed, func(i, j int) bool { return parsed[i].RelPath < parsed[j].RelPath })
 
 	toolsByFileSym := make(map[string]map[string]*models.ToolDef)
