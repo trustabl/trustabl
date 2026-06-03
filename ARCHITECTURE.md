@@ -1387,8 +1387,11 @@ Coverage is split across three layers, each with a focused contract:
    `os.DirFS`. Cases with `lang: typescript` are routed through `parseTSTool`
    / `parseTSAgentInline` helpers that run real TS discovery; Python cases
    use the existing Python parse path. `TestPolicyRules_AllRulesCovered` fails
-   if any shipped rule (including TypeScript rules) lacks an entry — adding a
-   rule without test cases is therefore a build failure regardless of language.
+   if any shipped rule (including TypeScript rules) lacks **both** a fire case
+   (`wantFires=true`) and a silent case (`wantFires=false`) — one case alone
+   would pass a predicate that is hard-wired to always fire (or never fire), so
+   both are required. Adding a rule without both test cases is therefore a build
+   failure regardless of language.
 3. **End-to-end sweep** ([scanner_test.go](internal/scanner/scanner_test.go)).
    `TestScanExamples_NoCrash` walks every immediate subdirectory of
    `testdata/corpus/` (skipping the `ToolBench` dataset) and runs `scanner.Run`

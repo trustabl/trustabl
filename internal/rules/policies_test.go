@@ -2220,35 +2220,60 @@ func TestPolicySubagentRules(t *testing.T) {
 	}
 }
 
-// TestPolicyRules_AllRulesCovered fails if a shipped rule has no test case.
+// TestPolicyRules_AllRulesCovered fails unless every shipped rule has BOTH a
+// fire case (wantFires=true) and a silent case (wantFires=false). One case
+// alone is not enough: a fire-only case passes a predicate that always returns
+// true, and a silent-only case passes one that always returns false — exactly
+// the dead-predicate bugs this guard exists to catch. (Mirrors the sync
+// obligation in CLAUDE.md: "fire + silent cases".)
 func TestPolicyRules_AllRulesCovered(t *testing.T) {
 	policies, err := rules.Load(fixtureFS(t))
 	if err != nil {
 		t.Fatalf("load policies: %v", err)
 	}
-	covered := map[string]bool{}
+	hasFire := map[string]bool{}
+	hasSilent := map[string]bool{}
+	record := func(id string, fires bool) {
+		if fires {
+			hasFire[id] = true
+		} else {
+			hasSilent[id] = true
+		}
+	}
 	for _, tc := range policyRuleCases {
-		covered[tc.ruleID] = true
+		record(tc.ruleID, tc.wantFires)
 	}
 	for _, tc := range policyAgentRuleCases {
-		covered[tc.ruleID] = true
+		record(tc.ruleID, tc.wantFires)
 	}
 	for _, tc := range policyRepoRuleCases {
-		covered[tc.ruleID] = true
+		record(tc.ruleID, tc.wantFires)
 	}
 	for _, tc := range policySubagentRuleCases {
-		covered[tc.ruleID] = true
+		record(tc.ruleID, tc.wantFires)
 	}
-	var missing []string
+	var missingAny, missingFire, missingSilent []string
 	for _, p := range policies {
 		for _, r := range p.Rules {
-			if !covered[r.ID] {
-				missing = append(missing, r.ID)
+			f, s := hasFire[r.ID], hasSilent[r.ID]
+			switch {
+			case !f && !s:
+				missingAny = append(missingAny, r.ID)
+			case !f:
+				missingFire = append(missingFire, r.ID)
+			case !s:
+				missingSilent = append(missingSilent, r.ID)
 			}
 		}
 	}
-	if len(missing) > 0 {
-		t.Errorf("rules without policy_test coverage: %v", missing)
+	if len(missingAny) > 0 {
+		t.Errorf("rules with no policy_test coverage at all: %v", missingAny)
+	}
+	if len(missingFire) > 0 {
+		t.Errorf("rules missing a FIRE case (wantFires=true): %v", missingFire)
+	}
+	if len(missingSilent) > 0 {
+		t.Errorf("rules missing a SILENT case (wantFires=false): %v", missingSilent)
 	}
 }
 
