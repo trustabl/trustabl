@@ -356,8 +356,16 @@ func PredCallWithoutKwarg(expr CallWithoutKwargExpr, t models.ToolDef, pf analys
 		if _, want := calleeSet[canonical]; !want {
 			return true
 		}
-		// Fires when the kwarg is absent OR present with literal None (an
-		// explicitly-disabled value is the same hazard as a missing one).
+		// Fires when the kwarg is absent OR present with literal None. None is
+		// the deliberate disabling value here: every rule using this predicate
+		// targets `missing: timeout`, and for the HTTP libraries they cover
+		// (requests / urllib / httpx) `timeout=None` means "wait forever" — the
+		// exact hang hazard, indistinguishable from omitting it. Other literals
+		// are deliberately NOT treated as disabled: `timeout=0` fails fast rather
+		// than hanging, so flagging it would be a false positive. If a future
+		// rule needs a different disabling value (e.g. `verify=False`), make the
+		// disabled-value set rule-configurable rather than broadening this check
+		// and over-firing the timeout rules.
 		value, present := astutil.KwargValue(n, pf.Source, expr.Missing)
 		if !present || value == "None" {
 			found = true
