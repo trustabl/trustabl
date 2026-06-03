@@ -6,13 +6,12 @@ package rules
 // this constant (an older engine cannot evaluate rules that need predicates
 // or schema fields it does not have compiled in).
 //
-// Bump this whenever a new predicate or schema field is added to the rules
-// engine (schema.go / predicates.go / evaluator.go), or when a rule begins to
-// depend on a new engine capability an older binary lacks.
-//
-// v9: added the `agents_md` component kind (AGENTS.md discovery). The
-// repo-hygiene rules (CSDK-203 / OAI-202 / ADK-201) now accept AGENTS.md as a
-// vendor-neutral agent-guidance doc, so a pack using it must be rejected by a
-// pre-v9 engine that does not discover AGENTS.md (which would otherwise
-// over-fire those rules on AGENTS.md-only repos).
-const SupportedSchemaVersion = 9
+// Bump this ONLY when the rule grammar changes in a way an older binary would
+// mis-parse or mis-evaluate: a new predicate, a new schema field, or changed
+// evaluator semantics (schema.go / predicates.go / evaluator.go). A rule that
+// merely behaves better on a newer engine but degrades to a benign result on
+// an older one (e.g. a discovery capability an old binary lacks) does NOT
+// warrant a bump — gating the whole pack out of every old binary over one
+// rule's edge-case behavior is disproportionate. Reserve this for true
+// grammar breaks; let capability drift degrade gracefully instead.
+const SupportedSchemaVersion = 8
