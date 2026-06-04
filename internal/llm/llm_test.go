@@ -193,3 +193,89 @@ func TestMaskKey(t *testing.T) {
 		})
 	}
 }
+
+func TestDefaultModels(t *testing.T) {
+	tests := []struct {
+		provider  string
+		wantModel string
+	}{
+		{"anthropic", "claude-haiku-4-5"},
+		{"openai", "gpt-4.1-nano"},
+		{"google", "gemini-2.5-flash-lite"},
+		{"localllm", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.provider, func(t *testing.T) {
+			// Use a fresh config with no existing entry to trigger auto-create.
+			cfg := &llm.Config{
+				Active:    "other",
+				Providers: map[string]llm.Provider{},
+			}
+			cfg.SetActive(tt.provider)
+			p := cfg.Providers[tt.provider]
+			if p.Model != tt.wantModel {
+				t.Errorf("SetActive(%q) default model = %q, want %q", tt.provider, p.Model, tt.wantModel)
+			}
+		})
+	}
+}
+
+func TestSetActive_NewProvider(t *testing.T) {
+	setConfigDir(t, t.TempDir())
+
+	cfg, _ := llm.Load()
+	cfg.SetActive("openai")
+
+	if cfg.Active != "openai" {
+		t.Errorf("Active = %q, want openai", cfg.Active)
+	}
+	p := cfg.ActiveProvider()
+	if p.Model != "gpt-4.1-nano" {
+		t.Errorf("Model = %q, want gpt-4.1-nano", p.Model)
+	}
+	if p.Key != "" {
+		t.Errorf("Key = %q, want empty", p.Key)
+	}
+}
+
+func TestSetActive_ExistingProvider(t *testing.T) {
+	setConfigDir(t, t.TempDir())
+
+	cfg, _ := llm.Load()
+	// Set a key on the default anthropic provider.
+	cfg.SetKey("sk-ant-api03-testkey12345678901234")
+	// Switch to openai and back — the anthropic key must survive.
+	cfg.SetActive("openai")
+	cfg.SetActive("anthropic")
+
+	if cfg.Active != "anthropic" {
+		t.Errorf("Active = %q, want anthropic", cfg.Active)
+	}
+	p := cfg.ActiveProvider()
+	if p.Key != "sk-ant-api03-testkey12345678901234" {
+		t.Errorf("Key = %q, want original key preserved", p.Key)
+	}
+}
+
+func TestLoad_NonDefaultActiveProvider(t *testing.T) {
+	dir := t.TempDir()
+	setConfigDir(t, dir)
+
+	// Save a config with openai as active provider (no openai entry yet).
+	cfg, _ := llm.Load()
+	cfg.SetActive("openai")
+	if err := cfg.Save(); err != nil {
+		t.Fatalf("Save() error: %v", err)
+	}
+
+	// Load it back — the openai entry must have the openai default model,
+	// not the anthropic default.
+	got, err := llm.Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	p := got.ActiveProvider()
+	if p.Model != "gpt-4.1-nano" {
+		t.Errorf("openai default model = %q, want gpt-4.1-nano", p.Model)
+	}
+}

@@ -288,3 +288,110 @@ func TestLLMModelSet(t *testing.T) {
 		t.Errorf("model = %q, want claude-opus-4-7", cfg.ActiveProvider().Model)
 	}
 }
+
+func TestLLMProviderSet_New(t *testing.T) {
+	setLLMConfigDir(t, t.TempDir())
+
+	cmd := newLLMProviderSetCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	cmd.SetArgs([]string{"openai"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "Active provider set to openai") {
+		t.Errorf("output %q missing confirmation", out)
+	}
+	if !strings.Contains(out, "API key for openai is not set") {
+		t.Errorf("output %q missing key hint for new provider", out)
+	}
+
+	cfg, err := llm.Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.Active != "openai" {
+		t.Errorf("Active = %q, want openai", cfg.Active)
+	}
+	if cfg.Providers["openai"].Model != "gpt-4.1-nano" {
+		t.Errorf("openai model = %q, want gpt-4.1-nano", cfg.Providers["openai"].Model)
+	}
+}
+
+func TestLLMProviderSet_Existing(t *testing.T) {
+	setLLMConfigDir(t, t.TempDir())
+
+	// Pre-configure two providers.
+	cfg, _ := llm.Load()
+	cfg.SetActive("openai")
+	if err := cfg.Save(); err != nil {
+		t.Fatalf("setup Save() error: %v", err)
+	}
+
+	// Switch back to anthropic (already exists).
+	cmd := newLLMProviderSetCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	cmd.SetArgs([]string{"anthropic"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "Active provider set to anthropic") {
+		t.Errorf("output %q missing confirmation", out)
+	}
+	if strings.Contains(out, "API key for anthropic is not set") {
+		t.Errorf("output %q should not show key hint for existing provider", out)
+	}
+}
+
+func TestLLMProviderList_NoConfig(t *testing.T) {
+	setLLMConfigDir(t, t.TempDir())
+
+	cmd := newLLMProviderListCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(buf.String(), "No LLM configuration found") {
+		t.Errorf("got %q, want 'No LLM configuration found'", buf.String())
+	}
+}
+
+func TestLLMProviderList_WithConfig(t *testing.T) {
+	setLLMConfigDir(t, t.TempDir())
+
+	// Configure two providers: anthropic (active) and openai.
+	cfg, _ := llm.Load()
+	cfg.SetActive("openai")
+	cfg.SetActive("anthropic") // switch back so anthropic is active
+	if err := cfg.Save(); err != nil {
+		t.Fatalf("setup Save() error: %v", err)
+	}
+
+	cmd := newLLMProviderListCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "anthropic *") {
+		t.Errorf("output %q missing active marker 'anthropic *'", out)
+	}
+	if !strings.Contains(out, "openai") {
+		t.Errorf("output %q missing 'openai'", out)
+	}
+	// Verify anthropic comes before openai (sorted).
+	anthPos := strings.Index(out, "anthropic")
+	openaiPos := strings.Index(out, "openai")
+	if anthPos > openaiPos {
+		t.Errorf("providers not sorted: anthropic at %d, openai at %d", anthPos, openaiPos)
+	}
+}

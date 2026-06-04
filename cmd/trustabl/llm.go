@@ -21,6 +21,7 @@ func newLLMCommand() *cobra.Command {
 	cmd.AddCommand(newLLMListCommand())
 	cmd.AddCommand(newLLMKeyCommand())
 	cmd.AddCommand(newLLMModelCommand())
+	cmd.AddCommand(newLLMProviderCommand())
 	return cmd
 }
 
@@ -214,4 +215,83 @@ func runLLMModelSet(cmd *cobra.Command, model string) error {
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "Model for %s set to %s.\n", cfg.Active, model)
 	return nil
+}
+
+// ── provider ──────────────────────────────────────────────────────────────────
+
+func newLLMProviderCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "provider",
+		Short: "Manage LLM providers",
+	}
+	cmd.AddCommand(newLLMProviderSetCommand())
+	cmd.AddCommand(newLLMProviderListCommand())
+	return cmd
+}
+
+func newLLMProviderSetCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "set <provider>",
+		Short: "Set the active LLM provider",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runLLMProviderSet(cmd, args[0])
+		},
+	}
+}
+
+func runLLMProviderSet(cmd *cobra.Command, provider string) error {
+	cfg, err := llm.Load()
+	if err != nil {
+		return err
+	}
+	_, existed := cfg.Providers[provider]
+	cfg.SetActive(provider)
+	if err := cfg.Save(); err != nil {
+		return err
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "Active provider set to %s.\n", provider)
+	if !existed {
+		fmt.Fprintf(cmd.OutOrStdout(),
+			"API key for %s is not set. Run `trustabl llm key set` to configure it.\n", provider)
+	}
+	return nil
+}
+
+func newLLMProviderListCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "list",
+		Short: "List configured LLM providers",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runLLMProviderList(cmd)
+		},
+	}
+}
+
+func runLLMProviderList(cmd *cobra.Command) error {
+	if !llm.Exists() {
+		fmt.Fprintln(cmd.OutOrStdout(),
+			"No LLM configuration found. Run `trustabl llm key set` to get started.")
+		return nil
+	}
+	cfg, err := llm.Load()
+	if err != nil {
+		return err
+	}
+	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', 0)
+	fmt.Fprintln(w, "PROVIDER")
+	names := make([]string, 0, len(cfg.Providers))
+	for name := range cfg.Providers {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		active := ""
+		if name == cfg.Active {
+			active = " *"
+		}
+		fmt.Fprintf(w, "%s%s\n", name, active)
+	}
+	return w.Flush()
 }

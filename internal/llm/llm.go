@@ -10,10 +10,15 @@ import (
 	"path/filepath"
 )
 
-const (
-	defaultProvider = "anthropic"
-	defaultModel    = "claude-haiku-4-5"
-)
+const defaultProvider = "anthropic"
+
+// defaultModels maps known provider names to their fast/cheap default model.
+// Unknown providers return "" — the user must run `trustabl llm model set`.
+var defaultModels = map[string]string{
+	"anthropic": "claude-haiku-4-5",
+	"openai":    "gpt-4.1-nano",
+	"google":    "gemini-2.5-flash-lite",
+}
 
 // ConfigDir overrides os.UserConfigDir() when non-empty. Intended for tests only.
 var ConfigDir string
@@ -65,6 +70,18 @@ func (c *Config) SetModel(model string) {
 	c.Providers[c.Active] = p
 }
 
+// SetActive sets the active provider, auto-creating its entry with a default
+// model if it does not already exist. Existing entries are never overwritten.
+func (c *Config) SetActive(provider string) {
+	if c.Providers == nil {
+		c.Providers = make(map[string]Provider)
+	}
+	if _, ok := c.Providers[provider]; !ok {
+		c.Providers[provider] = Provider{Model: defaultModels[provider]}
+	}
+	c.Active = provider
+}
+
 // Load reads configuration from disk. Returns defaults when the file does not exist.
 func Load() (*Config, error) {
 	path, err := configPath()
@@ -89,10 +106,10 @@ func Load() (*Config, error) {
 		c.Providers = make(map[string]Provider)
 	}
 	if _, ok := c.Providers[c.Active]; !ok {
-		c.Providers[c.Active] = Provider{Model: defaultModel}
+		c.Providers[c.Active] = Provider{Model: defaultModels[c.Active]}
 	}
 	if p, ok := c.Providers[c.Active]; ok && p.Model == "" {
-		p.Model = defaultModel
+		p.Model = defaultModels[c.Active]
 		c.Providers[c.Active] = p
 	}
 	return &c, nil
@@ -165,7 +182,7 @@ func defaults() *Config {
 	return &Config{
 		Active: defaultProvider,
 		Providers: map[string]Provider{
-			defaultProvider: {Model: defaultModel},
+			defaultProvider: {Model: defaultModels[defaultProvider]},
 		},
 	}
 }
