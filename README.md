@@ -395,6 +395,16 @@ populates it; each subsequent scan checks for an update first (unless
 `--no-rules-update`), falling back to the cached rules if the fetch
 fails.
 
+### Claude Code plugin (self-audit at generation time)
+
+Trustabl ships a Claude Code plugin under [`.claude-plugin/`](.claude-plugin/)
+that exposes a `trustabl-scan` skill ([`skills/trustabl-scan/`](skills/trustabl-scan/)).
+The skill triggers right after agent, tool, subagent, or MCP-server code is
+written or changed and runs `trustabl scan` to self-audit it before committing,
+upstream of CI. It is a thin wrapper around the CLI documented above and runs no
+network service: it shells out to the same `trustabl` binary, so the binary must
+be installed and on `PATH`.
+
 ### "no schema-compatible rules available"
 
 This means the resolved rule pack targets a newer rule-schema version than
