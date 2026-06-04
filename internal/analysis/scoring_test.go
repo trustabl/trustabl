@@ -218,3 +218,73 @@ func TestScore_EmptyReturnsOne(t *testing.T) {
 		t.Errorf("overall: got %v, want 1.0", overall)
 	}
 }
+
+// TestProject_EmptyReturnsAllOne: a clean repo (tools, no findings) projects to
+// 1.0 at every tier.
+func TestProject_EmptyReturnsAllOne(t *testing.T) {
+	tools := []models.ToolDef{tool("search", "a.py")}
+	p := analysis.Project(tools, nil, nil, nil)
+	for name, v := range map[string]float64{
+		"fix_critical": p.FixCritical, "fix_high": p.FixHigh, "fix_medium": p.FixMedium,
+		"fix_low": p.FixLow, "fix_all": p.FixAll,
+	} {
+		if math.Abs(v-1.0) > eps {
+			t.Errorf("%s: got %v, want 1.0", name, v)
+		}
+	}
+}
+
+// TestProject_MonotonicAndAboveOverall: with findings spread across surfaces and
+// severities, projections are non-decreasing crit→all, each ≥ the unprojected
+// overall, and fix_all == 1.0 (everything resolved → all surfaces clean).
+func TestProject_MonotonicAndAboveOverall(t *testing.T) {
+	tools := []models.ToolDef{tool("a", "a.py"), tool("b", "b.py"), tool("c", "c.py")}
+	findings := []models.Finding{
+		{RuleID: "X1", Scope: models.ScopeTool, ToolName: "a", FilePath: "a.py", Severity: models.SeverityCritical, Confidence: 1.0},
+		{RuleID: "X2", Scope: models.ScopeTool, ToolName: "b", FilePath: "b.py", Severity: models.SeverityHigh, Confidence: 1.0},
+		{RuleID: "X3", Scope: models.ScopeTool, ToolName: "c", FilePath: "c.py", Severity: models.SeverityLow, Confidence: 1.0},
+	}
+	_, overall := analysis.Score(tools, nil, nil, findings)
+	p := analysis.Project(tools, nil, nil, findings)
+
+	if p.FixCritical < overall-eps {
+		t.Errorf("fix_critical (%v) must be >= overall (%v)", p.FixCritical, overall)
+	}
+	if !(p.FixCritical > overall) {
+		t.Errorf("resolving the critical finding must raise the score: fix_critical=%v overall=%v", p.FixCritical, overall)
+	}
+	chain := []float64{p.FixCritical, p.FixHigh, p.FixMedium, p.FixLow, p.FixAll}
+	for i := 1; i < len(chain); i++ {
+		if chain[i] < chain[i-1]-eps {
+			t.Errorf("projection not monotonic at tier %d: %v then %v (full: %+v)", i, chain[i-1], chain[i], p)
+		}
+	}
+	if math.Abs(p.FixAll-1.0) > eps {
+		t.Errorf("fix_all: got %v, want 1.0 (all findings resolved)", p.FixAll)
+	}
+}
+
+// TestProject_InfoResolvedOnlyAtFixAll: an info-only finding survives every tier
+// except fix_all, so the lower tiers equal the unprojected overall and only
+// fix_all climbs to 1.0. Guards the tier boundary (info has rank 0).
+func TestProject_InfoResolvedOnlyAtFixAll(t *testing.T) {
+	tools := []models.ToolDef{tool("a", "a.py")}
+	findings := []models.Finding{
+		{RuleID: "I1", Scope: models.ScopeTool, ToolName: "a", FilePath: "a.py", Severity: models.SeverityInfo, Confidence: 1.0},
+	}
+	_, overall := analysis.Score(tools, nil, nil, findings)
+	p := analysis.Project(tools, nil, nil, findings)
+	for name, v := range map[string]float64{
+		"fix_critical": p.FixCritical, "fix_high": p.FixHigh, "fix_medium": p.FixMedium, "fix_low": p.FixLow,
+	} {
+		if math.Abs(v-overall) > eps {
+			t.Errorf("%s: got %v, want overall %v (info finding must not resolve below fix_all)", name, v, overall)
+		}
+	}
+	if math.Abs(p.FixAll-1.0) > eps {
+		t.Errorf("fix_all: got %v, want 1.0", p.FixAll)
+	}
+	if overall >= 1.0 {
+		t.Errorf("sanity: overall with an info finding (%v) should be < 1.0", overall)
+	}
+}

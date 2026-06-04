@@ -94,6 +94,8 @@ type scanFlags struct {
 	rulesRef      string
 	noRulesUpdate bool
 	noProgress    bool
+	jsonOut       string
+	sarifOut      string
 }
 
 func newScanCommand() *cobra.Command {
@@ -122,6 +124,10 @@ func newScanCommand() *cobra.Command {
 		"do not fetch rules; use the local cache only")
 	cmd.Flags().BoolVar(&f.noProgress, "no-progress", false,
 		"disable real-time progress output")
+	cmd.Flags().StringVar(&f.jsonOut, "json-out", "",
+		"also write the JSON ScanResult to this file (independent of --format)")
+	cmd.Flags().StringVar(&f.sarifOut, "sarif-out", "",
+		"also write the SARIF report to this file (independent of --format)")
 	return cmd
 }
 
@@ -295,24 +301,63 @@ func finishScan(result models.ScanResult, jobErr error, f scanFlags) error {
 		return fmt.Errorf("unknown --format %q", f.format)
 	}
 
+	// --json-out / --sarif-out persist the respective format to a file
+	// independent of --format, so one scan can print the human panel to stdout
+	// while writing machine artifacts. The bytes are identical to the matching
+	// --format stdout output (shared renderers).
+	if err := writeSideOutputs(result, f); err != nil {
+		return err
+	}
+
 	if code := exitCode(result, f.strict); code != 0 {
 		return exitCodeError{code}
 	}
 	return nil
 }
 
-func emitJSON(result models.ScanResult) error {
+// jsonBytes renders the ScanResult as the canonical pretty JSON document
+// (trailing newline). Shared by stdout (--format json) and file (--json-out) so
+// the two are byte-identical.
+func jsonBytes(result models.ScanResult) ([]byte, error) {
 	b, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(b, '\n'), nil
+}
+
+func emitJSON(result models.ScanResult) error {
+	b, err := jsonBytes(result)
 	if err != nil {
 		return err
 	}
-	_, err = os.Stdout.Write(append(b, '\n'))
+	_, err = os.Stdout.Write(b)
 	return err
 }
 
 func emitSARIF(result models.ScanResult) error {
 	_, err := os.Stdout.Write(sarif.Render(result, version))
 	return err
+}
+
+// writeSideOutputs honors --json-out / --sarif-out, writing each format to its
+// file when the flag is set. No-op when both are empty.
+func writeSideOutputs(result models.ScanResult, f scanFlags) error {
+	if f.jsonOut != "" {
+		b, err := jsonBytes(result)
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(f.jsonOut, b, 0o644); err != nil {
+			return fmt.Errorf("write --json-out: %w", err)
+		}
+	}
+	if f.sarifOut != "" {
+		if err := os.WriteFile(f.sarifOut, sarif.Render(result, version), 0o644); err != nil {
+			return fmt.Errorf("write --sarif-out: %w", err)
+		}
+	}
+	return nil
 }
 
 func exitCode(result models.ScanResult, strict bool) int {

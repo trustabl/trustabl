@@ -132,3 +132,49 @@ func overallScore(surfaces []models.SurfaceReadiness) float64 {
 	}
 	return num / den
 }
+
+// severityRank maps a severity to an ordinal for tier comparisons: info/unknown
+// 0, low 1, medium 2, high 3, critical 4.
+func severityRank(s models.Severity) int {
+	switch s {
+	case models.SeverityCritical:
+		return 4
+	case models.SeverityHigh:
+		return 3
+	case models.SeverityMedium:
+		return 2
+	case models.SeverityLow:
+		return 1
+	default: // info, unknown
+		return 0
+	}
+}
+
+// Project computes overall-score projections by cumulatively resolving findings
+// at each severity tier and recomputing the real overall via Score(). For a
+// given tier, every finding at or above it is treated as resolved (dropped) and
+// the remaining findings are re-scored against the same seeded surfaces. This is
+// an estimate, not a re-scan: it assumes resolved findings vanish cleanly and
+// introduce nothing new. Results are non-decreasing FixCritical → FixAll and
+// each is ≥ the unprojected overall.
+func Project(tools []models.ToolDef, agents []models.AgentDef, subagents []models.SubagentDef, findings []models.Finding) models.ProjectedScores {
+	// overallResolvingFrom recomputes the overall keeping only findings strictly
+	// below minResolvedRank (i.e. resolving everything at or above that rank).
+	overallResolvingFrom := func(minResolvedRank int) float64 {
+		kept := make([]models.Finding, 0, len(findings))
+		for _, f := range findings {
+			if severityRank(f.Severity) < minResolvedRank {
+				kept = append(kept, f)
+			}
+		}
+		_, overall := Score(tools, agents, subagents, kept)
+		return overall
+	}
+	return models.ProjectedScores{
+		FixCritical: overallResolvingFrom(4), // resolve critical
+		FixHigh:     overallResolvingFrom(3), // resolve high and above
+		FixMedium:   overallResolvingFrom(2), // resolve medium and above
+		FixLow:      overallResolvingFrom(1), // resolve low and above
+		FixAll:      overallResolvingFrom(0), // resolve everything (incl. info)
+	}
+}
