@@ -3,10 +3,13 @@ package main
 import (
 	"bytes"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/trustabl/trustabl/internal/models"
+	"github.com/trustabl/trustabl/internal/sarif"
 )
 
 // TestFinishScan_GenericErrorNotDoublePrinted guards the double-print fix: in an
@@ -203,5 +206,106 @@ func TestExitCode(t *testing.T) {
 					tt.strict, len(tt.findings), got, tt.want)
 			}
 		})
+	}
+}
+
+// sampleResult is a minimal ScanResult carrying one finding, enough to exercise
+// the report-rendering paths.
+func sampleResult() models.ScanResult {
+	return models.ScanResult{
+		ScanID:   "scan_output_test",
+		Manifest: models.ScanManifest{RepoRoot: "."},
+		Findings: []models.Finding{{
+			RuleID:       "OAI-005",
+			Category:     models.CategoryOpenAISDK,
+			Severity:     models.SeverityHigh,
+			ToolName:     "fetch_url",
+			FilePath:     "agents/web.py",
+			Line:         42,
+			Title:        "Network call has no timeout",
+			Explanation:  "An HTTP call without timeout can hang.",
+			SuggestedFix: "Pass timeout=5 to the request.",
+			Confidence:   0.85,
+		}},
+	}
+}
+
+// TestRenderReport_SARIFMatchesRenderer guards that routing SARIF through the
+// CLI's renderReport produces exactly the bytes internal/sarif.Render emits, so
+// the byte-stability contract is not perturbed by the --output plumbing.
+func TestRenderReport_SARIFMatchesRenderer(t *testing.T) {
+	result := sampleResult()
+	got, err := renderReport(result, scanFlags{format: "sarif"})
+	if err != nil {
+		t.Fatalf("renderReport: %v", err)
+	}
+	want := sarif.Render(result, version)
+	if !bytes.Equal(got, want) {
+		t.Errorf("renderReport(sarif) diverged from sarif.Render")
+	}
+}
+
+func TestRenderReport_UnknownFormatErrors(t *testing.T) {
+	if _, err := renderReport(models.ScanResult{}, scanFlags{format: "xml"}); err == nil {
+		t.Fatal("renderReport with unknown format: want error, got nil")
+	}
+}
+
+// TestWriteReport_ToFile verifies --output writes the report bytes verbatim to
+// the given path and writes nothing to stdout.
+func TestWriteReport_ToFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "out.sarif")
+	payload := []byte("{\"hello\":\"sarif\"}\n")
+
+	if err := writeReport(payload, path); err != nil {
+		t.Fatalf("writeReport: %v", err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading back report: %v", err)
+	}
+	if !bytes.Equal(got, payload) {
+		t.Errorf("file contents = %q, want %q", got, payload)
+	}
+}
+
+func TestWriteReport_BadPathErrors(t *testing.T) {
+	// A path whose parent directory does not exist is a write error the CLI must
+	// surface, not swallow.
+	missing := filepath.Join(t.TempDir(), "no-such-dir", "out.sarif")
+	if err := writeReport([]byte("x"), missing); err == nil {
+		t.Fatal("writeReport to a nonexistent directory: want error, got nil")
+	}
+}
+
+// TestSARIFToFile_RoundTrip exercises the full --output path end to end: render
+// SARIF for a result with a medium+ finding, write it to a file, and confirm the
+// file holds valid, complete SARIF. This is the exact sequence a code-scanning
+// workflow runs before uploading the file, where the scan's nonzero exit code is
+// handled by the workflow (if: always()) rather than by losing the report.
+func TestSARIFToFile_RoundTrip(t *testing.T) {
+	result := sampleResult()
+	path := filepath.Join(t.TempDir(), "trustabl.sarif")
+
+	report, err := renderReport(result, scanFlags{format: "sarif"})
+	if err != nil {
+		t.Fatalf("renderReport: %v", err)
+	}
+	if err := writeReport(report, path); err != nil {
+		t.Fatalf("writeReport: %v", err)
+	}
+
+	onDisk, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading SARIF file: %v", err)
+	}
+	if !bytes.Equal(onDisk, sarif.Render(result, version)) {
+		t.Error("SARIF file diverged from sarif.Render output")
+	}
+	// The finding is high severity, so the scan would exit 1; the file write must
+	// still have happened (it did, above) so the workflow can upload it.
+	if exitCode(result, false) != 1 {
+		t.Errorf("exitCode = %d, want 1 (a high finding present)", exitCode(result, false))
 	}
 }

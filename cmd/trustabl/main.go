@@ -91,6 +91,7 @@ func newVersionCommand() *cobra.Command {
 type scanFlags struct {
 	detectors     string
 	format        string
+	output        string
 	strict        bool
 	noColor       bool
 	rulesRepo     string
@@ -113,6 +114,8 @@ func newScanCommand() *cobra.Command {
 		"comma-separated detector categories: claude_sdk, openai_sdk, openshell, google_adk (default: all)")
 	cmd.Flags().StringVar(&f.format, "format", "human",
 		"output format: human|json|sarif")
+	cmd.Flags().StringVarP(&f.output, "output", "o", "",
+		"write the report to a file instead of stdout (use with --format sarif to feed code-scanning upload)")
 	cmd.Flags().BoolVar(&f.strict, "strict", false,
 		"exit 1 on any finding of low severity or higher (info/META signals never fail)")
 	cmd.Flags().BoolVar(&f.noColor, "no-color", false,
@@ -325,20 +328,12 @@ func finishScan(result models.ScanResult, jobErr error, f scanFlags) error {
 		}
 	}
 
-	switch f.format {
-	case "json":
-		if err := emitJSON(result); err != nil {
-			return err
-		}
-	case "sarif":
-		if err := emitSARIF(result); err != nil {
-			return err
-		}
-	case "human", "":
-		r := &review.Renderer{NoColor: f.noColor}
-		fmt.Print(r.Render(result))
-	default:
-		return fmt.Errorf("unknown --format %q", f.format)
+	report, err := renderReport(result, f)
+	if err != nil {
+		return err
+	}
+	if err := writeReport(report, f.output); err != nil {
+		return err
 	}
 
 	if code := exitCode(result, f.strict); code != 0 {
@@ -347,18 +342,40 @@ func finishScan(result models.ScanResult, jobErr error, f scanFlags) error {
 	return nil
 }
 
-func emitJSON(result models.ScanResult) error {
-	b, err := json.MarshalIndent(result, "", "  ")
-	if err != nil {
-		return err
+// renderReport turns a ScanResult into the report bytes for the chosen format.
+// Rendering is decoupled from the write destination so the same bytes go to
+// stdout or to --output unchanged, keeping the JSON/SARIF byte-stability
+// contract regardless of where the report lands.
+func renderReport(result models.ScanResult, f scanFlags) ([]byte, error) {
+	switch f.format {
+	case "json":
+		b, err := json.MarshalIndent(result, "", "  ")
+		if err != nil {
+			return nil, err
+		}
+		return append(b, '\n'), nil
+	case "sarif":
+		return sarif.Render(result, version), nil
+	case "human", "":
+		r := &review.Renderer{NoColor: f.noColor}
+		return []byte(r.Render(result)), nil
+	default:
+		return nil, fmt.Errorf("unknown --format %q", f.format)
 	}
-	_, err = os.Stdout.Write(append(b, '\n'))
-	return err
 }
 
-func emitSARIF(result models.ScanResult) error {
-	_, err := os.Stdout.Write(sarif.Render(result, version))
-	return err
+// writeReport sends the rendered report to stdout, or to path when --output is
+// set. The report is fully materialized before the file is opened, so a render
+// error never leaves a half-written file behind.
+func writeReport(report []byte, path string) error {
+	if path == "" {
+		_, err := os.Stdout.Write(report)
+		return err
+	}
+	if err := os.WriteFile(path, report, 0o644); err != nil {
+		return fmt.Errorf("writing report to %s: %w", path, err)
+	}
+	return nil
 }
 
 func exitCode(result models.ScanResult, strict bool) int {
