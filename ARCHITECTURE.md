@@ -1565,7 +1565,15 @@ timestamp, no map iteration order, no goroutine scheduling may influence output.
 
 ---
 
-## 8. CLI surface ([cmd/trustabl/main.go](cmd/trustabl/main.go))
+## 8. CLI surface ([cmd/trustabl/](cmd/trustabl/))
+
+Each subcommand lives in its own file under `cmd/trustabl/` — `scan.go`,
+`version.go`, `rules.go`, `mcp.go`, `llm.go` — with `main.go` holding only the
+root-command wiring, build metadata, and the shared exit-code error type. Run
+from source via the **package path**, not a single file:
+`go run ./cmd/trustabl scan <target>` — a bare `go run cmd/trustabl/main.go`
+compiles only that one file and fails with `undefined: newScanCommand` because
+the other commands are in sibling files of the package.
 
 ```
 trustabl scan <target> [--detectors=…] [--format=human|json|sarif]
