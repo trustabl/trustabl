@@ -1,0 +1,40 @@
+policy:
+  id: langchain_repo_hygiene
+  name: LangChain repo hygiene
+  category: langchain
+  description: >
+    Repo-scoped hygiene rules for projects that use LangChain / LangGraph. Fire
+    once per scan against the repo manifest and inventory.
+
+rules:
+  - id: LC-201
+    title: LangChain project ships no agent-guidance doc (AGENTS.md/CLAUDE.md)
+    severity: low
+    confidence: 0.9
+    applies_to:
+      - langchain
+    scope: repo
+    match:
+      all:
+        - repo_has_sdk_in_code:
+            - langchain
+        - not:
+            repo_component_present:
+              - agents_md
+              - claude_md
+    explanation: >
+      The project uses LangChain / LangGraph in code but ships no agent-guidance
+      doc (AGENTS.md or CLAUDE.md) at the repo root. AGENTS.md is the cross-vendor
+      convention an editing coding agent reads before it acts; with neither file
+      present, any agent that opens this repo has no project-specific guidance on
+      which agent constructor to use (create_react_agent vs create_agent vs a raw
+      StateGraph), how tools must be defined and guarded, whether the REPL/shell
+      built-ins are permitted, or the local test and build commands. The likely
+      consequence is generated code that violates the project's tool and agent
+      contracts because nothing in-tree teaches the agent the local rules.
+    fix: >
+      Add an AGENTS.md at the repo root (a CLAUDE.md also satisfies this rule).
+      State which LangChain agent constructors the project uses and why, how tools
+      must be defined and guarded, any required human-in-the-loop gates, and the
+      exact test, lint, and build commands. Keep it short and concrete so an
+      editing agent can act on it without re-deriving the conventions.

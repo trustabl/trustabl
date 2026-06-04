@@ -323,11 +323,12 @@ When changing a rule (add / remove / edit severity, confidence, match, text):
 6. Commit and push the rules repo **and** the rulebook (the user pushes engine
    commits manually; confirm before pushing any of the three).
 
-> **Known live gap (2026-06-04):** the rulebook documents 88 rules but
-> production ships 102 — the 14 MCP rules (MCP-001..014, the standalone `mcp/`
-> category) have no rationale doc yet, so `check_rulebook.py` would fail against
-> the live pack. Backfilling these is the standing first task before any rule
-> expansion.
+> **Rulebook status (2026-06-04):** the rulebook documents all shipped rules —
+> production ships **117** rules (the 102-rule pack plus the 15 LangChain LC-*
+> rules) across the four SDK categories plus `langchain`, and the rulebook carries
+> a rationale doc for every one (52 docs). `check_rulebook.py --strict` and
+> `gen_index.py --check` both pass against the live pack with zero warnings. The
+> earlier MCP-doc backfill gap is closed.
 
 The rule-authoring contract (required fields, ID conventions, per-scope
 `applies_to` values, framing discipline) lives in

@@ -134,6 +134,133 @@ type policySubagentCase struct {
 }
 
 var policyRuleCases = []policyRuleCase{
+	// ─── LangChain tool rules (LC-*) ────────────────────────────────────────
+	{name: "LC-001 fires on tool with no docstring", ruleID: "LC-001", kind: models.KindLangChainTool, src: `
+def search(q: str) -> str:
+    return q
+`, wantFires: true},
+	{name: "LC-001 silent with docstring", ruleID: "LC-001", kind: models.KindLangChainTool, src: `
+def search(q: str) -> str:
+    """Search the web."""
+    return q
+`, wantFires: false},
+
+	{name: "LC-002 fires on untyped params", ruleID: "LC-002", kind: models.KindLangChainTool, src: `
+def search(q):
+    """Search."""
+    return q
+`, wantFires: true},
+	{name: "LC-002 silent with typed params", ruleID: "LC-002", kind: models.KindLangChainTool, src: `
+def search(q: str) -> str:
+    """Search."""
+    return q
+`, wantFires: false},
+
+	{name: "LC-003 fires on subprocess", ruleID: "LC-003", kind: models.KindLangChainTool, src: `
+def run(cmd: str) -> str:
+    """Run a command."""
+    import subprocess
+    return subprocess.run(cmd, shell=True)
+`, wantFires: true},
+	{name: "LC-003 silent without shell", ruleID: "LC-003", kind: models.KindLangChainTool, src: `
+def run(cmd: str) -> str:
+    """Run."""
+    return cmd
+`, wantFires: false},
+
+	{name: "LC-004 fires on eval", ruleID: "LC-004", kind: models.KindLangChainTool, src: `
+def calc(expr: str) -> str:
+    """Calculate."""
+    return eval(expr)
+`, wantFires: true},
+	{name: "LC-004 silent without eval", ruleID: "LC-004", kind: models.KindLangChainTool, src: `
+def calc(expr: str) -> str:
+    """Calculate."""
+    return expr
+`, wantFires: false},
+
+	{name: "LC-005 fires on dynamic URL", ruleID: "LC-005", kind: models.KindLangChainTool, src: `
+def fetch(url: str) -> str:
+    """Fetch a URL."""
+    import requests
+    return requests.get(url).text
+`, wantFires: true},
+	{name: "LC-005 silent on literal URL", ruleID: "LC-005", kind: models.KindLangChainTool, src: `
+def fetch(q: str) -> str:
+    """Fetch."""
+    import requests
+    return requests.get("https://api.example.com/data").text
+`, wantFires: false},
+
+	{name: "LC-006 fires on return_direct=True", ruleID: "LC-006", kind: models.KindLangChainTool, src: `
+def f(x: str) -> str:
+    """Doc."""
+    return x
+`, toolConfig: map[string]string{"return_direct": "True"}, wantFires: true},
+	{name: "LC-006 silent without return_direct", ruleID: "LC-006", kind: models.KindLangChainTool, src: `
+def f(x: str) -> str:
+    """Doc."""
+    return x
+`, toolConfig: map[string]string{}, wantFires: false},
+
+	// LangChain TypeScript tool rules — parseTSTool runs DiscoverTSLangChainTools,
+	// so each snippet must import from the langchain ecosystem to be discovered.
+	{name: "LC-010 fires on TS tool with no description", ruleID: "LC-010", kind: models.KindLangChainTool, lang: models.LanguageTypeScript, wantFires: true, src: `
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+export const t = tool(async (i) => i.q, { name: "search", schema: z.object({ q: z.string() }) });
+`},
+	{name: "LC-010 silent with description", ruleID: "LC-010", kind: models.KindLangChainTool, lang: models.LanguageTypeScript, wantFires: false, src: `
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+export const t = tool(async (i) => i.q, { name: "search", description: "Search the web.", schema: z.object({ q: z.string() }) });
+`},
+
+	{name: "LC-011 fires on TS subprocess", ruleID: "LC-011", kind: models.KindLangChainTool, lang: models.LanguageTypeScript, wantFires: true, src: `
+import { tool } from "@langchain/core/tools";
+import { execSync } from "child_process";
+import { z } from "zod";
+export const t = tool(async (i) => { return execSync(i.cmd).toString(); }, { name: "run", description: "Run.", schema: z.object({ cmd: z.string() }) });
+`},
+	{name: "LC-011 silent without TS shell", ruleID: "LC-011", kind: models.KindLangChainTool, lang: models.LanguageTypeScript, wantFires: false, src: `
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+export const t = tool(async (i) => i.cmd, { name: "run", description: "Run.", schema: z.object({ cmd: z.string() }) });
+`},
+
+	{name: "LC-012 fires on TS eval", ruleID: "LC-012", kind: models.KindLangChainTool, lang: models.LanguageTypeScript, wantFires: true, src: `
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+export const t = tool(async (i) => { return eval(i.code); }, { name: "calc", description: "Calc.", schema: z.object({ code: z.string() }) });
+`},
+	{name: "LC-012 silent without TS eval", ruleID: "LC-012", kind: models.KindLangChainTool, lang: models.LanguageTypeScript, wantFires: false, src: `
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+export const t = tool(async (i) => { return i.code; }, { name: "calc", description: "Calc.", schema: z.object({ code: z.string() }) });
+`},
+
+	{name: "LC-013 fires on TS dynamic URL", ruleID: "LC-013", kind: models.KindLangChainTool, lang: models.LanguageTypeScript, wantFires: true, src: `
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+export const t = tool(async (i) => { const r = await fetch(i.url); return r.text(); }, { name: "fetch", description: "Fetch.", schema: z.object({ url: z.string() }) });
+`},
+	{name: "LC-013 silent on TS literal URL", ruleID: "LC-013", kind: models.KindLangChainTool, lang: models.LanguageTypeScript, wantFires: false, src: `
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+export const t = tool(async (i) => { const r = await fetch("https://api.example.com/data"); return r.text(); }, { name: "fetch", description: "Fetch.", schema: z.object({ q: z.string() }) });
+`},
+
+	{name: "LC-014 fires on TS returnDirect", ruleID: "LC-014", kind: models.KindLangChainTool, lang: models.LanguageTypeScript, wantFires: true, src: `
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+export const t = tool(async (i) => i.q, { name: "x", description: "X.", schema: z.object({ q: z.string() }), returnDirect: true });
+`},
+	{name: "LC-014 silent without TS returnDirect", ruleID: "LC-014", kind: models.KindLangChainTool, lang: models.LanguageTypeScript, wantFires: false, src: `
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+export const t = tool(async (i) => i.q, { name: "x", description: "X.", schema: z.object({ q: z.string() }) });
+`},
+
 	// ─── CSDK-001 missing docstring ─────────────────────────────────────────
 	{name: "CSDK-001 fires on missing docstring", ruleID: "CSDK-001", kind: models.KindClaudeSDKTool, src: `
 def fetch_data(x: str) -> dict:
@@ -1315,6 +1442,18 @@ def calc(expr: str) -> int:
 
 // policyRepoRuleCases covers repo-scoped rules.
 var policyRepoRuleCases = []policyRepoCase{
+	// ─── LangChain repo rule (LC-201) ───────────────────────────────────────
+	{"LC-201 fires when LangChain code has no agent-guidance doc", "LC-201",
+		models.RepoProfile{Languages: []models.Language{models.LanguagePython}},
+		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKLangChain}},
+		true},
+	{"LC-201 silent when AGENTS.md present", "LC-201",
+		models.RepoProfile{
+			Languages: []models.Language{models.LanguagePython},
+			Manifest:  models.ScanManifest{Components: []models.AgentComponent{{Kind: models.ComponentAgentsMd}}},
+		},
+		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKLangChain}},
+		false},
 	// ─── OAI-201 default tracing (repo-scoped) ───────────────────────────────
 	{"OAI-201 fires when using default tracing", "OAI-201",
 		models.RepoProfile{Languages: []models.Language{models.LanguagePython}},
@@ -1496,6 +1635,36 @@ var policySubagentRuleCases = []policySubagentCase{
 
 // policyAgentRuleCases covers agent-scoped rules.
 var policyAgentRuleCases = []policyAgentCase{
+	// ─── LangChain agent rules (LC-*) ───────────────────────────────────────
+	{"LC-101 fires when agent wires PythonREPLTool", "LC-101",
+		models.AgentDef{
+			SDK: models.SDKLangChain, Class: "ReactAgent", Language: models.LanguagePython,
+			HostedToolRefs: []models.HostedToolRef{{Class: "PythonREPLTool"}},
+		},
+		models.RepoInventory{}, true},
+	{"LC-101 silent without a dangerous builtin", "LC-101",
+		models.AgentDef{SDK: models.SDKLangChain, Class: "ReactAgent", Language: models.LanguagePython},
+		models.RepoInventory{}, false},
+
+	{"LC-102 fires when AgentExecutor has no max_iterations", "LC-102",
+		models.AgentDef{SDK: models.SDKLangChain, Class: "AgentExecutor", Language: models.LanguagePython},
+		models.RepoInventory{}, true},
+	{"LC-102 silent when max_iterations set", "LC-102",
+		models.AgentDef{SDK: models.SDKLangChain, Class: "AgentExecutor", Language: models.LanguagePython,
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"max_iterations": {Value: &models.Expr{Kind: models.ExprLiteralInt, Text: "5"}},
+			}}},
+		models.RepoInventory{}, false},
+
+	{"LC-111 fires when TS AgentExecutor has no maxIterations", "LC-111",
+		models.AgentDef{SDK: models.SDKLangChain, Class: "AgentExecutor", Language: models.LanguageTypeScript},
+		models.RepoInventory{}, true},
+	{"LC-111 silent when maxIterations set", "LC-111",
+		models.AgentDef{SDK: models.SDKLangChain, Class: "AgentExecutor", Language: models.LanguageTypeScript,
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"maxIterations": {Value: &models.Expr{Kind: models.ExprLiteralInt, Text: "5"}},
+			}}},
+		models.RepoInventory{}, false},
 	// ─── OAI-101 no input_guardrails + shell tools ────────────────────────────
 	{"OAI-101 fires when no guardrails and has shell tool", "OAI-101",
 		models.AgentDef{

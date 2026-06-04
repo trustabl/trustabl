@@ -4,7 +4,7 @@ Coverage matrix for Trustabl's static analysis: which agent SDKs (and which
 languages) we currently scan, analyse, and detect against. This file is the
 at-a-glance reference; `ARCHITECTURE.md` has the implementation detail.
 
-_Last reviewed: 2026-06-04 (HEAD `8e0d94f`)._
+_Last reviewed: 2026-06-04 (LangChain / LangGraph SDK row added)._
 
 > **Note:** Detection rules are not shipped in the binary. They live in the
 > separate `trustabl-rules` git repository
@@ -30,6 +30,8 @@ Legend: ✅ full · ◐ partial · ❌ none · — N/A
 | **Google ADK** | Python | ✅ dep-scan (`google-adk`) + file inventory | ✅ LlmAgent (+ Agent alias), SequentialAgent, ParallelAgent, LoopAgent, LanggraphAgent; FunctionTool wrapping; 13 built-in hosted tools; sub_agents edges | ✅ tool ADK-001..007, 009..012 (009 = print to stdout, 010 = subprocess, 011 = eval/exec/compile, 012 = SSRF); agent ADK-008, 101..108, 110; repo ADK-201 (SDK code without an agent-guidance doc: AGENTS.md/CLAUDE.md) |
 | **Google ADK** | TypeScript | ✅ dep-scan (`@google/adk`) + file inventory | ✅ tools (`new FunctionTool({...})`), agents (5 constructors: LlmAgent + SequentialAgent + ParallelAgent + LoopAgent + RoutedAgent), hosted tools (13 classes), subAgents edges | ◐ tool ADK-013 (no description), 015 (eval / new Function), 016 (SSRF / dynamic URL); agent ADK-109 (LlmAgent no description); first ADK TS pack; META-004 no longer fires |
 | **Google ADK** | Go / Java / Kotlin | ❌ | ❌ | ❌ |
+| **LangChain / LangGraph** | Python | ✅ dep-scan (`langchain` / `langgraph` needles, all manifests) + file inventory | ✅ tools (`@tool` decorator — import-gated to disambiguate from the Claude SDK's `@tool`; `StructuredTool` / `Tool` factories + `.from_function`), agents (`create_react_agent`, `create_agent`, `AgentExecutor`; positional `tools` captured), dangerous built-ins (`PythonREPLTool` / `PythonAstREPLTool` / `ShellTool` / `Requests*` → `HostedToolDef` edges) | ✅ tool LC-001 (no description), LC-002 (untyped params), LC-003 (shell), LC-004 (code-exec), LC-005 (SSRF), LC-006 (`return_direct`); agent LC-101 (code-exec/shell built-in), LC-102 (AgentExecutor no `max_iterations`); repo LC-201 (no agent-guidance doc) |
+| **LangChain / LangGraph** | TypeScript | ✅ dep-scan (`@langchain/*` / `langchain` / `langgraph`) + file inventory | ✅ tools (`tool(fn, {...})` factory — import-gated, config from arg 1; `DynamicStructuredTool` / `DynamicTool`), agents (`createReactAgent`, `createAgent`, `new AgentExecutor`) | ◐ tool LC-010 (no description), LC-011 (shell), LC-012 (code-exec), LC-013 (SSRF), LC-014 (`returnDirect`); agent LC-111 (AgentExecutor no `maxIterations`). Provider hosted tools (`shell()` / `bash_*` / `applyPatch`) and the raw `StateGraph` graph agent are documented gaps |
 | **OpenShell** | Python | ✅ shell-invocation discovery + `openshell/*.yaml` policy files surfaced | ✅ `KindShellInvocation` tools → `RepoInventory.HasShellInvocations` (the "openshell" risk surface; not an SDK, never in `SDKsDetected`) | ❌ rules moved to closed-source companion project (no rule fires; no META finding — openshell is not treated as an unaudited SDK) |
 
 ## What we parse exactly (per SDK)
@@ -145,6 +147,45 @@ only files importing from `@google/adk` are processed (handled by the
 **Limitation:** `AgentTool` wraps another agent — same transitive-analysis caveat as Python ADK applies.
 **v1 limitation:** only bare-identifier constructors are recognized; namespace-import constructors like `new ns.LlmAgent({...})` (a member_expression) are not handled.
 
+### LangChain / LangGraph — Python
+
+Discovery sources: `internal/analysis/discovery.go` (the `@tool` decorator,
+import-routed), `langchain_tools.go`, `langchain_agents.go`,
+`langchain_hosted_tools.go`. Import gate (AST-based): a file is in scope when it
+imports the langchain ecosystem (`langchain`, `langchain_core`, `langgraph`,
+`langchain_community`, `langchain_experimental`, `langchain_classic`, the
+`langchain-*` provider packages).
+
+| Construct | Recognition |
+|---|---|
+| Tools (`@tool`) | The `@tool` decorator (shared with the Claude SDK), classified in `kindFromDecorators` by the **import binding** of the `tool` symbol (`collectToolImports`): `tool` bound from a langchain module → `KindLangChainTool`, from `claude_agent_sdk` → Claude, last-binding-wins on shadowing — so it attributes correctly even when a file imports both SDKs. A file-level import-presence check is the fallback for a star-import / locally defined `tool`. Captures name, docstring → Description, typed-params, decorator kwargs (incl. `return_direct`) → Config |
+| Tools (factories) | `StructuredTool(...)` / `StructuredTool.from_function(fn)` / `Tool(...)` / `Tool.from_function(fn)`. Resolves the wrapped function (first positional arg, or `func=`) to a same-file def and points the ToolDef at its body so the shell/code/SSRF predicates scan the implementation; explicit `name=` / `description=` / `args_schema=` override. `class X(BaseTool)` is a documented gap |
+| Agents | `create_react_agent(...)` / `create_agent(...)` / `AgentExecutor(...)` → `AgentDef` with normalized Class `ReactAgent` / `CreateAgent` / `AgentExecutor`. All kwargs captured; the positional `tools` argument (index 1) of the two factories is captured as a synthetic `tools` kwarg so edge + hosted-tool resolution sees it |
+| Dangerous built-ins | `PythonREPLTool`, `PythonAstREPLTool`, `ShellTool`, and the `Requests*` family inside an agent's resolved `tools` list → `HostedToolDef` (SDK `langchain`), consumed by agent rule LC-101 |
+
+**Limitation:** the raw `StateGraph` → `.add_node` → `.compile()` graph agent is
+not modeled (it is emergent across many call sites). Tool-edge / hosted-tool
+resolution requires `tools` to be a kwarg or the captured positional; a
+`ToolNode`-indirected or fully dynamic tool list is left unresolved.
+
+### LangChain / LangGraph — TypeScript
+
+Discovery sources: `internal/analysis/ts_langchain_tools.go`,
+`ts_langchain_agents.go`, plus the shared `ts_handler_facts.go`. Import gate:
+prefix-matched (`astutil.TSImportAliasesMatch`) so the many subpaths
+(`@langchain/core/tools`, `@langchain/langgraph/prebuilt`, `langchain`,
+`langgraph`, any `@langchain/*`) are all in scope.
+
+| Construct | Recognition |
+|---|---|
+| Tools | `tool(fn, { name, description, schema })` (config is arg 1, unlike OpenAI's arg-0 — the import gate keeps the shared `tool()` name from cross-firing with the Claude/OpenAI passes), `new DynamicStructuredTool({...})`, `new DynamicTool({...})`. Name/description/`schema` (Zod or literal) → typed-params; handler body facts (`shells_out`, `code_exec`, `dynamic_url`) via `tsHandlerFacts`; `returnDirect` → Config |
+| Agents | `createReactAgent({...})` / `createAgent({...})` / `new AgentExecutor({...})` → `AgentDef` with normalized Class `ReactAgent` / `CreateAgent` / `AgentExecutor`. Kwargs captured; identifier `tools` refs wired as ToolRefs; an inline or `ToolNode` tool list marks the agent `Opaque` |
+
+**Limitation:** provider-package hosted tools (`@langchain/openai` `shell()` /
+`localShell()`, `@langchain/anthropic` `bash_*` — date-stamped names) and
+class-based tools (`extends StructuredTool`) are documented gaps; the raw
+`StateGraph` graph agent is not modeled.
+
 ### OpenShell — Python
 
 | Construct | Recognition |
@@ -175,6 +216,7 @@ not fire for it.
 | **Claude SDK TypeScript rules** (`@anthropic-ai/claude-agent-sdk`) | Shipped: tool CSDK-010 (shell), 011 (eval/new Function), 012 (fs-write), 013 (SSRF/dynamic URL), 014 (no description), 016 (mutating tool no idempotency key); agent CSDK-120 (permissionMode bypass), 130/131 (`query()` main-thread agent grants Bash / write-fetch built-ins). The TS predicate machinery is in place (structural `shells_out`/`writes_fs`/`dynamic_url`/`code_exec` facts read by `has_shell_call`/`has_write_call`/`has_dynamic_url_call`/`has_code_exec_call` language branches, plus a `has_body_text` line-span substring fallback kept only for inherently *textual-absence* checks) and covered by the per-rule fire/silent harness. CSDK-010 (shell) and CSDK-012 (fs-write) now match structurally, not by substring. Remaining breadth-parity gaps vs the Python CSDK set: typed-params (no viable TS predicate today, see note), network timeout and idempotency (intentionally still `has_body_text` — they test for the *absence* of a textual marker, which has no call-shape), error-handling. The `query()` main-thread agent surface (`claude_query_main`) is now audited by 130/131, which nothing previously checked |
 | **MCP cross-language** (TS, Rust, Go) | Two prerequisites are missing today: (1) MCP dep-scan needles in `internal/ingestion/normalizer.go` — currently only `claude-agent-sdk` / `claude_agent_sdk` / `openai-agents` / `@openai/agents` / `google-adk` / `@google/adk` are matched; there is no `@modelcontextprotocol/sdk` (npm), no `rmcp` / `anthropic-mcp` (Cargo), no Go MCP module needle. (2) per-language AST parsers and discovery for the SDK shapes (`Server.tool()` factory in TS, `#[tool]` macros in Rust, etc.). File paths are recorded by the generic walk but no MCP-specific extraction happens against them |
 | **MCP server-side completeness** | We discover tools registered with `@server.tool` etc., but don't extract `Prompt`, `Resource`, `Sampling` registrations — those exist in the spec and would be a small additional pass |
+| **LangChain class tools + raw `StateGraph` + TS provider hosted tools** | Three additive discovery gaps in the LangChain pack: `class X(BaseTool)` / `extends StructuredTool` (a class shape, not a call); the raw `StateGraph` → `.compile()` graph agent (emergent across call sites — needs data-flow from the `StateGraph` var through `add_node` / `ToolNode` / `compile`, not a single-call capture); and the date-stamped TS provider hosted tools (`shell()` / `bash_*` / `applyPatch`). Each is discovery-only, no schema change |
 
 ## Recommended next moves
 

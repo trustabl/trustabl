@@ -90,13 +90,24 @@ func toolsInFile(pf ParsedFile) []models.ToolDef {
 	root := pf.Tree.RootNode()
 	var out []models.ToolDef
 
+	// `@tool` is exported by BOTH the Claude Agent SDK and LangChain. Resolve each
+	// decorator by the import binding of the exact name it uses — `tool` from a
+	// langchain module is a LangChain tool, `tool` from `claude_agent_sdk` is a
+	// Claude tool — which is correct for any mix of the two SDKs and follows
+	// Python's last-binding-wins shadowing. The file-level flags are only a
+	// fallback for the unresolvable case (a star-import or a locally-defined
+	// `tool`). Computed once per file.
+	toolImports := collectToolImports(pf)
+	lcImport := fileImportsLangChain(pf)
+	claudeImport := fileImportsClaudeSDK(pf)
+
 	// Pass 1: decorated functions.
 	for _, dec := range astutil.FindAll(root, "decorated_definition") {
 		fn := astutil.FunctionDef(dec)
 		if fn == nil {
 			continue
 		}
-		kind := kindFromDecorators(astutil.Decorators(dec), pf.Source)
+		kind := kindFromDecorators(astutil.Decorators(dec), pf.Source, toolImports, lcImport, claudeImport)
 		if kind == models.KindUnknown {
 			continue
 		}
@@ -135,7 +146,7 @@ func toolsInFile(pf ParsedFile) []models.ToolDef {
 // Order matters: @function_tool is OpenAI Agents SDK and is checked before
 // the more permissive "@tool" Claude SDK match (which would otherwise swallow
 // "@function_tool" via substring).
-func kindFromDecorators(decs []*sitter.Node, src []byte) models.ToolKind {
+func kindFromDecorators(decs []*sitter.Node, src []byte, toolImports map[string]models.ToolKind, lcImport, claudeImport bool) models.ToolKind {
 	for _, d := range decs {
 		// Match on the decorator's resolved callee path (e.g. "function_tool",
 		// "agent.tool", "server.tool", "app.register_tool"), not a substring of
@@ -151,6 +162,17 @@ func kindFromDecorators(decs []*sitter.Node, src []byte) models.ToolKind {
 		if i := strings.LastIndex(callee, "."); i >= 0 {
 			last = callee[i+1:]
 		}
+		// Precise resolution first: an UNQUALIFIED decorator name that was bound by
+		// an explicit import resolves to that import's SDK. This is the exact
+		// signal for the otherwise-ambiguous `@tool` (shared by the Claude SDK and
+		// LangChain) and works regardless of how many SDKs the file imports. Only
+		// bare names are resolved this way; qualified callees (`server.tool`,
+		// `agent.tool`) keep their dedicated handling in the switch below.
+		if !strings.Contains(callee, ".") {
+			if sdk, ok := toolImports[callee]; ok {
+				return sdk
+			}
+		}
 		switch {
 		// OpenAI Agents SDK — `@function_tool` / `@function_tool(...)`, bare or
 		// module-qualified (`agents.function_tool`).
@@ -158,7 +180,16 @@ func kindFromDecorators(decs []*sitter.Node, src []byte) models.ToolKind {
 			return models.KindOpenAITool
 		// Claude Agent SDK conventions. Real names are still in flux — CSDK is
 		// pre-1.0. Expand this list as the SDK stabilizes.
-		case callee == "tool" || callee == "claude_tool" || last == "claude_tool",
+		case callee == "tool":
+			// Bare @tool that no import resolved (a star-import or a locally
+			// defined `tool`): fall back to file-level presence — a
+			// langchain-importing file that does not import the Claude SDK routes
+			// to LangChain; otherwise the historical Claude default holds.
+			if lcImport && !claudeImport {
+				return models.KindLangChainTool
+			}
+			return models.KindClaudeSDKTool
+		case callee == "claude_tool" || last == "claude_tool",
 			callee == "agent.tool",
 			strings.Contains(callee, "claude_agent_sdk"):
 			return models.KindClaudeSDKTool
@@ -169,6 +200,55 @@ func kindFromDecorators(decs []*sitter.Node, src []byte) models.ToolKind {
 		}
 	}
 	return models.KindUnknown
+}
+
+// trackedToolDecoratorNames are the unqualified tool-decorator names whose owning
+// SDK cannot be told from the name alone: `tool` is exported by both the Claude
+// Agent SDK and LangChain, so it MUST be resolved by import binding.
+// `claude_tool` is Claude-only but tracked so an aliased import still resolves.
+var trackedToolDecoratorNames = map[string]bool{"tool": true, "claude_tool": true}
+
+// collectToolImports maps a file's locally-bound tool-decorator names to the SDK
+// that exported them, by inspecting `from <module> import <name> [as <alias>]`
+// statements. Only the ambiguous names in trackedToolDecoratorNames are recorded.
+// When the same name is imported from two SDKs in one file, the last import wins
+// — matching Python's runtime binding. Used by kindFromDecorators to disambiguate
+// `@tool` between the Claude SDK and LangChain regardless of what else the file
+// imports.
+func collectToolImports(pf ParsedFile) map[string]models.ToolKind {
+	out := map[string]models.ToolKind{}
+	astutil.Walk(pf.Tree.RootNode(), func(n *sitter.Node) bool {
+		if n.Type() != "import_from_statement" {
+			return true
+		}
+		module := astutil.NodeText(n.ChildByFieldName("module_name"), pf.Source)
+		var sdk models.ToolKind
+		switch {
+		case isLangChainModule(module):
+			sdk = models.KindLangChainTool
+		case module == "claude_agent_sdk" || strings.HasPrefix(module, "claude_agent_sdk."):
+			sdk = models.KindClaudeSDKTool
+		default:
+			return true
+		}
+		for i := 0; i < int(n.ChildCount()); i++ {
+			c := n.Child(i)
+			switch c.Type() {
+			case "dotted_name":
+				if name := astutil.NodeText(c, pf.Source); trackedToolDecoratorNames[name] {
+					out[name] = sdk
+				}
+			case "aliased_import":
+				imported := astutil.NodeText(c.ChildByFieldName("name"), pf.Source)
+				alias := astutil.NodeText(c.ChildByFieldName("alias"), pf.Source)
+				if trackedToolDecoratorNames[imported] && alias != "" {
+					out[alias] = sdk
+				}
+			}
+		}
+		return true
+	})
+	return out
 }
 
 // decoratorCallee returns the dotted callee path of a decorator, stripped of any

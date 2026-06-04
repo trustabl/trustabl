@@ -135,7 +135,9 @@ func Run(cfg Config) (models.ScanResult, error) {
 	}
 	agents := analysis.DiscoverAgents(parsed)
 	agents = append(agents, analysis.DiscoverADKAgents(parsed)...)
+	agents = append(agents, analysis.DiscoverLangChainAgents(parsed)...)
 	tools = append(tools, analysis.DiscoverADKTools(parsed)...)
+	tools = append(tools, analysis.DiscoverLangChainTools(parsed)...)
 	guardrails := analysis.DiscoverGuardrails(parsed)
 	sessions := analysis.DiscoverSessions(parsed)
 
@@ -176,6 +178,9 @@ func Run(cfg Config) (models.ScanResult, error) {
 	// Google ADK TS
 	tools = append(tools, analysis.DiscoverTSADKTools(tsFiles, nil)...)
 	agents = append(agents, analysis.DiscoverTSADKAgents(tsFiles, nil)...)
+	// LangChain / LangGraph TS
+	tools = append(tools, analysis.DiscoverTSLangChainTools(tsFiles, nil)...)
+	agents = append(agents, analysis.DiscoverTSLangChainAgents(tsFiles, nil)...)
 	// MCP server authoring (@modelcontextprotocol/sdk) TS — registerTool/tool.
 	// Emits KindMCPTool, so deriveSDKsDetected stamps SDKMCP and the mcp pack
 	// loads automatically (same path as the Python MCP tools).
@@ -334,6 +339,8 @@ func deriveSDKsDetected(tools []models.ToolDef, agents []models.AgentDef, subage
 			seen[models.SDKMCP] = true
 		case models.KindADKFunctionTool:
 			seen[models.SDKGoogleADK] = true
+		case models.KindLangChainTool:
+			seen[models.SDKLangChain] = true
 		}
 	}
 	for _, a := range agents {

@@ -1,0 +1,80 @@
+policy:
+  id: langchain_agent_safety
+  name: LangChain agent safety
+  category: langchain
+  description: >
+    Agent-scope safety and reliability rules for LangChain / LangGraph agents
+    (create_react_agent, create_agent, AgentExecutor).
+
+rules:
+  - id: LC-101
+    title: LangChain agent wires a code-execution or shell built-in tool
+    severity: high
+    confidence: 0.85
+    language: python
+    applies_to:
+      - langchain_agent
+      - langchain_agent_executor
+    scope: agent
+    match:
+      agent_uses_hosted_tool_class:
+        - PythonREPLTool
+        - PythonAstREPLTool
+        - ShellTool
+    explanation: >
+      This agent's tools list includes a LangChain built-in that executes code or
+      shell commands chosen by the model: PythonREPLTool / PythonAstREPLTool run
+      arbitrary Python, and ShellTool runs arbitrary shell commands. Once such a
+      tool is wired, a prompt injection or a confused model has a direct path to
+      arbitrary code execution in the agent process — these built-ins were the
+      vector in multiple published LangChain RCE advisories.
+    fix: >
+      Remove the REPL/shell built-in from production agents. If you genuinely need
+      code execution, run it in an isolated sandbox (no filesystem, no network, no
+      credentials, hard timeout) and gate it behind a human-in-the-loop approval
+      (a LangGraph interrupt_before breakpoint or a tool-approval middleware)
+      rather than letting the model invoke it unattended.
+
+  - id: LC-102
+    title: LangChain AgentExecutor has no max_iterations limit
+    severity: medium
+    confidence: 0.8
+    language: python
+    applies_to:
+      - langchain_agent_executor
+    scope: agent
+    match:
+      agent_kwarg_missing:
+        - max_iterations
+    explanation: >
+      This AgentExecutor sets no max_iterations, so a model that never emits a
+      final answer (it loops calling tools, or oscillates between two) runs until
+      it exhausts the API budget or wall-clock — there is no built-in ceiling. A
+      runaway tool-calling loop is a cost incident and, when the tools have side
+      effects, a correctness and safety one.
+    fix: >
+      Pass max_iterations= (and optionally max_execution_time=) to AgentExecutor,
+      sized to the task. Also set handle_parsing_errors= so a malformed model step
+      is surfaced rather than retried indefinitely.
+
+  - id: LC-111
+    title: TypeScript LangChain AgentExecutor has no maxIterations limit
+    severity: medium
+    confidence: 0.8
+    language: typescript
+    applies_to:
+      - langchain_agent_executor
+    scope: agent
+    match:
+      agent_kwarg_missing:
+        - maxIterations
+    explanation: >
+      This AgentExecutor sets no maxIterations, so a model that never returns a
+      final answer (it loops calling tools, or oscillates) runs until it exhausts
+      the API budget or wall-clock — there is no built-in ceiling. A runaway loop
+      is a cost incident and, when the tools have side effects, a correctness and
+      safety one.
+    fix: >
+      Pass maxIterations to the AgentExecutor options, sized to the task, and set
+      handleParsingErrors so a malformed step is surfaced rather than retried
+      indefinitely.

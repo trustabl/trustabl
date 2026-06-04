@@ -1,0 +1,54 @@
+policy:
+  id: langchain_shell_safety
+  name: LangChain shell-execution safety
+  category: langchain
+  description: >
+    Flags LangChain tools whose body shells out to the operating system. A
+    model-callable tool that runs shell commands is a prompt-injection path to
+    arbitrary code execution.
+
+rules:
+  - id: LC-003
+    title: LangChain tool body spawns a subprocess
+    severity: high
+    confidence: 0.85
+    language: python
+    applies_to:
+      - langchain_tool
+    scope: tool
+    match:
+      has_shell_call: true
+    explanation: >
+      This LangChain tool's body invokes a shell primitive (subprocess.*,
+      os.system, os.popen, or os.spawn*). Because the tool is exposed to the
+      model, a prompt-injected or confused model can drive it to run arbitrary
+      commands with the agent process's privileges. Shell execution selected by
+      model output is the most direct path from prompt injection to remote code
+      execution.
+    fix: >
+      Do not let model-controlled input reach a shell. Replace shell-outs with a
+      typed library call; if a subprocess is unavoidable, pass an argument list
+      (never shell=True), allow-list the exact commands, and run it in a sandbox
+      with no ambient credentials. Keep shell logic out of any agent-callable tool.
+
+  - id: LC-011
+    title: TypeScript LangChain tool body spawns a subprocess
+    severity: high
+    confidence: 0.85
+    language: typescript
+    applies_to:
+      - langchain_tool
+    scope: tool
+    match:
+      has_shell_call: true
+    explanation: >
+      This LangChain.js tool's handler calls a child_process primitive (exec,
+      execSync, spawn, fork, …). Because the tool is exposed to the model, a
+      prompt-injected or confused model can drive it to run arbitrary shell
+      commands with the Node process's privileges — the most direct path from
+      prompt injection to remote code execution.
+    fix: >
+      Do not let model-controlled input reach a shell. Prefer a typed library
+      call; if a subprocess is unavoidable use execFile/spawn with an argument
+      array (never a shell string), allow-list the exact commands, and sandbox the
+      execution. Keep shell logic out of any agent-callable tool.

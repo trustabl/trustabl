@@ -1,0 +1,52 @@
+policy:
+  id: langchain_code_execution
+  name: LangChain dynamic-code-execution safety
+  category: langchain
+  description: >
+    Flags LangChain tools whose body evaluates code at runtime. Model-selected
+    code evaluation is a direct arbitrary-execution path.
+
+rules:
+  - id: LC-004
+    title: LangChain tool body evaluates dynamic code
+    severity: high
+    confidence: 0.85
+    language: python
+    applies_to:
+      - langchain_tool
+    scope: tool
+    match:
+      has_code_exec_call: true
+    explanation: >
+      This LangChain tool's body calls eval(), exec(), or compile() — Python's
+      dynamic-code-execution builtins. A model-callable tool that evaluates a
+      string can be steered by prompt injection to run attacker-chosen code in the
+      agent process. This is the same mechanism behind LangChain's own
+      PythonREPLTool; hand-rolling it in a tool body carries the identical risk.
+    fix: >
+      Remove eval/exec/compile from agent-callable tool bodies. If the tool must
+      compute over structured input, parse it with a real parser (ast.literal_eval
+      for data, a typed schema for arguments). If code execution is genuinely the
+      product, run it in a locked-down sandbox with no filesystem or network and a
+      hard timeout.
+
+  - id: LC-012
+    title: TypeScript LangChain tool evaluates dynamic code
+    severity: high
+    confidence: 0.85
+    language: typescript
+    applies_to:
+      - langchain_tool
+    scope: tool
+    match:
+      has_code_exec_call: true
+    explanation: >
+      This LangChain.js tool's handler calls eval() or constructs a new Function()
+      — both evaluate a string as code. A model-callable tool that evaluates its
+      input can be steered by prompt injection to execute attacker-chosen code in
+      the Node process.
+    fix: >
+      Remove eval / new Function from agent-callable tool handlers. Parse
+      structured input with JSON.parse or a typed schema instead. If code
+      execution is the product, run it in an isolated sandbox (a Worker with no
+      module access, or an external sandbox service) with a hard timeout.

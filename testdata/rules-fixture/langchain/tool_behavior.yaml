@@ -1,0 +1,57 @@
+policy:
+  id: langchain_tool_behavior
+  name: LangChain tool behavior safety
+  category: langchain
+  description: >
+    Flags LangChain tool configuration that alters the agent's control flow in
+    ways that bypass the model's reasoning and any post-tool guardrails.
+
+rules:
+  - id: LC-006
+    title: LangChain tool returns its output directly, bypassing the model
+    severity: medium
+    confidence: 0.8
+    language: python
+    applies_to:
+      - langchain_tool
+    scope: tool
+    match:
+      tool_decorator_kwarg_value:
+        kwarg: return_direct
+        value: "True"
+    explanation: >
+      This tool sets return_direct=True, so LangChain returns the tool's raw
+      output straight to the caller and stops the agent loop — the model never
+      sees the result, cannot validate or summarize it, and any output guardrail
+      or post-processing step is skipped. Raw tool output (which may include
+      errors, secrets, or unsanitized external content) is handed to the user
+      verbatim, and multi-step plans that expect the model to act on the tool
+      result silently break.
+    fix: >
+      Leave return_direct at its default (False) unless you specifically intend to
+      short-circuit the agent. If you do, sanitize and shape the tool's output
+      yourself, since no model step or guardrail runs after it.
+
+  - id: LC-014
+    title: TypeScript LangChain tool returns its output directly, bypassing the model
+    severity: medium
+    confidence: 0.8
+    language: typescript
+    applies_to:
+      - langchain_tool
+    scope: tool
+    match:
+      tool_decorator_kwarg_value:
+        kwarg: returnDirect
+        value: "true"
+    explanation: >
+      This tool sets returnDirect: true, so LangChain.js returns the tool's raw
+      output straight to the caller and halts the agent loop — the model never
+      sees the result and any post-tool guardrail or formatting step is skipped.
+      Unsanitized tool output (errors, secrets, external content) reaches the user
+      verbatim, and multi-step plans that depend on the model reacting to the
+      result break.
+    fix: >
+      Leave returnDirect at its default (false) unless you deliberately intend to
+      short-circuit the agent. If you do, sanitize and shape the output in the
+      handler, because no model step or guardrail runs after it.

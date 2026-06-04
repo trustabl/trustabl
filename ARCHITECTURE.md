@@ -47,11 +47,19 @@ same TS file extensions, gated on imports from `@openai/agents`,
 classes / `subAgents` edges in the same TS file extensions, gated on
 imports from `@google/adk`). MCP-proper servers authored with
 `@modelcontextprotocol/sdk` (`new McpServer(...)` + `registerTool` / `tool`)
-are discovered in TS via `ts_mcp_proper.go`. TypeScript rule packs now ship for
-all four SDK surfaces: Claude SDK (CSDK-010/011/012/013/014/016 tool rules,
+are discovered in TS via `ts_mcp_proper.go`. LangChain / LangGraph is discovered
+in both Python (the `@tool` decorator — import-routed to disambiguate from the
+Claude SDK's `@tool` — plus `StructuredTool` / `Tool` factories,
+`create_react_agent` / `create_agent` / `AgentExecutor`, and the `PythonREPLTool`
+/ `ShellTool` built-ins) and TypeScript (the `tool(fn, {...})` factory,
+`DynamicStructuredTool` / `DynamicTool`, and `createReactAgent` / `createAgent` /
+`AgentExecutor`), import-gated to the `@langchain/*` / `langchain` / `langgraph`
+ecosystem. TypeScript rule packs now ship for
+all five SDK surfaces: Claude SDK (CSDK-010/011/012/013/014/016 tool rules,
 CSDK-120/130/131 agent rules), OpenAI Agents (OAI-016/017/019/022/024 tool
 rules, OAI-105 agent rule), Google ADK (ADK-013/015/016 tool rules, ADK-109
-agent rule), and MCP (MCP-011/012/013/014 tool rules). A TS
+agent rule), MCP (MCP-011/012/013/014 tool rules), and LangChain
+(LC-010/011/012/013/014 tool rules, LC-111 agent rule). A TS
 repo for any of these no longer produces a blanket META-004; the full
 per-SDK/language matrix lives in COVERAGE.md. The scanner
 can also recognize JavaScript and Go *files* (they appear in
@@ -432,6 +440,28 @@ For each language recon cleared, do the AST work and produce a `RepoInventory`:
   pre-resolve hosted-tool class instantiations against
   `TSADKHostedToolClasses` (13 entries); leaves identifier-valued refs in
   `tools` / `subAgents` for `ResolveEdges` to wire by binding name.
+- **DiscoverLangChainTools / DiscoverLangChainAgents** (`langchain_tools.go`,
+  `langchain_agents.go`) — Python LangChain / LangGraph. The `@tool` decorator
+  (shared with the Claude SDK) is routed in `discovery.go`'s `kindFromDecorators`
+  by the **import binding** of the `tool` symbol (`collectToolImports`): `tool`
+  bound from a langchain module → `KindLangChainTool`, from `claude_agent_sdk` →
+  Claude, last-binding-wins on shadowing — correct for any mix of the two SDKs. A
+  file-level import-presence check is the fallback for the unresolvable case (a
+  star-import or a locally defined `tool`). `StructuredTool` / `Tool` factories
+  (and `.from_function`) are recognized here, with the wrapped function resolved so
+  body predicates scan the implementation. Agents: `create_react_agent` /
+  `create_agent` / `AgentExecutor` → normalized Class `ReactAgent` / `CreateAgent`
+  / `AgentExecutor`; the positional `tools` argument (index 1) is captured as a
+  synthetic kwarg. `langchain_hosted_tools.go` classifies the `PythonREPLTool` /
+  `PythonAstREPLTool` / `ShellTool` / `Requests*` built-ins in an agent's tool list
+  as `HostedToolDef`s (SDK `langchain`).
+- **DiscoverTSLangChainTools / DiscoverTSLangChainAgents** (`ts_langchain_tools.go`,
+  `ts_langchain_agents.go`) — TS LangChain. Tools: `tool(fn, {...})` (config at
+  arg 1, unlike OpenAI's arg-0), `new DynamicStructuredTool({...})`,
+  `new DynamicTool({...})`; the import gate is prefix-matched via
+  `astutil.TSImportAliasesMatch` to cover the many `@langchain/*` subpaths. Agents:
+  `createReactAgent` / `createAgent` / `new AgentExecutor`. Reuses
+  `tsZodParamNames` / `tsHandlerFacts`.
 - **ResolveEdges** — links agent `tools=`, `handoffs=`, `input_guardrails=`
   references to discovered definitions in the same repo; cross-module resolution
   uses import statements; unresolvable references are flagged `External=true`.
@@ -729,6 +759,21 @@ Shipped rules (one row per YAML rule entry):
 | MCP-012  | tool     | mcp        | high     | `mcp/shell_safety.yaml`            | TypeScript MCP tool spawns a subprocess                                               |
 | MCP-013  | tool     | mcp        | high     | `mcp/ssrf.yaml`                    | TypeScript MCP tool fetches a caller-controlled URL (SSRF)                            |
 | MCP-014  | tool     | mcp        | high     | `mcp/code_execution.yaml`          | TypeScript MCP tool evaluates dynamic code (eval / new Function)                      |
+| LC-001   | tool     | langchain  | low      | `langchain/tool_definition.yaml`   | LangChain tool has no description                                                     |
+| LC-002   | tool     | langchain  | medium   | `langchain/tool_definition.yaml`   | LangChain tool parameters are not type-annotated                                      |
+| LC-003   | tool     | langchain  | high     | `langchain/shell_safety.yaml`      | LangChain tool body spawns a subprocess                                               |
+| LC-004   | tool     | langchain  | high     | `langchain/code_execution.yaml`    | LangChain tool body evaluates dynamic code                                            |
+| LC-005   | tool     | langchain  | high     | `langchain/ssrf.yaml`              | LangChain tool fetches a caller-controlled URL (SSRF)                                 |
+| LC-006   | tool     | langchain  | medium   | `langchain/tool_behavior.yaml`     | LangChain tool returns output directly (`return_direct`)                              |
+| LC-010   | tool     | langchain  | low      | `langchain/tool_definition.yaml`   | TypeScript LangChain tool has no description                                          |
+| LC-011   | tool     | langchain  | high     | `langchain/shell_safety.yaml`      | TypeScript LangChain tool body spawns a subprocess                                    |
+| LC-012   | tool     | langchain  | high     | `langchain/code_execution.yaml`    | TypeScript LangChain tool evaluates dynamic code                                      |
+| LC-013   | tool     | langchain  | high     | `langchain/ssrf.yaml`              | TypeScript LangChain tool fetches a caller-controlled URL (SSRF)                      |
+| LC-014   | tool     | langchain  | medium   | `langchain/tool_behavior.yaml`     | TypeScript LangChain tool returns output directly (`returnDirect`)                    |
+| LC-101   | agent    | langchain  | high     | `langchain/agent_safety.yaml`      | LangChain agent wires a code-execution or shell built-in tool                         |
+| LC-102   | agent    | langchain  | medium   | `langchain/agent_safety.yaml`      | LangChain AgentExecutor has no max_iterations limit                                   |
+| LC-111   | agent    | langchain  | medium   | `langchain/agent_safety.yaml`      | TypeScript LangChain AgentExecutor has no maxIterations limit                         |
+| LC-201   | repo     | langchain  | low      | `langchain/repo_hygiene.yaml`      | LangChain project with no agent-guidance doc (AGENTS.md/CLAUDE.md)                     |
 
 > **MCP-tool coverage moved to a dedicated `mcp` category (2026-06-03).** The
 > Python CSDK rules CSDK-001/002/003/004/005/006/007/009/107/108 previously

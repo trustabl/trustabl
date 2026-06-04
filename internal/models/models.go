@@ -60,6 +60,7 @@ const (
 	CategoryOpenShell DetectorCategory = "openshell"
 	CategoryGoogleADK DetectorCategory = "google_adk"
 	CategoryMCP       DetectorCategory = "mcp"
+	CategoryLangChain DetectorCategory = "langchain"
 )
 
 // ToolKind drives detector applicability.
@@ -72,6 +73,12 @@ const (
 	KindShellInvocation ToolKind = "shell_invocation"
 	KindUnknown         ToolKind = "unknown"
 	KindADKFunctionTool ToolKind = "adk_function_tool"
+	// KindLangChainTool is a LangChain / LangGraph tool: the @tool decorator,
+	// a StructuredTool/Tool factory or constructor (Python), or the tool()
+	// factory / DynamicStructuredTool / DynamicTool (TypeScript). Discovery is
+	// import-gated so it does not collide with the Claude-SDK @tool / tool()
+	// shapes that share the same callee name.
+	KindLangChainTool ToolKind = "langchain_tool"
 )
 
 // Language identifies the source language of a discovered tool. Rules
@@ -203,6 +210,7 @@ const (
 	SDKOpenAIAgents   SDK = "openai_agents"
 	SDKMCP            SDK = "mcp"
 	SDKGoogleADK      SDK = "google_adk"
+	SDKLangChain      SDK = "langchain" // LangChain + LangGraph (one ecosystem, one SDK row)
 )
 
 // "openshell" is intentionally NOT in the SDK enum: it is not a library

@@ -141,6 +141,16 @@ func agentKindMatches(kind string, a models.AgentDef) bool {
 		return a.SDK == models.SDKGoogleADK && a.Class == "LoopAgent"
 	case "adk_langgraph_agent":
 		return a.SDK == models.SDKGoogleADK && a.Class == "LanggraphAgent"
+	// LangChain / LangGraph. Class values are normalized canonical names
+	// (language-agnostic): "ReactAgent" (create_react_agent / createReactAgent),
+	// "CreateAgent" (create_agent / createAgent), "AgentExecutor", "StateGraph".
+	// The a.Language field distinguishes the Python vs TypeScript shapes.
+	case "langchain_agent":
+		return a.SDK == models.SDKLangChain && (a.Class == "ReactAgent" || a.Class == "CreateAgent")
+	case "langchain_agent_executor":
+		return a.SDK == models.SDKLangChain && a.Class == "AgentExecutor"
+	case "langchain_state_graph":
+		return a.SDK == models.SDKLangChain && a.Class == "StateGraph"
 	}
 	return false
 }
@@ -216,6 +226,8 @@ func LoadFor(fsys fs.FS, sdks []models.SDK) (*detectors.Registry, error) {
 			wanted["mcp"] = true
 		case models.SDKGoogleADK:
 			wanted["google_adk"] = true
+		case models.SDKLangChain:
+			wanted["langchain"] = true
 		}
 	}
 	all, err := Load(fsys)
