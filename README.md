@@ -197,9 +197,11 @@ schema's `language:` field is in place for when those parsers ship.
 
 ### Scope boundaries
 
-- **LLM enrichment is opt-in.** The BYOK interface and cache exist
-  (`internal/inference/router.go`), but rule-based detection runs fully
-  without a key and makes no network call without one.
+- **LLM enrichment is opt-in.** Rule-based detection runs fully without a
+  key and makes no network call without one. Use `trustabl llm key set` to
+  configure a provider key (`~/.config/trustabl/keys.json`, mode 0600);
+  `internal/inference/router.go` is the BYOK interface the enrichment path
+  will call.
 - **Confidence scores are heuristic**, not LLM-judged, and not yet
   calibrated against a labelled real-agent corpus — treat findings as
   signal to investigate.
@@ -371,6 +373,14 @@ trustabl scan ./repo --no-progress   # disable progress entirely
 # Run as a stdio MCP server so an MCP client (Claude Code, Cursor, Claude
 # Desktop) can scan code an agent just wrote (see "Run as an MCP server" below)
 trustabl mcp
+
+# Configure LLM provider for enrichment (prerequisite for trustabl enrich)
+trustabl llm list                          # show configured providers with masked keys
+trustabl llm key set                       # prompt securely for an API key
+trustabl llm key set sk-ant-api03-...      # set key non-interactively
+trustabl llm key get                       # show masked key for active provider
+trustabl llm key delete                    # delete key with confirmation prompt
+trustabl llm model set claude-sonnet-4-6   # change model for active provider
 ```
 
 Rules are cached under your OS cache dir (`os.UserCacheDir()`, e.g.
@@ -470,6 +480,7 @@ Two fixes:
 | Scoring engine     | `internal/analysis/scoring.go`           |
 | Report renderer    | `internal/review/diff.go` (human), `internal/sarif/render.go` (SARIF), JSON marshal in `cmd/trustabl` |
 | Inference router   | `internal/inference/router.go`           |
+| LLM config         | `internal/llm/` (key storage · masking · validation) |
 
 Rule packs live in the separate `trustabl-rules` git repository (grouped
 `{claude_sdk,openai_sdk,google_adk}/`), resolved at scan time rather
@@ -495,6 +506,10 @@ corpus is the detection-quality target (see
 [ARCHITECTURE.md § 10](ARCHITECTURE.md#10-what-is-intentionally-out));
 the current tests are regression coverage, not detection-quality
 measurement.
+
+## Community
+
+Join the [Trustabl Discord](https://discord.gg/maQ7QMPsB) to ask questions, share feedback, and follow development.
 
 ## License
 

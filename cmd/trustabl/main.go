@@ -64,6 +64,7 @@ func main() {
 	rootCmd.AddCommand(newVersionCommand())
 	rootCmd.AddCommand(newRulesCommand())
 	rootCmd.AddCommand(newMCPCommand())
+	rootCmd.AddCommand(newLLMCommand())
 
 	if err := rootCmd.Execute(); err != nil {
 		var ec exitCodeError
