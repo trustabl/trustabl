@@ -323,10 +323,11 @@ When changing a rule (add / remove / edit severity, confidence, match, text):
 6. Commit and push the rules repo **and** the rulebook (the user pushes engine
    commits manually; confirm before pushing any of the three).
 
-> **Known live gap (2026-06-03):** the rulebook documents 72 rules but
-> production ships 77 — the 5 Claude TS rules (CSDK-010/011/012/013/120) have
-> no rationale doc yet, so `check_rulebook.py` would fail against the live pack.
-> Backfilling these is the standing first task before any rule expansion.
+> **Known live gap (2026-06-04):** the rulebook documents 88 rules but
+> production ships 102 — the 14 MCP rules (MCP-001..014, the standalone `mcp/`
+> category) have no rationale doc yet, so `check_rulebook.py` would fail against
+> the live pack. Backfilling these is the standing first task before any rule
+> expansion.
 
 The rule-authoring contract (required fields, ID conventions, per-scope
 `applies_to` values, framing discipline) lives in

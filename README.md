@@ -197,11 +197,12 @@ schema's `language:` field is in place for when those parsers ship.
 
 ### Scope boundaries
 
-- **LLM enrichment is opt-in.** Rule-based detection runs fully without a
-  key and makes no network call without one. Use `trustabl llm key set` to
-  configure a provider key (`~/.config/trustabl/keys.json`, mode 0600);
-  `internal/inference/router.go` is the BYOK interface the enrichment path
-  will call.
+- **LLM enrichment is not wired yet.** Rule-based detection is the whole
+  scan today and makes no network call at all — there is no LLM-backed
+  enrichment path, with or without a key. `trustabl llm key set` only stores
+  a provider key (`~/.config/trustabl/keys.json`, mode 0600) for that future
+  path; `internal/inference/router.go` is the BYOK interface it will call
+  once implemented (today it is a non-functional placeholder).
 - **Confidence scores are heuristic**, not LLM-judged, and not yet
   calibrated against a labelled real-agent corpus — treat findings as
   signal to investigate.
@@ -392,7 +393,7 @@ trustabl scan ./repo --no-progress   # disable progress entirely
 # Desktop) can scan code an agent just wrote (see "Run as an MCP server" below)
 trustabl mcp
 
-# Configure LLM provider for enrichment (prerequisite for trustabl enrich)
+# Configure LLM provider for enrichment (stores the key; the enrichment path is not yet wired)
 trustabl llm list                          # show configured providers with masked keys
 trustabl llm key set                       # prompt securely for an API key
 trustabl llm key set sk-ant-api03-...      # set key non-interactively
@@ -570,10 +571,11 @@ Two fixes:
 | LLM config         | `internal/llm/` (key storage · masking · validation) |
 
 Rule packs live in the separate `trustabl-rules` git repository (grouped
-`{claude_sdk,openai_sdk,google_adk}/`), resolved at scan time rather
+`{claude_sdk,openai_sdk,google_adk,mcp}/`), resolved at scan time rather
 than embedded in the binary. Naming convention: `CSDK-NNN` for Claude
 Agent SDK rules (CSDK-0xx tool-scope, CSDK-1xx agent + subagent-scope),
-`OAI-NNN` for OpenAI Agents SDK rules, `ADK-NNN` for Google ADK rules.
+`OAI-NNN` for OpenAI Agents SDK rules, `ADK-NNN` for Google ADK rules,
+`MCP-NNN` for the dedicated MCP tool-scope pack.
 See
 [ARCHITECTURE.md § 2 — steps 3–4](ARCHITECTURE.md#2-pipeline) for the
 shipped rule table and [COVERAGE.md](COVERAGE.md) for per-SDK

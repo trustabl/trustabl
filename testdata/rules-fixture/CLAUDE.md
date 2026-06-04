@@ -43,16 +43,18 @@ Do not skip step 1.
 
 ## Required fields per rule
 
-Every rule MUST set: `id`, `title`, `severity`, `confidence`,
+Every rule MUST set: `id`, `title`, `scope`, `severity`, `confidence`,
 `applies_to`, `match`, `explanation`, `fix`. The loader refuses to start
-the scanner if any are missing — this surfaces as a `scan: ...` error in
-the CLI.
+the scanner if any are missing (`scope` empty is rejected with "scope is
+required") — this surfaces as a `scan: ...` error in the CLI.
 
 `language:` is OPTIONAL but state it explicitly — defaults to `python`
 when omitted. For TypeScript / JavaScript / Go rules, set it explicitly:
-`language: typescript`. Note: only Python tool discovery is plumbed in
-today, so non-python rules will load successfully but never fire until
-the matching parser ships.
+`language: typescript`. Python and TypeScript discovery are both plumbed in
+today (Claude SDK, OpenAI Agents, Google ADK, and MCP all have TS discovery
+and shipped TS rules); JavaScript and Go are recognized by recon but have no
+AST parser, so rules in those languages load but never fire until the
+matching parser ships.
 
 ## Per-scope `applies_to` values
 
@@ -78,6 +80,7 @@ against. Pick values from the table for the scope you're targeting.
 | `openai_agent`            | `Agent(...)` from `openai-agents` SDK                         |
 | `openai_sandbox_agent`    | `SandboxAgent(...)` from `openai-agents` SDK                  |
 | `claude_agent_definition` | `AgentDefinition(...)` from `claude-agent-sdk`                |
+| `claude_query_main`       | `query(...)` main-thread agent (`QueryMainAgent`) from the Claude TS SDK |
 | `adk_llm_agent`           | `LlmAgent(...)` / `Agent(...)` alias from `google-adk`        |
 | `adk_sequential_agent`    | `SequentialAgent(...)` from `google-adk`                      |
 | `adk_parallel_agent`      | `ParallelAgent(...)` from `google-adk`                        |
@@ -123,7 +126,9 @@ Subagent rules use the `subagent_grants_tool` predicate (true when
 `SubagentDef.Tools` contains a listed tool name). They carry **no `language:`
 field** — subagents are markdown frontmatter, not code, and the
 `subagentRuleDetector.Applies` method does not gate on language. The shipped
-rule is CSDK-110 in `claude_sdk/subagent_safety.yaml`.
+rules are CSDK-110 ("Subagent granted the built-in Bash tool") and CSDK-111
+("Subagent granted filesystem-write or web-fetch built-ins"), both in
+`claude_sdk/subagent_safety.yaml`.
 
 ## "Add a rule for X"
 
