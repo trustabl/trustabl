@@ -827,8 +827,8 @@ the report is fully materialized before the file is opened so a render error
 never leaves a half-written file. The write happens before the findings-based
 exit code is applied, which is what lets a CI job run the scan step with
 `continue-on-error` and still upload the SARIF on `if: always()` even when the
-scan exits 1 on findings. A worked Code Scanning workflow ships at
-`docs/ci/code-scanning.yml`.
+scan exits 1 on findings. On GitHub Actions, `trustabl/trustabl-action` wraps
+this sequence and uploads the SARIF to Code Scanning.
 
 An earlier version of Trustabl also generated committable artifacts
 (Pre/PostToolUse hook scripts, an OpenShell sandbox-policy starter) and could
