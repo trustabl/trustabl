@@ -59,6 +59,42 @@ func TestLoader_ValidFile(t *testing.T) {
 	}
 }
 
+// TestLoader_MCPCategory verifies the mcp policy category loads. The trustabl-rules
+// repo ships an mcp/ pack; the engine must accept category: mcp (regression for the
+// drift where the rules repo shipped mcp rules no engine could load).
+func TestLoader_MCPCategory(t *testing.T) {
+	const mcpYAML = `
+policy:
+  id: mcp_test
+  name: MCP Test
+  category: mcp
+  description: Test mcp policy.
+rules:
+  - id: MCP-999
+    title: An mcp test rule
+    scope: tool
+    severity: low
+    confidence: 0.8
+    applies_to:
+      - mcp_tool
+    match:
+      has_docstring: true
+    explanation: Some explanation.
+    fix: Some fix.
+`
+	fsys := makeFS(map[string]string{"mcp/test.yaml": mcpYAML})
+	policies, err := rules.Load(fsys)
+	if err != nil {
+		t.Fatalf("loading an mcp-category policy should succeed, got: %v", err)
+	}
+	if len(policies) != 1 || len(policies[0].Rules) != 1 {
+		t.Fatalf("expected 1 policy with 1 rule, got %+v", policies)
+	}
+	if string(policies[0].Rules[0].Category) != "mcp" {
+		t.Errorf("rule.Category = %q, want mcp", policies[0].Rules[0].Category)
+	}
+}
+
 func TestLoader_MissingRequiredField(t *testing.T) {
 	const noTitle = `
 policy:

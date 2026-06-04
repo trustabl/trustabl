@@ -134,7 +134,10 @@ func ruleFromFinding(f models.Finding) ReportingDescriptor {
 		},
 	}
 	// Omit help entirely when there's no fix text — an empty help.text is noise
-	// for SARIF viewers. Mirrors the guard on result.Fixes.
+	// for SARIF viewers. help.text is the SOLE carrier of the suggested fix:
+	// Trustabl fixes are prose advice, not concrete patches, so a per-result
+	// SARIF fixes[] (which the spec requires to carry artifactChanges) would be
+	// both dishonest and rejected by the GitHub Code Scanning schema validator.
 	if f.SuggestedFix != "" {
 		rd.Help = &Message{Text: f.SuggestedFix}
 	}
@@ -161,10 +164,6 @@ func resultFromFinding(f models.Finding, ruleIndex *int, useBase bool) Result {
 	}
 	rank := f.Confidence * 100
 	r.Rank = &rank
-
-	if f.SuggestedFix != "" {
-		r.Fixes = []Fix{{Description: Message{Text: f.SuggestedFix}}}
-	}
 
 	// Locations: physical when we have a file; logical when we have a tool name.
 	if f.FilePath != "" {
