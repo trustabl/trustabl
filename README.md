@@ -8,8 +8,10 @@ tools, agents, subagents, skills, slash commands, and plugin manifests it
 declares, and checks them against a catalog of reliability and safety rules. It reports the weaknesses it finds — each
 with an explanation, a suggested fix, and a confidence score — as a
 human-readable summary, JSON, or SARIF 2.1.0, plus a per-surface reliability
-score and a CI-friendly exit code. It ships as a single Go binary; there is
-no daemon, server, or hosted service.
+score and a CI-friendly exit code. It ships as a single Go binary with no
+hosted service: it runs as a CLI, or as a local stdio MCP server
+(`trustabl mcp`) that exposes the same scan to MCP clients without opening a
+network port.
 
 The rest of this document explains *what Trustabl reasons about* and *how
 the scan works*, then covers building and running it. For the full
@@ -365,6 +367,10 @@ trustabl scan ./repo --no-rules-update
 # Progress output (human format): animated on a terminal, plain lines when piped
 trustabl scan ./repo                 # spinner + bars on a TTY; "[phase] summary" lines when piped
 trustabl scan ./repo --no-progress   # disable progress entirely
+
+# Run as a stdio MCP server so an MCP client (Claude Code, Cursor, Claude
+# Desktop) can scan code an agent just wrote (see "Run as an MCP server" below)
+trustabl mcp
 ```
 
 Rules are cached under your OS cache dir (`os.UserCacheDir()`, e.g.
@@ -373,6 +379,48 @@ on Linux). The first scan (or an explicit `trustabl rules pull`)
 populates it; each subsequent scan checks for an update first (unless
 `--no-rules-update`), falling back to the cached rules if the fetch
 fails.
+
+### Run as an MCP server
+
+`trustabl mcp` runs a Model Context Protocol (MCP) server over stdio, so an MCP
+client (Claude Code, Cursor, Claude Desktop) can scan a directory an agent just
+edited and read the findings back. It is the same scan as `trustabl scan`,
+exposed as an MCP tool — it opens no network port. The server speaks JSON-RPC on
+stdout, so it writes nothing else there; status lines and diagnostics go to
+stderr.
+
+It exposes two tools:
+
+- `scan` — input `{ "path": "<dir>", "rules_ref": "<branch-or-tag>"? }`. Scans
+  `path` and returns the full scan result (findings, scores, discovered
+  inventory) as JSON — the same shape as `--format json`.
+- `version` — reports the build version, commit, and date.
+
+Register it with an MCP client by pointing the client at the binary with the
+`mcp` argument over stdio. For Claude Code:
+
+```bash
+claude mcp add trustabl -- trustabl mcp
+```
+
+Or configure it directly in a client's MCP config (the `mcpServers` stdio
+shape used by Claude Desktop / Cursor):
+
+```json
+{
+  "mcpServers": {
+    "trustabl": {
+      "command": "trustabl",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+The rules-source flags (`--rules-repo`, `--rules-ref`, `--no-rules-update`) work
+on `trustabl mcp` exactly as on `trustabl scan`; a client may also pass a
+per-call `rules_ref` in the `scan` tool arguments, which overrides the
+command-level `--rules-ref` for that call.
 
 ### "no schema-compatible rules available"
 

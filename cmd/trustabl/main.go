@@ -3,6 +3,7 @@
 // Subcommands:
 //
 //	trustabl scan <target> [flags]   primary command: scan a repo
+//	trustabl mcp [flags]             run a stdio MCP server exposing the scan
 //	trustabl version                 print version
 //
 // Exit codes:
@@ -62,6 +63,7 @@ func main() {
 	rootCmd.AddCommand(newScanCommand())
 	rootCmd.AddCommand(newVersionCommand())
 	rootCmd.AddCommand(newRulesCommand())
+	rootCmd.AddCommand(newMCPCommand())
 
 	if err := rootCmd.Execute(); err != nil {
 		var ec exitCodeError
