@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -141,6 +142,9 @@ func newScanCommand() *cobra.Command {
 }
 
 func runScan(target string, f scanFlags) error {
+	if err := validateOutputFlags(f); err != nil {
+		return err
+	}
 	cfg := scanner.Config{Target: target}
 	if f.detectors != "" {
 		cats, err := parseCategories(f.detectors)
@@ -211,6 +215,26 @@ func runScan(target string, f scanFlags) error {
 	}
 	out := <-done
 	return finishScan(out.result, out.err, f)
+}
+
+// validateOutputFlags rejects output destinations that collide. --output writes
+// the --format report to a file; --json-out/--sarif-out write those formats to
+// files independently. Pointing two of them at one path writes it twice and,
+// across formats, silently clobbers — so require distinct paths.
+func validateOutputFlags(f scanFlags) error {
+	out := filepath.Clean(f.output)
+	jsonOut := filepath.Clean(f.jsonOut)
+	sarifOut := filepath.Clean(f.sarifOut)
+	if f.output != "" && f.jsonOut != "" && out == jsonOut {
+		return fmt.Errorf("--output and --json-out point at the same file (%s); use distinct paths", f.output)
+	}
+	if f.output != "" && f.sarifOut != "" && out == sarifOut {
+		return fmt.Errorf("--output and --sarif-out point at the same file (%s); use distinct paths", f.output)
+	}
+	if f.jsonOut != "" && f.sarifOut != "" && jsonOut == sarifOut {
+		return fmt.Errorf("--json-out and --sarif-out point at the same file (%s); use distinct paths", f.jsonOut)
+	}
+	return nil
 }
 
 // pickScanMode maps flags + stderr TTY state to a progress mode.

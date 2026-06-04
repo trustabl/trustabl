@@ -309,3 +309,30 @@ func TestSARIFToFile_RoundTrip(t *testing.T) {
 		t.Errorf("exitCode = %d, want 1 (a high finding present)", exitCode(result, false))
 	}
 }
+
+func TestValidateOutputFlags(t *testing.T) {
+	cases := []struct {
+		name    string
+		f       scanFlags
+		wantErr bool
+	}{
+		{"all empty", scanFlags{}, false},
+		{"output only", scanFlags{output: "r.txt"}, false},
+		{"distinct paths", scanFlags{output: "r.sarif", jsonOut: "r.json", sarifOut: "s.sarif"}, false},
+		{"output == json-out", scanFlags{output: "x.json", jsonOut: "x.json"}, true},
+		{"output == sarif-out", scanFlags{output: "x.sarif", sarifOut: "x.sarif"}, true},
+		{"output == sarif-out via ./", scanFlags{output: "x.sarif", sarifOut: "./x.sarif"}, true},
+		{"json-out == sarif-out", scanFlags{jsonOut: "o.txt", sarifOut: "o.txt"}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateOutputFlags(tc.f)
+			if tc.wantErr && err == nil {
+				t.Errorf("validateOutputFlags(%+v) = nil, want error", tc.f)
+			}
+			if !tc.wantErr && err != nil {
+				t.Errorf("validateOutputFlags(%+v) = %v, want nil", tc.f, err)
+			}
+		})
+	}
+}
