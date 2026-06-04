@@ -111,7 +111,7 @@ func newScanCommand() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&f.detectors, "detectors", "",
-		"comma-separated detector categories: claude_sdk, openai_sdk, openshell, google_adk (default: all)")
+		"comma-separated detector categories: claude_sdk, openai_sdk, openshell, google_adk, mcp (default: all)")
 	cmd.Flags().StringVar(&f.format, "format", "human",
 		"output format: human|json|sarif")
 	cmd.Flags().BoolVar(&f.strict, "strict", false,
@@ -441,10 +441,10 @@ func parseCategories(s string) ([]models.DetectorCategory, error) {
 		c := models.DetectorCategory(strings.TrimSpace(raw))
 		switch c {
 		case models.CategoryClaudeSDK, models.CategoryOpenAISDK,
-			models.CategoryOpenShell, models.CategoryGoogleADK:
+			models.CategoryOpenShell, models.CategoryGoogleADK, models.CategoryMCP:
 			out = append(out, c)
 		default:
-			return nil, fmt.Errorf("unknown detector category %q (allowed: claude_sdk, openai_sdk, openshell, google_adk)", c)
+			return nil, fmt.Errorf("unknown detector category %q (allowed: claude_sdk, openai_sdk, openshell, google_adk, mcp)", c)
 		}
 	}
 	return out, nil
