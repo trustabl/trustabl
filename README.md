@@ -249,7 +249,15 @@ interactive terminal, or plain `[phase] summary` lines when piped
 own automation.
 
 `--format sarif` emits a SARIF 2.1.0 document, suitable for
-`github/codeql-action/upload-sarif` and other SARIF-aware tools.
+`github/codeql-action/upload-sarif` and other SARIF-aware tools. The suggested
+fix is carried at the rule level (`help.text`); Trustabl emits no per-result
+`fixes[]`, so the document passes GitHub Code Scanning's schema validator (which
+rejects a `fix` that lacks `artifactChanges`).
+
+`--json-out <file>` and `--sarif-out <file>` write the JSON / SARIF document to a
+file independent of `--format` — one scan can print the human summary to stdout
+while persisting both machine artifacts. The file bytes are identical to the
+matching `--format` stdout output.
 
 `--format json` and `--format sarif` are progress-silent and byte-stable
 across identical-input runs (pure functions of the `ScanResult`). The human
@@ -350,6 +358,9 @@ trustabl scan ./repo --format json
 
 # SARIF output for GitHub Code Scanning / SARIF-aware tools
 trustabl scan ./repo --format sarif > trustabl.sarif
+
+# One scan, both machine artifacts written to files (human summary to stdout)
+trustabl scan ./repo --json-out trustabl.json --sarif-out trustabl.sarif
 
 # Exit 1 on any finding regardless of severity
 trustabl scan ./repo --strict

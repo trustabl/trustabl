@@ -767,6 +767,16 @@ Both `saturation` and the severity weights in [models.SeverityWeight](internal/m
 are initial values pending corpus calibration (architecture § 8). They live in one
 place so the curve can be tuned without touching detectors.
 
+`ScanResult.projected_scores` ([analysis.Project](internal/analysis/scoring.go))
+carries five overall-score projections — `fix_critical`, `fix_high`,
+`fix_medium`, `fix_low`, `fix_all` — each the real `Score` overall recomputed
+with findings at or above that severity tier treated as resolved (dropped),
+cumulatively. It is an estimate, **not a re-scan**: it assumes a fixed finding
+vanishes cleanly and introduces nothing new. Values are non-decreasing
+`fix_critical → fix_all` and each is ≥ the unprojected `overall_score`. Consumers
+(e.g. the GitHub Action's "headroom ladder") read these instead of recomputing
+scoring, keeping the formula in one place.
+
 ### Step 6 — Review ([internal/review/](internal/review/))
 
 The scan is read-only: review renders the `ScanResult`, it does not write
@@ -786,18 +796,26 @@ anything into the scanned repo.
   to a closed-source project), and the renderer has no signal for "was an
   openshell rule loaded."
 - `--format json` marshals the `ScanResult` directly (in `cmd/trustabl`), for
-  CI consumers.
+  CI consumers. `--json-out <file>` / `--sarif-out <file>` additionally persist
+  the JSON / SARIF document to a file independent of `--format`, so a single scan
+  can print the human panel to stdout while writing both machine artifacts
+  (byte-identical to the matching `--format` stdout output).
 
 ### SARIF output (`--format sarif`)
 
 `internal/sarif.Render(ScanResult)` emits a SARIF 2.1.0 JSON document that
-`github/codeql-action/upload-sarif` and other SARIF consumers accept
-unchanged. The field-mapping rules — severity bucketing, the META finding
+GitHub Code Scanning (`github/codeql-action/upload-sarif`) and other SARIF
+consumers accept. The field-mapping rules — severity bucketing, the META finding
 split between results and notifications, the `partialFingerprints` scheme,
 and rule-catalog inclusion — are recorded in the spec at
-`.superpowers/specs/2026-05-24-sarif-output-design.md`. Like JSON, SARIF is
-a pure function of `ScanResult`: no clocks, no map-iteration leakage,
-byte-stable per `ScanID`.
+`.superpowers/specs/2026-05-24-sarif-output-design.md`. A rule's suggested fix is
+carried once at the rule level as `help.text`; Trustabl deliberately emits **no
+per-result `fixes[]`**, because the SARIF spec requires a `fix` to carry
+`artifactChanges` (a concrete patch) while Trustabl's fixes are prose advice — a
+described-but-patchless result is both honest and accepted by the Code Scanning
+schema validator, which rejects a `fixes[]` entry lacking `artifactChanges`. Like
+JSON, SARIF is a pure function of `ScanResult`: no clocks, no map-iteration
+leakage, byte-stable per `ScanID`.
 
 An earlier version of Trustabl also generated committable artifacts
 (Pre/PostToolUse hook scripts, an OpenShell sandbox-policy starter) and could
@@ -1534,6 +1552,7 @@ timestamp, no map iteration order, no goroutine scheduling may influence output.
 
 ```
 trustabl scan <target> [--detectors=…] [--format=human|json|sarif]
+                       [--json-out=FILE] [--sarif-out=FILE]
                        [--strict] [--no-color] [--no-progress]
                        [--rules-repo=URL] [--rules-ref=REF] [--no-rules-update]
 trustabl rules pull    [--rules-repo=URL] [--rules-ref=REF]

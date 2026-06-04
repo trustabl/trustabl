@@ -169,13 +169,6 @@
               ]
             }
           ],
-          "fixes": [
-            {
-              "description": {
-                "text": "Pass timeout=5 to the request."
-              }
-            }
-          ],
           "rank": 85,
           "partialFingerprints": {
             "primaryLocationLineHash": "80ef6bbb4cfc3b2f7693a435688afc27b72afe9e4aa3b898154c6d751ca037a7"
