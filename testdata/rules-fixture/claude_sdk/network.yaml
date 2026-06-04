@@ -15,7 +15,6 @@ rules:
     language: python
     applies_to:
       - claude_sdk_tool
-      - mcp_tool
     scope: tool
     match:
       call_without_kwarg:

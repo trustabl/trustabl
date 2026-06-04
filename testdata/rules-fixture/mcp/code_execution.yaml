@@ -1,0 +1,55 @@
+policy:
+  id: mcp_code_execution
+  name: MCP dynamic code execution
+  category: mcp
+  description: >
+    Rules covering MCP tool handlers that evaluate dynamic Python code.
+    eval/exec/compile inside a handler turns the server process into an
+    arbitrary-code-execution surface when any input flows from the client.
+
+rules:
+  - id: MCP-009
+    title: Tool body calls eval/exec/compile on dynamic input
+    severity: high
+    confidence: 0.85
+    language: python
+    applies_to:
+      - mcp_tool
+    scope: tool
+    match:
+      has_code_exec_call: true
+    explanation: >
+      The tool handler invokes Python's eval, exec, or compile. When any portion
+      of the input flows from the connecting client (directly, or via state the
+      model writes), the call is arbitrary code execution inside the MCP server
+      process: same memory, same imports, same in-process credentials. There is
+      no process boundary between the call and the server host. A model steered
+      by an untrusted document or a prompt-injected task can reach this primitive
+      and run whatever it constructs.
+    fix: >
+      Remove eval/exec/compile from the handler. For arithmetic use
+      ast.literal_eval; for richer expressions validate the AST against an
+      allow-list before compiling. If the tool is intentionally a code-execution
+      surface, run the code in a separate sandboxed single-use process (no
+      network, read-only filesystem, CPU/wall-clock caps), not in the server
+      process.
+
+  - id: MCP-014
+    title: TypeScript MCP tool evaluates dynamic code
+    severity: high
+    confidence: 0.9
+    language: typescript
+    applies_to:
+      - mcp_tool
+    scope: tool
+    match:
+      has_code_exec_call: true
+    explanation: >
+      This MCP tool handler, authored in TypeScript, calls `eval()` or
+      constructs a `new Function(...)`. With model- or caller-controlled input
+      reaching the evaluated string, this is remote code execution inside the
+      MCP server process.
+    fix: >
+      Remove `eval`/`new Function`. Parse structured input with `JSON.parse`,
+      dispatch on a fixed map of allowed operations, and never construct
+      executable code from tool arguments.

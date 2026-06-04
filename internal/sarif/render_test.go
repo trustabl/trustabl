@@ -150,9 +150,11 @@ func TestResultFromFinding_LocatedToolFinding(t *testing.T) {
 	if loc.LogicalLocations[0].Kind != "function" {
 		t.Errorf("LogicalLocation Kind = %q", loc.LogicalLocations[0].Kind)
 	}
-	if len(r.Fixes) != 1 || r.Fixes[0].Description.Text != f.SuggestedFix {
-		t.Errorf("Fixes = %+v", r.Fixes)
-	}
+	// Suggested-fix text is intentionally NOT emitted as a per-result fixes[]
+	// entry: the SARIF spec requires fixes[] to carry artifactChanges, which
+	// Trustabl's prose advice cannot honestly provide, and GitHub Code Scanning
+	// rejects the document otherwise. The fix is carried once at the rule level
+	// via help.text — see TestRuleFromFinding (rd.Help) above.
 	if r.Rank == nil || *r.Rank != 85.0 {
 		t.Errorf("Rank = %v, want 85.0", r.Rank)
 	}

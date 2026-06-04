@@ -75,6 +75,12 @@ func detectSDKDeps(root string) []models.SDKDep {
 			Manifests: []string{"package.json"}},
 		{Name: "google-adk", Pattern: "@google/adk",
 			Manifests: []string{"package.json"}},
+		// MCP TypeScript SDK. The package id is unambiguous (no Python-substring
+		// hazard), so it scans package.json only. Drives the "declared but
+		// unused" drift signal; actual pack loading is driven by SDKMCP from
+		// discovery, not this needle.
+		{Name: "mcp", Pattern: "@modelcontextprotocol/sdk",
+			Manifests: []string{"package.json"}},
 	}
 	seen := make(map[string]bool)
 	var out []models.SDKDep

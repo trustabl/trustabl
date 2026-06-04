@@ -56,7 +56,6 @@ type Result struct {
 	Kind                string            `json:"kind,omitempty"` // omit for default "fail"; set "informational" otherwise
 	Message             Message           `json:"message"`
 	Locations           []Location        `json:"locations,omitempty"`
-	Fixes               []Fix             `json:"fixes,omitempty"`
 	Rank                *float64          `json:"rank,omitempty"`
 	PartialFingerprints map[string]string `json:"partialFingerprints,omitempty"`
 	Properties          map[string]any    `json:"properties,omitempty"`
@@ -84,10 +83,6 @@ type Region struct {
 type LogicalLocation struct {
 	Name string `json:"name"`
 	Kind string `json:"kind,omitempty"`
-}
-
-type Fix struct {
-	Description Message `json:"description"`
 }
 
 type Invocation struct {

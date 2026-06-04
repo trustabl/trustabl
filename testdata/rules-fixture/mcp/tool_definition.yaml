@@ -1,0 +1,104 @@
+policy:
+  id: mcp_tool_definition
+  name: MCP tool definition hygiene
+  category: mcp
+  description: >
+    Rules covering the structural hygiene of Model Context Protocol tool
+    registrations (@server.tool / @mcp.tool / .register_tool). An MCP server
+    advertises each tool's name, description, and input schema across a trust
+    boundary to whatever client and model connect to it, so weak definitions
+    degrade tool selection for every consumer of the server.
+
+rules:
+  - id: MCP-001
+    title: Tool has no description
+    severity: low
+    confidence: 0.9
+    language: python
+    applies_to:
+      - mcp_tool
+    scope: tool
+    match:
+      has_docstring: false
+    explanation: >
+      An MCP server publishes each tool's description to connecting clients as
+      the text a model uses to decide whether to call the tool. A registration
+      with no docstring (and no explicit description) gives every connecting
+      model nothing to route on, leading to wrong-tool or skipped calls across
+      all clients of the server.
+    fix: >
+      Add a one-line docstring (or a description= argument on the registration)
+      stating what the tool does and when a model should call it. This text is
+      the tool's primary routing signal alongside its name.
+
+  - id: MCP-002
+    title: Tool has no type-annotated parameters
+    severity: medium
+    confidence: 0.85
+    language: python
+    applies_to:
+      - mcp_tool
+    scope: tool
+    match:
+      has_params: true
+      has_typed_params: false
+    explanation: >
+      MCP derives a tool's input JSON schema from the handler's Python type
+      annotations. Without annotations the advertised schema is degraded
+      (parameters fall back to an unconstrained type), so connecting models
+      send unvalidated inputs that frequently cause runtime errors inside the
+      server.
+    fix: >
+      Add type hints to every parameter (def search(query: str, limit: int = 10)
+      -> dict). Use Pydantic models or TypedDict for structured inputs so the
+      published schema constrains them.
+
+  - id: MCP-003
+    title: Ambiguous tool name
+    severity: low
+    confidence: 0.85
+    language: python
+    applies_to:
+      - mcp_tool
+    scope: tool
+    match:
+      name_in:
+        - process
+        - handle
+        - run
+        - do
+        - execute
+        - perform
+        - work
+        - go
+        - thing
+        - stuff
+    explanation: >
+      Tool names like `process`, `handle`, or `run` give a connecting model no
+      signal about intent. Because an MCP server is consumed by clients the
+      author does not control, an ambiguous name degrades selection everywhere
+      the server is mounted, and collides more easily with similarly-named
+      tools from other servers in the same session.
+    fix: >
+      Rename to a verb-object form, e.g. `summarize_invoice`, `fetch_weather`.
+
+  - id: MCP-011
+    title: TypeScript MCP tool has no description
+    severity: low
+    confidence: 0.85
+    language: typescript
+    applies_to:
+      - mcp_tool
+    scope: tool
+    match:
+      has_docstring: false
+    explanation: >
+      An MCP server authored in TypeScript registers each tool with
+      `server.registerTool(name, {description, inputSchema}, handler)`. With no
+      `description` (or one built from a non-literal expression, captured as
+      empty), every connecting model loses the primary signal for deciding
+      whether to call the tool, causing wrong-tool or skipped calls across all
+      clients of the server.
+    fix: >
+      Provide a concise `description` string in the registration config stating
+      what the tool does and when a model should call it.

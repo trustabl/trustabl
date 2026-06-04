@@ -1,0 +1,39 @@
+policy:
+  id: mcp_path_safety
+  name: MCP filesystem path safety
+  category: mcp
+  description: >
+    Rules that catch caller-supplied filesystem paths flowing into I/O calls
+    inside an MCP tool handler without containment. A traversal payload like
+    ../../etc/passwd reaches real filesystem state if the handler does not
+    resolve and gate the path.
+
+rules:
+  - id: MCP-005
+    title: Path parameter used in I/O without validation
+    severity: high
+    confidence: 0.7
+    language: python
+    applies_to:
+      - mcp_tool
+    scope: tool
+    # call_uses_unnormalized_path_param is per-param: a tool with two path
+    # params and one .resolve() correctly fires on the unresolved one.
+    match:
+      call_uses_unnormalized_path_param:
+        callees:
+          - open
+          - Path
+        callee_prefixes:
+          - shutil.
+          - os.
+    explanation: >
+      The tool accepts a path-like parameter and passes it to file or directory
+      operations without resolving or sandboxing the path. Because MCP tool
+      arguments are supplied by a connecting client (and chosen by a model from
+      conversation context), a `../../etc/passwd` is reachable and the server
+      reads or writes filesystem state outside any intended root. Detection is
+      heuristic — confirm the parameter is genuinely caller-supplied.
+    fix: >
+      Resolve the path with `Path(...).resolve()` and assert it sits under an
+      allowed root before any I/O touches it. Reject paths that escape the root.

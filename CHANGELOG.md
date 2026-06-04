@@ -4,6 +4,33 @@ All notable changes to Trustabl are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project aims
 to follow Semantic Versioning once it reaches 1.0.
 
+## [Unreleased]
+
+### Added
+
+- **`trustabl llm provider` — provider switching.** New subcommand group for
+  managing which LLM provider is active:
+  - `trustabl llm provider set <provider>` — switch the active provider;
+    auto-creates an entry with a per-provider default model if not yet
+    configured (`anthropic → claude-haiku-4-5`, `openai → gpt-4.1-nano`,
+    `google → gemini-2.5-flash-lite`). Prints a key hint when a new provider
+    is created.
+  - `trustabl llm provider list` — list all configured providers; active
+    provider marked with `*`.
+
+- **`trustabl llm` — LLM provider configuration.** New command group for
+  managing LLM provider keys and models, stored at
+  `~/.config/trustabl/keys.json` (mode 0600, atomic write):
+  - `trustabl llm list` — table of configured providers with masked keys;
+    active provider marked with `*`.
+  - `trustabl llm key set [key]` — store an API key (prompts securely if
+    key is omitted; validates format for `anthropic` keys).
+  - `trustabl llm key get` — display the masked key for the active provider.
+  - `trustabl llm key delete` — delete the key with a `y/N` confirmation prompt.
+  - `trustabl llm model set <model>` — set the model for the active provider.
+  Defaults: provider `anthropic`, model `claude-haiku-4-5`. Multi-provider
+  shape is in place from day one. Pre-requisite for `trustabl enrich`.
+
 ## [0.1.2] - 2026-06-03
 
 ### Added

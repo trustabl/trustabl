@@ -59,6 +59,7 @@ const (
 	CategoryOpenAISDK DetectorCategory = "openai_sdk"
 	CategoryOpenShell DetectorCategory = "openshell"
 	CategoryGoogleADK DetectorCategory = "google_adk"
+	CategoryMCP       DetectorCategory = "mcp"
 )
 
 // ToolKind drives detector applicability.
@@ -161,6 +162,21 @@ type SurfaceReadiness struct {
 	Score            float64 `json:"score"`     // 0..1
 	FindingCount     int     `json:"finding_count"`
 	WeightedSeverity float64 `json:"weighted_severity"`
+}
+
+// ProjectedScores are overall-score projections after resolving findings up to
+// and including each severity tier, cumulatively. Each value is the real
+// overall score (see analysis.Score) recomputed with the remaining findings —
+// an ESTIMATE, not a re-scan: it assumes each resolved finding is removed
+// cleanly and introduces nothing new. Values are in [0,1] and non-decreasing
+// from FixCritical → FixAll. Single source of truth for the "headroom" ladder;
+// consumers (e.g. the GitHub Action) must not recompute scoring.
+type ProjectedScores struct {
+	FixCritical float64 `json:"fix_critical"` // resolve all critical findings
+	FixHigh     float64 `json:"fix_high"`     // + all high
+	FixMedium   float64 `json:"fix_medium"`   // + all medium
+	FixLow      float64 `json:"fix_low"`      // + all low
+	FixAll      float64 `json:"fix_all"`      // + all info (everything resolved)
 }
 
 // ScanManifest is what the Normalizer produces.
@@ -271,6 +287,7 @@ type ScanResult struct {
 	Findings            []Finding          `json:"findings"`
 	Surfaces            []SurfaceReadiness `json:"surfaces"`
 	OverallScore        float64            `json:"overall_score"`
+	ProjectedScores     ProjectedScores    `json:"projected_scores"`
 	RulesSource         string             `json:"rules_source"`     // repo the rule pack came from
 	RulesVersion        string             `json:"rules_version"`    // resolved rules commit SHA
 	RulesFromCache      bool               `json:"rules_from_cache"` // true if rules came from cache (network skipped/unreachable)

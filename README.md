@@ -8,8 +8,10 @@ tools, agents, subagents, skills, slash commands, and plugin manifests it
 declares, and checks them against a catalog of reliability and safety rules. It reports the weaknesses it finds — each
 with an explanation, a suggested fix, and a confidence score — as a
 human-readable summary, JSON, or SARIF 2.1.0, plus a per-surface reliability
-score and a CI-friendly exit code. It ships as a single Go binary; there is
-no daemon, server, or hosted service.
+score and a CI-friendly exit code. It ships as a single Go binary with no
+hosted service: it runs as a CLI, or as a local stdio MCP server
+(`trustabl mcp`) that exposes the same scan to MCP clients without opening a
+network port.
 
 The rest of this document explains *what Trustabl reasons about* and *how
 the scan works*, then covers building and running it. For the full
@@ -195,9 +197,11 @@ schema's `language:` field is in place for when those parsers ship.
 
 ### Scope boundaries
 
-- **LLM enrichment is opt-in.** The BYOK interface and cache exist
-  (`internal/inference/router.go`), but rule-based detection runs fully
-  without a key and makes no network call without one.
+- **LLM enrichment is opt-in.** Rule-based detection runs fully without a
+  key and makes no network call without one. Use `trustabl llm key set` to
+  configure a provider key (`~/.config/trustabl/keys.json`, mode 0600);
+  `internal/inference/router.go` is the BYOK interface the enrichment path
+  will call.
 - **Confidence scores are heuristic**, not LLM-judged, and not yet
   calibrated against a labelled real-agent corpus — treat findings as
   signal to investigate.
@@ -250,7 +254,15 @@ interactive terminal, or plain `[phase] summary` lines when piped
 own automation.
 
 `--format sarif` emits a SARIF 2.1.0 document, suitable for
-`github/codeql-action/upload-sarif` and other SARIF-aware tools.
+`github/codeql-action/upload-sarif` and other SARIF-aware tools. The suggested
+fix is carried at the rule level (`help.text`); Trustabl emits no per-result
+`fixes[]`, so the document passes GitHub Code Scanning's schema validator (which
+rejects a `fix` that lacks `artifactChanges`).
+
+`--json-out <file>` and `--sarif-out <file>` write the JSON / SARIF document to a
+file independent of `--format` — one scan can print the human summary to stdout
+while persisting both machine artifacts. The file bytes are identical to the
+matching `--format` stdout output.
 
 `--format json` and `--format sarif` are progress-silent and byte-stable
 across identical-input runs (pure functions of the `ScanResult`). The human
@@ -356,6 +368,9 @@ trustabl scan ./repo --format sarif > trustabl.sarif
 # the file even when the scan exits 1 on findings, so a CI step can upload it.
 trustabl scan ./repo --format sarif --output trustabl.sarif
 
+# One scan, both machine artifacts written to files (human summary to stdout)
+trustabl scan ./repo --json-out trustabl.json --sarif-out trustabl.sarif
+
 # Exit 1 on any finding regardless of severity
 trustabl scan ./repo --strict
 
@@ -372,6 +387,20 @@ trustabl scan ./repo --no-rules-update
 # Progress output (human format): animated on a terminal, plain lines when piped
 trustabl scan ./repo                 # spinner + bars on a TTY; "[phase] summary" lines when piped
 trustabl scan ./repo --no-progress   # disable progress entirely
+
+# Run as a stdio MCP server so an MCP client (Claude Code, Cursor, Claude
+# Desktop) can scan code an agent just wrote (see "Run as an MCP server" below)
+trustabl mcp
+
+# Configure LLM provider for enrichment (prerequisite for trustabl enrich)
+trustabl llm list                          # show configured providers with masked keys
+trustabl llm key set                       # prompt securely for an API key
+trustabl llm key set sk-ant-api03-...      # set key non-interactively
+trustabl llm key get                       # show masked key for active provider
+trustabl llm key delete                    # delete key with confirmation prompt
+trustabl llm model set claude-sonnet-4-6   # change model for active provider
+trustabl llm provider set openai           # switch active provider (auto-creates entry)
+trustabl llm provider list                 # list configured providers
 ```
 
 Rules are cached under your OS cache dir (`os.UserCacheDir()`, e.g.
@@ -430,6 +459,58 @@ identical-input runs, repo-relative file URIs, and a stable
 `partialFingerprints` per finding so Code Scanning deduplicates alerts across
 runs rather than re-opening them.
 
+### Run as an MCP server
+
+`trustabl mcp` runs a Model Context Protocol (MCP) server over stdio, so an MCP
+client (Claude Code, Cursor, Claude Desktop) can scan a directory an agent just
+edited and read the findings back. It is the same scan as `trustabl scan`,
+exposed as an MCP tool — it opens no network port. The server speaks JSON-RPC on
+stdout, so it writes nothing else there; status lines and diagnostics go to
+stderr.
+
+It exposes two tools:
+
+- `scan` — input `{ "path": "<dir>", "rules_ref": "<branch-or-tag>"? }`. Scans
+  `path` and returns the full scan result (findings, scores, discovered
+  inventory) as JSON — the same shape as `--format json`.
+- `version` — reports the build version, commit, and date.
+
+Register it with an MCP client by pointing the client at the binary with the
+`mcp` argument over stdio. For Claude Code:
+
+```bash
+claude mcp add trustabl -- trustabl mcp
+```
+
+Or configure it directly in a client's MCP config (the `mcpServers` stdio
+shape used by Claude Desktop / Cursor):
+
+```json
+{
+  "mcpServers": {
+    "trustabl": {
+      "command": "trustabl",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+The rules-source flags (`--rules-repo`, `--rules-ref`, `--no-rules-update`) work
+on `trustabl mcp` exactly as on `trustabl scan`; a client may also pass a
+per-call `rules_ref` in the `scan` tool arguments, which overrides the
+command-level `--rules-ref` for that call.
+
+### Claude Code plugin (self-audit at generation time)
+
+Trustabl ships a Claude Code plugin under [`.claude-plugin/`](.claude-plugin/)
+that exposes a `trustabl-scan` skill ([`skills/trustabl-scan/`](skills/trustabl-scan/)).
+The skill triggers right after agent, tool, subagent, or MCP-server code is
+written or changed and runs `trustabl scan` to self-audit it before committing,
+upstream of CI. It is a thin wrapper around the CLI documented above and runs no
+network service: it shells out to the same `trustabl` binary, so the binary must
+be installed and on `PATH`.
+
 ### "no schema-compatible rules available"
 
 This means the resolved rule pack targets a newer rule-schema version than
@@ -478,6 +559,7 @@ Two fixes:
 | Scoring engine     | `internal/analysis/scoring.go`           |
 | Report renderer    | `internal/review/diff.go` (human), `internal/sarif/render.go` (SARIF), JSON marshal in `cmd/trustabl` |
 | Inference router   | `internal/inference/router.go`           |
+| LLM config         | `internal/llm/` (key storage · masking · validation) |
 
 Rule packs live in the separate `trustabl-rules` git repository (grouped
 `{claude_sdk,openai_sdk,google_adk}/`), resolved at scan time rather
@@ -503,6 +585,10 @@ corpus is the detection-quality target (see
 [ARCHITECTURE.md § 10](ARCHITECTURE.md#10-what-is-intentionally-out));
 the current tests are regression coverage, not detection-quality
 measurement.
+
+## Community
+
+Join the [Trustabl Discord](https://discord.gg/maQ7QMPsB) to ask questions, share feedback, and follow development.
 
 ## License
 

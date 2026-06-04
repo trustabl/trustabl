@@ -72,6 +72,8 @@ func parseTSTool(t *testing.T, src string, kind models.ToolKind) (models.ToolDef
 		tools = analysis.DiscoverTSOpenAITools([]analysis.ParsedFile{pf}, func(string) {})
 	case models.KindADKFunctionTool:
 		tools = analysis.DiscoverTSADKTools([]analysis.ParsedFile{pf}, func(string) {})
+	case models.KindMCPTool:
+		tools = analysis.DiscoverTSMCPProper([]analysis.ParsedFile{pf}, func(string) {})
 	default:
 		t.Fatalf("parseTSTool: unsupported kind %q", kind)
 	}

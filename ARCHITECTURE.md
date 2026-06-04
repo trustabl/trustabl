@@ -18,8 +18,10 @@ output is a `ScanResult` — findings (each with an explanation, suggested fix,
 and confidence), per-surface readiness scores, an overall score, and the
 discovered inventory — rendered as a human summary or as JSON for CI.
 
-Single Go binary, no daemon, no server. Web app and CI surfaces are out of
-scope (see `README.md`).
+Single Go binary, no network daemon. The one long-running mode is
+`trustabl mcp`, a local stdio MCP server that is a thin frontend over the same
+scan (§8.1) — it opens no socket and exposes no network surface. Web app and
+hosted-API surfaces remain out of scope (see `README.md`).
 
 The binary ships with **no embedded rules**. Detection rules live in a
 separate git repository and are resolved at scan time (see §2 — Rule
@@ -43,11 +45,14 @@ same TS file extensions, gated on imports from `@openai/agents`,
 (via `new LlmAgent({...})` / `SequentialAgent` / `ParallelAgent` /
 `LoopAgent` / `RoutedAgent` / `new FunctionTool({...})` / 13 hosted-tool
 classes / `subAgents` edges in the same TS file extensions, gated on
-imports from `@google/adk`). TypeScript rule packs now ship for all three
-SDKs: Claude SDK (CSDK-010/011/012/013/014/016 tool rules, CSDK-120/130/131
-agent rules), OpenAI Agents (OAI-016/017/019/022/024 tool rules, OAI-105 agent
-rule), and Google ADK (ADK-013/015/016 tool rules, ADK-109 agent rule). A TS
-repo for any of the three no longer produces a blanket META-004; the full
+imports from `@google/adk`). MCP-proper servers authored with
+`@modelcontextprotocol/sdk` (`new McpServer(...)` + `registerTool` / `tool`)
+are discovered in TS via `ts_mcp_proper.go`. TypeScript rule packs now ship for
+all four SDK surfaces: Claude SDK (CSDK-010/011/012/013/014/016 tool rules,
+CSDK-120/130/131 agent rules), OpenAI Agents (OAI-016/017/019/022/024 tool
+rules, OAI-105 agent rule), Google ADK (ADK-013/015/016 tool rules, ADK-109
+agent rule), and MCP (MCP-011/012/013/014 tool rules). A TS
+repo for any of these no longer produces a blanket META-004; the full
 per-SDK/language matrix lives in COVERAGE.md. The scanner
 can also recognize JavaScript and Go *files* (they appear in
 `manifest.typescript_files` and friends) but has no AST parser for them.
@@ -373,7 +378,18 @@ For each language recon cleared, do the AST work and produce a `RepoInventory`:
   servers: `createSdkMcpServer({...})` calls plus object literals in
   `options.mcpServers` discriminated by `type:` into
   `McpStdioServerConfig` / `McpSSEServerConfig` / `McpHttpServerConfig` /
-  `McpSdkServerConfigWithInstance`.
+  `McpSdkServerConfigWithInstance`. This is the Claude *client-side* server
+  config (emits `MCPServerDef`), NOT MCP-proper server authoring.
+- **DiscoverTSMCPProper** (`ts_mcp_proper.go`) — MCP *server authoring* with
+  `@modelcontextprotocol/sdk`: tracks variables bound to `new McpServer(...)` /
+  `new Server(...)` (import-gated to `.../server/{mcp,index}.js`), then emits a
+  `ToolDef{Kind: mcp_tool, Language: typescript}` per `registerTool(name,
+  config, handler)` and legacy `tool(...)` call on a tracked server var.
+  Reuses `tsZodParamNames` (from `inputSchema`) and `tsHandlerFacts` (handler
+  body facts). Receiver-aware so a non-server `.tool(...)` is not
+  mis-attributed. Emitting `KindMCPTool` routes through the existing
+  `SDKMCP` → `mcp` pack plumbing. Low-level `Server` + `setRequestHandler`
+  tools are not extracted (gap).
 - **DiscoverTSOpenAITools** (`ts_openai_tools.go`) — `tool({...})` factory calls
   from `@openai/agents` / `-core` / `-openai`. Captures `name`/`description`
   (registered name), `parameters` top-level keys as `ParamNames`, handler body
@@ -699,6 +715,29 @@ Shipped rules (one row per YAML rule entry):
 | ADK-109  | agent    | google_adk | medium   | `google_adk/agent_safety.yaml`     | TypeScript LlmAgent has no description                                                |
 | ADK-110  | agent    | google_adk | medium   | `google_adk/agent_safety.yaml`     | Agent fetches web content via UrlContextTool/LoadWebPage without before_tool_callback |
 | ADK-201  | repo     | google_adk | low      | `google_adk/repo_hygiene.yaml`     | Google ADK project with no agent-guidance doc (AGENTS.md/CLAUDE.md)                   |
+| MCP-001  | tool     | mcp        | low      | `mcp/tool_definition.yaml`         | MCP tool has no description                                                           |
+| MCP-002  | tool     | mcp        | medium   | `mcp/tool_definition.yaml`         | MCP tool parameters are not type-annotated                                            |
+| MCP-003  | tool     | mcp        | low      | `mcp/tool_definition.yaml`         | Ambiguous MCP tool name                                                               |
+| MCP-004  | tool     | mcp        | high     | `mcp/network.yaml`                 | Network call in MCP tool handler has no timeout                                       |
+| MCP-005  | tool     | mcp        | high     | `mcp/path_safety.yaml`             | Path parameter used in I/O without validation                                         |
+| MCP-006  | tool     | mcp        | medium   | `mcp/error_handling.yaml`          | MCP tool raises exceptions without a structured error contract                        |
+| MCP-007  | tool     | mcp        | medium   | `mcp/idempotency.yaml`             | Mutating MCP tool has no idempotency key                                              |
+| MCP-008  | tool     | mcp        | high     | `mcp/ssrf.yaml`                    | MCP tool fetches a caller-controlled URL (SSRF)                                       |
+| MCP-009  | tool     | mcp        | high     | `mcp/code_execution.yaml`          | MCP tool body calls eval/exec/compile on dynamic input                               |
+| MCP-010  | tool     | mcp        | high     | `mcp/shell_safety.yaml`            | MCP tool body spawns a subprocess                                                     |
+| MCP-011  | tool     | mcp        | low      | `mcp/tool_definition.yaml`         | TypeScript MCP tool has no description (`language: typescript`)                       |
+| MCP-012  | tool     | mcp        | high     | `mcp/shell_safety.yaml`            | TypeScript MCP tool spawns a subprocess                                               |
+| MCP-013  | tool     | mcp        | high     | `mcp/ssrf.yaml`                    | TypeScript MCP tool fetches a caller-controlled URL (SSRF)                            |
+| MCP-014  | tool     | mcp        | high     | `mcp/code_execution.yaml`          | TypeScript MCP tool evaluates dynamic code (eval / new Function)                      |
+
+> **MCP-tool coverage moved to a dedicated `mcp` category (2026-06-03).** The
+> Python CSDK rules CSDK-001/002/003/004/005/006/007/009/107/108 previously
+> listed `mcp_tool` in `applies_to`; that token was stripped from all ten so MCP
+> tools are audited only by the `mcp` pack (which loads whenever any MCP tool is
+> discovered, so pure-MCP repos are now covered and mixed Claude+MCP repos no
+> longer double-fire). The `mcp` category is accepted by the loader's
+> category allow-list (`internal/rules/loader.go`); `SDKMCP` already routed to
+> the `mcp` category via `LoadFor`, so no other wiring changed.
 
 ### Step 5 — Scoring ([internal/analysis/scoring.go](internal/analysis/scoring.go))
 
@@ -730,6 +769,16 @@ Both `saturation` and the severity weights in [models.SeverityWeight](internal/m
 are initial values pending corpus calibration (architecture § 8). They live in one
 place so the curve can be tuned without touching detectors.
 
+`ScanResult.projected_scores` ([analysis.Project](internal/analysis/scoring.go))
+carries five overall-score projections — `fix_critical`, `fix_high`,
+`fix_medium`, `fix_low`, `fix_all` — each the real `Score` overall recomputed
+with findings at or above that severity tier treated as resolved (dropped),
+cumulatively. It is an estimate, **not a re-scan**: it assumes a fixed finding
+vanishes cleanly and introduces nothing new. Values are non-decreasing
+`fix_critical → fix_all` and each is ≥ the unprojected `overall_score`. Consumers
+(e.g. the GitHub Action's "headroom ladder") read these instead of recomputing
+scoring, keeping the formula in one place.
+
 ### Step 6 — Review ([internal/review/](internal/review/))
 
 The scan is read-only: review renders the `ScanResult`, it does not write
@@ -749,18 +798,26 @@ anything into the scanned repo.
   to a closed-source project), and the renderer has no signal for "was an
   openshell rule loaded."
 - `--format json` marshals the `ScanResult` directly (in `cmd/trustabl`), for
-  CI consumers.
+  CI consumers. `--json-out <file>` / `--sarif-out <file>` additionally persist
+  the JSON / SARIF document to a file independent of `--format`, so a single scan
+  can print the human panel to stdout while writing both machine artifacts
+  (byte-identical to the matching `--format` stdout output).
 
 ### SARIF output (`--format sarif`)
 
 `internal/sarif.Render(ScanResult)` emits a SARIF 2.1.0 JSON document that
-`github/codeql-action/upload-sarif` and other SARIF consumers accept
-unchanged. The field-mapping rules — severity bucketing, the META finding
+GitHub Code Scanning (`github/codeql-action/upload-sarif`) and other SARIF
+consumers accept. The field-mapping rules — severity bucketing, the META finding
 split between results and notifications, the `partialFingerprints` scheme,
 and rule-catalog inclusion — are recorded in the spec at
-`.superpowers/specs/2026-05-24-sarif-output-design.md`. Like JSON, SARIF is
-a pure function of `ScanResult`: no clocks, no map-iteration leakage,
-byte-stable per `ScanID`.
+`.superpowers/specs/2026-05-24-sarif-output-design.md`. A rule's suggested fix is
+carried once at the rule level as `help.text`; Trustabl deliberately emits **no
+per-result `fixes[]`**, because the SARIF spec requires a `fix` to carry
+`artifactChanges` (a concrete patch) while Trustabl's fixes are prose advice — a
+described-but-patchless result is both honest and accepted by the Code Scanning
+schema validator, which rejects a `fixes[]` entry lacking `artifactChanges`. Like
+JSON, SARIF is a pure function of `ScanResult`: no clocks, no map-iteration
+leakage, byte-stable per `ScanID`.
 
 **Report destination (`--output` / `-o`).** `cmd/trustabl` renders the chosen
 format to bytes (`renderReport`) and then writes them either to stdout or, when
@@ -1146,7 +1203,8 @@ Discipline rules:
 ## 4. Package layout
 
 ```
-cmd/trustabl/                    CLI entry point (cobra). main.go only.
+cmd/trustabl/                    CLI entry point (cobra).
+│                                main.go (scan/rules/version) + mcp.go (mcp).
 internal/
 ├── models/                      Cross-boundary types. JSON-tagged. Zero deps.
 ├── ingestion/                   Importer + Normalizer.
@@ -1223,6 +1281,9 @@ internal/
 ├── sarif/                       SARIF 2.1.0 output renderer (`--format sarif`).
 │   ├── types.go                 SARIF struct definitions.
 │   └── render.go                Render(ScanResult) + helpers (severity, locations, fingerprints).
+├── mcpserver/                   Stdio MCP server frontend over scanner.Run.
+│   ├── jsonrpc.go               JSON-RPC 2.0 stdio framing (no third-party SDK).
+│   └── server.go                MCP methods (initialize/tools-list/tools-call) + scan tool.
 ├── review/                      Human renderer (read-only; no file writes).
 └── inference/                   BYOK inference router (interface + cache).
 
@@ -1509,8 +1570,10 @@ timestamp, no map iteration order, no goroutine scheduling may influence output.
 ```
 trustabl scan <target> [--detectors=…] [--format=human|json|sarif]
                        [--output=PATH|-o PATH]
+                       [--json-out=FILE] [--sarif-out=FILE]
                        [--strict] [--no-color] [--no-progress]
                        [--rules-repo=URL] [--rules-ref=REF] [--no-rules-update]
+trustabl mcp           [--rules-repo=URL] [--rules-ref=REF] [--no-rules-update]
 trustabl rules pull    [--rules-repo=URL] [--rules-ref=REF]
 trustabl version
 ```
@@ -1532,8 +1595,45 @@ Exit codes:
   (run `trustabl rules pull`).
 
 The CLI is a thin shell over `scanner.Run`. The same
-`Run(Config) (ScanResult, error)` is what a future HTTP server, GitHub Action,
-or test harness calls; the boundary is intentionally narrow.
+`Run(Config) (ScanResult, error)` is what the MCP frontend (§8.1), a future
+GitHub Action, or a test harness calls; the boundary is intentionally narrow.
+
+### 8.1 MCP frontend ([cmd/trustabl/mcp.go](cmd/trustabl/mcp.go) + [internal/mcpserver/](internal/mcpserver/))
+
+`trustabl mcp` runs a Model Context Protocol (MCP) server over stdio, so an MCP
+client (Claude Code, Cursor, Claude Desktop) can scan code an agent just wrote.
+It is a **second frontend over the same scanner core** as the CLI scan command —
+not a new analysis path. The command's scan handler resolves rules with
+`rulesource.Resolve` and runs `scanner.Run` exactly as the `scan` command does,
+then serializes the deterministic `ScanResult` onto the protocol stream itself.
+There is no second serialization format: the `scan` tool returns the same
+indented `ScanResult` JSON that `--format json` emits.
+
+`internal/mcpserver` owns the protocol, not any scanning. It is a hand-rolled
+JSON-RPC 2.0 server over newline-delimited stdio (`jsonrpc.go`) plus the MCP
+method handlers (`server.go`): `initialize`, `tools/list`, `tools/call`, and
+`ping`. No third-party MCP SDK is pulled in — the official Go SDK requires a
+newer Go than this module's floor, and the stdio surface needed here is small,
+so a direct implementation keeps `go.mod` and the Go version directive
+unchanged. The scanner is injected as a `ScanFunc` seam, which is what lets the
+server be unit-tested against the local rules fixture with no network
+(`server_test.go`).
+
+Two tools are exposed, kept deliberately minimal and honest:
+
+- `scan` — input `{ "path": string, "rules_ref"?: string }`. Runs the scanner
+  against `path` and returns the `ScanResult` JSON as a text content block. A
+  scan failure is returned as an `isError` tool result (the model sees the
+  message), not a JSON-RPC protocol error.
+- `version` — reports the build version, commit, and date.
+
+**Protocol-stream discipline.** MCP stdio uses **stdout** for the JSON-RPC
+stream, so in server mode nothing else may write to stdout. This aligns with the
+existing stderr-only progress contract (§7): the scan handler attaches the
+`progress.NewNop()` reporter, the human/stdout report path is never invoked, and
+the "server ready" line and any diagnostics go to stderr. The server serializes
+results itself; the byte-stable `ScanResult` is reused verbatim, so the
+determinism contract holds across this frontend too.
 
 ---
 
@@ -1550,17 +1650,28 @@ take it absent a concrete distribution requirement.
 
 ## 10. What is intentionally out
 
-- **LLM enrichment is opt-in.** `internal/inference/router.go` defines the BYOK
-  interface and an in-process cache; `Call()` returns `ErrLLMDisabled` when
-  no API key is set. The first planned target is upgrading low-confidence
-  rule-based hits to confirmed findings (CSDK-005 raw-exception detection is
+- **LLM enrichment is opt-in.** `internal/llm/` owns key storage
+  (`~/.config/trustabl/keys.json`, mode 0600) and is managed via
+  `trustabl llm` (list / key set|get|delete / model set / provider set|list).
+  The package exposes `Load`/`Save` (atomic write, mode 0600), `SetActive`
+  (switches active provider, auto-creates entry with a per-provider default
+  model), `ValidateKey`, and `MaskKey`. A `defaultModels` map supplies
+  fast/cheap defaults per known provider (`anthropic → claude-haiku-4-5`,
+  `openai → gpt-4.1-nano`, `google → gemini-2.5-flash-lite`).
+  `internal/inference/router.go` defines the BYOK call interface;
+  `Call()` returns `ErrLLMDisabled` when no key is configured.
+  Rule-based detection runs fully without a key and makes no network
+  call without one. The first planned enrichment target is upgrading
+  low-confidence rule-based hits to confirmed findings (CSDK-005 is
   the highest-leverage rule for this).
 - **No corpus-eval benchmark.** Detection quality measured on a 20–40
   real-agent-repo corpus is the detection-quality target. The shipped
   rule-based detectors carry three-layer test coverage (see §6) — that is
   regression coverage, not the corpus eval, which requires labelled-finding
   ground truth on real repos.
-- **No web app, no API server, no GitHub Action.** CLI-only.
+- **No web app, no hosted API server.** The surfaces are the CLI scan and the
+  local stdio MCP frontend (§8.1); neither opens a network socket. A hosted
+  HTTP/API service is still out of scope.
 - **No artifact generation or remediation.** Trustabl detects and reports; it
   does not write hook scripts, sandbox policies, or any other file into the
   scanned repo. An earlier version generated and could apply/export such

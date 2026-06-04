@@ -192,6 +192,18 @@ func TestScan_GoogleADKDemoFiresExpectedRules(t *testing.T) {
 	if res.OverallScore >= 1.0 {
 		t.Errorf("OverallScore = %v; want < 1.0 (non-tool rules fired: %v)", res.OverallScore, fired)
 	}
+
+	// projected_scores must be populated by the scanner, monotonic (resolving
+	// more findings never lowers the score), and every tier must sit at or above
+	// the unprojected overall. fix_all resolves everything, so it is the ceiling.
+	p := res.ProjectedScores
+	if !(p.FixCritical >= res.OverallScore && p.FixHigh >= p.FixCritical &&
+		p.FixMedium >= p.FixHigh && p.FixLow >= p.FixMedium && p.FixAll >= p.FixLow) {
+		t.Errorf("projected_scores not monotonic/above overall: overall=%v projected=%+v", res.OverallScore, p)
+	}
+	if p.FixAll < res.OverallScore {
+		t.Errorf("projected_scores.fix_all (%v) must be >= overall (%v)", p.FixAll, res.OverallScore)
+	}
 }
 
 func TestScan_SurfacesNewInventoryFields(t *testing.T) {

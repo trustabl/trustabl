@@ -3,6 +3,7 @@
 // Subcommands:
 //
 //	trustabl scan <target> [flags]   primary command: scan a repo
+//	trustabl mcp [flags]             run a stdio MCP server exposing the scan
 //	trustabl version                 print version
 //
 // Exit codes:
@@ -62,6 +63,8 @@ func main() {
 	rootCmd.AddCommand(newScanCommand())
 	rootCmd.AddCommand(newVersionCommand())
 	rootCmd.AddCommand(newRulesCommand())
+	rootCmd.AddCommand(newMCPCommand())
+	rootCmd.AddCommand(newLLMCommand())
 
 	if err := rootCmd.Execute(); err != nil {
 		var ec exitCodeError
@@ -98,6 +101,8 @@ type scanFlags struct {
 	rulesRef      string
 	noRulesUpdate bool
 	noProgress    bool
+	jsonOut       string
+	sarifOut      string
 }
 
 func newScanCommand() *cobra.Command {
@@ -111,7 +116,7 @@ func newScanCommand() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&f.detectors, "detectors", "",
-		"comma-separated detector categories: claude_sdk, openai_sdk, openshell, google_adk (default: all)")
+		"comma-separated detector categories: claude_sdk, openai_sdk, openshell, google_adk, mcp (default: all)")
 	cmd.Flags().StringVar(&f.format, "format", "human",
 		"output format: human|json|sarif")
 	cmd.Flags().StringVarP(&f.output, "output", "o", "",
@@ -128,6 +133,10 @@ func newScanCommand() *cobra.Command {
 		"do not fetch rules; use the local cache only")
 	cmd.Flags().BoolVar(&f.noProgress, "no-progress", false,
 		"disable real-time progress output")
+	cmd.Flags().StringVar(&f.jsonOut, "json-out", "",
+		"also write the JSON ScanResult to this file (independent of --format)")
+	cmd.Flags().StringVar(&f.sarifOut, "sarif-out", "",
+		"also write the SARIF report to this file (independent of --format)")
 	return cmd
 }
 
@@ -336,6 +345,14 @@ func finishScan(result models.ScanResult, jobErr error, f scanFlags) error {
 		return err
 	}
 
+	// --json-out / --sarif-out persist the respective format to a file
+	// independent of --format, so one scan can print the human panel to stdout
+	// while writing machine artifacts. The bytes are identical to the matching
+	// --format stdout output (shared renderers).
+	if err := writeSideOutputs(result, f); err != nil {
+		return err
+	}
+
 	if code := exitCode(result, f.strict); code != 0 {
 		return exitCodeError{code}
 	}
@@ -349,11 +366,7 @@ func finishScan(result models.ScanResult, jobErr error, f scanFlags) error {
 func renderReport(result models.ScanResult, f scanFlags) ([]byte, error) {
 	switch f.format {
 	case "json":
-		b, err := json.MarshalIndent(result, "", "  ")
-		if err != nil {
-			return nil, err
-		}
-		return append(b, '\n'), nil
+		return jsonBytes(result)
 	case "sarif":
 		return sarif.Render(result, version), nil
 	case "human", "":
@@ -362,6 +375,17 @@ func renderReport(result models.ScanResult, f scanFlags) ([]byte, error) {
 	default:
 		return nil, fmt.Errorf("unknown --format %q", f.format)
 	}
+}
+
+// jsonBytes renders the ScanResult as the canonical pretty JSON document
+// (trailing newline). Shared by renderReport (--format json) and writeSideOutputs
+// (--json-out) so all JSON output is byte-identical.
+func jsonBytes(result models.ScanResult) ([]byte, error) {
+	b, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	return append(b, '\n'), nil
 }
 
 // writeReport sends the rendered report to stdout, or to path when --output is
@@ -374,6 +398,26 @@ func writeReport(report []byte, path string) error {
 	}
 	if err := os.WriteFile(path, report, 0o644); err != nil {
 		return fmt.Errorf("writing report to %s: %w", path, err)
+	}
+	return nil
+}
+
+// writeSideOutputs honors --json-out / --sarif-out, writing each format to its
+// file when the flag is set. No-op when both are empty.
+func writeSideOutputs(result models.ScanResult, f scanFlags) error {
+	if f.jsonOut != "" {
+		b, err := jsonBytes(result)
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(f.jsonOut, b, 0o644); err != nil {
+			return fmt.Errorf("write --json-out: %w", err)
+		}
+	}
+	if f.sarifOut != "" {
+		if err := os.WriteFile(f.sarifOut, sarif.Render(result, version), 0o644); err != nil {
+			return fmt.Errorf("write --sarif-out: %w", err)
+		}
 	}
 	return nil
 }
@@ -457,10 +501,10 @@ func parseCategories(s string) ([]models.DetectorCategory, error) {
 		c := models.DetectorCategory(strings.TrimSpace(raw))
 		switch c {
 		case models.CategoryClaudeSDK, models.CategoryOpenAISDK,
-			models.CategoryOpenShell, models.CategoryGoogleADK:
+			models.CategoryOpenShell, models.CategoryGoogleADK, models.CategoryMCP:
 			out = append(out, c)
 		default:
-			return nil, fmt.Errorf("unknown detector category %q (allowed: claude_sdk, openai_sdk, openshell, google_adk)", c)
+			return nil, fmt.Errorf("unknown detector category %q (allowed: claude_sdk, openai_sdk, openshell, google_adk, mcp)", c)
 		}
 	}
 	return out, nil
