@@ -1,0 +1,111 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"os"
+
+	"github.com/spf13/cobra"
+
+	"github.com/trustabl/trustabl/internal/mcpserver"
+	"github.com/trustabl/trustabl/internal/models"
+	"github.com/trustabl/trustabl/internal/progress"
+	"github.com/trustabl/trustabl/internal/rules"
+	"github.com/trustabl/trustabl/internal/rulesource"
+	"github.com/trustabl/trustabl/internal/scanner"
+)
+
+// mcpFlags configure the `trustabl mcp` server. They mirror the rules-source
+// knobs of `scan`, since rule resolution is identical; the server has no output
+// format (it speaks the MCP protocol on stdout) and no progress (which would
+// corrupt that stream).
+type mcpFlags struct {
+	rulesRepo     string
+	rulesRef      string
+	noRulesUpdate bool
+}
+
+// newMCPCommand wires the `mcp` subcommand: a stdio MCP server that exposes
+// Trustabl's scan to MCP clients (Claude Code, Cursor, Claude Desktop). It is a
+// frontend over the same scanner core as `scan` — it reuses rule resolution and
+// scanner.Run, and serializes the deterministic ScanResult onto the protocol
+// stream itself.
+func newMCPCommand() *cobra.Command {
+	var f mcpFlags
+	cmd := &cobra.Command{
+		Use:   "mcp",
+		Short: "Run a stdio MCP server exposing Trustabl's scan",
+		Long: "Run a Model Context Protocol (MCP) server over stdio so an MCP client\n" +
+			"(Claude Code, Cursor, Claude Desktop) can scan code with Trustabl. The\n" +
+			"server exposes a 'scan' tool that runs the same analysis as 'trustabl scan'\n" +
+			"and returns the structured result as JSON.\n\n" +
+			"The MCP protocol uses stdout for its JSON-RPC stream, so this command\n" +
+			"writes nothing else to stdout; diagnostics go to stderr.",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return runMCP(cmd.Context(), f)
+		},
+	}
+	cmd.Flags().StringVar(&f.rulesRepo, "rules-repo", "",
+		"rules repository URL (default: official trustabl-rules; or TRUSTABL_RULES_REPO)")
+	cmd.Flags().StringVar(&f.rulesRef, "rules-ref", "",
+		"rules branch or tag to use (default: the repo's default branch)")
+	cmd.Flags().BoolVar(&f.noRulesUpdate, "no-rules-update", false,
+		"do not fetch rules; use the local cache only")
+	return cmd
+}
+
+// runMCP starts the stdio MCP server. The scan handler resolves rules and runs
+// scanner.Run exactly like the CLI scan path, but with progress disabled (the
+// nop reporter) so nothing touches stdout. A per-call rules_ref overrides the
+// command-level --rules-ref when the client supplies one.
+func runMCP(ctx context.Context, f mcpFlags) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	scan := func(ctx context.Context, req mcpserver.ScanRequest) (models.ScanResult, error) {
+		ref := f.rulesRef
+		if req.RulesRef != "" {
+			ref = req.RulesRef
+		}
+		rcfg := rulesource.Config{
+			RepoURL:  rulesRepoFromFlag(f.rulesRepo),
+			Ref:      ref,
+			NoUpdate: f.noRulesUpdate,
+		}
+		res, err := rulesource.Resolve(rcfg, rules.SupportedSchemaVersion)
+		if err != nil {
+			return models.ScanResult{}, fmt.Errorf("resolve rules: %w", err)
+		}
+		// Progress is the nop reporter: the MCP transport owns stdout, and even
+		// stderr progress would interleave noisily into a client's server log
+		// for every tool call. The scan stays a pure function over its config.
+		cfg := scanner.Config{
+			Target:         req.Path,
+			RulesFS:        res.FS,
+			RulesSource:    res.RepoURL,
+			RulesVersion:   res.SHA,
+			RulesFromCache: res.FromCache,
+			Progress:       progress.NewNop(),
+			Ctx:            ctx,
+		}
+		return scanner.Run(cfg)
+	}
+
+	srv := mcpserver.New(scan, mcpserver.VersionInfo{Version: version, Commit: commit, Date: date})
+	// Announce readiness on stderr (stdout is the protocol stream). Quietly
+	// returning here would leave an operator staring at a blank terminal unsure
+	// whether the server came up.
+	fmt.Fprintln(os.Stderr, "Trustabl MCP server ready (stdio). Awaiting client on stdin.")
+	return srv.Serve(ctx, os.Stdin, os.Stdout)
+}
+
+// rulesRepoFromFlag applies the TRUSTABL_RULES_REPO environment override when
+// --rules-repo is unset, matching the scan command's precedence.
+func rulesRepoFromFlag(flag string) string {
+	if flag != "" {
+		return flag
+	}
+	return os.Getenv("TRUSTABL_RULES_REPO")
+}

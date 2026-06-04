@@ -18,8 +18,10 @@ output is a `ScanResult` — findings (each with an explanation, suggested fix,
 and confidence), per-surface readiness scores, an overall score, and the
 discovered inventory — rendered as a human summary or as JSON for CI.
 
-Single Go binary, no daemon, no server. Web app and CI surfaces are out of
-scope (see `README.md`).
+Single Go binary, no network daemon. The one long-running mode is
+`trustabl mcp`, a local stdio MCP server that is a thin frontend over the same
+scan (§8.1) — it opens no socket and exposes no network surface. Web app and
+hosted-API surfaces remain out of scope (see `README.md`).
 
 The binary ships with **no embedded rules**. Detection rules live in a
 separate git repository and are resolved at scan time (see §2 — Rule
@@ -1190,7 +1192,8 @@ Discipline rules:
 ## 4. Package layout
 
 ```
-cmd/trustabl/                    CLI entry point (cobra). main.go only.
+cmd/trustabl/                    CLI entry point (cobra).
+│                                main.go (scan/rules/version) + mcp.go (mcp).
 internal/
 ├── models/                      Cross-boundary types. JSON-tagged. Zero deps.
 ├── ingestion/                   Importer + Normalizer.
@@ -1267,6 +1270,9 @@ internal/
 ├── sarif/                       SARIF 2.1.0 output renderer (`--format sarif`).
 │   ├── types.go                 SARIF struct definitions.
 │   └── render.go                Render(ScanResult) + helpers (severity, locations, fingerprints).
+├── mcpserver/                   Stdio MCP server frontend over scanner.Run.
+│   ├── jsonrpc.go               JSON-RPC 2.0 stdio framing (no third-party SDK).
+│   └── server.go                MCP methods (initialize/tools-list/tools-call) + scan tool.
 ├── review/                      Human renderer (read-only; no file writes).
 └── inference/                   BYOK inference router (interface + cache).
 
@@ -1555,6 +1561,7 @@ trustabl scan <target> [--detectors=…] [--format=human|json|sarif]
                        [--json-out=FILE] [--sarif-out=FILE]
                        [--strict] [--no-color] [--no-progress]
                        [--rules-repo=URL] [--rules-ref=REF] [--no-rules-update]
+trustabl mcp           [--rules-repo=URL] [--rules-ref=REF] [--no-rules-update]
 trustabl rules pull    [--rules-repo=URL] [--rules-ref=REF]
 trustabl version
 ```
@@ -1572,8 +1579,45 @@ Exit codes:
   (run `trustabl rules pull`).
 
 The CLI is a thin shell over `scanner.Run`. The same
-`Run(Config) (ScanResult, error)` is what a future HTTP server, GitHub Action,
-or test harness calls; the boundary is intentionally narrow.
+`Run(Config) (ScanResult, error)` is what the MCP frontend (§8.1), a future
+GitHub Action, or a test harness calls; the boundary is intentionally narrow.
+
+### 8.1 MCP frontend ([cmd/trustabl/mcp.go](cmd/trustabl/mcp.go) + [internal/mcpserver/](internal/mcpserver/))
+
+`trustabl mcp` runs a Model Context Protocol (MCP) server over stdio, so an MCP
+client (Claude Code, Cursor, Claude Desktop) can scan code an agent just wrote.
+It is a **second frontend over the same scanner core** as the CLI scan command —
+not a new analysis path. The command's scan handler resolves rules with
+`rulesource.Resolve` and runs `scanner.Run` exactly as the `scan` command does,
+then serializes the deterministic `ScanResult` onto the protocol stream itself.
+There is no second serialization format: the `scan` tool returns the same
+indented `ScanResult` JSON that `--format json` emits.
+
+`internal/mcpserver` owns the protocol, not any scanning. It is a hand-rolled
+JSON-RPC 2.0 server over newline-delimited stdio (`jsonrpc.go`) plus the MCP
+method handlers (`server.go`): `initialize`, `tools/list`, `tools/call`, and
+`ping`. No third-party MCP SDK is pulled in — the official Go SDK requires a
+newer Go than this module's floor, and the stdio surface needed here is small,
+so a direct implementation keeps `go.mod` and the Go version directive
+unchanged. The scanner is injected as a `ScanFunc` seam, which is what lets the
+server be unit-tested against the local rules fixture with no network
+(`server_test.go`).
+
+Two tools are exposed, kept deliberately minimal and honest:
+
+- `scan` — input `{ "path": string, "rules_ref"?: string }`. Runs the scanner
+  against `path` and returns the `ScanResult` JSON as a text content block. A
+  scan failure is returned as an `isError` tool result (the model sees the
+  message), not a JSON-RPC protocol error.
+- `version` — reports the build version, commit, and date.
+
+**Protocol-stream discipline.** MCP stdio uses **stdout** for the JSON-RPC
+stream, so in server mode nothing else may write to stdout. This aligns with the
+existing stderr-only progress contract (§7): the scan handler attaches the
+`progress.NewNop()` reporter, the human/stdout report path is never invoked, and
+the "server ready" line and any diagnostics go to stderr. The server serializes
+results itself; the byte-stable `ScanResult` is reused verbatim, so the
+determinism contract holds across this frontend too.
 
 ---
 
@@ -1609,7 +1653,9 @@ take it absent a concrete distribution requirement.
   rule-based detectors carry three-layer test coverage (see §6) — that is
   regression coverage, not the corpus eval, which requires labelled-finding
   ground truth on real repos.
-- **No web app, no API server, no GitHub Action.** CLI-only.
+- **No web app, no hosted API server.** The surfaces are the CLI scan and the
+  local stdio MCP frontend (§8.1); neither opens a network socket. A hosted
+  HTTP/API service is still out of scope.
 - **No artifact generation or remediation.** Trustabl detects and reports; it
   does not write hook scripts, sandbox policies, or any other file into the
   scanned repo. An earlier version generated and could apply/export such
