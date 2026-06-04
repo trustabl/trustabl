@@ -279,3 +279,30 @@ func TestLoad_NonDefaultActiveProvider(t *testing.T) {
 		t.Errorf("openai default model = %q, want gpt-4.1-nano", p.Model)
 	}
 }
+
+func TestIsKnownProvider(t *testing.T) {
+	for _, p := range []string{"anthropic", "openai", "google"} {
+		if !llm.IsKnownProvider(p) {
+			t.Errorf("IsKnownProvider(%q) = false, want true", p)
+		}
+	}
+	if llm.IsKnownProvider("anthropc") {
+		t.Error("IsKnownProvider(typo) = true, want false")
+	}
+	if llm.IsKnownProvider("") {
+		t.Error(`IsKnownProvider("") = true, want false`)
+	}
+}
+
+func TestKnownProviders_SortedAndComplete(t *testing.T) {
+	got := llm.KnownProviders()
+	want := []string{"anthropic", "google", "openai"}
+	if len(got) != len(want) {
+		t.Fatalf("KnownProviders() = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("KnownProviders()[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}

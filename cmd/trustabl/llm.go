@@ -241,6 +241,10 @@ func newLLMProviderSetCommand() *cobra.Command {
 }
 
 func runLLMProviderSet(cmd *cobra.Command, provider string) error {
+	if !llm.IsKnownProvider(provider) {
+		return fmt.Errorf("unknown provider %q (known providers: %s)",
+			provider, strings.Join(llm.KnownProviders(), ", "))
+	}
 	cfg, err := llm.Load()
 	if err != nil {
 		return err

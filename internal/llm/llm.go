@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 )
 
 const defaultProvider = "anthropic"
@@ -18,6 +19,24 @@ var defaultModels = map[string]string{
 	"anthropic": "claude-haiku-4-5",
 	"openai":    "gpt-4.1-nano",
 	"google":    "gemini-2.5-flash-lite",
+}
+
+// IsKnownProvider reports whether Trustabl ships a default model for provider
+// (the supported provider set is the keys of defaultModels). Setting an unknown
+// provider would create an entry with an empty model, so callers gate on this.
+func IsKnownProvider(provider string) bool {
+	_, ok := defaultModels[provider]
+	return ok
+}
+
+// KnownProviders returns the supported provider names, sorted.
+func KnownProviders() []string {
+	names := make([]string, 0, len(defaultModels))
+	for n := range defaultModels {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // ConfigDir overrides os.UserConfigDir() when non-empty. Intended for tests only.
