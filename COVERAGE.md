@@ -223,10 +223,13 @@ not fire for it.
 This section is editorial — recorded here so future contributors see the
 rationale, not as a binding roadmap.
 
-1. **TypeScript parser** has now landed for Claude SDK TS, OpenAI Agents
-   JS, and Google ADK JS — the same infra investment still covers the
-   remaining TS targets (TS MCP servers). The discovery patterns are
-   different per SDK but the AST plumbing is shared.
+1. **TypeScript parser** now backs every SDK Trustabl recognizes — Claude SDK
+   TS, OpenAI Agents JS, Google ADK JS, MCP-proper servers (`ts_mcp_proper.go`),
+   and LangChain / LangGraph TS. The discovery patterns differ per SDK but the
+   AST plumbing is shared; the LangChain pass added a reusable prefix-matched
+   import gate (`astutil.TSImportAliasesMatch`) for ecosystems whose imports use
+   many subpaths. The remaining TS work is per-SDK *rule* parity (points 2, 3,
+   and 5), not parser infrastructure.
 2. **OpenAI Agents TS rule pack** has **expanded**: OAI-016 (fetch without
    AbortSignal timeout), OAI-017 (eval / new Function), OAI-019 (mutating tool
    without idempotency), OAI-022 (no description), OAI-024 (dynamic URL / SSRF),
@@ -253,6 +256,18 @@ rationale, not as a binding roadmap.
    eval / new Function). `mcp_tool` coverage now lives only in this pack. Still
    open: server-side completeness (Prompt/Resource/Sampling registrations) and
    MCP discovery for Rust/Go (see the gaps table above).
+5. **LangChain / LangGraph pack** has **landed** (newest SDK row): 15 rules
+   (LC-001..201) across Python and TypeScript — tool no-description /
+   untyped-params / shell / code-exec / SSRF / `return_direct`, agent
+   code-exec-or-shell built-in + `AgentExecutor` iteration-limit, and the repo
+   missing-guidance-doc rule. The `@tool` decorator (shared with the Claude SDK)
+   is disambiguated by the import binding of the `tool` symbol
+   (`collectToolImports`), so it attributes correctly even in a mixed-import
+   file. Remaining (tracked in the gaps table): the raw `StateGraph` →
+   `.compile()` graph agent (emergent across many call sites — needs data-flow
+   discovery, not a single-call capture), class-based tools (`class X(BaseTool)`
+   / `extends StructuredTool`), and the date-stamped TS provider hosted tools
+   (`shell()` / `bash_*` / `applyPatch`).
 
 ## Sources
 
