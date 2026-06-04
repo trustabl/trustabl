@@ -176,6 +176,10 @@ func Run(cfg Config) (models.ScanResult, error) {
 	// Google ADK TS
 	tools = append(tools, analysis.DiscoverTSADKTools(tsFiles, nil)...)
 	agents = append(agents, analysis.DiscoverTSADKAgents(tsFiles, nil)...)
+	// MCP server authoring (@modelcontextprotocol/sdk) TS — registerTool/tool.
+	// Emits KindMCPTool, so deriveSDKsDetected stamps SDKMCP and the mcp pack
+	// loads automatically (same path as the Python MCP tools).
+	tools = append(tools, analysis.DiscoverTSMCPProper(tsFiles, nil)...)
 
 	// Canonicalize tool/agent order before anything reads them. Discovery appends
 	// in walk order (Python -> ADK -> TS), which is deterministic only by accident

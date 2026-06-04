@@ -1,0 +1,31 @@
+policy:
+  id: mcp_error_handling
+  name: MCP error contract hygiene
+  category: mcp
+  description: >
+    Rules covering how an MCP tool handler surfaces failures back to the
+    connecting client. Raising raw exceptions yields opaque protocol errors
+    that a model cannot branch on intelligently.
+
+rules:
+  - id: MCP-006
+    title: Tool raises exceptions without a structured error contract
+    severity: medium
+    confidence: 0.6
+    language: python
+    applies_to:
+      - mcp_tool
+    scope: tool
+    match:
+      all:
+        - has_raise: true
+        - has_try_except: false
+    explanation: >
+      When an MCP tool handler raises, the runtime surfaces the exception to the
+      connecting client as an opaque error. The model on the other end often
+      cannot recover or retry intelligently, and the raw message may leak
+      internal detail (stack frames, paths) across the server's trust boundary.
+    fix: >
+      Catch known failure modes and return a structured result the model can
+      branch on (e.g. {"error": ..., "retryable": bool}) instead of letting the
+      exception propagate as a protocol error.

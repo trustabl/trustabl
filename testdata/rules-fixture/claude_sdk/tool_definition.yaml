@@ -15,7 +15,6 @@ rules:
     language: python
     applies_to:
       - claude_sdk_tool
-      - mcp_tool
     scope: tool
     match:
       has_docstring: false
@@ -35,7 +34,6 @@ rules:
     language: python
     applies_to:
       - claude_sdk_tool
-      - mcp_tool
     scope: tool
     match:
       all:
@@ -57,7 +55,6 @@ rules:
     language: python
     applies_to:
       - claude_sdk_tool
-      - mcp_tool
     scope: tool
     match:
       name_in:

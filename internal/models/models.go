@@ -59,6 +59,7 @@ const (
 	CategoryOpenAISDK DetectorCategory = "openai_sdk"
 	CategoryOpenShell DetectorCategory = "openshell"
 	CategoryGoogleADK DetectorCategory = "google_adk"
+	CategoryMCP       DetectorCategory = "mcp"
 )
 
 // ToolKind drives detector applicability.

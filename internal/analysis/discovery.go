@@ -38,8 +38,11 @@ func DiscoverToolsFromParsed(parsed []ParsedFile) []models.ToolDef {
 // Three recognition strategies, in priority order:
 //
 //  1. Claude Agent SDK `@tool` decorator (most reliable signal).
-//  2. MCP server registrations: `server.tool("name", ...)` or
-//     `@server.tool(...)`. (Spec: github.com/modelcontextprotocol/python-sdk.)
+//  2. MCP server registrations via the DECORATOR form only:
+//     `@server.tool(...)` / `@mcp.tool(...)` / `@*.register_tool(...)`. The
+//     non-decorator call form (`server.tool("name", fn)`, `mcp.add_tool(fn)`)
+//     is NOT recognized — only `decorated_definition` nodes are walked.
+//     (Spec: github.com/modelcontextprotocol/python-sdk.)
 //  3. Shell-invocation hotspots: any function that calls subprocess.* or
 //     os.system. These get KindShellInvocation and feed the OpenShell detectors.
 //

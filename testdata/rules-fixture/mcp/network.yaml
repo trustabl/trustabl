@@ -1,0 +1,50 @@
+policy:
+  id: mcp_network
+  name: MCP tool network hygiene
+  category: mcp
+  description: >
+    Rules covering outbound network calls made from inside MCP tool handlers.
+    The MCP runtime does not enforce timeouts on tool code; a hung request
+    inside a handler stalls the server's response to the connecting client.
+
+rules:
+  - id: MCP-004
+    title: Network call has no timeout
+    severity: high
+    confidence: 0.85
+    language: python
+    applies_to:
+      - mcp_tool
+    scope: tool
+    match:
+      call_without_kwarg:
+        callees:
+          - requests.get
+          - requests.post
+          - requests.put
+          - requests.delete
+          - requests.patch
+          - requests.head
+          - requests.request
+          - requests.Session.get
+          - requests.Session.post
+          - httpx.get
+          - httpx.post
+          - httpx.put
+          - httpx.delete
+          - httpx.patch
+          - httpx.head
+          - httpx.request
+          - urllib.request.urlopen
+          - urlopen
+        missing: timeout
+    explanation: >
+      An MCP tool handler that makes a network request without a timeout can
+      hang indefinitely on a slow or unresponsive host. The MCP runtime does
+      not bound tool execution, so the stalled handler blocks the server's
+      reply to the connecting client and ties up the worker serving that
+      session. A kwarg present with literal None counts as missing.
+    fix: >
+      Pass timeout= (typically 5-30 seconds depending on the endpoint) to every
+      outbound call. Return the timeout to the client as a structured tool error
+      rather than letting the handler block.
