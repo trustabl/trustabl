@@ -504,12 +504,20 @@ command-level `--rules-ref` for that call.
 ### Claude Code plugin (self-audit at generation time)
 
 Trustabl ships a Claude Code plugin under [`.claude-plugin/`](.claude-plugin/)
-that exposes a `trustabl-scan` skill ([`skills/trustabl-scan/`](skills/trustabl-scan/)).
-The skill triggers right after agent, tool, subagent, or MCP-server code is
-written or changed and runs `trustabl scan` to self-audit it before committing,
-upstream of CI. It is a thin wrapper around the CLI documented above and runs no
-network service: it shells out to the same `trustabl` binary, so the binary must
-be installed and on `PATH`.
+with two skills that form a scan-and-fix loop:
+
+- **[`trustabl-scan`](skills/trustabl-scan/)** — triggers right after agent,
+  tool, subagent, or MCP-server code is written or changed and runs
+  `trustabl scan` to self-audit it before committing, upstream of CI.
+- **[`trustabl-enrich`](skills/trustabl-enrich/)** — takes the output of a
+  `trustabl scan` run (JSON, SARIF, or pasted terminal text) and applies each
+  finding as a targeted code edit, guided entirely by the scan's own
+  `explanation` and `suggested_fix` fields. It does not re-run the scanner; use
+  `trustabl-scan` first, then invoke `trustabl-enrich` with the results.
+
+Both skills shell out to the same `trustabl` binary, so the binary must be
+installed and on `PATH`. Neither runs a network service or modifies files
+outside the scan target.
 
 ### "no schema-compatible rules available"
 
