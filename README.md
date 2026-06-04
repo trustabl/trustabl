@@ -207,10 +207,11 @@ schema's `language:` field is in place for when those parsers ship.
   calibrated against a labelled real-agent corpus — treat findings as
   signal to investigate.
 - **The CLI is the surface.** No web app, API server, or hosted service:
-  pipe `--format json` or `--format sarif` into your own automation. For CI,
-  `--format sarif --output <file>` feeds `github/codeql-action/upload-sarif`
-  so findings land in the GitHub Security tab; a copy-paste workflow lives at
-  [docs/ci/code-scanning.yml](docs/ci/code-scanning.yml).
+  pipe `--format json` or `--format sarif` into your own automation. On GitHub
+  Actions, [`trustabl/trustabl-action`](https://github.com/trustabl/trustabl-action)
+  wraps the scan and uploads SARIF to the Security tab for you; for any other
+  CI, `--format sarif --output <file>` produces a SARIF 2.1.0 report that feeds
+  `github/codeql-action/upload-sarif` or any SARIF-aware step.
 
 ## What it produces
 
@@ -419,41 +420,18 @@ Two CI patterns are supported, and they compose:
   of medium severity or higher (`--strict` lowers the bar to any finding),
   `2` on an operational error. A bare `trustabl scan ./repo` in a job step
   fails the job when it should.
-- **Publish to GitHub Code Scanning.** `--format sarif --output <file>`
-  writes a SARIF 2.1.0 report to a file, which
-  `github/codeql-action/upload-sarif` then publishes to the repository's
-  Security tab. Because `--output` writes the file before the findings-based
-  exit code is applied, the scan step can run with `continue-on-error: true`
-  and the upload step with `if: always()`, so a scan that finds issues still
-  surfaces them instead of aborting the run with nothing uploaded.
-
-A ready-to-copy workflow is at
-[docs/ci/code-scanning.yml](docs/ci/code-scanning.yml). Drop it into your
-agent-SDK repo at `.github/workflows/trustabl.yml`:
-
-```yaml
-permissions:
-  contents: read
-  security-events: write   # required by upload-sarif
-
-jobs:
-  trustabl:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Run Trustabl
-        continue-on-error: true
-        run: |
-          docker run --rm -v "$PWD:/repo" \
-            ghcr.io/trustabl/trustabl:latest \
-            scan /repo --format sarif --output /repo/trustabl.sarif
-      - name: Upload SARIF to Code Scanning
-        if: always()
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: trustabl.sarif
-          category: trustabl
-```
+- **Publish to GitHub Code Scanning.** On GitHub Actions, the
+  [`trustabl/trustabl-action`](https://github.com/trustabl/trustabl-action)
+  runs the scan and uploads the SARIF to the repository's Security tab in a
+  single step (`upload-sarif` defaults to `true`), with inline PR alerts and
+  optional threshold gating — the recommended path, and the single source of
+  truth for the workflow. Outside GitHub Actions, `--format sarif --output
+  <file>` writes a SARIF 2.1.0 report that any
+  `github/codeql-action/upload-sarif` or SARIF-aware step can publish. Because
+  `--output` writes the file before the findings-based exit code is applied,
+  the scan step can run with `continue-on-error: true` and the upload with
+  `if: always()`, so a scan that finds issues still surfaces them instead of
+  aborting the run with nothing uploaded.
 
 The SARIF document is a pure function of the scan result: byte-stable across
 identical-input runs, repo-relative file URIs, and a stable
