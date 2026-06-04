@@ -78,7 +78,7 @@ func tsHandlerFacts(handler *sitter.Node, src []byte) map[string]string {
 //
 // Verified tree-sitter node types (typescript grammar):
 //   - Plain string (`"..."` or `'...'`): type "string".
-//   - Template string (`` `...` ``): type "template_string"; backtick delimiters
+//   - Template string (“ `...` “): type "template_string"; backtick delimiters
 //     are anonymous children, so a plain backtick template with no ${...} has
 //     NamedChildCount() == 0, while one with substitutions has at least one
 //     "template_substitution" named child (NamedChildCount() > 0).
