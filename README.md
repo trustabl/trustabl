@@ -201,8 +201,11 @@ schema's `language:` field is in place for when those parsers ship.
 - **Confidence scores are heuristic**, not LLM-judged, and not yet
   calibrated against a labelled real-agent corpus — treat findings as
   signal to investigate.
-- **The CLI is the surface.** No web app, API server, or GitHub Action —
-  pipe `--format json` or `--format sarif` into your own automation.
+- **The CLI is the surface.** No web app, API server, or hosted service:
+  pipe `--format json` or `--format sarif` into your own automation. For CI,
+  `--format sarif --output <file>` feeds `github/codeql-action/upload-sarif`
+  so findings land in the GitHub Security tab; a copy-paste workflow lives at
+  [docs/ci/code-scanning.yml](docs/ci/code-scanning.yml).
 
 ## What it produces
 
@@ -349,6 +352,10 @@ trustabl scan ./repo --format json
 # SARIF output for GitHub Code Scanning / SARIF-aware tools
 trustabl scan ./repo --format sarif > trustabl.sarif
 
+# Write the report to a file instead of stdout (any format). --output writes
+# the file even when the scan exits 1 on findings, so a CI step can upload it.
+trustabl scan ./repo --format sarif --output trustabl.sarif
+
 # Exit 1 on any finding regardless of severity
 trustabl scan ./repo --strict
 
@@ -373,6 +380,55 @@ on Linux). The first scan (or an explicit `trustabl rules pull`)
 populates it; each subsequent scan checks for an update first (unless
 `--no-rules-update`), falling back to the cached rules if the fetch
 fails.
+
+### Continuous integration
+
+Two CI patterns are supported, and they compose:
+
+- **Gate the build.** The exit code is the gate: `0` clean, `1` on a finding
+  of medium severity or higher (`--strict` lowers the bar to any finding),
+  `2` on an operational error. A bare `trustabl scan ./repo` in a job step
+  fails the job when it should.
+- **Publish to GitHub Code Scanning.** `--format sarif --output <file>`
+  writes a SARIF 2.1.0 report to a file, which
+  `github/codeql-action/upload-sarif` then publishes to the repository's
+  Security tab. Because `--output` writes the file before the findings-based
+  exit code is applied, the scan step can run with `continue-on-error: true`
+  and the upload step with `if: always()`, so a scan that finds issues still
+  surfaces them instead of aborting the run with nothing uploaded.
+
+A ready-to-copy workflow is at
+[docs/ci/code-scanning.yml](docs/ci/code-scanning.yml). Drop it into your
+agent-SDK repo at `.github/workflows/trustabl.yml`:
+
+```yaml
+permissions:
+  contents: read
+  security-events: write   # required by upload-sarif
+
+jobs:
+  trustabl:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run Trustabl
+        continue-on-error: true
+        run: |
+          docker run --rm -v "$PWD:/repo" \
+            ghcr.io/trustabl/trustabl:latest \
+            scan /repo --format sarif --output /repo/trustabl.sarif
+      - name: Upload SARIF to Code Scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trustabl.sarif
+          category: trustabl
+```
+
+The SARIF document is a pure function of the scan result: byte-stable across
+identical-input runs, repo-relative file URIs, and a stable
+`partialFingerprints` per finding so Code Scanning deduplicates alerts across
+runs rather than re-opening them.
 
 ### "no schema-compatible rules available"
 
