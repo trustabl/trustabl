@@ -1534,10 +1534,14 @@ take it absent a concrete distribution requirement.
 
 ## 10. What is intentionally out
 
-- **LLM enrichment is opt-in.** `internal/inference/router.go` defines the BYOK
-  interface and an in-process cache; `Call()` returns `ErrLLMDisabled` when
-  no API key is set. The first planned target is upgrading low-confidence
-  rule-based hits to confirmed findings (CSDK-005 raw-exception detection is
+- **LLM enrichment is opt-in.** `internal/llm/` owns key storage
+  (`~/.config/trustabl/keys.json`, mode 0600) and is managed via
+  `trustabl llm` (list / key set|get|delete / model set).
+  `internal/inference/router.go` defines the BYOK call interface;
+  `Call()` returns `ErrLLMDisabled` when no key is configured.
+  Rule-based detection runs fully without a key and makes no network
+  call without one. The first planned enrichment target is upgrading
+  low-confidence rule-based hits to confirmed findings (CSDK-005 is
   the highest-leverage rule for this).
 - **No corpus-eval benchmark.** Detection quality measured on a 20–40
   real-agent-repo corpus is the detection-quality target. The shipped

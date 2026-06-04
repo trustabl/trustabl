@@ -62,6 +62,7 @@ func main() {
 	rootCmd.AddCommand(newScanCommand())
 	rootCmd.AddCommand(newVersionCommand())
 	rootCmd.AddCommand(newRulesCommand())
+	rootCmd.AddCommand(newLLMCommand())
 
 	if err := rootCmd.Execute(); err != nil {
 		var ec exitCodeError
