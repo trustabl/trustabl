@@ -146,6 +146,8 @@ func ResolveEdges(inv *models.RepoInventory, parsed []ParsedFile) {
 					switch a.SDK {
 					case models.SDKGoogleADK:
 						h, isHT = classifyADKHostedToolCall(item, a.FilePath)
+					case models.SDKLangChain:
+						h, isHT = classifyLangChainHostedToolCall(item, a.FilePath)
 					default:
 						h, isHT = classifyHostedToolCall(item, a.FilePath)
 					}

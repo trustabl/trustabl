@@ -206,6 +206,38 @@ func TestScan_GoogleADKDemoFiresExpectedRules(t *testing.T) {
 	}
 }
 
+func TestScan_LangChainDemoFiresExpectedRules(t *testing.T) {
+	_, thisFile, _, _ := runtime.Caller(0)
+	target := filepath.Join(filepath.Dir(thisFile), "..", "..", "testdata", "corpus", "langchain-demo")
+	res, err := scanner.Run(scanner.Config{Target: target, RulesFS: rulesFixture(t)})
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+
+	var sawLC bool
+	for _, s := range res.SDKs {
+		if s == models.SDKLangChain {
+			sawLC = true
+		}
+	}
+	if !sawLC {
+		t.Errorf("expected langchain in ScanResult.SDKs, got %+v", res.SDKs)
+	}
+
+	fired := map[string]bool{}
+	for _, f := range res.Findings {
+		fired[f.RuleID] = true
+	}
+	// Tool no-docstring (LC-001), tool shell-out (LC-003), agent code-exec
+	// built-in (LC-101), and the repo missing-guidance-doc rule (LC-201) all have
+	// triggers in agent.py, exercising tool + agent + repo scopes end-to-end.
+	for _, want := range []string{"LC-001", "LC-003", "LC-101", "LC-201"} {
+		if !fired[want] {
+			t.Errorf("expected rule %s to fire on langchain-demo; fired set: %v", want, fired)
+		}
+	}
+}
+
 func TestScan_SurfacesNewInventoryFields(t *testing.T) {
 	_, thisFile, _, _ := runtime.Caller(0)
 	target := filepath.Join(filepath.Dir(thisFile), "..", "..", "testdata", "corpus", "financial_research_agent")

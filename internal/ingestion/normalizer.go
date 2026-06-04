@@ -81,6 +81,17 @@ func detectSDKDeps(root string) []models.SDKDep {
 		// discovery, not this needle.
 		{Name: "mcp", Pattern: "@modelcontextprotocol/sdk",
 			Manifests: []string{"package.json"}},
+		// LangChain + LangGraph — one ecosystem, one SDK row (SDKLangChain). The
+		// "langchain" pattern matches the umbrella plus every langchain-* /
+		// @langchain/* distribution (langchain-core, langchain_community,
+		// @langchain/langgraph, …); "langgraph" catches the graph runtime when it
+		// is pulled in on its own. Both map to Name "langchain". This needle only
+		// feeds the declared-vs-used drift signal — pack loading is gated on
+		// observed code via deriveSDKsDetected, not on this dependency scan.
+		{Name: "langchain", Pattern: "langchain",
+			Manifests: []string{"pyproject.toml", "requirements.txt", "Pipfile", "poetry.lock", "package.json"}},
+		{Name: "langchain", Pattern: "langgraph",
+			Manifests: []string{"pyproject.toml", "requirements.txt", "Pipfile", "poetry.lock", "package.json"}},
 	}
 	seen := make(map[string]bool)
 	var out []models.SDKDep

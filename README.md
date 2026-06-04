@@ -3,7 +3,8 @@
 </p>
 
 Trustabl is a static analyzer for agent reliability. It parses an agent-SDK
-repository (Claude Agent SDK, OpenAI Agents SDK, Google ADK, MCP), models the
+repository (Claude Agent SDK, OpenAI Agents SDK, Google ADK, MCP, LangChain /
+LangGraph), models the
 tools, agents, subagents, skills, slash commands, and plugin manifests it
 declares, and checks them against a catalog of reliability and safety rules. It reports the weaknesses it finds — each
 with an explanation, a suggested fix, and a confidence score — as a

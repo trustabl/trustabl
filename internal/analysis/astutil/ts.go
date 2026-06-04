@@ -52,6 +52,15 @@ func ParserKindForExtension(path string) string {
 // (`import { tool }`) maps "tool" -> "tool". Imports from any module other
 // than `module` are ignored.
 func TSImportAliases(root *sitter.Node, src []byte, module string) map[string]string {
+	return TSImportAliasesMatch(root, src, func(mod string) bool { return mod == module })
+}
+
+// TSImportAliasesMatch generalizes TSImportAliases to an arbitrary module
+// matcher. It exists for ecosystems whose imports use many subpaths — e.g.
+// LangChain's "@langchain/core/tools", "@langchain/langgraph/prebuilt",
+// "@langchain/community/tools/shell" — where an exact module list would be
+// brittle. The matcher receives the unquoted module specifier.
+func TSImportAliasesMatch(root *sitter.Node, src []byte, match func(mod string) bool) map[string]string {
 	out := make(map[string]string)
 	if root == nil {
 		return out
@@ -71,7 +80,7 @@ func TSImportAliases(root *sitter.Node, src []byte, module string) map[string]st
 		}
 		// Strip surrounding quotes.
 		mod := raw[1 : len(raw)-1]
-		if mod != module {
+		if !match(mod) {
 			return true
 		}
 		// Walk children for import_clause(s): named_imports / namespace_import / identifier

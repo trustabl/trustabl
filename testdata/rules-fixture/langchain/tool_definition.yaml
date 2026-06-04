@@ -1,0 +1,79 @@
+policy:
+  id: langchain_tool_definition
+  name: LangChain tool definition hygiene
+  category: langchain
+  description: >
+    Hygiene rules for LangChain / LangGraph tools — the @tool decorator and
+    StructuredTool / Tool factories (Python), and the tool() factory /
+    DynamicStructuredTool / DynamicTool (TypeScript). These surfaces drive
+    whether the model can reason about a tool and call it correctly.
+
+rules:
+  - id: LC-001
+    title: LangChain tool has no description
+    severity: low
+    confidence: 0.8
+    language: python
+    applies_to:
+      - langchain_tool
+    scope: tool
+    match:
+      has_docstring: false
+    explanation: >
+      LangChain exposes a tool to the model through its description: for an
+      @tool-decorated function or a StructuredTool, the description defaults to
+      the wrapped function's docstring. A tool with no docstring (and no explicit
+      description=) reaches the model as a bare name, so the model cannot tell
+      what the tool does or when to call it — it will skip the tool or invoke it
+      with the wrong arguments. This is the single highest-leverage authoring fix.
+    fix: >
+      Add a one-paragraph docstring to the wrapped function describing what the
+      tool does, the inputs it expects, and what it returns — or pass an explicit
+      description= to StructuredTool/Tool. The model reads this string verbatim.
+
+  - id: LC-002
+    title: LangChain tool parameters are not type-annotated
+    severity: medium
+    confidence: 0.85
+    language: python
+    applies_to:
+      - langchain_tool
+    scope: tool
+    match:
+      all:
+        - has_params: true
+        - has_typed_params: false
+    explanation: >
+      LangChain builds a tool's argument schema from the wrapped function's type
+      hints (or an explicit args_schema Pydantic model). A tool whose parameters
+      carry no annotations produces an underspecified schema: the model gets no
+      type guidance and passes arguments of the wrong shape, which LangChain then
+      rejects at validation time — a silent reliability tax on every call.
+    fix: >
+      Annotate every parameter with a concrete type (str, int, list[str], a
+      Pydantic model, etc.), or pass an args_schema= to StructuredTool. LangChain
+      propagates these into the JSON schema the model sees.
+
+  - id: LC-010
+    title: TypeScript LangChain tool has no description
+    severity: low
+    confidence: 0.8
+    language: typescript
+    applies_to:
+      - langchain_tool
+    scope: tool
+    match:
+      has_docstring: false
+    explanation: >
+      LangChain.js exposes a tool to the model through the description field in
+      its config object (the second argument to tool(), or the options for
+      DynamicStructuredTool / DynamicTool). The model reads that string verbatim
+      to decide whether and how to call the tool. A tool built with no description
+      gives the model no signal about its purpose, so it under-calls the tool or
+      calls it with the wrong arguments. Unlike Python, where the docstring is a
+      fallback, the JS SDK takes the description as an explicit field — omitting it
+      is a silent gap.
+    fix: >
+      Pass a one-sentence description in the tool() config (or the
+      DynamicStructuredTool options) naming what the tool does, the inputs it
+      expects, and what it returns. Write it for the model, not a human reader.

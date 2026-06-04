@@ -74,10 +74,10 @@ func Load(fsys fs.FS) ([]PolicyFile, error) {
 			switch pf.Policy.Category {
 			case models.CategoryClaudeSDK, models.CategoryOpenAISDK,
 				models.CategoryOpenShell, models.CategoryGoogleADK,
-				models.CategoryMCP:
+				models.CategoryMCP, models.CategoryLangChain:
 				// valid
 			default:
-				errs = append(errs, fmt.Errorf("%s: unknown category %q (allowed: claude_sdk, openai_sdk, openshell, google_adk, mcp)", name, pf.Policy.Category))
+				errs = append(errs, fmt.Errorf("%s: unknown category %q (allowed: claude_sdk, openai_sdk, openshell, google_adk, mcp, langchain)", name, pf.Policy.Category))
 			}
 		}
 		if len(errs) > policyErrCount {
@@ -185,7 +185,7 @@ func Load(fsys fs.FS) ([]PolicyFile, error) {
 			// token here silently never matches, so the rule never fires.
 			for _, sdk := range rule.Match.repoSDKInCodeValues() {
 				if !validRepoHasSDKInCode(sdk) {
-					errs = append(errs, fmt.Errorf("%s: repo_has_sdk_in_code value %q is not a known SDK token (want one of: claude_agent_sdk, openai_agents, google_adk, mcp, openshell)", tag, sdk))
+					errs = append(errs, fmt.Errorf("%s: repo_has_sdk_in_code value %q is not a known SDK token (want one of: claude_agent_sdk, openai_agents, google_adk, mcp, langchain, openshell)", tag, sdk))
 				}
 			}
 			// A degenerate combinator (empty any/all list, or not: over an empty
@@ -220,7 +220,8 @@ func Load(fsys fs.FS) ([]PolicyFile, error) {
 func validRepoHasSDKInCode(tok string) bool {
 	switch tok {
 	case string(models.SDKClaudeAgentSDK), string(models.SDKOpenAIAgents),
-		string(models.SDKGoogleADK), string(models.SDKMCP), "openshell":
+		string(models.SDKGoogleADK), string(models.SDKMCP),
+		string(models.SDKLangChain), "openshell":
 		return true
 	}
 	return false
@@ -231,7 +232,8 @@ func validAppliesToForScope(scope models.Scope, kind string) bool {
 	case models.ScopeTool:
 		switch kind {
 		case "claude_sdk_tool", "openai_tool", "mcp_tool",
-			"shell_invocation", "unknown", "adk_function_tool":
+			"shell_invocation", "unknown", "adk_function_tool",
+			"langchain_tool":
 			return true
 		}
 	case models.ScopeAgent:
@@ -239,12 +241,14 @@ func validAppliesToForScope(scope models.Scope, kind string) bool {
 		case "openai_agent", "openai_sandbox_agent", "claude_agent_definition",
 			"claude_query_main",
 			"adk_llm_agent", "adk_sequential_agent", "adk_parallel_agent",
-			"adk_loop_agent", "adk_langgraph_agent":
+			"adk_loop_agent", "adk_langgraph_agent",
+			"langchain_agent", "langchain_agent_executor", "langchain_state_graph":
 			return true
 		}
 	case models.ScopeRepo:
 		switch kind {
-		case "claude_sdk", "openai_agents", "openshell", "mcp", "google_adk":
+		case "claude_sdk", "openai_agents", "openshell", "mcp", "google_adk",
+			"langchain":
 			return true
 		}
 	case models.ScopeSubagent:
