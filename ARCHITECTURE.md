@@ -819,6 +819,17 @@ schema validator, which rejects a `fixes[]` entry lacking `artifactChanges`. Lik
 JSON, SARIF is a pure function of `ScanResult`: no clocks, no map-iteration
 leakage, byte-stable per `ScanID`.
 
+**Report destination (`--output` / `-o`).** `cmd/trustabl` renders the chosen
+format to bytes (`renderReport`) and then writes them either to stdout or, when
+`--output <path>` is set, to that file (`writeReport`). Rendering is decoupled
+from the destination so the file receives exactly the bytes stdout would, and
+the report is fully materialized before the file is opened so a render error
+never leaves a half-written file. The write happens before the findings-based
+exit code is applied, which is what lets a CI job run the scan step with
+`continue-on-error` and still upload the SARIF on `if: always()` even when the
+scan exits 1 on findings. A worked Code Scanning workflow ships at
+`docs/ci/code-scanning.yml`.
+
 An earlier version of Trustabl also generated committable artifacts
 (Pre/PostToolUse hook scripts, an OpenShell sandbox-policy starter) and could
 apply or export them. That generation path has been removed — Trustabl now
@@ -1558,6 +1569,7 @@ timestamp, no map iteration order, no goroutine scheduling may influence output.
 
 ```
 trustabl scan <target> [--detectors=…] [--format=human|json|sarif]
+                       [--output=PATH|-o PATH]
                        [--json-out=FILE] [--sarif-out=FILE]
                        [--strict] [--no-color] [--no-progress]
                        [--rules-repo=URL] [--rules-ref=REF] [--no-rules-update]
@@ -1568,8 +1580,12 @@ trustabl version
 
 `--rules-repo` (env `TRUSTABL_RULES_REPO`) overrides the rules repository URL;
 `--rules-ref` selects a branch or tag; `--no-rules-update` skips the network
-fetch and uses the local cache only. `trustabl rules pull` downloads the rule
-packs into the cache without scanning. See §2 — Rule resolution.
+fetch and uses the local cache only. `--output`/`-o` writes the report to a
+file instead of stdout (the report is rendered before the file is opened, so
+it is written even when findings raise a nonzero exit code, which is what lets
+a code-scanning workflow upload the SARIF on `if: always()`).
+`trustabl rules pull` downloads the rule packs into the cache without
+scanning. See §2 — Rule resolution.
 
 Exit codes:
 
