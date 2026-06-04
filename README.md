@@ -448,6 +448,10 @@ corpus is the detection-quality target (see
 the current tests are regression coverage, not detection-quality
 measurement.
 
+## Community
+
+Join the [Trustabl Discord](https://discord.gg/maQ7QMPsB) to ask questions, share feedback, and follow development.
+
 ## License
 
 Apache-2.0. See [`LICENSE`](LICENSE).
