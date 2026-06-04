@@ -1354,8 +1354,8 @@ rules:
 
 ### Adding a rule
 
-1. Pick the right category subdirectory (`claude_sdk/` or `openai_sdk/`) in
-   the rules repository.
+1. Pick the right category subdirectory (`claude_sdk/`, `openai_sdk/`,
+   `google_adk/`, or `mcp/`) in the rules repository.
 2. Either append to an existing topic file or create a new `<topic>.yaml`
    file — the loader walks the rules FS recursively, so new files are picked
    up automatically with no engine change.
@@ -1658,12 +1658,13 @@ take it absent a concrete distribution requirement.
   model), `ValidateKey`, and `MaskKey`. A `defaultModels` map supplies
   fast/cheap defaults per known provider (`anthropic → claude-haiku-4-5`,
   `openai → gpt-4.1-nano`, `google → gemini-2.5-flash-lite`).
-  `internal/inference/router.go` defines the BYOK call interface;
-  `Call()` returns `ErrLLMDisabled` when no key is configured.
-  Rule-based detection runs fully without a key and makes no network
-  call without one. The first planned enrichment target is upgrading
-  low-confidence rule-based hits to confirmed findings (CSDK-005 is
-  the highest-leverage rule for this).
+  `internal/inference/router.go` defines the BYOK call interface, but it is
+  a non-functional placeholder today: `Call()` returns `ErrLLMDisabled` with
+  no key and a "not implemented" error with one, and the `Router` is never
+  instantiated by the scan pipeline. Rule-based detection is therefore the
+  entire scan and makes no network call at all, with or without a key. The
+  first planned enrichment target is upgrading low-confidence rule-based hits
+  to confirmed findings (CSDK-005 is the highest-leverage rule for this).
 - **No corpus-eval benchmark.** Detection quality measured on a 20–40
   real-agent-repo corpus is the detection-quality target. The shipped
   rule-based detectors carry three-layer test coverage (see §6) — that is

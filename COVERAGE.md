@@ -4,7 +4,7 @@ Coverage matrix for Trustabl's static analysis: which agent SDKs (and which
 languages) we currently scan, analyse, and detect against. This file is the
 at-a-glance reference; `ARCHITECTURE.md` has the implementation detail.
 
-_Last reviewed: 2026-06-03 (HEAD `870bac3`)._
+_Last reviewed: 2026-06-04 (HEAD `8e0d94f`)._
 
 > **Note:** Detection rules are not shipped in the binary. They live in the
 > separate `trustabl-rules` git repository
@@ -204,10 +204,13 @@ rationale, not as a binding roadmap.
    (typed-params, callback-gated agent rules) still need new TS predicates: ADK
    JS agent callback kwarg names need verification before porting
    ADK-102/105..107.
-4. **MCP rule pack** would be a small detection win — we already discover
-   MCP tools, but no rules target them. Useful checks include "MCP tool
-   without input schema" and "stdio MCP server with absolute path to a
-   binary outside the repo."
+4. **MCP rule pack** has **landed** — the dedicated `mcp/` pack now ships 14
+   rules: tool MCP-001..010 (Python: no description, untyped params, ambiguous
+   name, network timeout, path safety, error contract, idempotency, SSRF,
+   code-exec, shell) and MCP-011..014 (TypeScript: no description, shell, SSRF,
+   eval / new Function). `mcp_tool` coverage now lives only in this pack. Still
+   open: server-side completeness (Prompt/Resource/Sampling registrations) and
+   MCP discovery for Rust/Go (see the gaps table above).
 
 ## Sources
 

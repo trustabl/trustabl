@@ -56,10 +56,11 @@ rules:
     language: python                        # OPTIONAL (default: python). Source language this rule
                                             # targets. Allowed: python | typescript | javascript | go.
                                             # A rule only fires against tools whose Language matches.
-                                            # Today only Python tools are discovered (no TS parser
-                                            # plumbed in), so non-python rules will be inert until
-                                            # the corresponding language parser ships. Future TS/JS/Go
-                                            # rules MUST set this explicitly.
+                                            # Python and TypeScript discovery are both plumbed in today,
+                                            # so python and typescript rules fire. JavaScript and Go
+                                            # have no parser yet, so rules in those languages stay inert
+                                            # until the corresponding parser ships. Non-python rules
+                                            # MUST set this explicitly.
 
     applies_to:                             # REQUIRED. Non-empty list of kind strings (tool scope shown):
       - claude_sdk_tool                     #   claude_sdk_tool   — @tool / @claude_tool / claude_agent_sdk
