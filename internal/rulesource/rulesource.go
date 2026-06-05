@@ -22,9 +22,13 @@ const DefaultRepoURL = "https://github.com/trustabl/trustabl-rules"
 // found in cache. A scan in this state must fail (exit 2), never report clean.
 var ErrNoRules = errors.New("no rules available: none cached and could not fetch")
 
-// ErrNoCompatibleRules means a pack was available but its schema_version
-// exceeds what this engine build supports.
-var ErrNoCompatibleRules = errors.New("no schema-compatible rules available")
+// ErrNoCompatibleRules means a pack was available but its manifest is missing,
+// unparseable, or declares a non-positive schema version — a pack the engine
+// cannot vouch for. A pack that merely targets a NEWER schema than this build
+// is no longer rejected here: it is resolved and loaded leniently (the lenient
+// loader skips rules this build cannot evaluate), so this error is now reserved
+// for an unreadable/corrupt manifest.
+var ErrNoCompatibleRules = errors.New("no usable rules manifest")
 
 // fatalResolveError wraps a failure that must NOT degrade to cached rules: a
 // local filesystem / install fault (disk full, permission denied, a failed
@@ -82,6 +86,14 @@ type Resolved struct {
 	SHA       string // resolved commit SHA — the rules "version"
 	RepoURL   string // repo the pack came from
 	FromCache bool   // true if the network was skipped/unreachable
+
+	// SchemaVersion is the pack manifest's declared schema_version. SchemaNewer
+	// is true when it exceeds the engine's supported version: the pack targets a
+	// newer rule grammar, so the lenient loader will skip any rules using
+	// predicates this build lacks. The pack is still used — these fields drive a
+	// user-facing "rules newer than this build" warning, not a refusal.
+	SchemaVersion int
+	SchemaNewer   bool
 }
 
 // withDefaults returns cfg with empty fields filled in.
@@ -99,14 +111,24 @@ func withDefaults(cfg Config) (Config, error) {
 	return cfg, nil
 }
 
-// usePack builds a Resolved for an already-cached SHA, gating on schema
-// compatibility.
+// usePack builds a Resolved for an already-cached SHA. It rejects only a pack
+// with no usable manifest (missing / unparseable / non-positive version). A
+// pack whose version merely EXCEEDS `supported` is accepted and flagged
+// SchemaNewer — the lenient loader degrades it gracefully rather than refusing.
 func usePack(cfg Config, sha string, fromCache bool, supported int) (Resolved, error) {
 	fsys := os.DirFS(packDir(cfg.CacheDir, sha))
-	if !compatible(fsys, supported) {
+	mi := readManifestInfo(fsys)
+	if !mi.valid {
 		return Resolved{}, ErrNoCompatibleRules
 	}
-	return Resolved{FS: fsys, SHA: sha, RepoURL: cfg.RepoURL, FromCache: fromCache}, nil
+	return Resolved{
+		FS:            fsys,
+		SHA:           sha,
+		RepoURL:       cfg.RepoURL,
+		FromCache:     fromCache,
+		SchemaVersion: mi.version,
+		SchemaNewer:   mi.version > supported,
+	}, nil
 }
 
 // fallbackToCache resolves the current cached pack, or ErrNoRules if none.
@@ -121,7 +143,7 @@ func fallbackToCache(cfg Config, supported int) (Resolved, error) {
 // Resolve obtains a rule pack for a scan. With NoUpdate it uses the cache
 // only. Otherwise it resolves the latest ref, clones it if new, and gates it.
 // It falls back to the cached pack on a remote-contact failure (the offline
-// story) or a schema incompatibility, but a local install fault — disk full,
+// story) or an unusable freshly-fetched manifest, but a local install fault — disk full,
 // permission denied, a failed rename, or a corrupt clone (a fatalResolveError) —
 // is propagated, never masked by stale cached rules. It returns ErrNoRules only
 // when nothing is available at all.
@@ -161,7 +183,7 @@ func Resolve(cfg Config, supported int) (Resolved, error) {
 	}
 	res, err := usePack(cfg, sha, false, supported)
 	if err != nil {
-		// Pack fetched but unusable (incompatible schema). Try the last
+		// Pack fetched but unusable (no valid manifest). Try the last
 		// known-good cached pack before giving up.
 		if fb, fbErr := fallbackToCache(cfg, supported); fbErr == nil {
 			return fb, nil

@@ -75,7 +75,7 @@ CSDK-120/130/131 agent rules), OpenAI Agents (OAI-016/017/019/022/024 tool
 rules, OAI-105 agent rule), Google ADK (ADK-013/015/016 tool rules, ADK-109
 agent rule), MCP (MCP-011/012/013/014 tool rules), LangChain
 (LC-010/011/012/013/014 tool rules, LC-111 agent rule), and the Vercel AI SDK
-(VAI-001..005 tool rules, VAI-006/007/008 agent rules, VAI-012 repo rule). A TS
+(VAI-001..005 + VAI-011 tool rules, VAI-006/007/008 agent rules, VAI-012 repo rule). A TS
 repo for any of these no longer produces a blanket META-004; the full
 per-SDK/language matrix lives in COVERAGE.md. The scanner
 can also recognize JavaScript and Go *files* (they appear in
@@ -145,12 +145,31 @@ Resolution order:
    deletes the sentinel *first*, so a pack left half-deleted by an interrupted
    prune is markerless and re-cloned rather than trusted as a thinned ruleset.
 
-The pack's `manifest.yaml` declares a `schema_version`; resolution rejects a
-pack whose version is incompatible with the engine's
-`rules.SupportedSchemaVersion` (treated as no compatible rules → exit `2`).
-The resolved commit SHA is recorded on `ScanResult` (`RulesSource`,
-`RulesVersion`, `RulesFromCache`) and folded into `ScanID` (see §7).
-`trustabl rules pull` performs the same fetch eagerly without scanning.
+The pack's `manifest.yaml` declares a `schema_version`. Resolution is
+**forward-compatible**: a pack whose version *exceeds*
+`rules.SupportedSchemaVersion` is **not** rejected — it is loaded leniently
+(below) and flagged `SchemaNewer` so the CLI warns. Resolution refuses a pack
+only when its manifest is missing / unparseable / non-positive
+(`ErrNoCompatibleRules`). The resolved commit SHA is recorded on `ScanResult`
+(`RulesSource`, `RulesVersion`, `RulesFromCache`, plus `RulesSchemaVersion` /
+`RulesSchemaNewer`) and folded into `ScanID` along with the engine's
+`SupportedSchemaVersion` (see §7). `trustabl rules pull` performs the same fetch
+eagerly without scanning.
+
+**Lenient rule loading (forward compatibility).** The deployed scanner loads the
+pack via `rules.LoadLenient`: a rule whose `match` references a predicate this
+build does not understand (a rule from a newer schema) is **dropped whole** —
+its ID collected into `ScanResult.RulesSkipped` and surfaced as a stderr
+warning — and the scan proceeds with the rules it understands. The whole rule is
+dropped, not partially decoded, because a silently-omitted predicate would
+collapse the rule's `match` to vacuous-true (firing on every entity). Authoring
+and CI use the **strict** `rules.Load` (`KnownFields(true)`), so typos and bad
+rules are still caught against the in-repo fixture; only the runtime path
+degrades. The engine exits `2` only when *no* rule is usable: a genuinely empty
+pack (`ErrNoRulesInPack`) or one whose every rule is forward-incompatible
+(`ErrAllRulesIncompatible`, which hints "upgrade Trustabl"). This decouples
+additive rule updates from binary upgrades — see the `SupportedSchemaVersion`
+contract in [`internal/rules/schema_version.go`](internal/rules/schema_version.go).
 
 ### Progress reporting
 
@@ -531,8 +550,9 @@ For each language recon cleared, do the AST work and produce a `RepoInventory`:
   `[...]` array like every other TS pass): bare identifier → `ToolRef`; inline
   `tool({...})` / spread / other → agent `Opaque`; `<provider>.tools.<name>()` →
   `HostedToolRef` (canonicalized in `ts_vercel_hosted_tools.go`). `.js` / `.mjs`
-  apps are inventoried but not AST-parsed; VAI-009/010 (name rules) and VAI-011
-  (TS timeout predicate) are v1 gaps.
+  apps are inventoried but not AST-parsed; VAI-009/010 (name rules) are v1 gaps.
+  VAI-011 (HTTP-call-without-timeout) ships via the structural
+  `has_http_call_without_timeout` predicate.
 - **ResolveEdges** — links agent `tools=`, `handoffs=`, `input_guardrails=`
   references to discovered definitions in the same repo; cross-module resolution
   uses import statements; unresolvable references are flagged `External=true`.

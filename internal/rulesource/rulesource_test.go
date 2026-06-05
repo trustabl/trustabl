@@ -107,15 +107,40 @@ func TestResolve_NoUpdateUsesCacheOnly(t *testing.T) {
 	}
 }
 
-func TestResolve_IncompatibleSchemaRejected(t *testing.T) {
+// TestResolve_NewerSchemaUsedAndFlagged is the forward-compatibility contract:
+// a pack whose schema_version exceeds the engine's support is NOT rejected. It
+// resolves successfully and is flagged SchemaNewer so the CLI can warn; the
+// lenient loader skips any rules this build can't evaluate.
+func TestResolve_NewerSchemaUsedAndFlagged(t *testing.T) {
 	dir := t.TempDir()
 	remote := filepath.Join(dir, "remote")
 	newFixtureRepo(t, remote, map[string]string{"manifest.yaml": "schema_version: 99\n"})
 	cache := filepath.Join(dir, "cache")
 
-	_, err := Resolve(cfgFor(remote, cache), 1)
-	if !errors.Is(err, ErrNoCompatibleRules) {
-		t.Errorf("err = %v, want ErrNoCompatibleRules", err)
+	res, err := Resolve(cfgFor(remote, cache), 1)
+	if err != nil {
+		t.Fatalf("Resolve on a newer pack must succeed (forward-compatible), got %v", err)
+	}
+	if !res.SchemaNewer {
+		t.Error("SchemaNewer = false on a pack newer than supported")
+	}
+	if res.SchemaVersion != 99 {
+		t.Errorf("SchemaVersion = %d, want 99", res.SchemaVersion)
+	}
+}
+
+// TestResolve_InvalidManifestRejected covers the remaining meaning of
+// ErrNoCompatibleRules after the softening: a pack with no usable manifest
+// (here, no schema_version key → zero) is unvouchable and still rejected (after
+// the empty-cache fallback fails).
+func TestResolve_InvalidManifestRejected(t *testing.T) {
+	dir := t.TempDir()
+	remote := filepath.Join(dir, "remote")
+	newFixtureRepo(t, remote, map[string]string{"manifest.yaml": "name: oops\n"})
+	cache := filepath.Join(dir, "cache")
+
+	if _, err := Resolve(cfgFor(remote, cache), 1); !errors.Is(err, ErrNoCompatibleRules) {
+		t.Errorf("err = %v, want ErrNoCompatibleRules for an unusable manifest", err)
 	}
 }
 

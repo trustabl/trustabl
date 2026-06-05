@@ -77,27 +77,17 @@ rules:
       - openai_tool
     scope: tool
     match:
-      all:
-        - has_body_text:
-            - fetch(
-        - not:
-            has_body_text:
-              - AbortSignal
-              - AbortController
-              - 'signal:'
-              - AbortSignal.timeout
+      has_http_call_without_timeout: true
     explanation: >
-      An OpenAI Agents SDK tool authored in TypeScript calls `fetch()` without
-      attaching an AbortSignal. Node's and the browser's `fetch` have no
-      implicit timeout; a slow or unresponsive host blocks the tool's
+      An OpenAI Agents SDK tool authored in TypeScript makes an HTTP call
+      (`fetch` / `axios` / `got`) without a timeout bound — no `signal`,
+      `timeout`, or `abortSignal` option. Node's and the browser's `fetch`
+      have no implicit timeout; a slow or unresponsive host blocks the tool's
       `execute` callback indefinitely, which in turn blocks the agent's run
       loop, consumes the conversation's wall-clock budget, and ties up the
-      worker that owns the request. The miner's examples include Cloudflare
-      Worker and realtime-agent templates that fetch from URLs interpolated
-      from tool arguments, so the gap also amplifies SSRF and exfiltration
-      impact: the call cannot be cancelled even when downstream behaviour
-      goes obviously wrong. Provisional: this rule loads and validates today
-      but will not fire until the engine's TypeScript tool parser ships.
+      worker that owns the request. Tools that fetch URLs interpolated from
+      tool arguments also amplify SSRF and exfiltration impact: the call
+      cannot be cancelled even when downstream behaviour goes obviously wrong.
     fix: >
       Attach an AbortSignal that fires after a bounded deadline. Modern
       runtimes: `await fetch(url, { signal: AbortSignal.timeout(15_000) })`.

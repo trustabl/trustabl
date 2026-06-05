@@ -84,3 +84,59 @@ export const t = tool("f", "f", { q: z.string() }, async ({ q }) => {
 		t.Error("retrieval( must NOT set code_exec (the false-positive this fix targets)")
 	}
 }
+
+func TestTSHandlerFacts_NoTimeout_BareFetchHits(t *testing.T) {
+	src := `
+import { tool } from "@anthropic-ai/claude-agent-sdk";
+import { z } from "zod";
+export const t = tool("f", "f", { u: z.string() }, async ({ u }) => {
+  const r = await fetch("https://example.com/api");
+  return { content: [] };
+});
+`
+	if tsToolFacts(t, src)["http_no_timeout"] != "true" {
+		t.Error("expected http_no_timeout=true for a bare fetch with no options object")
+	}
+}
+
+func TestTSHandlerFacts_NoTimeout_OptionsWithoutTimeoutHits(t *testing.T) {
+	src := `
+import { tool } from "@anthropic-ai/claude-agent-sdk";
+import { z } from "zod";
+export const t = tool("f", "f", {}, async () => {
+  const r = await fetch("https://example.com/api", { method: "POST" });
+  return { content: [] };
+});
+`
+	if tsToolFacts(t, src)["http_no_timeout"] != "true" {
+		t.Error("expected http_no_timeout=true for fetch options lacking signal/timeout")
+	}
+}
+
+func TestTSHandlerFacts_NoTimeout_SignalIsSilent(t *testing.T) {
+	src := `
+import { tool } from "@anthropic-ai/claude-agent-sdk";
+import { z } from "zod";
+export const t = tool("f", "f", {}, async () => {
+  const r = await fetch("https://example.com/api", { signal: AbortSignal.timeout(5000) });
+  return { content: [] };
+});
+`
+	if tsToolFacts(t, src)["http_no_timeout"] == "true" {
+		t.Error("a fetch with { signal: ... } is bounded; http_no_timeout must not be set")
+	}
+}
+
+func TestTSHandlerFacts_NoTimeout_AbortSignalKeyIsSilent(t *testing.T) {
+	src := `
+import { tool } from "@anthropic-ai/claude-agent-sdk";
+import { z } from "zod";
+export const t = tool("f", "f", {}, async () => {
+  const r = await fetch("https://example.com/api", { abortSignal: AbortSignal.timeout(5000) });
+  return { content: [] };
+});
+`
+	if tsToolFacts(t, src)["http_no_timeout"] == "true" {
+		t.Error("the Vercel-style abortSignal key must count as a timeout bound")
+	}
+}

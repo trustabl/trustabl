@@ -39,6 +39,11 @@ type Config struct {
 	RulesSource    string
 	RulesVersion   string
 	RulesFromCache bool
+	// RulesSchemaVersion is the resolved pack manifest's schema_version, and
+	// RulesSchemaNewer is true when it exceeds this build's support. Surfaced on
+	// ScanResult and used by the CLI's "rules newer than this build" warning.
+	RulesSchemaVersion int
+	RulesSchemaNewer   bool
 
 	// Progress receives real-time phase events. Nil means no progress output.
 	Progress progress.Reporter
@@ -261,7 +266,7 @@ func Run(cfg Config) (models.ScanResult, error) {
 	if cfg.RulesFS == nil {
 		return models.ScanResult{}, fmt.Errorf("scan: no rules filesystem provided")
 	}
-	registry, err := rules.LoadFor(cfg.RulesFS, inventory.SDKsDetected)
+	registry, rulesSkipped, err := rules.LoadFor(cfg.RulesFS, inventory.SDKsDetected)
 	if err != nil {
 		return models.ScanResult{}, fmt.Errorf("load rules: %w", err)
 	}
@@ -305,7 +310,7 @@ func Run(cfg Config) (models.ScanResult, error) {
 	}
 
 	return models.ScanResult{
-		ScanID:              scanID(idLabel, profile.Manifest, cfg.RulesVersion),
+		ScanID:              scanID(idLabel, profile.Manifest, cfg.RulesVersion, rules.SupportedSchemaVersion),
 		Repo:                repoLabel,
 		Languages:           profile.Languages,
 		SDKs:                inventory.SDKsDetected,
@@ -327,6 +332,9 @@ func Run(cfg Config) (models.ScanResult, error) {
 		RulesSource:         cfg.RulesSource,
 		RulesVersion:        cfg.RulesVersion,
 		RulesFromCache:      cfg.RulesFromCache,
+		RulesSchemaVersion:  cfg.RulesSchemaVersion,
+		RulesSchemaNewer:    cfg.RulesSchemaNewer,
+		RulesSkipped:        sortedUnique(rulesSkipped),
 		Coverage:            coverage,
 	}, nil
 }
@@ -544,8 +552,10 @@ func parseTSFiles(paths []string, root string, onFile func(string)) ([]analysis.
 // sorted set of inventoried files, and the rules version, so the same inputs
 // always produce the same ID regardless of where the repo is checked out.
 // Including the rules version means a different rule pack yields a distinct,
-// honest ID.
-func scanID(idLabel string, manifest models.ScanManifest, rulesVersion string) string {
+// honest ID; folding the engine's supported schema version likewise keeps the
+// ID honest when forward-compatible loading makes two builds skip different
+// rules from the same pack.
+func scanID(idLabel string, manifest models.ScanManifest, rulesVersion string, engineSchema int) string {
 	h := sha256.New()
 	h.Write([]byte(idLabel))
 	// Fold every inventoried file list so the ID is honest about all scanned
@@ -574,5 +584,12 @@ func scanID(idLabel string, manifest models.ScanManifest, rulesVersion string) s
 		h.Write([]byte{0})
 	}
 	h.Write([]byte(rulesVersion))
+	// Fold the engine's supported schema version. With forward-compatible
+	// loading, two builds supporting different schema versions can skip different
+	// (forward-incompatible) rules from the SAME pack and thus emit different
+	// findings; folding it keeps the ScanID honest about the effective ruleset,
+	// not just the pack SHA.
+	h.Write([]byte{0})
+	h.Write([]byte(fmt.Sprintf("%d", engineSchema)))
 	return "scan_" + hex.EncodeToString(h.Sum(nil)[:8])
 }

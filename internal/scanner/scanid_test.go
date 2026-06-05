@@ -14,7 +14,7 @@ import (
 // across materially different scans of a non-Python repo.
 func TestScanID_FoldsAllFileLists(t *testing.T) {
 	base := models.ScanManifest{PythonFiles: []string{"main.py"}}
-	baseID := scanID("repo", base, "v1")
+	baseID := scanID("repo", base, "v1", 8)
 
 	cases := []struct {
 		name   string
@@ -31,7 +31,7 @@ func TestScanID_FoldsAllFileLists(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			m := base
 			tc.mutate(&m)
-			if got := scanID("repo", m, "v1"); got == baseID {
+			if got := scanID("repo", m, "v1", 8); got == baseID {
 				t.Errorf("ScanID unchanged when %s differs: both %q", tc.name, got)
 			}
 		})
@@ -49,7 +49,19 @@ func TestScanID_StableUnderReordering(t *testing.T) {
 		PythonFiles:     []string{"b.py", "a.py"},
 		TypeScriptFiles: []string{"y.ts", "x.ts"},
 	}
-	if scanID("repo", a, "v1") != scanID("repo", b, "v1") {
+	if scanID("repo", a, "v1", 8) != scanID("repo", b, "v1", 8) {
 		t.Error("ScanID changed under file reordering; must be order-independent")
+	}
+}
+
+// TestScanID_FoldsEngineSchemaVersion guards the forward-compatibility honesty
+// addition: two builds supporting different schema versions can skip different
+// forward-incompatible rules from the same pack, so the engine's supported
+// schema version is folded into the ID. Same inputs but a different engine
+// schema → different ID.
+func TestScanID_FoldsEngineSchemaVersion(t *testing.T) {
+	m := models.ScanManifest{PythonFiles: []string{"main.py"}}
+	if scanID("repo", m, "v1", 8) == scanID("repo", m, "v1", 9) {
+		t.Error("ScanID unchanged when engine schema version differs")
 	}
 }

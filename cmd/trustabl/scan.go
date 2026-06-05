@@ -201,12 +201,17 @@ func resolveAndScan(cfg *scanner.Config, f scanFlags, rep progress.Reporter) (mo
 	if res.FromCache {
 		summary = res.SHA + " (cached, offline)"
 	}
+	if res.SchemaNewer {
+		summary += " (newer schema)"
+	}
 	rep.EndPhase(summary)
 
 	cfg.RulesFS = res.FS
 	cfg.RulesSource = res.RepoURL
 	cfg.RulesVersion = res.SHA
 	cfg.RulesFromCache = res.FromCache
+	cfg.RulesSchemaVersion = res.SchemaVersion
+	cfg.RulesSchemaNewer = res.SchemaNewer
 	cfg.Progress = rep
 
 	result, err := scanner.Run(*cfg)
@@ -220,10 +225,10 @@ func resolveAndScan(cfg *scanner.Config, f scanFlags, rep progress.Reporter) (mo
 // finishScan turns a job outcome into output + the process exit code.
 func finishScan(result models.ScanResult, jobErr error, f scanFlags) error {
 	if jobErr != nil {
-		if errors.Is(jobErr, rulesource.ErrNoCompatibleRules) {
+		if errors.Is(jobErr, rules.ErrAllRulesIncompatible) {
 			fmt.Fprintf(os.Stderr,
-				"The rules are newer than this Trustabl build can evaluate "+
-					"(this engine supports rule schema version up to %d).\n",
+				"Every rule in the resolved pack requires a newer Trustabl than this "+
+					"build (this engine supports rule schema version up to %d).\n",
 				rules.SupportedSchemaVersion)
 			fmt.Fprintln(os.Stderr, "Fix it one of two ways:")
 			fmt.Fprintln(os.Stderr,
@@ -234,6 +239,14 @@ func finishScan(result models.ScanResult, jobErr error, f scanFlags) error {
 					"    (--rules-ref resolves branches and tags only, not commit SHAs,\n"+
 					"     so a compatible branch or tag must exist in the rules repo).\n",
 				rules.SupportedSchemaVersion)
+			return exitCodeError{2}
+		}
+		if errors.Is(jobErr, rulesource.ErrNoCompatibleRules) {
+			fmt.Fprintln(os.Stderr,
+				"The resolved rule pack has no usable schema manifest (it may be "+
+					"corrupt or truncated).")
+			fmt.Fprintln(os.Stderr,
+				`Run "trustabl rules pull" to refresh the rule packs.`)
 			return exitCodeError{2}
 		}
 		if errors.Is(jobErr, rulesource.ErrNoRules) {
@@ -268,6 +281,29 @@ func finishScan(result models.ScanResult, jobErr error, f scanFlags) error {
 		fmt.Fprintf(os.Stderr,
 			"warning: using cached rules %s; could not fetch or use newer rules\n",
 			result.RulesVersion)
+	}
+
+	// A rules pack newer than this build — or any forward-incompatible rules it
+	// carried — means some rules were skipped. Surface it on stderr so a degraded
+	// scan never reads as a complete one; stdout stays machine-clean.
+	if result.RulesSchemaNewer || len(result.RulesSkipped) > 0 {
+		if result.RulesSchemaNewer {
+			fmt.Fprintf(os.Stderr,
+				"warning: the rules target schema version %d but this Trustabl build supports up to %d; %d rule(s) newer than this build were skipped. Upgrade Trustabl to evaluate them.\n",
+				result.RulesSchemaVersion, rules.SupportedSchemaVersion, len(result.RulesSkipped))
+		} else {
+			fmt.Fprintf(os.Stderr,
+				"warning: %d rule(s) were skipped because they use predicates this Trustabl build does not understand.\n",
+				len(result.RulesSkipped))
+		}
+		const maxShownRules = 10
+		for i, id := range result.RulesSkipped {
+			if i == maxShownRules {
+				fmt.Fprintf(os.Stderr, "  ... and %d more\n", len(result.RulesSkipped)-maxShownRules)
+				break
+			}
+			fmt.Fprintf(os.Stderr, "  skipped rule: %s\n", id)
+		}
 	}
 
 	// Incomplete parse coverage must never masquerade as a clean result. If any

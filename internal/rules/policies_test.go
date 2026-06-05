@@ -1475,7 +1475,7 @@ def calc(expr: str) -> int:
 `,
 		toolConfig: nil, wantFires: false},
 
-	// ── OAI-016: TS fetch without AbortSignal timeout (has_body_text) ──
+	// ── OAI-016: TS HTTP call without timeout (structural has_http_call_without_timeout) ──
 	{
 		name: "OAI-016 fires on TS fetch with no AbortSignal", ruleID: "OAI-016",
 		kind: models.KindOpenAITool, lang: models.LanguageTypeScript, wantFires: true,
@@ -1492,6 +1492,37 @@ def calc(expr: str) -> int:
 			"export const t = tool({ name: \"f\", description: \"f\", parameters: {}, execute: async () => {\n" +
 			"  const r = await fetch(\"https://example.com\", { signal: AbortSignal.timeout(15000) });\n" +
 			"  return r.status;\n" +
+			"} });\n",
+	},
+	{
+		name: "OAI-016 fires when fetch options omit any timeout", ruleID: "OAI-016",
+		kind: models.KindOpenAITool, lang: models.LanguageTypeScript, wantFires: true,
+		src: "import { tool } from \"@openai/agents\";\n" +
+			"export const t = tool({ name: \"f\", description: \"f\", parameters: {}, execute: async () => {\n" +
+			"  const r = await fetch(\"https://example.com\", { method: \"POST\" });\n" +
+			"  return r.status;\n" +
+			"} });\n",
+	},
+
+	// ── VAI-011: Vercel AI tool HTTP call without timeout (structural) ──
+	{
+		name: "VAI-011 fires on a bare fetch in a Vercel tool", ruleID: "VAI-011",
+		kind: models.KindVercelAITool, lang: models.LanguageTypeScript, wantFires: true,
+		src: "import { tool } from \"ai\";\n" +
+			"import { z } from \"zod\";\n" +
+			"export const t = tool({ description: \"f\", inputSchema: z.object({ u: z.string() }), execute: async ({ u }) => {\n" +
+			"  const r = await fetch(\"https://api.example.com\");\n" +
+			"  return String(r.status);\n" +
+			"} });\n",
+	},
+	{
+		name: "VAI-011 silent when abortSignal timeout present", ruleID: "VAI-011",
+		kind: models.KindVercelAITool, lang: models.LanguageTypeScript, wantFires: false,
+		src: "import { tool } from \"ai\";\n" +
+			"import { z } from \"zod\";\n" +
+			"export const t = tool({ description: \"f\", inputSchema: z.object({ u: z.string() }), execute: async ({ u }) => {\n" +
+			"  const r = await fetch(\"https://api.example.com\", { abortSignal: AbortSignal.timeout(10000) });\n" +
+			"  return String(r.status);\n" +
 			"} });\n",
 	},
 
