@@ -44,6 +44,14 @@ or agents are extracted from them.
 
 ## How to run the scan
 
+> **Which `trustabl` to run.** This plugin auto-installs a pinned CLI build at
+> session start. Resolve the binary in this order and use the first that works:
+> (1) `"$TRUSTABL_BIN"` when that environment variable is set; (2) the
+> plugin-managed path the Trustabl `SessionStart` check reported this session
+> (under the plugin data dir); (3) `trustabl` on `PATH`. In the commands below,
+> `trustabl` stands for that resolved binary — e.g. run `"$TRUSTABL_BIN" scan .`
+> when `$TRUSTABL_BIN` is set.
+
 From the repo you just edited (or pass its path), run:
 
 ```bash
@@ -132,12 +140,19 @@ whole.
 
 ## Installing the binary
 
-This plugin runs a non-destructive `SessionStart` check
-(`scripts/check-trustabl.sh`) that reports, into the session, when `trustabl` is
-missing from `PATH` or older than the minimum the skills need. When you see a
-`[trustabl] CLI not found …` or `… older than the minimum …` notice — or a scan
-fails because `trustabl` isn't found — install it (from the project README),
-**asking the user before you run any install command; never install silently**:
+Normally you do not need to. At session start this plugin runs
+`scripts/check-trustabl.sh`, which downloads the pinned CLI version, verifies it
+against the release `checksums.txt`, installs it into the plugin's private data
+directory, and exposes it as `$TRUSTABL_BIN` (see "Which `trustabl` to run"
+above). This installs only into the plugin's own data dir — it never touches the
+user's system or their own `trustabl`, and is reversible.
+
+Auto-install is skipped only when it cannot run: offline on the very first
+session, an unsupported platform (e.g. native Windows without bash), or missing
+`curl` / `tar`. The check then falls back to whatever `trustabl` is on `PATH` and
+prints a hint. If you see a `[trustabl] CLI not found …` notice — or no binary
+resolves at all — offer to install it system-wide, **asking the user before you
+run any install command; never install silently**:
 
 ```bash
 # macOS / Linux (Homebrew)

@@ -511,15 +511,19 @@ with two skills that form a scan-and-fix loop:
   `explanation` and `suggested_fix` fields. It does not re-run the scanner; use
   `trustabl-scan` first, then invoke `trustabl-enrich` with the results.
 
-Both skills shell out to the same `trustabl` binary, so the binary must be
-installed and on `PATH`. A non-destructive `SessionStart` hook
+Both skills shell out to the same `trustabl` binary. A `SessionStart` hook
 ([`hooks/hooks.json`](hooks/hooks.json) →
-[`scripts/check-trustabl.sh`](scripts/check-trustabl.sh)) checks at session
-start whether the binary is present and meets the minimum version the skills
-need, surfacing an install hint when it is missing or outdated. The hook never
-installs anything itself — the install stays a consented step inside
-`trustabl-scan`. Neither skill runs a network service or modifies files outside
-the scan target.
+[`scripts/check-trustabl.sh`](scripts/check-trustabl.sh)) keeps that binary
+current automatically: at session start it downloads the pinned CLI version from
+GitHub Releases, verifies it against the release `checksums.txt`, installs it
+into the plugin's private data directory (`$CLAUDE_PLUGIN_DATA` — no `sudo`, and
+nothing outside that dir is touched), and exposes it to the skills as
+`$TRUSTABL_BIN`. The install is idempotent: it re-runs only when the pin changes
+or the copy is missing/corrupt. When auto-install cannot run (offline first
+session, an unsupported platform, or missing `curl`/`tar`) it falls back to
+whatever `trustabl` is on `PATH` and prints an install hint — the system-wide
+install then stays a consented step inside `trustabl-scan`. Neither skill runs a
+network service or modifies files outside the scan target.
 
 ### "no schema-compatible rules available"
 
