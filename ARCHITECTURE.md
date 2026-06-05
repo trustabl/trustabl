@@ -160,7 +160,13 @@ eagerly without scanning.
 pack via `rules.LoadLenient`: a rule whose `match` references a predicate this
 build does not understand (a rule from a newer schema) is **dropped whole** —
 its ID collected into `ScanResult.RulesSkipped` and surfaced as a stderr
-warning — and the scan proceeds with the rules it understands. The whole rule is
+warning — and the scan proceeds with the rules it understands. Likewise, a pack
+whose `category` this build does not recognize — an SDK a *newer* rules release
+added — is **skipped as a whole file** (its rule IDs collected into
+`RulesSkipped` the same way) rather than hard-failing the entire load and taking
+every other SDK's rules down with it; `models.ValidCategory` is the recognized
+set, and strict load still rejects an unknown category so a typo is caught at
+authoring. The whole rule is
 dropped, not partially decoded, because a silently-omitted predicate would
 collapse the rule's `match` to vacuous-true (firing on every entity). Authoring
 and CI use the **strict** `rules.Load` (`KnownFields(true)`), so typos and bad

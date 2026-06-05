@@ -100,6 +100,29 @@ func loadPolicies(fsys fs.FS, lenient bool) ([]PolicyFile, []string, error) {
 		}
 		skipped = append(skipped, fileSkip...)
 
+		// Forward-compatible category gate. An unrecognized (non-empty) category is
+		// a pack for an SDK that a newer rules release added but this build does not
+		// audit yet. In lenient (runtime) mode, skip the whole file — its rules are
+		// recorded as skipped and surfaced like any forward-incompatible rule —
+		// rather than hard-failing the entire load and blocking every other SDK's
+		// rules; this is what stops a new category from forcing a lockstep binary
+		// upgrade. Strict mode (authoring/CI) still rejects it so a typo'd category
+		// is caught before shipping. Checked before the required-field validation so
+		// an unknown-category pack is skipped cleanly without also reporting its
+		// other fields.
+		if pf.Policy.Category != "" && !models.ValidCategory(pf.Policy.Category) {
+			if lenient {
+				for _, r := range pf.Rules {
+					if r.ID != "" {
+						skipped = append(skipped, r.ID)
+					}
+				}
+				continue
+			}
+			errs = append(errs, fmt.Errorf("%s: unknown category %q (allowed: claude_sdk, openai_sdk, openshell, google_adk, mcp, langchain, crewai, pydantic_ai, vercel_ai, autogen)", name, pf.Policy.Category))
+			continue
+		}
+
 		// Validate policy-level required fields.
 		policyErrCount := len(errs)
 		if pf.Policy.ID == "" {
@@ -107,18 +130,6 @@ func loadPolicies(fsys fs.FS, lenient bool) ([]PolicyFile, []string, error) {
 		}
 		if pf.Policy.Category == "" {
 			errs = append(errs, fmt.Errorf("%s: policy.category is required", name))
-		}
-		if pf.Policy.Category != "" {
-			switch pf.Policy.Category {
-			case models.CategoryClaudeSDK, models.CategoryOpenAISDK,
-				models.CategoryOpenShell, models.CategoryGoogleADK,
-				models.CategoryMCP, models.CategoryLangChain,
-				models.CategoryCrewAI, models.CategoryPydanticAI,
-				models.CategoryVercelAI, models.CategoryAutoGen:
-				// valid
-			default:
-				errs = append(errs, fmt.Errorf("%s: unknown category %q (allowed: claude_sdk, openai_sdk, openshell, google_adk, mcp, langchain, crewai, pydantic_ai, vercel_ai, autogen)", name, pf.Policy.Category))
-			}
 		}
 		if len(errs) > policyErrCount {
 			continue

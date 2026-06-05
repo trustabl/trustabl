@@ -67,6 +67,21 @@ const (
 	CategoryAutoGen    DetectorCategory = "autogen"
 )
 
+// ValidCategory reports whether c is a category this build recognizes. New SDK
+// categories are added here as coverage lands. The rule loader skips packs with
+// an unrecognized category leniently at runtime (forward-compat: a newer rules
+// release must not block an older binary from scanning the SDKs it knows) and
+// rejects them in strict (authoring/CI) mode so a typo'd category is caught.
+func ValidCategory(c DetectorCategory) bool {
+	switch c {
+	case CategoryClaudeSDK, CategoryOpenAISDK, CategoryOpenShell, CategoryGoogleADK,
+		CategoryMCP, CategoryLangChain, CategoryCrewAI, CategoryPydanticAI,
+		CategoryVercelAI, CategoryAutoGen:
+		return true
+	}
+	return false
+}
+
 // ToolKind drives detector applicability.
 type ToolKind string
 
@@ -308,11 +323,11 @@ type ScanResult struct {
 	Surfaces            []SurfaceReadiness `json:"surfaces"`
 	OverallScore        float64            `json:"overall_score"`
 	ProjectedScores     ProjectedScores    `json:"projected_scores"`
-	RulesSource         string             `json:"rules_source"`     // repo the rule pack came from
-	RulesVersion        string             `json:"rules_version"`    // resolved rules commit SHA
-	RulesFromCache      bool               `json:"rules_from_cache"` // true if rules came from cache (network skipped/unreachable)
+	RulesSource         string             `json:"rules_source"`                   // repo the rule pack came from
+	RulesVersion        string             `json:"rules_version"`                  // resolved rules commit SHA
+	RulesFromCache      bool               `json:"rules_from_cache"`               // true if rules came from cache (network skipped/unreachable)
 	RulesSchemaVersion  int                `json:"rules_schema_version,omitempty"` // pack manifest's declared schema_version
 	RulesSchemaNewer    bool               `json:"rules_schema_newer,omitempty"`   // pack targets a schema newer than this build supports
 	RulesSkipped        []string           `json:"rules_skipped,omitempty"`        // rule IDs dropped as forward-incompatible (sorted, deduped)
-	Coverage            Coverage           `json:"coverage"`         // how many source files parsed vs. were skipped
+	Coverage            Coverage           `json:"coverage"`                       // how many source files parsed vs. were skipped
 }
