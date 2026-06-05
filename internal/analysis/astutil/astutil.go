@@ -8,6 +8,7 @@ package astutil
 import (
 	"context"
 	"strings"
+	"time"
 
 	sitter "github.com/smacker/go-tree-sitter"
 	"github.com/smacker/go-tree-sitter/python"
@@ -28,7 +29,26 @@ func NewPyParser() *sitter.Parser {
 // the actual byte content of identifiers). Each call allocates a one-shot
 // parser; hot per-file loops should reuse a NewPyParser instead.
 func Parse(src []byte) (*sitter.Tree, error) {
-	return NewPyParser().ParseCtx(context.Background(), nil, src)
+	return ParseCtxTimeout(context.Background(), NewPyParser(), src)
+}
+
+// ParseTimeout bounds how long a single tree-sitter parse may run. A normal
+// source file parses in milliseconds; a pathologically-nested file (thousands of
+// nested brackets/parens) can make the C parser consume CPU/memory for far
+// longer. Wrapping ParseCtx with this deadline arms tree-sitter's cancellation
+// so such a file is abandoned instead of hanging the whole scan.
+const ParseTimeout = 15 * time.Second
+
+// ParseCtxTimeout parses src with parser, deriving a deadline from ctx so that
+// BOTH an upstream cancellation (e.g. the CLI's Ctrl-C) and the ParseTimeout
+// ceiling arm tree-sitter's C-level cancellation — which the binding only
+// engages when ctx.Done() is non-nil (a bare context.Background() never
+// interrupts the C parser). Pass context.Background() when there is no upstream
+// context to honor; the timeout still applies.
+func ParseCtxTimeout(ctx context.Context, parser *sitter.Parser, src []byte) (*sitter.Tree, error) {
+	cctx, cancel := context.WithTimeout(ctx, ParseTimeout)
+	defer cancel()
+	return parser.ParseCtx(cctx, nil, src)
 }
 
 // NodeText returns the source bytes a node spans, as a string.
@@ -90,6 +110,11 @@ func walk(n *sitter.Node, fn func(*sitter.Node) bool, depth int) {
 	if depth > maxWalkDepth {
 		return
 	}
+	// NamedChild can return nil for a null C node (malformed/partial tree), so
+	// the recursive descent below may hand us nil — guard before fn dereferences.
+	if n == nil {
+		return
+	}
 	if !fn(n) {
 		return
 	}
@@ -125,7 +150,7 @@ func Decorators(n *sitter.Node) []*sitter.Node {
 	count := int(n.NamedChildCount())
 	for i := 0; i < count; i++ {
 		c := n.NamedChild(i)
-		if c.Type() == "decorator" {
+		if c != nil && c.Type() == "decorator" {
 			out = append(out, c)
 		}
 	}
@@ -145,7 +170,7 @@ func FunctionDef(n *sitter.Node) *sitter.Node {
 		count := int(n.NamedChildCount())
 		for i := 0; i < count; i++ {
 			c := n.NamedChild(i)
-			if c.Type() == "function_definition" {
+			if c != nil && c.Type() == "function_definition" {
 				return c
 			}
 		}
@@ -179,11 +204,11 @@ func FunctionDocstring(fn *sitter.Node, src []byte) string {
 		return ""
 	}
 	first := body.NamedChild(0)
-	if first.Type() != "expression_statement" || int(first.NamedChildCount()) == 0 {
+	if first == nil || first.Type() != "expression_statement" || int(first.NamedChildCount()) == 0 {
 		return ""
 	}
 	str := first.NamedChild(0)
-	if str.Type() != "string" {
+	if str == nil || str.Type() != "string" {
 		return ""
 	}
 	return stripPythonStringLiteral(NodeText(str, src))
@@ -222,6 +247,9 @@ func FunctionParams(fn *sitter.Node, src []byte) []string {
 	count := int(params.NamedChildCount())
 	for i := 0; i < count; i++ {
 		p := params.NamedChild(i)
+		if p == nil {
+			continue
+		}
 		switch p.Type() {
 		case "identifier":
 			out = append(out, NodeText(p, src))
@@ -229,7 +257,7 @@ func FunctionParams(fn *sitter.Node, src []byte) []string {
 			// First named child is the identifier in all three.
 			if int(p.NamedChildCount()) > 0 {
 				name := p.NamedChild(0)
-				if name.Type() == "identifier" {
+				if name != nil && name.Type() == "identifier" {
 					out = append(out, NodeText(name, src))
 				}
 			}
@@ -240,7 +268,7 @@ func FunctionParams(fn *sitter.Node, src []byte) []string {
 			// **kwargs signature, not only a plain param literally so named.
 			if int(p.NamedChildCount()) > 0 {
 				name := p.NamedChild(0)
-				if name.Type() == "identifier" {
+				if name != nil && name.Type() == "identifier" {
 					out = append(out, NodeText(name, src))
 				}
 			}
@@ -269,7 +297,7 @@ func KwargValue(call *sitter.Node, src []byte, name string) (value string, prese
 	count := int(args.NamedChildCount())
 	for i := 0; i < count; i++ {
 		n := args.NamedChild(i)
-		if n.Type() != "keyword_argument" {
+		if n == nil || n.Type() != "keyword_argument" {
 			continue
 		}
 		k := n.ChildByFieldName("name")
@@ -296,11 +324,14 @@ func FunctionHasTypedParams(fn *sitter.Node, src []byte) bool {
 	count := int(params.NamedChildCount())
 	for i := 0; i < count; i++ {
 		p := params.NamedChild(i)
+		if p == nil {
+			continue
+		}
 		if p.Type() == "typed_parameter" || p.Type() == "typed_default_parameter" {
 			// First named child is the identifier in both types.
 			if int(p.NamedChildCount()) > 0 {
 				name := p.NamedChild(0)
-				if name.Type() == "identifier" {
+				if name != nil && name.Type() == "identifier" {
 					text := NodeText(name, src)
 					if text == "self" || text == "cls" {
 						continue

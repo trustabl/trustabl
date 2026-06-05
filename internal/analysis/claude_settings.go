@@ -202,10 +202,21 @@ func readKey(dec *json.Decoder) (string, error) {
 	return s, nil
 }
 
+// maxJSONDepth bounds the skipValue/skipToCloser recursion. A real settings.json
+// nests a few levels; a pathologically deep object/array (a hostile file) would
+// otherwise exhaust the goroutine stack during this line-attribution walk. The
+// json.Unmarshal pass elsewhere is the authoritative structural check; this walk
+// only needs to fail gracefully (the caller then emits rules without line
+// numbers), so exceeding the bound returns an error rather than crashing.
+const maxJSONDepth = 1000
+
 // skipToCloser consumes tokens until the matching closing delim of an
 // already-consumed opening delim `opened` ('{' or '['). Handles nested
 // objects/arrays. Object keys must be consumed as part of the walk.
-func skipToCloser(dec *json.Decoder, opened json.Delim) error {
+func skipToCloser(dec *json.Decoder, opened json.Delim, depth int) error {
+	if depth > maxJSONDepth {
+		return fmt.Errorf("json nesting exceeds maximum depth %d", maxJSONDepth)
+	}
 	closer := json.Delim('}')
 	if opened == '[' {
 		closer = ']'
@@ -216,7 +227,7 @@ func skipToCloser(dec *json.Decoder, opened json.Delim) error {
 				return err
 			}
 		}
-		if err := skipValue(dec); err != nil {
+		if err := skipValue(dec, depth); err != nil {
 			return err
 		}
 	}
@@ -232,13 +243,13 @@ func skipToCloser(dec *json.Decoder, opened json.Delim) error {
 
 // skipValue consumes one complete JSON value from the decoder, regardless
 // of shape. Used to advance past values whose content is irrelevant.
-func skipValue(dec *json.Decoder) error {
+func skipValue(dec *json.Decoder, depth int) error {
 	tok, err := dec.Token()
 	if err != nil {
 		return err
 	}
 	if d, ok := tok.(json.Delim); ok {
-		return skipToCloser(dec, d)
+		return skipToCloser(dec, d, depth+1)
 	}
 	return nil
 }
@@ -277,7 +288,7 @@ func readStringArrayLines(dec *json.Decoder, nls []int) ([]int, error) {
 		}
 		// Non-string item: if it was a delim, drain until the matching close.
 		if d, ok := tok.(json.Delim); ok {
-			if err := skipToCloser(dec, d); err != nil {
+			if err := skipToCloser(dec, d, 0); err != nil {
 				return nil, err
 			}
 		}
@@ -319,7 +330,7 @@ func extractPermissionLines(raw []byte) (allow, deny, ask []int, err error) {
 			return nil, nil, nil, kerr
 		}
 		if key != "permissions" {
-			if serr := skipValue(dec); serr != nil {
+			if serr := skipValue(dec, 0); serr != nil {
 				return nil, nil, nil, serr
 			}
 			continue
@@ -345,7 +356,7 @@ func extractPermissionLines(raw []byte) (allow, deny, ask []int, err error) {
 				lines, perr = readStringArrayLines(dec, nls)
 				ask = lines
 			default:
-				perr = skipValue(dec)
+				perr = skipValue(dec, 0)
 			}
 			if perr != nil {
 				return nil, nil, nil, perr

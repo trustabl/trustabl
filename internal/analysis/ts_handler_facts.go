@@ -142,12 +142,12 @@ func httpCallHasTimeout(call *sitter.Node, src []byte) bool {
 	}
 	for i := 0; i < int(args.NamedChildCount()); i++ {
 		arg := args.NamedChild(i)
-		if arg.Type() != "object" {
+		if arg == nil || arg.Type() != "object" {
 			continue
 		}
 		for j := 0; j < int(arg.NamedChildCount()); j++ {
 			prop := arg.NamedChild(j)
-			if prop.Type() != "pair" {
+			if prop == nil || prop.Type() != "pair" {
 				continue
 			}
 			k := prop.ChildByFieldName("key")

@@ -399,6 +399,36 @@ func (e MatchExpr) isEmpty() bool {
 		e.Always == nil && len(e.setPredicateNames()) == 0
 }
 
+// maxMatchDepth bounds match-expression nesting (all/any/not). A legitimate rule
+// nests a handful of levels; thousands is a malformed or hostile pack that would
+// otherwise exhaust the stack during loading or evaluation. The loader rejects
+// rules exceeding it (strict) and the lenient pre-pass skips them, so the
+// recursive evaluator and validation walks never see an over-deep tree.
+const maxMatchDepth = 64
+
+// exceedsMatchDepth reports whether e nests combinators deeper than limit. It
+// stops descending once the budget is spent, so it is itself bounded and cannot
+// overflow while measuring an adversarially-deep tree.
+func exceedsMatchDepth(e MatchExpr, limit int) bool {
+	if limit < 0 {
+		return true
+	}
+	for _, sub := range e.All {
+		if exceedsMatchDepth(sub, limit-1) {
+			return true
+		}
+	}
+	for _, sub := range e.Any {
+		if exceedsMatchDepth(sub, limit-1) {
+			return true
+		}
+	}
+	if e.Not != nil && exceedsMatchDepth(*e.Not, limit-1) {
+		return true
+	}
+	return false
+}
+
 // degenerateCombinators returns descriptions of meaningless combinators in the
 // match tree: an empty `all:`/`any:` list (a present-but-empty sequence, not an
 // absent one) and a `not:` wrapping an empty expression. `any: []` vacuously
