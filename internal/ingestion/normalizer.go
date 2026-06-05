@@ -92,6 +92,31 @@ func detectSDKDeps(root string) []models.SDKDep {
 			Manifests: []string{"pyproject.toml", "requirements.txt", "Pipfile", "poetry.lock", "package.json"}},
 		{Name: "langchain", Pattern: "langgraph",
 			Manifests: []string{"pyproject.toml", "requirements.txt", "Pipfile", "poetry.lock", "package.json"}},
+		// CrewAI (Python). The "crewai" needle also catches the "crewai-tools"
+		// companion package — both map to the one SDKCrewAI row.
+		{Name: "crewai", Pattern: "crewai",
+			Manifests: []string{"pyproject.toml", "requirements.txt", "Pipfile", "poetry.lock"}},
+		// Pydantic AI (Python). MUST be "pydantic-ai" (catches "pydantic-ai-slim"
+		// too), NOT the bare "pydantic" — pydantic is a ubiquitous validation dep
+		// and would over-match nearly every FastAPI project.
+		{Name: "pydantic-ai", Pattern: "pydantic-ai",
+			Manifests: []string{"pyproject.toml", "requirements.txt", "Pipfile", "poetry.lock"}},
+		// AutoGen / AG2 (Python). Two upstream lines: the AG2 fork (pyautogen / ag2)
+		// and Microsoft's autogen-agentchat / autogen-core / autogen-ext.
+		{Name: "autogen", Pattern: "pyautogen",
+			Manifests: []string{"pyproject.toml", "requirements.txt", "Pipfile", "poetry.lock"}},
+		{Name: "autogen", Pattern: "autogen-agentchat",
+			Manifests: []string{"pyproject.toml", "requirements.txt", "Pipfile", "poetry.lock"}},
+		// Vercel AI SDK (TypeScript). The core package is literally named "ai", so
+		// the needle is the QUOTED JSON key `"ai"` — it matches the dependency
+		// entry, not the substring "ai" inside "@langchain/openai" / "tailwindcss".
+		// The @ai-sdk/ provider packages are the unambiguous secondary anchor.
+		// Both are drift signals only; pack loading is gated on observed code via
+		// deriveSDKsDetected (import gate on 'ai'), never on this dep scan.
+		{Name: "vercel-ai", Pattern: "\"ai\"",
+			Manifests: []string{"package.json"}},
+		{Name: "vercel-ai", Pattern: "@ai-sdk/",
+			Manifests: []string{"package.json"}},
 	}
 	seen := make(map[string]bool)
 	var out []models.SDKDep

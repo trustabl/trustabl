@@ -55,12 +55,16 @@ func SeverityWeight(s Severity) float64 {
 type DetectorCategory string
 
 const (
-	CategoryClaudeSDK DetectorCategory = "claude_sdk"
-	CategoryOpenAISDK DetectorCategory = "openai_sdk"
-	CategoryOpenShell DetectorCategory = "openshell"
-	CategoryGoogleADK DetectorCategory = "google_adk"
-	CategoryMCP       DetectorCategory = "mcp"
-	CategoryLangChain DetectorCategory = "langchain"
+	CategoryClaudeSDK  DetectorCategory = "claude_sdk"
+	CategoryOpenAISDK  DetectorCategory = "openai_sdk"
+	CategoryOpenShell  DetectorCategory = "openshell"
+	CategoryGoogleADK  DetectorCategory = "google_adk"
+	CategoryMCP        DetectorCategory = "mcp"
+	CategoryLangChain  DetectorCategory = "langchain"
+	CategoryCrewAI     DetectorCategory = "crewai"
+	CategoryPydanticAI DetectorCategory = "pydantic_ai"
+	CategoryVercelAI   DetectorCategory = "vercel_ai"
+	CategoryAutoGen    DetectorCategory = "autogen"
 )
 
 // ToolKind drives detector applicability.
@@ -78,7 +82,11 @@ const (
 	// factory / DynamicStructuredTool / DynamicTool (TypeScript). Discovery is
 	// import-gated so it does not collide with the Claude-SDK @tool / tool()
 	// shapes that share the same callee name.
-	KindLangChainTool ToolKind = "langchain_tool"
+	KindLangChainTool  ToolKind = "langchain_tool"
+	KindCrewAITool     ToolKind = "crewai_tool"
+	KindPydanticAITool ToolKind = "pydantic_ai_tool"
+	KindVercelAITool   ToolKind = "vercel_ai_tool"
+	KindAutoGenTool    ToolKind = "autogen_tool"
 )
 
 // Language identifies the source language of a discovered tool. Rules
@@ -211,6 +219,10 @@ const (
 	SDKMCP            SDK = "mcp"
 	SDKGoogleADK      SDK = "google_adk"
 	SDKLangChain      SDK = "langchain" // LangChain + LangGraph (one ecosystem, one SDK row)
+	SDKCrewAI         SDK = "crewai"
+	SDKPydanticAI     SDK = "pydantic_ai"
+	SDKVercelAI       SDK = "vercel_ai"
+	SDKAutoGen        SDK = "autogen"
 )
 
 // "openshell" is intentionally NOT in the SDK enum: it is not a library

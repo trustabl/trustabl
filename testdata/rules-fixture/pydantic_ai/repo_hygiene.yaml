@@ -1,0 +1,42 @@
+policy:
+  id: pydantic_ai_repo_hygiene
+  name: Pydantic AI repo hygiene
+  category: pydantic_ai
+  description: >
+    Repo-scoped hygiene rules for projects that use Pydantic AI. Fire once per
+    scan against the repo manifest and inventory.
+
+rules:
+  - id: PYD-201
+    title: Pydantic AI project ships no agent-guidance doc (AGENTS.md/CLAUDE.md)
+    severity: low
+    confidence: 0.9
+    applies_to:
+      - pydantic_ai
+    scope: repo
+    match:
+      all:
+        - repo_has_sdk_in_code:
+            - pydantic_ai
+        - not:
+            repo_component_present:
+              - agents_md
+              - claude_md
+    explanation: >
+      The project uses Pydantic AI in code but ships no agent-guidance doc
+      (AGENTS.md or CLAUDE.md) at the repo root. AGENTS.md is the cross-vendor
+      convention an editing coding agent reads before it acts; with neither file
+      present, any agent that opens this repo has no project-specific guidance on
+      how agents and tools must be configured — in particular, whether
+      CodeExecutionTool or native URL fetchers are permitted, how tools must be
+      typed and documented, whether output_type must be a validated model, and the
+      local test and build commands. The likely consequence is generated code that
+      violates the project's safety contract because nothing in-tree teaches the
+      agent the local rules.
+    fix: >
+      Add an AGENTS.md at the repo root (a CLAUDE.md also satisfies this rule).
+      State whether code execution and open URL fetching are permitted and under
+      what guard, how tools must be defined and typed, whether structured
+      output_type is required, any human-in-the-loop gates, and the exact test,
+      lint, and build commands. Keep it short and concrete so an editing agent can
+      act on it without re-deriving the conventions.

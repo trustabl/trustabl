@@ -1,0 +1,40 @@
+policy:
+  id: autogen_repo_hygiene
+  name: AutoGen repo hygiene
+  category: autogen
+  description: >
+    Repo-scoped hygiene rules for projects that use AutoGen / AG2. Fire once per
+    scan against the repo manifest and inventory.
+
+rules:
+  - id: AG2-201
+    title: AutoGen project ships no agent-guidance doc (AGENTS.md/CLAUDE.md)
+    severity: low
+    confidence: 0.9
+    applies_to:
+      - autogen
+    scope: repo
+    match:
+      all:
+        - repo_has_sdk_in_code:
+            - autogen
+        - not:
+            repo_component_present:
+              - agents_md
+              - claude_md
+    explanation: >
+      The project uses AutoGen in code but ships no agent-guidance doc (AGENTS.md or
+      CLAUDE.md) at the repo root. AGENTS.md is the cross-vendor convention an editing
+      coding agent reads before it acts; with neither file present, any agent that
+      opens this repo has no project-specific guidance on how agents and tools must be
+      configured — in particular, whether code execution is permitted, whether the
+      executor must run in Docker, and whether human_input_mode may be set to NEVER.
+      The likely consequence is generated code that violates the project's safety
+      contract because nothing in-tree teaches the agent the local rules.
+    fix: >
+      Add an AGENTS.md at the repo root (a CLAUDE.md also satisfies this rule). State
+      whether code execution is permitted and under what guard (Docker,
+      human_input_mode), how tools must be registered and constrained, any required
+      human-in-the-loop gates, and the exact test, lint, and build commands. Keep it
+      short and concrete so an editing agent can act on it without re-deriving the
+      conventions.

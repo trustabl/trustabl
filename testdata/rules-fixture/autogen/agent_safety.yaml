@@ -1,0 +1,145 @@
+policy:
+  id: autogen_agent_safety
+  name: AutoGen agent safety
+  category: autogen
+  description: >
+    Agent-scope safety rules for AutoGen / AG2 agents. These flag constructor
+    kwargs that hand a model-driven agent host code execution with no container,
+    no human review, or no loop bound — the configurations AutoGen's own docs
+    warn against ("we strongly recommend Docker"; "local execution is not
+    recommended").
+
+rules:
+  - id: AG2-001
+    title: AutoGen executor runs code on the host without Docker
+    severity: high
+    confidence: 0.9
+    language: python
+    applies_to:
+      - autogen_conversable_agent
+      - autogen_user_proxy_agent
+    scope: agent
+    match:
+      agent_kwarg_value:
+        kwarg: code_execution_config.use_docker
+        value: "False"
+    explanation: >
+      This agent sets code_execution_config={"use_docker": False}, so every code
+      block the model emits is written to disk and executed directly on the host
+      with the agent process's privileges — no container, no isolation. Because the
+      conversation, tool outputs, and any retrieved content are all model-reachable,
+      a single prompt injection turns into host remote code execution. AutoGen's own
+      documentation strongly recommends Docker for exactly this reason: container
+      execution is the boundary that keeps model-chosen code off the host.
+    fix: >
+      Set use_docker=True (the default when Docker is available) so generated code
+      runs inside a container, or disable code execution on this agent entirely
+      (code_execution_config=False) and move any genuine code-running need to a
+      hardened external sandbox gated behind explicit human approval.
+
+  - id: AG2-002
+    title: AutoGen executor runs code with no human review (human_input_mode=NEVER)
+    severity: high
+    confidence: 0.85
+    language: python
+    applies_to:
+      - autogen_conversable_agent
+      - autogen_user_proxy_agent
+    scope: agent
+    match:
+      all:
+        - agent_kwarg_value:
+            kwarg: human_input_mode
+            value: NEVER
+        - agent_kwarg_present:
+            - code_execution_config
+    explanation: >
+      This agent enables code execution (code_execution_config is set) while
+      human_input_mode="NEVER" removes the human-in-the-loop step. The combination
+      makes the agent fully autonomous: every code block the model emits runs with
+      zero review, so a prompt injection or a confused model executes attacker-chosen
+      code with no chance for a human to intervene. AutoGen's human_input_mode exists
+      precisely to gate this; setting it to NEVER on a code-executing agent removes
+      the last checkpoint before execution.
+    fix: >
+      Set human_input_mode="ALWAYS" (or "TERMINATE") on any agent that executes
+      code, so a human approves each run, or disable code execution on this agent
+      (code_execution_config=False). If unattended execution is a hard requirement,
+      run the code in a hardened external sandbox with no host access rather than via
+      the AutoGen executor.
+
+  - id: AG2-004
+    title: AutoGen GroupChatManager has no max_round bound
+    severity: medium
+    confidence: 0.8
+    language: python
+    applies_to:
+      - autogen_group_chat_manager
+    scope: agent
+    match:
+      agent_kwarg_missing:
+        - max_round
+    explanation: >
+      This group chat does not set max_round, so the speaker-selection loop has no
+      upper bound on the number of turns. A degenerate conversation — two agents that
+      keep handing work back and forth, or a model that never emits the termination
+      signal — runs until something else stops it, burning token budget the whole
+      time. When the participating agents wield side-effecting tools (file writes,
+      shell, network), an unbounded loop is not just a cost incident but a
+      correctness one: the same mutation can be applied many times over.
+    fix: >
+      Pass max_round= to GroupChat / GroupChatManager with a concrete cap sized to
+      the workflow (often 10–25). Pair it with a clear termination condition so the
+      chat ends on success rather than only on the round cap.
+
+  - id: AG2-005
+    title: AutoGen AssistantAgent enables code execution on the LLM agent
+    severity: medium
+    confidence: 0.7
+    language: python
+    applies_to:
+      - autogen_assistant_agent
+    scope: agent
+    match:
+      agent_kwarg_present:
+        - code_execution_config
+    explanation: >
+      This AssistantAgent sets code_execution_config, enabling code execution on the
+      LLM-facing agent. AutoGen's recommended pattern splits responsibilities: the
+      AssistantAgent generates code with code_execution_config=False, and a separate
+      UserProxyAgent (the executor) runs it. Collapsing both roles into one agent
+      removes that review boundary — the same agent that the model fully controls
+      also executes whatever it produces, so a prompt injection has a direct path
+      from generation to execution.
+    fix: >
+      Set code_execution_config=False on the AssistantAgent and route execution
+      through a dedicated UserProxyAgent executor, keeping the generate/execute split
+      AutoGen recommends. Apply the executor's own safety controls (Docker,
+      human_input_mode) on that proxy rather than on the assistant.
+
+  - id: AG2-006
+    title: AutoGen executor with code execution has no auto-reply cap
+    severity: medium
+    confidence: 0.7
+    language: python
+    applies_to:
+      - autogen_conversable_agent
+      - autogen_user_proxy_agent
+    scope: agent
+    match:
+      all:
+        - agent_kwarg_present:
+            - code_execution_config
+        - agent_kwarg_missing:
+            - max_consecutive_auto_reply
+    explanation: >
+      This executor enables code execution (code_execution_config is set) but does
+      not set max_consecutive_auto_reply, so there is no cap on how many times it will
+      auto-respond — and therefore auto-execute model-emitted code — in a single
+      exchange. An agent that keeps replying without limit can run generated code an
+      unbounded number of times, amplifying both the cost and the blast radius of a
+      single injected instruction.
+    fix: >
+      Set max_consecutive_auto_reply= to a small integer on any code-executing agent
+      so the auto-reply loop is bounded, and combine it with human_input_mode and
+      Docker so each run is both capped and reviewed.

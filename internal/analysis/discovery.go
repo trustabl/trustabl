@@ -100,6 +100,8 @@ func toolsInFile(pf ParsedFile) []models.ToolDef {
 	toolImports := collectToolImports(pf)
 	lcImport := fileImportsLangChain(pf)
 	claudeImport := fileImportsClaudeSDK(pf)
+	crewaiImport := fileImportsCrewAI(pf)
+	pydanticImport := fileImportsPydanticAI(pf)
 
 	// Pass 1: decorated functions.
 	for _, dec := range astutil.FindAll(root, "decorated_definition") {
@@ -107,7 +109,7 @@ func toolsInFile(pf ParsedFile) []models.ToolDef {
 		if fn == nil {
 			continue
 		}
-		kind := kindFromDecorators(astutil.Decorators(dec), pf.Source, toolImports, lcImport, claudeImport)
+		kind := kindFromDecorators(astutil.Decorators(dec), pf.Source, toolImports, lcImport, claudeImport, crewaiImport, pydanticImport)
 		if kind == models.KindUnknown {
 			continue
 		}
@@ -146,7 +148,7 @@ func toolsInFile(pf ParsedFile) []models.ToolDef {
 // Order matters: @function_tool is OpenAI Agents SDK and is checked before
 // the more permissive "@tool" Claude SDK match (which would otherwise swallow
 // "@function_tool" via substring).
-func kindFromDecorators(decs []*sitter.Node, src []byte, toolImports map[string]models.ToolKind, lcImport, claudeImport bool) models.ToolKind {
+func kindFromDecorators(decs []*sitter.Node, src []byte, toolImports map[string]models.ToolKind, lcImport, claudeImport, crewaiImport, pydanticImport bool) models.ToolKind {
 	for _, d := range decs {
 		// Match on the decorator's resolved callee path (e.g. "function_tool",
 		// "agent.tool", "server.tool", "app.register_tool"), not a substring of
@@ -161,6 +163,19 @@ func kindFromDecorators(decs []*sitter.Node, src []byte, toolImports map[string]
 		last := callee
 		if i := strings.LastIndex(callee, "."); i >= 0 {
 			last = callee[i+1:]
+		}
+		// Pydantic AI context tools use ATTRIBUTE decorators on the agent var:
+		// `@agent.tool` (takes a leading RunContext) and `@agent.tool_plain` (no
+		// ctx). The callee is dotted (`<agentvar>.tool`), and `tool`/`tool_plain`
+		// as the attribute suffix is Pydantic's shape. This must route to
+		// KindPydanticAITool ONLY when the file imports pydantic_ai and does NOT
+		// import the Claude SDK — the `&& !claudeImport` guard is load-bearing:
+		// the Claude SDK also exposes an `@agent.tool`, so a Claude-only file (and
+		// a file importing BOTH) must fall through to the `callee == "agent.tool"`
+		// switch case below, which keeps it KindClaudeSDKTool (claude wins).
+		if strings.Contains(callee, ".") && (last == "tool" || last == "tool_plain") &&
+			pydanticImport && !claudeImport {
+			return models.KindPydanticAITool
 		}
 		// Precise resolution first: an UNQUALIFIED decorator name that was bound by
 		// an explicit import resolves to that import's SDK. This is the exact
@@ -182,11 +197,17 @@ func kindFromDecorators(decs []*sitter.Node, src []byte, toolImports map[string]
 		// pre-1.0. Expand this list as the SDK stabilizes.
 		case callee == "tool":
 			// Bare @tool that no import resolved (a star-import or a locally
-			// defined `tool`): fall back to file-level presence — a
-			// langchain-importing file that does not import the Claude SDK routes
-			// to LangChain; otherwise the historical Claude default holds.
-			if lcImport && !claudeImport {
+			// defined `tool`): fall back to file-level import presence. A file
+			// that imports exactly one of the @tool-exporting SDKs routes there;
+			// the historical Claude default holds when none — or more than one —
+			// are present. The extra !crewaiImport / !lcImport guards are no-ops
+			// for existing repos (those flags were always false before CrewAI),
+			// so this only adds the new CrewAI arm without changing prior routing.
+			if lcImport && !claudeImport && !crewaiImport {
 				return models.KindLangChainTool
+			}
+			if crewaiImport && !claudeImport && !lcImport {
+				return models.KindCrewAITool
 			}
 			return models.KindClaudeSDKTool
 		case callee == "claude_tool" || last == "claude_tool",
@@ -226,6 +247,8 @@ func collectToolImports(pf ParsedFile) map[string]models.ToolKind {
 		switch {
 		case isLangChainModule(module):
 			sdk = models.KindLangChainTool
+		case isCrewAIModule(module):
+			sdk = models.KindCrewAITool
 		case module == "claude_agent_sdk" || strings.HasPrefix(module, "claude_agent_sdk."):
 			sdk = models.KindClaudeSDKTool
 		default:

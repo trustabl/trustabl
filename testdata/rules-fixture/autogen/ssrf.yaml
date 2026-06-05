@@ -1,0 +1,32 @@
+policy:
+  id: autogen_ssrf
+  name: AutoGen SSRF safety
+  category: autogen
+  description: >
+    Flags AutoGen tools that issue an outbound HTTP request to a
+    caller-controlled (non-literal) URL — the server-side request forgery
+    surface a model-callable tool exposes.
+
+rules:
+  - id: AG2-011
+    title: AutoGen tool fetches a caller-controlled URL (SSRF)
+    severity: high
+    confidence: 0.8
+    language: python
+    applies_to:
+      - autogen_tool
+    scope: tool
+    match:
+      has_dynamic_url_call: true
+    explanation: >
+      This AutoGen tool issues an HTTP request whose URL is built from a parameter
+      or interpolated value rather than a fixed literal. Because the tool is
+      model-callable, the model (or a prompt injection) controls the destination —
+      it can reach internal services, the cloud metadata endpoint (169.254.169.254),
+      or localhost admin ports the agent host can see but an external caller cannot.
+      This is a classic server-side request forgery primitive handed to the model.
+    fix: >
+      Constrain the destination: validate the URL against an allow-list of hosts,
+      reject private and link-local IP ranges (and redirects into them), and forbid
+      raw model-supplied URLs. If the tool only ever talks to one service, hard-code
+      the base URL and accept only a path or query from the model.

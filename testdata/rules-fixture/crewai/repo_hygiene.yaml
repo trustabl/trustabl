@@ -1,0 +1,40 @@
+policy:
+  id: crewai_repo_hygiene
+  name: CrewAI repo hygiene
+  category: crewai
+  description: >
+    Repo-scoped hygiene rules for projects that use CrewAI. Fire once per scan
+    against the repo manifest and inventory.
+
+rules:
+  - id: CREW-201
+    title: CrewAI project ships no agent-guidance doc (AGENTS.md/CLAUDE.md)
+    severity: low
+    confidence: 0.9
+    applies_to:
+      - crewai
+    scope: repo
+    match:
+      all:
+        - repo_has_sdk_in_code:
+            - crewai
+        - not:
+            repo_component_present:
+              - agents_md
+              - claude_md
+    explanation: >
+      The project uses CrewAI in code but ships no agent-guidance doc (AGENTS.md or
+      CLAUDE.md) at the repo root. AGENTS.md is the cross-vendor convention an
+      editing coding agent reads before it acts; with neither file present, any
+      agent that opens this repo has no project-specific guidance on how agents and
+      tools must be configured — in particular, whether allow_code_execution or the
+      CodeInterpreterTool are permitted, how tools must be defined and guarded, and
+      the local test and build commands. The likely consequence is generated code
+      that violates the project's safety contract because nothing in-tree teaches
+      the agent the local rules.
+    fix: >
+      Add an AGENTS.md at the repo root (a CLAUDE.md also satisfies this rule).
+      State whether code execution is permitted and under what guard, how tools must
+      be defined and constrained, any required human-in-the-loop gates, and the
+      exact test, lint, and build commands. Keep it short and concrete so an editing
+      agent can act on it without re-deriving the conventions.

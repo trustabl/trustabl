@@ -1,0 +1,35 @@
+policy:
+  id: vercel_ai_ssrf
+  name: Vercel AI SDK server-side request forgery
+  category: vercel_ai
+  description: >
+    Flags Vercel AI SDK tools whose execute() body fetches a URL the model
+    controls. A model-chosen request target is a server-side request forgery
+    vector into internal services and the cloud metadata endpoint.
+
+rules:
+  - id: VAI-003
+    title: Vercel AI tool execute() fetches a model-controlled URL
+    severity: high
+    confidence: 0.75
+    language: typescript
+    applies_to:
+      - vercel_ai_tool
+    scope: tool
+    match:
+      has_dynamic_url_call: true
+    explanation: >
+      This Vercel AI SDK tool's execute() handler issues an outbound HTTP call
+      (fetch / axios / got / undici) whose URL is not a constant — it comes from
+      the tool's arguments, a template string, or a concatenation, all of which
+      the model controls at call time. A prompt injection can point the request
+      at internal services or the cloud metadata endpoint (169.254.169.254) to
+      exfiltrate credentials, and the fetched body then re-enters the
+      conversation as untrusted text, opening a second-order prompt-injection
+      channel.
+    fix: >
+      Do not let the model choose the request target. Validate the URL against an
+      allow-list of permitted hosts, reject private and link-local IP ranges
+      (and redirects into them), and forbid raw model-supplied URLs. Treat any
+      retrieved content as untrusted — keep it out of the system prompt and do
+      not let it expand the agent's permissions.

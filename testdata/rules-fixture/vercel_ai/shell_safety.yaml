@@ -1,0 +1,37 @@
+policy:
+  id: vercel_ai_shell_safety
+  name: Vercel AI SDK shell-execution safety
+  category: vercel_ai
+  description: >
+    Flags Vercel AI SDK tools whose execute() body shells out to the operating
+    system. A model-callable tool that runs shell commands is the most direct
+    prompt-injection path to arbitrary code execution. The Vercel AI SDK ships
+    no dedicated shell-tool primitive in the `ai` core, so a hand-rolled
+    execute() that spawns a subprocess is the real shell surface to watch.
+
+rules:
+  - id: VAI-001
+    title: Vercel AI tool execute() spawns a subprocess
+    severity: high
+    confidence: 0.85
+    language: typescript
+    applies_to:
+      - vercel_ai_tool
+    scope: tool
+    match:
+      has_shell_call: true
+    explanation: >
+      This Vercel AI SDK tool's execute() handler invokes a Node shell primitive
+      (child_process exec / execSync / spawn / spawnSync / execFile / fork).
+      Because the tool is exposed to the model via the agent's tools record, a
+      prompt-injected or confused model can drive it to run arbitrary commands
+      with the agent process's privileges — shell execution selected by model
+      output is the most direct path from prompt injection to remote code
+      execution. The `ai` package has no built-in shell tool, so a tool that
+      shells out by hand is the shell surface a reviewer must inspect.
+    fix: >
+      Do not let model-controlled input reach a shell. Replace the shell-out with
+      a typed library call; if a subprocess is unavoidable, use execFile with a
+      fixed argument list (never a shell string), allow-list the exact commands,
+      and run it in a sandbox with no ambient credentials. Keep shell logic out
+      of any model-callable tool.

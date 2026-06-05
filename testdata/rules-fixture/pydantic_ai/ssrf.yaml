@@ -1,0 +1,39 @@
+policy:
+  id: pydantic_ai_ssrf
+  name: Pydantic AI SSRF safety
+  category: pydantic_ai
+  description: >
+    Flags Pydantic AI tools that issue an outbound HTTP request to a
+    caller-controlled (non-literal) URL — the server-side request forgery
+    surface a model-callable tool exposes.
+
+rules:
+  - id: PYD-005
+    title: Pydantic AI tool fetches a caller-controlled URL (SSRF)
+    severity: high
+    confidence: 0.8
+    language: python
+    applies_to:
+      - pydantic_ai_tool
+    scope: tool
+    match:
+      has_dynamic_url_call: true
+    explanation: >
+      This Pydantic AI tool issues an HTTP request whose URL is built from a
+      parameter or interpolated value rather than a fixed literal. Because the
+      tool is model-callable, the model (or a prompt injection) controls the
+      destination — it can reach internal services, the cloud metadata endpoint
+      (169.254.169.254), or localhost admin ports the agent host can see but an
+      external caller cannot. This is a classic server-side request forgery
+      primitive handed to the model. Pydantic AI's own built-in URL fetchers have
+      had to harden against exactly this: CVE-2026-46678 and CVE-2026-25580
+      cover a metadata-endpoint blocklist that could be bypassed (e.g. via DNS
+      rebinding or alternate IP encodings), so a hand-rolled fetch that does no
+      validation at all is strictly more exposed.
+    fix: >
+      Constrain the destination: validate the URL against an allow-list of hosts,
+      reject private and link-local IP ranges (and redirects into them), and
+      forbid raw model-supplied URLs. Resolve the hostname and re-check the
+      resolved IP to defeat DNS rebinding. If the tool only ever talks to one
+      service, hard-code the base URL and accept only a path or query from the
+      model.

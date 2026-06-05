@@ -4,7 +4,7 @@
 
 Trustabl is a static analyzer for agent reliability. It parses an agent-SDK
 repository (Claude Agent SDK, OpenAI Agents SDK, Google ADK, MCP, LangChain /
-LangGraph), models the
+LangGraph, CrewAI, AutoGen / AG2, Pydantic AI, and the Vercel AI SDK), models the
 tools, agents, subagents, skills, slash commands, and plugin manifests it
 declares, and checks them against a catalog of reliability and safety rules. It reports the weaknesses it finds — each
 with an explanation, a suggested fix, and a confidence score — as a
@@ -165,8 +165,13 @@ diagram with typed inputs at each step.
 Tool/agent AST discovery is wired for:
 
 - **Python** — Claude Agent SDK (decorators), OpenAI Agents SDK, Google
-  ADK. Discovery extracts tool definitions, agent constructors, hosted
-  tools, MCP servers, guardrails, sessions.
+  ADK, LangChain / LangGraph, CrewAI, AutoGen / AG2, and Pydantic AI.
+  Discovery extracts tool definitions, agent constructors, hosted
+  tools, MCP servers, guardrails, sessions. The bare `Agent(...)`
+  constructor shared by OpenAI / ADK / CrewAI / Pydantic AI is
+  import-gated per SDK so the classes never cross-match, and the
+  shared `@tool` decorator is routed to the owning SDK by its import
+  binding.
 - **TypeScript** — Claude Agent SDK (the `tool()` factory, the
   `query()` main-thread `QueryMainAgent`, inline-in-`query()` sub-agents,
   typed-const `AgentDefinition`s, `createSdkMcpServer` and the four
@@ -181,15 +186,26 @@ Tool/agent AST discovery is wired for:
   `new FunctionTool({...})` constructor, 5 agent constructors —
   `new LlmAgent({...})` / `SequentialAgent` / `ParallelAgent` /
   `LoopAgent` / `RoutedAgent` — 13 hosted-tool classes, and `subAgents`
-  edges — gated on imports from `@google/adk`). Handles
-  `.ts` / `.tsx` / `.mts` / `.cts`
-  with both `tree-sitter-typescript` and `tree-sitter-tsx` grammars.
-  TypeScript rule packs ship for all three SDKs: Claude Agent SDK
+  edges — gated on imports from `@google/adk`), LangChain / LangGraph
+  (the `tool(fn, {...})` factory, `DynamicStructuredTool` / `DynamicTool`,
+  and `createReactAgent` / `createAgent` / `new AgentExecutor` — gated on
+  the `@langchain/*` / `langchain` / `langgraph` ecosystem), and the
+  Vercel AI SDK (the `tool({...})` / `dynamicTool({...})` single-object
+  factory, the call-based `generateText` / `streamText` / `generateObject`
+  / `streamObject` agents and the class `ToolLoopAgent` /
+  `Experimental_Agent`, with `tools` walked as an object/record, plus the
+  `<provider>.tools.*()` hosted tools — gated on the bare `ai` import).
+  Handles `.ts` / `.tsx` / `.mts` / `.cts`
+  with both `tree-sitter-typescript` and `tree-sitter-tsx` grammars
+  (`.js` / `.mjs` are inventoried but not AST-parsed).
+  TypeScript rule packs ship for the Claude Agent SDK
   (CSDK-010/011/012/013/014/016 tool rules; CSDK-120/130/131 agent rules),
   OpenAI Agents SDK (OAI-016/017/019/022/024 tool rules; OAI-105 agent rule),
-  and Google ADK (ADK-013/015/016 tool rules; ADK-109 agent rule). A TS repo
-  for any of the three no longer produces a blanket `META-004`; see
-  `COVERAGE.md` for the full matrix.
+  Google ADK (ADK-013/015/016 tool rules; ADK-109 agent rule), MCP
+  (MCP-011/012/013/014 tool rules), LangChain (LC-010/011/012/013/014 tool
+  rules; LC-111 agent rule), and the Vercel AI SDK (VAI-001..008 tool/agent
+  rules; VAI-012 repo rule). A TS repo for any of these no longer produces a
+  blanket `META-004`; see `COVERAGE.md` for the full matrix.
 
 JavaScript and Go files are recognized by Recon (they appear in the
 file inventory and feed component discovery) but no AST parser for them

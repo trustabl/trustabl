@@ -33,8 +33,8 @@ added or changed without rebuilding or redistributing the scanner.
 ## 1.1 Language scope
 
 Trustabl ships with **Python and TypeScript tool/agent discovery** wired
-in. Python covers the OpenAI Agents SDK, Google ADK, and Claude Agent SDK
-(via decorators). TypeScript covers the Claude Agent SDK (via `tool()` /
+in. Python covers the OpenAI Agents SDK, Google ADK, Claude Agent SDK
+(via decorators), CrewAI, AutoGen / AG2, and Pydantic AI. TypeScript covers the Claude Agent SDK (via `tool()` /
 `query()` / `createSdkMcpServer()` / typed-const `AgentDefinition` shapes
 in `.ts`/`.tsx`/`.mts`/`.cts`) and the OpenAI Agents SDK (via `tool({...})`
 / `new Agent({...})` / `Agent.create({...})` / 9 hosted-tool factories
@@ -54,12 +54,28 @@ Claude SDK's `@tool` — plus `StructuredTool` / `Tool` factories,
 / `ShellTool` built-ins) and TypeScript (the `tool(fn, {...})` factory,
 `DynamicStructuredTool` / `DynamicTool`, and `createReactAgent` / `createAgent` /
 `AgentExecutor`), import-gated to the `@langchain/*` / `langchain` / `langgraph`
-ecosystem. TypeScript rule packs now ship for
-all five SDK surfaces: Claude SDK (CSDK-010/011/012/013/014/016 tool rules,
+ecosystem. Four further SDKs are wired in Python and TypeScript: CrewAI (Python —
+`Agent(...)` import-gated to `crewai`, the `@tool` decorator import-routed, the
+`Tool(fn)` factory, and the `CodeInterpreterTool` / `FileReadTool` built-ins),
+AutoGen / AG2 (Python — `ConversableAgent` / `UserProxyAgent` / `AssistantAgent`
+/ `GroupChat` / `GroupChatManager` / `CodeExecutorAgent` across the AG2 `autogen`
+and Microsoft v0.4 `autogen_agentchat` import lines, plus `register_function`
+and `@x.register_for_llm` / `@x.register_for_execution` tool registrations),
+Pydantic AI (Python — `Agent(...)` import-gated to `pydantic_ai`, the
+`@agent.tool` / `@agent.tool_plain` decorators import-routed with the Claude SDK
+winning the collision, the `Tool(fn)` factory, and the `CodeExecutionTool` /
+`WebFetchTool` native tools), and the Vercel AI SDK (TypeScript — the
+`tool({...})` / `dynamicTool({...})` single-object factory, the call-based
+`generateText` / `streamText` / `generateObject` / `streamObject` agents and the
+class `ToolLoopAgent` / `Experimental_Agent`, with `tools` walked as an
+object/record, plus the `<provider>.tools.*()` hosted tools — all gated on the
+bare `ai` import). TypeScript rule packs now ship for
+all six SDK surfaces: Claude SDK (CSDK-010/011/012/013/014/016 tool rules,
 CSDK-120/130/131 agent rules), OpenAI Agents (OAI-016/017/019/022/024 tool
 rules, OAI-105 agent rule), Google ADK (ADK-013/015/016 tool rules, ADK-109
-agent rule), MCP (MCP-011/012/013/014 tool rules), and LangChain
-(LC-010/011/012/013/014 tool rules, LC-111 agent rule). A TS
+agent rule), MCP (MCP-011/012/013/014 tool rules), LangChain
+(LC-010/011/012/013/014 tool rules, LC-111 agent rule), and the Vercel AI SDK
+(VAI-001..005 tool rules, VAI-006/007/008 agent rules, VAI-012 repo rule). A TS
 repo for any of these no longer produces a blanket META-004; the full
 per-SDK/language matrix lives in COVERAGE.md. The scanner
 can also recognize JavaScript and Go *files* (they appear in
@@ -462,14 +478,74 @@ For each language recon cleared, do the AST work and produce a `RepoInventory`:
   `astutil.TSImportAliasesMatch` to cover the many `@langchain/*` subpaths. Agents:
   `createReactAgent` / `createAgent` / `new AgentExecutor`. Reuses
   `tsZodParamNames` / `tsHandlerFacts`.
+- **DiscoverCrewAIAgents** (`crewai_agents.go`) — Python CrewAI `Agent(...)`
+  constructor calls, import-gated (AST-based) to the `crewai` / `crewai_tools`
+  ecosystem so the bare `Agent` name does not collide with the OpenAI Agents SDK
+  or Google ADK classes (`agentKindMatches("crewai_agent")` keys on both SDK and
+  Class). All kwargs captured into a typed `KwargTree`; the label falls back from
+  `name=` to `role=` to the assignment-target variable. CrewAI `@tool` tools are
+  routed in `discovery.go`'s `kindFromDecorators` (import-routed, below); the
+  `Tool(fn)` factory and the `CodeInterpreterTool` / `FileReadTool` built-ins are
+  resolved in `crewai_hosted_tools.go` during `ResolveEdges`. `class X(BaseTool)`
+  and `Crew(...)` are v1 gaps.
+- **DiscoverAutoGenAgents / DiscoverAutoGenTools** (`autogen_agents.go`,
+  `autogen_tools.go`) — Python AutoGen / AG2, import-gated to **either** upstream
+  line (AG2 `autogen` / `autogen.*`; Microsoft v0.4 `autogen_agentchat` /
+  `autogen_core` / `autogen_ext`); `agentKindMatches` keys on both SDK and Class
+  so the colliding `AssistantAgent` / `GroupChat` never cross-match. Agents: the
+  6 constructors `ConversableAgent` / `UserProxyAgent` / `AssistantAgent` /
+  `GroupChat` / `GroupChatManager` / `CodeExecutorAgent`, with the nested
+  `code_execution_config={...}` dict descended so dotted-path lookups reach
+  `code_execution_config.use_docker`. Tools: `register_function(fn, ...)` (a call,
+  not a decorator — resolves the first positional ident to a same-file function)
+  and the stacked attribute decorators `@<x>.register_for_llm` /
+  `@<x>.register_for_execution` (an attribute callee, so `kindFromDecorators` does
+  not classify it — this pass walks `decorated_definition` nodes itself). The
+  v0.4 executor-class surface (AG2-003), the `register_function` caller/executor
+  edge, and an AG2 bare-name `@tool` arm are v1 gaps.
+- **DiscoverPydanticAIAgents / DiscoverPydanticAITools** (`pydantic_ai_agents.go`,
+  `pydantic_ai_tools.go`) — Python Pydantic AI, import-gated to `pydantic_ai` so
+  the bare `Agent` name (normalized to Class `PydanticAgent`) does not collide
+  with OpenAI / ADK / CrewAI. Agents: `Agent(...)` with all kwargs captured;
+  `VarName` captured so the `@agent.tool` owner and `tools=[...]` references
+  resolve. Tools: the `@agent.tool` / `@agent.tool_plain` attribute decorators
+  (routed in `discovery.go`'s `kindFromDecorators`, import-gated and
+  Claude-disambiguated, below) and the `Tool(fn)` factory (gated on `pydantic_ai`
+  AND NOT LangChain, since LangChain ships an identically-named `Tool(...)`). The
+  `CodeExecutionTool` / `WebFetchTool` / `UrlContextTool` / `WebSearchTool` native
+  tools under `capabilities=` / `builtin_tools=` (the modern `NativeTool(...)`
+  wrapper unwrapped one level) are classified in `pydantic_ai_hosted_tools.go`
+  during `ResolveEdges`. PYD-104 (`force_download`), the bare-`tools=[fn]` ToolDef
+  shape, and the `RunContext` param-strip for PYD-002 are v1 gaps.
+- **DiscoverTSVercelTools / DiscoverTSVercelAgents** (`ts_vercel_tools.go`,
+  `ts_vercel_agents.go`, `ts_vercel_hosted_tools.go`) — TS Vercel AI SDK,
+  import-gated to the bare `ai` core module (the disambiguator from the
+  identically-named Claude / OpenAI / LangChain `tool()` factories). Tools: the
+  `tool({...})` / `dynamicTool({...})` single-object factory (arg 0 is the options
+  object, unlike LangChain's arg-1 config); the tool NAME comes from the agent's
+  tools-record key, so `ToolDef.Name` is empty and `VarName` carries the binding.
+  Agents: the call-based `generateText` / `streamText` / `generateObject` /
+  `streamObject` (emitted only when the options object carries a `tools` property)
+  and the class `ToolLoopAgent` / `Experimental_Agent` (often imported `as Agent`).
+  In both forms `tools` is an OBJECT / RECORD walked by property value (not a
+  `[...]` array like every other TS pass): bare identifier → `ToolRef`; inline
+  `tool({...})` / spread / other → agent `Opaque`; `<provider>.tools.<name>()` →
+  `HostedToolRef` (canonicalized in `ts_vercel_hosted_tools.go`). `.js` / `.mjs`
+  apps are inventoried but not AST-parsed; VAI-009/010 (name rules) and VAI-011
+  (TS timeout predicate) are v1 gaps.
 - **ResolveEdges** — links agent `tools=`, `handoffs=`, `input_guardrails=`
   references to discovered definitions in the same repo; cross-module resolution
   uses import statements; unresolvable references are flagged `External=true`.
   Hosted-tool dispatch is SDK-aware: OpenAI agents are matched against
-  `HostedToolClasses` (11 classes); Google ADK agents are matched against
-  `ADKHostedToolClasses` (13 classes, defined in `adk_hosted_tools.go`). Each
-  match emits a `HostedToolDef` record and a parallel `HostedToolRefs` edge on
-  the owning agent. For Google ADK agents, `FunctionTool(symbol)` references
+  `HostedToolClasses` (11 classes); Google ADK agents against
+  `ADKHostedToolClasses` (13 classes, `adk_hosted_tools.go`); CrewAI agents
+  against `CrewAIHostedToolClasses` (13 classes, `crewai_hosted_tools.go`); and
+  Pydantic AI agents against `PydanticAIHostedToolClasses` (4 classes,
+  `pydantic_ai_hosted_tools.go`) — but Pydantic native tools live under the
+  `capabilities=` / `builtin_tools=` kwargs, NOT the generic `tools=` list, so
+  `ResolveEdges` scans those two kwargs for Pydantic agents (unwrapping the modern
+  `NativeTool(...)` wrapper one level). Each match emits a `HostedToolDef` record
+  and a parallel `HostedToolRefs` edge on the owning agent. For Google ADK agents, `FunctionTool(symbol)` references
   inside `tools=[...]` are unwrapped and resolved to same-file `ToolDef`s before
   the hosted-tool check. `sub_agents=[...]` kwargs on ADK agents are resolved
   into `HandoffRefs` pointing to same-file `AgentDef`s. `mcp_servers=[...]` is
@@ -537,7 +613,9 @@ than just text matching.
    | Decorator callee                  | ToolKind              | Notes                       |
    | --------------------------------- | --------------------- | --------------------------- |
    | `function_tool` (any args)        | `KindOpenAITool`      | OpenAI Agents SDK           |
-   | `tool`, `claude_tool`, `agent.tool`, or a callee containing `claude_agent_sdk` | `KindClaudeSDKTool` | Claude Agent SDK (pre-1.0 — names still in flux) |
+   | bare `tool` / `claude_tool` bound by import | resolved SDK | The unqualified `@tool` is shared by the Claude SDK, LangChain, and CrewAI; `collectToolImports` resolves it to `KindClaudeSDKTool` / `KindLangChainTool` / `KindCrewAITool` by the **import binding** of the `tool` symbol (last-binding-wins), with a file-level import-presence fallback for a star-import / locally defined `tool` |
+   | `<agentvar>.tool`, `<agentvar>.tool_plain` (attribute) | `KindPydanticAITool` | Pydantic AI context tools — routed ONLY when the file imports `pydantic_ai` AND does NOT import the Claude SDK (the `&& !claudeImport` guard is load-bearing: the Claude SDK also exposes `@agent.tool`, so a Claude-only file and a both-importing file fall through to the `agent.tool` → Claude case below) |
+   | `agent.tool`, or a callee containing `claude_agent_sdk` | `KindClaudeSDKTool` | Claude Agent SDK (pre-1.0 — names still in flux); wins the `@agent.tool` collision with Pydantic |
    | `server.tool`, `mcp.tool`, `*.register_tool` | `KindMCPTool`  | MCP server registrations    |
    | (none of the above)               | `KindUnknown`         | Falls through to shell pass |
 
@@ -1021,7 +1099,11 @@ AgentDef {
 }
 
 // KwargTree holds a kwarg value as either a leaf or a nested map
-// (e.g. model_settings.tool_choice parses as Children["model_settings"].Children["tool_choice"])
+// (e.g. model_settings.tool_choice parses as Children["model_settings"].Children["tool_choice"]).
+// exprFromNode descends into a nested constructor call's kwargs AND into a dict
+// literal passed as a kwarg value (dictChildren keys by each string-literal pair
+// key), so a dotted-path lookup reaches e.g. AutoGen's
+// code_execution_config.use_docker the same way it reaches a nested call's kwarg.
 KwargTree { Value *Expr; Children map[string]*KwargTree }
 
 ToolDef {
@@ -1346,7 +1428,12 @@ the "Two-repo rule model" section in [`CLAUDE.md`](CLAUDE.md).
 Domain-level utilities the rules package and any future Go-native detector
 need:
 
-- `FindFunctionNode(t, pf)` — relocate a tool's `function_definition` node.
+- `FindFunctionNode(t, pf)` — relocate a tool's `function_definition` node. The
+  line is the primary key (an exact name match on the same line is the confident
+  hit; a name mismatch from a `name=` override — e.g. AutoGen `register_function`
+  or a Pydantic / LangChain factory — still resolves via the line), so the
+  body-scan predicates keep working when the tool's `Name` differs from the
+  wrapped function's.
 - `IsHTTPCall(callee)` — exact-text match against the known HTTP client API
   surface (the direct-call check).
 - `ResolveClientAliases(fn, src)` — walks a function body and maps local

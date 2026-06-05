@@ -1,0 +1,47 @@
+policy:
+  id: pydantic_ai_network
+  name: Pydantic AI tool network hygiene
+  category: pydantic_ai
+  description: >
+    Network-call hygiene inside Pydantic AI tool functions. A tool that makes a
+    network request without a timeout can hang the agent run indefinitely.
+
+rules:
+  - id: PYD-006
+    title: Pydantic AI tool network call has no timeout
+    severity: high
+    confidence: 0.85
+    language: python
+    applies_to:
+      - pydantic_ai_tool
+    scope: tool
+    match:
+      call_without_kwarg:
+        callees:
+          - requests.get
+          - requests.post
+          - requests.put
+          - requests.delete
+          - requests.patch
+          - requests.head
+          - requests.request
+          - httpx.get
+          - httpx.post
+          - httpx.put
+          - httpx.delete
+          - httpx.patch
+          - httpx.head
+          - httpx.request
+        missing: timeout
+    explanation: >
+      This Pydantic AI tool makes a network request without a timeout, so it will
+      hang indefinitely on a slow or unresponsive remote. The tool call runs
+      inside the agent's run loop; a request with no timeout blocks that run until
+      the remote eventually responds or the connection dies, and under load this
+      ties up whatever runtime the agent is hosted on without ever surfacing the
+      failure to the model.
+    fix: >
+      Pass timeout= (typically 5–30 seconds) to the request. Choose a value tight
+      enough to fail fast and loose enough to allow legitimate slow responses for
+      this endpoint, and surface failures as a structured error the model can
+      react to rather than letting the call hang.

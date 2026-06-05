@@ -148,6 +148,10 @@ func ResolveEdges(inv *models.RepoInventory, parsed []ParsedFile) {
 						h, isHT = classifyADKHostedToolCall(item, a.FilePath)
 					case models.SDKLangChain:
 						h, isHT = classifyLangChainHostedToolCall(item, a.FilePath)
+					case models.SDKCrewAI:
+						h, isHT = classifyCrewAIHostedToolCall(item, a.FilePath)
+					case models.SDKPydanticAI:
+						h, isHT = classifyPydanticAIHostedToolCall(item, a.FilePath)
 					default:
 						h, isHT = classifyHostedToolCall(item, a.FilePath)
 					}
@@ -191,6 +195,35 @@ func ResolveEdges(inv *models.RepoInventory, parsed []ParsedFile) {
 				}
 			} else if toolsKwarg != nil {
 				a.Opaque = true
+			}
+
+			// Pydantic AI native (built-in) tools live under capabilities= and
+			// builtin_tools=, NOT the generic tools= list scanned above, so the
+			// tools= block never sees CodeExecutionTool()/WebFetchTool(). Scan both
+			// kwargs here for hosted classification (the only thing they hold), so
+			// PYD-102/103 can flag the capability. Scoped to Pydantic agents — other
+			// SDKs do not use these kwargs, and the NativeTool(...) wrapper unwrap
+			// lives in classifyPydanticAIHostedToolCall. A non-list value is ignored
+			// (no Opaque side effect): native-tool opaqueness is orthogonal to the
+			// tools=-list opaqueness the block above tracks.
+			if a.SDK == models.SDKPydanticAI {
+				for _, kwName := range []string{"capabilities", "builtin_tools"} {
+					kw := agentKwarg(a, kwName)
+					if kw == nil || kw.Value == nil || kw.Value.Kind != models.ExprList {
+						continue
+					}
+					for _, item := range kw.Value.List {
+						h, isHT := classifyPydanticAIHostedToolCall(item, a.FilePath)
+						if !isHT {
+							continue
+						}
+						inv.HostedTools = append(inv.HostedTools, h)
+						a.HostedToolRefs = append(a.HostedToolRefs, models.HostedToolRef{
+							Class:    h.Class,
+							DefIndex: len(inv.HostedTools) - 1,
+						})
+					}
+				}
 			}
 		}
 
@@ -371,12 +404,13 @@ func ResolveEdges(inv *models.RepoInventory, parsed []ParsedFile) {
 			}
 		}
 
-		// HostedToolRefs — TS discovery (OpenAI and ADK) sets Class to the
-		// canonical hosted-tool class name and DefIndex=-1. Materialize a
+		// HostedToolRefs — TS discovery (OpenAI, ADK, and Vercel) sets Class to
+		// the canonical hosted-tool class name and DefIndex=-1. Materialize a
 		// matching HostedToolDef in inv.HostedTools so downstream consumers
 		// see a complete hosted-tool inventory. The SDK is stamped from
 		// whichever closed set matched the class name — TSOpenAIHostedToolFactories
-		// → SDKOpenAIAgents, TSADKHostedToolClasses → SDKGoogleADK. Python
+		// → SDKOpenAIAgents, TSADKHostedToolClasses → SDKGoogleADK,
+		// IsVercelHostedTool → SDKVercelAI. Python
 		// hosted-tool refs (handled by the classify block above) carry a
 		// valid DefIndex already and are skipped by the first guard. The
 		// Location is approximated to the agent's call site — the precise
@@ -397,6 +431,8 @@ func ResolveEdges(inv *models.RepoInventory, parsed []ParsedFile) {
 				sdk = models.SDKOpenAIAgents
 			case IsTSADKHostedToolClass(ref.Class):
 				sdk = models.SDKGoogleADK
+			case IsVercelHostedTool(ref.Class):
+				sdk = models.SDKVercelAI
 			default:
 				continue
 			}
@@ -673,7 +709,44 @@ func exprFromNode(n *sitter.Node, src []byte) *models.KwargTree {
 		e.CallKwargs = children
 		return &models.KwargTree{Value: e, Children: children}
 	}
+	// For a dict literal passed as a kwarg value
+	// (e.g. code_execution_config={"use_docker": False}), descend into each
+	// string-keyed pair so dotted-path lookups can reach the nested leaf
+	// (code_execution_config.use_docker). The Expr keeps its opaque Text (the
+	// raw dict source) and ExprUnknown kind; the nested structure lives in
+	// Children, mirroring how a call value carries CallKwargs above. Non-string
+	// keys (a variable or computed key) are skipped — they have no stable
+	// dotted-path name.
+	if n.Type() == "dictionary" {
+		children := dictChildren(n, src)
+		return &models.KwargTree{Value: e, Children: children}
+	}
 	return &models.KwargTree{Value: e}
+}
+
+// dictChildren builds a KwargTree child map from a Python dict literal node,
+// keyed by each pair's string-literal key (quotes stripped). Used so a dict
+// passed as a kwarg value supports the same dotted-path lookups as a nested
+// constructor call.
+func dictChildren(n *sitter.Node, src []byte) map[string]*models.KwargTree {
+	children := map[string]*models.KwargTree{}
+	for i := 0; i < int(n.NamedChildCount()); i++ {
+		pair := n.NamedChild(i)
+		if pair.Type() != "pair" {
+			continue
+		}
+		key := pair.ChildByFieldName("key")
+		val := pair.ChildByFieldName("value")
+		if key == nil || val == nil || key.Type() != "string" {
+			continue
+		}
+		name := strings.Trim(astutil.NodeText(key, src), `"'`)
+		if name == "" {
+			continue
+		}
+		children[name] = exprFromNode(val, src)
+	}
+	return children
 }
 
 func nilToEmpty(t *models.KwargTree) *models.KwargTree {

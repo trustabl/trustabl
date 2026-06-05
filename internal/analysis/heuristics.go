@@ -12,25 +12,41 @@ import (
 // FindFunctionNode locates the function_definition node for a tool inside its
 // parsed file. Detectors and rule predicates carry only positions; storing
 // nodes in ToolDef would couple JSON serialization to tree-sitter internals.
+//
+// Matching is primarily by START LINE, which uniquely identifies a
+// function_definition (two defs cannot begin on the same line). The tool Name is
+// used only as a tie-break/confirmation when it matches the def's name; when a
+// tool was registered under a name= override that differs from the function name
+// (e.g. AutoGen register_function(fn, name="x") or a LangChain factory name=),
+// the line still resolves the body so the body-scan predicates (has_shell_call,
+// has_code_exec_call, has_dynamic_url_call, call_without_kwarg) keep working. A
+// line-only fallback cannot misfire: the line is unique, and a non-zero
+// disagreement on name does not point at a different function.
 func FindFunctionNode(t models.ToolDef, pf ParsedFile) *sitter.Node {
 	if pf.Tree == nil {
 		return nil
 	}
-	var match *sitter.Node
+	var lineMatch *sitter.Node
 	astutil.Walk(pf.Tree.RootNode(), func(n *sitter.Node) bool {
-		if match != nil {
-			return false
-		}
 		if n.Type() != "function_definition" {
 			return true
 		}
-		if astutil.NodeLine(n) == t.Line && astutil.FunctionName(n, pf.Source) == t.Name {
-			match = n
+		if astutil.NodeLine(n) != t.Line {
+			return true
+		}
+		// Same line: an exact name match is the confident hit; return it. A
+		// name mismatch (name= override) still resolves via the line, recorded
+		// as a fallback in case no exact-name def shares this line.
+		if astutil.FunctionName(n, pf.Source) == t.Name {
+			lineMatch = n
 			return false
+		}
+		if lineMatch == nil {
+			lineMatch = n
 		}
 		return true
 	})
-	return match
+	return lineMatch
 }
 
 // IsHTTPCall returns true if the literal callee text matches a known HTTP

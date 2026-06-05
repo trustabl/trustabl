@@ -38,10 +38,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # A coordinated rules change ships as paired PRs (one here, one in
+      # trustabl-rules). To let this PR's fixture validate against the matching
+      # production PR before either merges, check out trustabl-rules at a branch
+      # of the SAME name as this PR's head branch when it exists; otherwise fall
+      # back to main. On push to main, head_ref is empty, so this always uses
+      # main — main is still guarded against the real production pack.
+      - name: Resolve trustabl-rules ref
+        id: rulesref
+        run: |
+          ref="${{ github.head_ref }}"
+          if [ -n "$ref" ] && git ls-remote --exit-code --heads \
+              https://github.com/trustabl/trustabl-rules.git "$ref" >/dev/null 2>&1; then
+            echo "ref=$ref" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=main" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Checkout trustabl-rules
         uses: actions/checkout@v4
         with:
           repository: trustabl/trustabl-rules
+          ref: ${{ steps.rulesref.outputs.ref }}
           path: .rules
 
       - name: Check fixture is in sync with production rules

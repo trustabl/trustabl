@@ -15,6 +15,11 @@ var shippedPolicySDKs = map[models.SDK]bool{
 	models.SDKOpenAIAgents:   true,
 	models.SDKMCP:            true,
 	models.SDKGoogleADK:      true,
+	models.SDKLangChain:      true, // ships the langchain/ pack (was missing → false META-001)
+	models.SDKCrewAI:         true,
+	models.SDKAutoGen:        true,
+	models.SDKPydanticAI:     true, // ships the pydantic_ai/ pack
+	models.SDKVercelAI:       true, // ships the vercel_ai/ pack
 }
 
 // depNameToSDK maps the canonical dep-file package name to the SDK enum.
@@ -22,6 +27,9 @@ var depNameToSDK = map[string]models.SDK{
 	"claude-agent-sdk": models.SDKClaudeAgentSDK,
 	"openai-agents":    models.SDKOpenAIAgents,
 	"google-adk":       models.SDKGoogleADK,
+	"crewai":           models.SDKCrewAI,
+	"autogen":          models.SDKAutoGen,
+	"pydantic-ai":      models.SDKPydanticAI,
 }
 
 // SelectAndEmitMETA inspects the profile + inventory and emits engine-level
@@ -109,6 +117,11 @@ var sdkToCategory = map[models.SDK]models.DetectorCategory{
 	models.SDKClaudeAgentSDK: models.CategoryClaudeSDK,
 	models.SDKOpenAIAgents:   models.CategoryOpenAISDK,
 	models.SDKGoogleADK:      models.CategoryGoogleADK,
+	models.SDKLangChain:      models.CategoryLangChain, // was missing → META-004 never fired for LangChain
+	models.SDKCrewAI:         models.CategoryCrewAI,
+	models.SDKAutoGen:        models.CategoryAutoGen,
+	models.SDKPydanticAI:     models.CategoryPydanticAI,
+	models.SDKVercelAI:       models.CategoryVercelAI,
 }
 
 // EmitCoverageMETA emits META-004 when an audited SDK was observed in code

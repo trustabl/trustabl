@@ -1,0 +1,73 @@
+policy:
+  id: crewai_dangerous_tools
+  name: CrewAI dangerous built-in tools
+  category: crewai
+  description: >
+    Flags CrewAI agents wired with high-risk crewai_tools built-ins: an
+    unconstrained file reader, and the web-fetching / RAG tools that retrieve
+    model-chosen URLs. Both are vectors in CrewAI's published file-read and SSRF
+    advisories.
+
+rules:
+  - id: CREW-106
+    title: CrewAI agent grants an unconstrained FileReadTool
+    severity: high
+    confidence: 0.7
+    language: python
+    applies_to:
+      - crewai_agent
+    scope: agent
+    match:
+      all:
+        - agent_uses_hosted_tool_class: [FileReadTool]
+        - not:
+            agent_hosted_tool_kwarg_present:
+              class: FileReadTool
+              kwarg: file_path
+    explanation: >
+      This agent wires FileReadTool with no file_path= pin, so the tool reads
+      whatever path the model names at call time. Because the tool is
+      model-callable, a prompt injection can make it read any file the agent
+      process can see — /etc/passwd, ~/.ssh/id_rsa, application secrets — which is
+      the arbitrary-file-read exposure tracked as CVE-2026-2285 (path traversal in
+      the file-read tool). Pinning the tool to a specific file at construction
+      removes the model's control over the target, so FileReadTool(file_path="...")
+      is the safe form and does not fire.
+    fix: >
+      Construct FileReadTool(file_path="...") bound to the one file the agent
+      needs, so the model cannot choose the path. If the agent must read several
+      files, validate every candidate path against an allow-list of directories,
+      resolve symlinks, and reject any path that escapes the intended root.
+
+  - id: CREW-107
+    title: CrewAI agent wires a tool that fetches model-chosen URLs
+    severity: medium
+    confidence: 0.7
+    language: python
+    applies_to:
+      - crewai_agent
+    scope: agent
+    match:
+      agent_uses_hosted_tool_class:
+        - ScrapeWebsiteTool
+        - SeleniumScrapingTool
+        - WebsiteSearchTool
+        - SerperDevTool
+        - JSONSearchTool
+        - PDFSearchTool
+        - CSVSearchTool
+    explanation: >
+      This agent wires a crewai_tools built-in that issues outbound requests to a
+      URL the model supplies (a scraper, a search tool, or a RAG retriever). Because
+      the destination is model-controlled, a prompt injection can point it at
+      internal services or the cloud metadata endpoint (169.254.169.254) to exfil
+      credentials — the server-side request forgery exposure tracked as
+      CVE-2026-2286. The retrieved page content then re-enters the conversation as
+      untrusted text, giving the fetched site a second-order prompt-injection
+      channel into the agent.
+    fix: >
+      Constrain the destination: validate every URL against an allow-list of hosts,
+      reject private and link-local IP ranges (and redirects into them), and forbid
+      raw model-supplied URLs. Treat any retrieved content as untrusted input —
+      keep it out of the system prompt and do not let it silently expand the agent's
+      tool permissions.

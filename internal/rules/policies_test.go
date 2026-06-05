@@ -261,6 +261,328 @@ import { z } from "zod";
 export const t = tool(async (i) => i.q, { name: "x", description: "X.", schema: z.object({ q: z.string() }) });
 `},
 
+	// ─── Vercel AI SDK tool rules (VAI-*) ───────────────────────────────────
+	// Import-gated to the bare `ai` module; tool name comes from the agent's
+	// tools-record KEY so ToolDef.Name is empty (VarName carries the binding).
+	{name: "VAI-001 fires on TS subprocess", ruleID: "VAI-001", kind: models.KindVercelAITool, lang: models.LanguageTypeScript, wantFires: true, src: `
+import { tool } from "ai";
+import { z } from "zod";
+import { execSync } from "child_process";
+export const t = tool({ description: "run", inputSchema: z.object({ cmd: z.string() }), execute: async ({ cmd }) => {
+  return execSync(cmd).toString();
+} });
+`},
+	{name: "VAI-001 silent without TS shell", ruleID: "VAI-001", kind: models.KindVercelAITool, lang: models.LanguageTypeScript, wantFires: false, src: `
+import { tool } from "ai";
+import { z } from "zod";
+export const t = tool({ description: "add", inputSchema: z.object({ a: z.number() }), execute: async ({ a }) => a + 1 });
+`},
+
+	{name: "VAI-002 fires on TS eval", ruleID: "VAI-002", kind: models.KindVercelAITool, lang: models.LanguageTypeScript, wantFires: true, src: `
+import { tool } from "ai";
+import { z } from "zod";
+export const t = tool({ description: "calc", inputSchema: z.object({ expr: z.string() }), execute: async ({ expr }) => eval(expr) });
+`},
+	{name: "VAI-002 silent without TS eval", ruleID: "VAI-002", kind: models.KindVercelAITool, lang: models.LanguageTypeScript, wantFires: false, src: `
+import { tool } from "ai";
+import { z } from "zod";
+export const t = tool({ description: "calc", inputSchema: z.object({ a: z.number() }), execute: async ({ a }) => a * 2 });
+`},
+
+	{name: "VAI-003 fires on TS dynamic URL", ruleID: "VAI-003", kind: models.KindVercelAITool, lang: models.LanguageTypeScript, wantFires: true, src: `
+import { tool } from "ai";
+import { z } from "zod";
+export const t = tool({ description: "get", inputSchema: z.object({ url: z.string() }), execute: async ({ url }) => {
+  const r = await fetch(url);
+  return r.text();
+} });
+`},
+	{name: "VAI-003 silent on TS literal URL", ruleID: "VAI-003", kind: models.KindVercelAITool, lang: models.LanguageTypeScript, wantFires: false, src: `
+import { tool } from "ai";
+import { z } from "zod";
+export const t = tool({ description: "get", inputSchema: z.object({ q: z.string() }), execute: async () => {
+  const r = await fetch("https://api.example.com/status");
+  return r.text();
+} });
+`},
+
+	{name: "VAI-004 fires on tool with no description", ruleID: "VAI-004", kind: models.KindVercelAITool, lang: models.LanguageTypeScript, wantFires: true, src: `
+import { tool } from "ai";
+import { z } from "zod";
+export const t = tool({ inputSchema: z.object({ q: z.string() }), execute: async ({ q }) => q });
+`},
+	{name: "VAI-004 silent with description", ruleID: "VAI-004", kind: models.KindVercelAITool, lang: models.LanguageTypeScript, wantFires: false, src: `
+import { tool } from "ai";
+import { z } from "zod";
+export const t = tool({ description: "Echoes the query.", inputSchema: z.object({ q: z.string() }), execute: async ({ q }) => q });
+`},
+
+	// VAI-005: dynamicTool is always untyped (fire); an empty z.object({}) is an
+	// open schema (fire); a concrete Zod object is typed (silent).
+	{name: "VAI-005 fires on dynamicTool", ruleID: "VAI-005", kind: models.KindVercelAITool, lang: models.LanguageTypeScript, wantFires: true, src: `
+import { dynamicTool } from "ai";
+import { z } from "zod";
+export const t = dynamicTool({ description: "x", inputSchema: z.unknown(), execute: async (input) => input });
+`},
+	{name: "VAI-005 fires on empty z.object schema", ruleID: "VAI-005", kind: models.KindVercelAITool, lang: models.LanguageTypeScript, wantFires: true, src: `
+import { tool } from "ai";
+import { z } from "zod";
+export const t = tool({ description: "x", inputSchema: z.object({}), execute: async () => 1 });
+`},
+	{name: "VAI-005 silent with typed zod schema", ruleID: "VAI-005", kind: models.KindVercelAITool, lang: models.LanguageTypeScript, wantFires: false, src: `
+import { tool } from "ai";
+import { z } from "zod";
+export const t = tool({ description: "x", inputSchema: z.object({ city: z.string() }), execute: async ({ city }) => city });
+`},
+
+	// ─── CrewAI tool rules (CREW-*) ─────────────────────────────────────────
+	{name: "CREW-001 fires on tool with no docstring", ruleID: "CREW-001", kind: models.KindCrewAITool, src: `
+def search(q: str) -> str:
+    return q
+`, wantFires: true},
+	{name: "CREW-001 silent with docstring", ruleID: "CREW-001", kind: models.KindCrewAITool, src: `
+def search(q: str) -> str:
+    """Search the web."""
+    return q
+`, wantFires: false},
+
+	{name: "CREW-002 fires on untyped params", ruleID: "CREW-002", kind: models.KindCrewAITool, src: `
+def search(q):
+    """Search."""
+    return q
+`, wantFires: true},
+	{name: "CREW-002 silent with typed params", ruleID: "CREW-002", kind: models.KindCrewAITool, src: `
+def search(q: str) -> str:
+    """Search."""
+    return q
+`, wantFires: false},
+	{name: "CREW-002 silent with no params", ruleID: "CREW-002", kind: models.KindCrewAITool, src: `
+def now() -> str:
+    """No params, no problem."""
+    return "ok"
+`, wantFires: false},
+
+	{name: "CREW-003 fires on eval", ruleID: "CREW-003", kind: models.KindCrewAITool, src: `
+def calc(expr: str) -> str:
+    """Calculate."""
+    return eval(expr)
+`, wantFires: true},
+	{name: "CREW-003 silent without eval", ruleID: "CREW-003", kind: models.KindCrewAITool, src: `
+def calc(expr: str) -> str:
+    """Calculate."""
+    return expr
+`, wantFires: false},
+
+	{name: "CREW-004 fires on subprocess", ruleID: "CREW-004", kind: models.KindCrewAITool, src: `
+def run(cmd: str) -> str:
+    """Run a command."""
+    import subprocess
+    return subprocess.run(cmd, shell=True)
+`, wantFires: true},
+	{name: "CREW-004 silent without shell", ruleID: "CREW-004", kind: models.KindCrewAITool, src: `
+def run(cmd: str) -> str:
+    """Run."""
+    return cmd
+`, wantFires: false},
+
+	{name: "CREW-005 fires on dynamic URL", ruleID: "CREW-005", kind: models.KindCrewAITool, src: `
+def fetch(url: str) -> str:
+    """Fetch a URL."""
+    import requests
+    return requests.get(url).text
+`, wantFires: true},
+	{name: "CREW-005 silent on literal URL", ruleID: "CREW-005", kind: models.KindCrewAITool, src: `
+def fetch(q: str) -> str:
+    """Fetch."""
+    import requests
+    return requests.get("https://api.example.com/data").text
+`, wantFires: false},
+
+	{name: "CREW-006 fires on mutating tool without key", ruleID: "CREW-006", kind: models.KindCrewAITool, src: `
+def create_order(customer_id: str, amount: float) -> dict:
+    """Create an order."""
+    return {"ok": True}
+`, wantFires: true},
+	{name: "CREW-006 silent with idempotency key", ruleID: "CREW-006", kind: models.KindCrewAITool, src: `
+def create_order(customer_id: str, amount: float, idempotency_key: str) -> dict:
+    """Create an order."""
+    return {"ok": True}
+`, wantFires: false},
+
+	{name: "CREW-108 fires on result_as_answer=True", ruleID: "CREW-108", kind: models.KindCrewAITool, src: `
+def f(x: str) -> str:
+    """Doc."""
+    return x
+`, toolConfig: map[string]string{"result_as_answer": "True"}, wantFires: true},
+	{name: "CREW-108 silent without result_as_answer", ruleID: "CREW-108", kind: models.KindCrewAITool, src: `
+def f(x: str) -> str:
+    """Doc."""
+    return x
+`, toolConfig: map[string]string{}, wantFires: false},
+
+	// ─── AutoGen tool rules (AG2-*) ─────────────────────────────────────────
+	{name: "AG2-007 fires on tool with no docstring", ruleID: "AG2-007", kind: models.KindAutoGenTool, src: `
+def search(q: str) -> str:
+    return q
+`, wantFires: true},
+	{name: "AG2-007 silent with docstring", ruleID: "AG2-007", kind: models.KindAutoGenTool, src: `
+def search(q: str) -> str:
+    """Search the web."""
+    return q
+`, wantFires: false},
+
+	{name: "AG2-008 fires on untyped params", ruleID: "AG2-008", kind: models.KindAutoGenTool, src: `
+def search(q):
+    """Search."""
+    return q
+`, wantFires: true},
+	{name: "AG2-008 silent with typed params", ruleID: "AG2-008", kind: models.KindAutoGenTool, src: `
+def search(q: str) -> str:
+    """Search."""
+    return q
+`, wantFires: false},
+	{name: "AG2-008 silent with no params", ruleID: "AG2-008", kind: models.KindAutoGenTool, src: `
+def now() -> str:
+    """No params, no problem."""
+    return "ok"
+`, wantFires: false},
+
+	{name: "AG2-009 fires on subprocess", ruleID: "AG2-009", kind: models.KindAutoGenTool, src: `
+def run(cmd: str) -> str:
+    """Run a command."""
+    import subprocess
+    return subprocess.run(cmd, shell=True)
+`, wantFires: true},
+	{name: "AG2-009 silent without shell", ruleID: "AG2-009", kind: models.KindAutoGenTool, src: `
+def run(cmd: str) -> str:
+    """Run."""
+    return cmd
+`, wantFires: false},
+
+	{name: "AG2-010 fires on eval", ruleID: "AG2-010", kind: models.KindAutoGenTool, src: `
+def calc(expr: str) -> str:
+    """Calculate."""
+    return eval(expr)
+`, wantFires: true},
+	{name: "AG2-010 silent without eval", ruleID: "AG2-010", kind: models.KindAutoGenTool, src: `
+def calc(expr: str) -> str:
+    """Calculate."""
+    return expr
+`, wantFires: false},
+
+	{name: "AG2-011 fires on dynamic URL", ruleID: "AG2-011", kind: models.KindAutoGenTool, src: `
+def fetch(url: str) -> str:
+    """Fetch a URL."""
+    import requests
+    return requests.get(url).text
+`, wantFires: true},
+	{name: "AG2-011 silent on literal URL", ruleID: "AG2-011", kind: models.KindAutoGenTool, src: `
+def fetch(q: str) -> str:
+    """Fetch."""
+    import requests
+    return requests.get("https://api.example.com/data").text
+`, wantFires: false},
+
+	{name: "AG2-012 fires on network call without timeout", ruleID: "AG2-012", kind: models.KindAutoGenTool, src: `
+def fetch(q: str) -> str:
+    """Fetch."""
+    import requests
+    return requests.get("https://api.example.com/data").text
+`, wantFires: true},
+	{name: "AG2-012 silent with timeout", ruleID: "AG2-012", kind: models.KindAutoGenTool, src: `
+def fetch(q: str) -> str:
+    """Fetch."""
+    import requests
+    return requests.get("https://api.example.com/data", timeout=10).text
+`, wantFires: false},
+
+	// ─── Pydantic AI tool rules (PYD-*) ─────────────────────────────────────
+	{name: "PYD-001 fires on tool with no docstring", ruleID: "PYD-001", kind: models.KindPydanticAITool, src: `
+def search(q: str) -> str:
+    return q
+`, wantFires: true},
+	{name: "PYD-001 silent with docstring", ruleID: "PYD-001", kind: models.KindPydanticAITool, src: `
+def search(q: str) -> str:
+    """Search the web."""
+    return q
+`, wantFires: false},
+
+	{name: "PYD-002 fires on untyped params", ruleID: "PYD-002", kind: models.KindPydanticAITool, src: `
+def search(q):
+    """Search."""
+    return q
+`, wantFires: true},
+	{name: "PYD-002 silent with typed params", ruleID: "PYD-002", kind: models.KindPydanticAITool, src: `
+def search(q: str) -> str:
+    """Search."""
+    return q
+`, wantFires: false},
+	{name: "PYD-002 silent with no params", ruleID: "PYD-002", kind: models.KindPydanticAITool, src: `
+def now() -> str:
+    """No params, no problem."""
+    return "ok"
+`, wantFires: false},
+
+	{name: "PYD-003 fires on subprocess", ruleID: "PYD-003", kind: models.KindPydanticAITool, src: `
+def run(cmd: str) -> str:
+    """Run a command."""
+    import subprocess
+    return subprocess.run(cmd, shell=True)
+`, wantFires: true},
+	{name: "PYD-003 silent without shell", ruleID: "PYD-003", kind: models.KindPydanticAITool, src: `
+def run(cmd: str) -> str:
+    """Run."""
+    return cmd
+`, wantFires: false},
+
+	{name: "PYD-004 fires on eval", ruleID: "PYD-004", kind: models.KindPydanticAITool, src: `
+def calc(expr: str) -> str:
+    """Calculate."""
+    return eval(expr)
+`, wantFires: true},
+	{name: "PYD-004 silent without eval", ruleID: "PYD-004", kind: models.KindPydanticAITool, src: `
+def calc(expr: str) -> str:
+    """Calculate."""
+    return expr
+`, wantFires: false},
+
+	{name: "PYD-005 fires on dynamic URL", ruleID: "PYD-005", kind: models.KindPydanticAITool, src: `
+def fetch(url: str) -> str:
+    """Fetch a URL."""
+    import requests
+    return requests.get(url).text
+`, wantFires: true},
+	{name: "PYD-005 silent on literal URL", ruleID: "PYD-005", kind: models.KindPydanticAITool, src: `
+def fetch(q: str) -> str:
+    """Fetch."""
+    import requests
+    return requests.get("https://api.example.com/data").text
+`, wantFires: false},
+
+	{name: "PYD-006 fires on network call without timeout", ruleID: "PYD-006", kind: models.KindPydanticAITool, src: `
+def fetch(q: str) -> str:
+    """Fetch."""
+    import requests
+    return requests.get("https://api.example.com/data").text
+`, wantFires: true},
+	{name: "PYD-006 silent with timeout", ruleID: "PYD-006", kind: models.KindPydanticAITool, src: `
+def fetch(q: str) -> str:
+    """Fetch."""
+    import requests
+    return requests.get("https://api.example.com/data", timeout=10).text
+`, wantFires: false},
+
+	{name: "PYD-007 fires on mutating tool without key", ruleID: "PYD-007", kind: models.KindPydanticAITool, src: `
+def create_order(customer_id: str, amount: float) -> dict:
+    """Create an order."""
+    return {"ok": True}
+`, wantFires: true},
+	{name: "PYD-007 silent with idempotency key", ruleID: "PYD-007", kind: models.KindPydanticAITool, src: `
+def create_order(customer_id: str, amount: float, idempotency_key: str) -> dict:
+    """Create an order."""
+    return {"ok": True}
+`, wantFires: false},
+
 	// ─── CSDK-001 missing docstring ─────────────────────────────────────────
 	{name: "CSDK-001 fires on missing docstring", ruleID: "CSDK-001", kind: models.KindClaudeSDKTool, src: `
 def fetch_data(x: str) -> dict:
@@ -1454,6 +1776,54 @@ var policyRepoRuleCases = []policyRepoCase{
 		},
 		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKLangChain}},
 		false},
+	// ─── CrewAI repo rule (CREW-201) ─────────────────────────────────────────
+	{"CREW-201 fires when CrewAI code has no agent-guidance doc", "CREW-201",
+		models.RepoProfile{Languages: []models.Language{models.LanguagePython}},
+		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKCrewAI}},
+		true},
+	{"CREW-201 silent when AGENTS.md present", "CREW-201",
+		models.RepoProfile{
+			Languages: []models.Language{models.LanguagePython},
+			Manifest:  models.ScanManifest{Components: []models.AgentComponent{{Kind: models.ComponentAgentsMd}}},
+		},
+		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKCrewAI}},
+		false},
+	// ─── AutoGen repo rule (AG2-201) ─────────────────────────────────────────
+	{"AG2-201 fires when AutoGen code has no agent-guidance doc", "AG2-201",
+		models.RepoProfile{Languages: []models.Language{models.LanguagePython}},
+		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKAutoGen}},
+		true},
+	{"AG2-201 silent when AGENTS.md present", "AG2-201",
+		models.RepoProfile{
+			Languages: []models.Language{models.LanguagePython},
+			Manifest:  models.ScanManifest{Components: []models.AgentComponent{{Kind: models.ComponentAgentsMd}}},
+		},
+		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKAutoGen}},
+		false},
+	// ─── Pydantic AI repo rule (PYD-201) ─────────────────────────────────────
+	{"PYD-201 fires when Pydantic AI code has no agent-guidance doc", "PYD-201",
+		models.RepoProfile{Languages: []models.Language{models.LanguagePython}},
+		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKPydanticAI}},
+		true},
+	{"PYD-201 silent when AGENTS.md present", "PYD-201",
+		models.RepoProfile{
+			Languages: []models.Language{models.LanguagePython},
+			Manifest:  models.ScanManifest{Components: []models.AgentComponent{{Kind: models.ComponentAgentsMd}}},
+		},
+		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKPydanticAI}},
+		false},
+	// ─── Vercel AI repo rule (VAI-012) ───────────────────────────────────────
+	{"VAI-012 fires when Vercel AI code has no agent-guidance doc", "VAI-012",
+		models.RepoProfile{Languages: []models.Language{models.LanguageTypeScript}},
+		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKVercelAI}},
+		true},
+	{"VAI-012 silent when CLAUDE.md present", "VAI-012",
+		models.RepoProfile{
+			Languages: []models.Language{models.LanguageTypeScript},
+			Manifest:  models.ScanManifest{Components: []models.AgentComponent{{Kind: models.ComponentClaudeMd}}},
+		},
+		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKVercelAI}},
+		false},
 	// ─── OAI-201 default tracing (repo-scoped) ───────────────────────────────
 	{"OAI-201 fires when using default tracing", "OAI-201",
 		models.RepoProfile{Languages: []models.Language{models.LanguagePython}},
@@ -1665,6 +2035,187 @@ var policyAgentRuleCases = []policyAgentCase{
 				"maxIterations": {Value: &models.Expr{Kind: models.ExprLiteralInt, Text: "5"}},
 			}}},
 		models.RepoInventory{}, false},
+
+	// ─── CrewAI agent rules (CREW-*) ────────────────────────────────────────
+	{"CREW-101 fires when allow_code_execution=True", "CREW-101",
+		models.AgentDef{
+			SDK: models.SDKCrewAI, Class: "Agent", Language: models.LanguagePython,
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"allow_code_execution": {Value: &models.Expr{Kind: models.ExprLiteralBool, Text: "True"}},
+			}}},
+		models.RepoInventory{}, true},
+	{"CREW-101 silent when allow_code_execution=False", "CREW-101",
+		models.AgentDef{
+			SDK: models.SDKCrewAI, Class: "Agent", Language: models.LanguagePython,
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"allow_code_execution": {Value: &models.Expr{Kind: models.ExprLiteralBool, Text: "False"}},
+			}}},
+		models.RepoInventory{}, false},
+
+	{"CREW-102 fires when code_execution_mode=unsafe", "CREW-102",
+		models.AgentDef{
+			SDK: models.SDKCrewAI, Class: "Agent", Language: models.LanguagePython,
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"code_execution_mode": {Value: &models.Expr{Kind: models.ExprLiteralString, Text: `"unsafe"`}},
+			}}},
+		models.RepoInventory{}, true},
+	{"CREW-102 silent when code_execution_mode=safe (default)", "CREW-102",
+		models.AgentDef{
+			SDK: models.SDKCrewAI, Class: "Agent", Language: models.LanguagePython,
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"code_execution_mode": {Value: &models.Expr{Kind: models.ExprLiteralString, Text: `"safe"`}},
+			}}},
+		models.RepoInventory{}, false},
+
+	{"CREW-103 fires when agent wires CodeInterpreterTool", "CREW-103",
+		models.AgentDef{
+			SDK: models.SDKCrewAI, Class: "Agent", Language: models.LanguagePython,
+			HostedToolRefs: []models.HostedToolRef{{Class: "CodeInterpreterTool"}},
+		},
+		models.RepoInventory{}, true},
+	{"CREW-103 silent without the code interpreter", "CREW-103",
+		models.AgentDef{SDK: models.SDKCrewAI, Class: "Agent", Language: models.LanguagePython},
+		models.RepoInventory{}, false},
+
+	{"CREW-104 fires when allow_delegation=True", "CREW-104",
+		models.AgentDef{
+			SDK: models.SDKCrewAI, Class: "Agent", Language: models.LanguagePython,
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"allow_delegation": {Value: &models.Expr{Kind: models.ExprLiteralBool, Text: "True"}},
+			}}},
+		models.RepoInventory{}, true},
+	{"CREW-104 silent when allow_delegation=False", "CREW-104",
+		models.AgentDef{
+			SDK: models.SDKCrewAI, Class: "Agent", Language: models.LanguagePython,
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"allow_delegation": {Value: &models.Expr{Kind: models.ExprLiteralBool, Text: "False"}},
+			}}},
+		models.RepoInventory{}, false},
+
+	{"CREW-106 fires when FileReadTool has no file_path", "CREW-106",
+		models.AgentDef{
+			SDK: models.SDKCrewAI, Class: "Agent", Language: models.LanguagePython,
+			HostedToolRefs: []models.HostedToolRef{
+				{Class: "FileReadTool", Resolved: &models.HostedToolDef{Class: "FileReadTool"}},
+			}},
+		models.RepoInventory{}, true},
+	{"CREW-106 silent when FileReadTool pins file_path", "CREW-106",
+		models.AgentDef{
+			SDK: models.SDKCrewAI, Class: "Agent", Language: models.LanguagePython,
+			HostedToolRefs: []models.HostedToolRef{
+				{Class: "FileReadTool", Resolved: &models.HostedToolDef{Class: "FileReadTool",
+					Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+						"file_path": {Value: &models.Expr{Kind: models.ExprLiteralString, Text: `"data.txt"`}},
+					}}}},
+			}},
+		models.RepoInventory{}, false},
+
+	{"CREW-107 fires when agent wires ScrapeWebsiteTool", "CREW-107",
+		models.AgentDef{
+			SDK: models.SDKCrewAI, Class: "Agent", Language: models.LanguagePython,
+			HostedToolRefs: []models.HostedToolRef{{Class: "ScrapeWebsiteTool"}},
+		},
+		models.RepoInventory{}, true},
+	{"CREW-107 silent without a URL-fetching builtin", "CREW-107",
+		models.AgentDef{SDK: models.SDKCrewAI, Class: "Agent", Language: models.LanguagePython},
+		models.RepoInventory{}, false},
+
+	// ─── AutoGen agent rules (AG2-*) ────────────────────────────────────────
+	// AG2-001: code_execution_config={"use_docker": False} — nested kwarg path.
+	{"AG2-001 fires when use_docker=False", "AG2-001",
+		models.AgentDef{
+			SDK: models.SDKAutoGen, Class: "UserProxyAgent", Language: models.LanguagePython,
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"code_execution_config": {Children: map[string]*models.KwargTree{
+					"use_docker": {Value: &models.Expr{Kind: models.ExprLiteralBool, Text: "False"}},
+				}},
+			}}},
+		models.RepoInventory{}, true},
+	{"AG2-001 silent when use_docker=True", "AG2-001",
+		models.AgentDef{
+			SDK: models.SDKAutoGen, Class: "UserProxyAgent", Language: models.LanguagePython,
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"code_execution_config": {Children: map[string]*models.KwargTree{
+					"use_docker": {Value: &models.Expr{Kind: models.ExprLiteralBool, Text: "True"}},
+				}},
+			}}},
+		models.RepoInventory{}, false},
+
+	// AG2-002: human_input_mode=NEVER AND code_execution_config present.
+	{"AG2-002 fires when human_input_mode=NEVER with code exec", "AG2-002",
+		models.AgentDef{
+			SDK: models.SDKAutoGen, Class: "UserProxyAgent", Language: models.LanguagePython,
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"human_input_mode": {Value: &models.Expr{Kind: models.ExprLiteralString, Text: `"NEVER"`}},
+				"code_execution_config": {Children: map[string]*models.KwargTree{
+					"use_docker": {Value: &models.Expr{Kind: models.ExprLiteralBool, Text: "True"}},
+				}},
+			}}},
+		models.RepoInventory{}, true},
+	{"AG2-002 silent when human_input_mode=ALWAYS", "AG2-002",
+		models.AgentDef{
+			SDK: models.SDKAutoGen, Class: "UserProxyAgent", Language: models.LanguagePython,
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"human_input_mode": {Value: &models.Expr{Kind: models.ExprLiteralString, Text: `"ALWAYS"`}},
+				"code_execution_config": {Children: map[string]*models.KwargTree{
+					"use_docker": {Value: &models.Expr{Kind: models.ExprLiteralBool, Text: "True"}},
+				}},
+			}}},
+		models.RepoInventory{}, false},
+
+	// AG2-004: GroupChatManager / GroupChat with no max_round.
+	{"AG2-004 fires when GroupChatManager has no max_round", "AG2-004",
+		models.AgentDef{
+			SDK: models.SDKAutoGen, Class: "GroupChatManager", Language: models.LanguagePython,
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{}}},
+		models.RepoInventory{}, true},
+	{"AG2-004 silent when max_round is set", "AG2-004",
+		models.AgentDef{
+			SDK: models.SDKAutoGen, Class: "GroupChat", Language: models.LanguagePython,
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"max_round": {Value: &models.Expr{Kind: models.ExprLiteralInt, Text: "12"}},
+			}}},
+		models.RepoInventory{}, false},
+
+	// AG2-005: AssistantAgent with code_execution_config present.
+	{"AG2-005 fires when AssistantAgent enables code exec", "AG2-005",
+		models.AgentDef{
+			SDK: models.SDKAutoGen, Class: "AssistantAgent", Language: models.LanguagePython,
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"code_execution_config": {Children: map[string]*models.KwargTree{
+					"use_docker": {Value: &models.Expr{Kind: models.ExprLiteralBool, Text: "True"}},
+				}},
+			}}},
+		models.RepoInventory{}, true},
+	{"AG2-005 silent when AssistantAgent has no code exec", "AG2-005",
+		models.AgentDef{
+			SDK: models.SDKAutoGen, Class: "AssistantAgent", Language: models.LanguagePython,
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"llm_config": {Value: &models.Expr{Kind: models.ExprNameRef, Text: "llm_config"}},
+			}}},
+		models.RepoInventory{}, false},
+
+	// AG2-006: code_execution_config present AND no max_consecutive_auto_reply.
+	{"AG2-006 fires when code exec has no auto-reply cap", "AG2-006",
+		models.AgentDef{
+			SDK: models.SDKAutoGen, Class: "UserProxyAgent", Language: models.LanguagePython,
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"code_execution_config": {Children: map[string]*models.KwargTree{
+					"use_docker": {Value: &models.Expr{Kind: models.ExprLiteralBool, Text: "True"}},
+				}},
+			}}},
+		models.RepoInventory{}, true},
+	{"AG2-006 silent when max_consecutive_auto_reply is set", "AG2-006",
+		models.AgentDef{
+			SDK: models.SDKAutoGen, Class: "UserProxyAgent", Language: models.LanguagePython,
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"code_execution_config": {Children: map[string]*models.KwargTree{
+					"use_docker": {Value: &models.Expr{Kind: models.ExprLiteralBool, Text: "True"}},
+				}},
+				"max_consecutive_auto_reply": {Value: &models.Expr{Kind: models.ExprLiteralInt, Text: "3"}},
+			}}},
+		models.RepoInventory{}, false},
+
 	// ─── OAI-101 no input_guardrails + shell tools ────────────────────────────
 	{"OAI-101 fires when no guardrails and has shell tool", "OAI-101",
 		models.AgentDef{
@@ -2499,6 +3050,111 @@ var policyAgentRuleCases = []policyAgentCase{
 	{"ADK-109 silent when TS LlmAgent has description", "ADK-109",
 		parseTSADKAgentInline("import { LlmAgent } from \"@google/adk\";\n" +
 			"const a = new LlmAgent({ name: \"x\", model: \"gemini-2.0-flash\", description: \"routes billing questions\" });\n"),
+		models.RepoInventory{},
+		false},
+
+	// ─── Pydantic AI agent rules (PYD-*) ─────────────────────────────────────
+	// PYD-101: output_type omitted (free-form str) fires; output_type=str fires
+	// explicitly; output_type set to a Pydantic model (Result) is validated → silent.
+	{"PYD-101 fires when output_type omitted", "PYD-101",
+		models.AgentDef{SDK: models.SDKPydanticAI, Class: "PydanticAgent", Language: models.LanguagePython},
+		models.RepoInventory{}, true},
+	{"PYD-101 fires when output_type=str", "PYD-101",
+		models.AgentDef{
+			SDK: models.SDKPydanticAI, Class: "PydanticAgent", Language: models.LanguagePython,
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"output_type": {Value: &models.Expr{Kind: models.ExprNameRef, Text: "str"}},
+			}}},
+		models.RepoInventory{}, true},
+	{"PYD-101 silent when output_type is a validated model", "PYD-101",
+		models.AgentDef{
+			SDK: models.SDKPydanticAI, Class: "PydanticAgent", Language: models.LanguagePython,
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"output_type": {Value: &models.Expr{Kind: models.ExprNameRef, Text: "Result"}},
+			}}},
+		models.RepoInventory{}, false},
+
+	{"PYD-102 fires when agent wires CodeExecutionTool", "PYD-102",
+		models.AgentDef{
+			SDK: models.SDKPydanticAI, Class: "PydanticAgent", Language: models.LanguagePython,
+			HostedToolRefs: []models.HostedToolRef{{Class: "CodeExecutionTool"}},
+		},
+		models.RepoInventory{}, true},
+	{"PYD-102 silent without the code-execution tool", "PYD-102",
+		models.AgentDef{SDK: models.SDKPydanticAI, Class: "PydanticAgent", Language: models.LanguagePython},
+		models.RepoInventory{}, false},
+
+	{"PYD-103 fires when agent wires WebFetchTool", "PYD-103",
+		models.AgentDef{
+			SDK: models.SDKPydanticAI, Class: "PydanticAgent", Language: models.LanguagePython,
+			HostedToolRefs: []models.HostedToolRef{{Class: "WebFetchTool"}},
+		},
+		models.RepoInventory{}, true},
+	{"PYD-103 silent without a URL-fetching native tool", "PYD-103",
+		models.AgentDef{SDK: models.SDKPydanticAI, Class: "PydanticAgent", Language: models.LanguagePython},
+		models.RepoInventory{}, false},
+
+	{"PYD-105 fires when end_strategy=exhaustive", "PYD-105",
+		models.AgentDef{
+			SDK: models.SDKPydanticAI, Class: "PydanticAgent", Language: models.LanguagePython,
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"end_strategy": {Value: &models.Expr{Kind: models.ExprLiteralString, Text: `"exhaustive"`}},
+			}}},
+		models.RepoInventory{}, true},
+	{"PYD-105 silent when end_strategy=early (default)", "PYD-105",
+		models.AgentDef{
+			SDK: models.SDKPydanticAI, Class: "PydanticAgent", Language: models.LanguagePython,
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"end_strategy": {Value: &models.Expr{Kind: models.ExprLiteralString, Text: `"early"`}},
+			}}},
+		models.RepoInventory{}, false},
+
+	// ─── Vercel AI SDK agent rules (VAI-*) ────────────────────────────────────
+	// The object-record tools walk: a provider hosted-tool call
+	// (anthropic.tools.bash_20250124()) becomes a HostedToolRef whose canonical
+	// Class (date suffix stripped) is "anthropic.tools.bash".
+	{"VAI-006 fires when agent wires anthropic bash tool", "VAI-006",
+		parseTSVercelAgentInline("import { generateText } from \"ai\";\n" +
+			"import { anthropic } from \"@ai-sdk/anthropic\";\n" +
+			"const r = await generateText({ model: anthropic(\"claude-sonnet-4\"), tools: { bash: anthropic.tools.bash_20250124() } });\n"),
+		models.RepoInventory{},
+		true},
+	{"VAI-006 fires when ToolLoopAgent wires openai codeInterpreter", "VAI-006",
+		parseTSVercelAgentInline("import { Experimental_Agent as Agent } from \"ai\";\n" +
+			"import { openai } from \"@ai-sdk/openai\";\n" +
+			"const a = new Agent({ model: openai(\"gpt-5\"), tools: { ci: openai.tools.codeInterpreter() } });\n"),
+		models.RepoInventory{},
+		true},
+	{"VAI-006 silent when agent wires only a named user tool", "VAI-006",
+		parseTSVercelAgentInline("import { generateText } from \"ai\";\n" +
+			"import { openai } from \"@ai-sdk/openai\";\n" +
+			"const r = await generateText({ model: openai(\"gpt-5\"), tools: { weather: weatherTool } });\n"),
+		models.RepoInventory{},
+		false},
+
+	{"VAI-007 fires when tool loop has no bound", "VAI-007",
+		parseTSVercelAgentInline("import { generateText } from \"ai\";\n" +
+			"import { openai } from \"@ai-sdk/openai\";\n" +
+			"const r = await generateText({ model: openai(\"gpt-5\"), tools: { weather: weatherTool } });\n"),
+		models.RepoInventory{},
+		true},
+	{"VAI-007 silent when maxSteps set", "VAI-007",
+		parseTSVercelAgentInline("import { generateText } from \"ai\";\n" +
+			"import { openai } from \"@ai-sdk/openai\";\n" +
+			"const r = await generateText({ model: openai(\"gpt-5\"), maxSteps: 5, tools: { weather: weatherTool } });\n"),
+		models.RepoInventory{},
+		false},
+
+	{"VAI-008 fires when toolChoice required with dangerous tool", "VAI-008",
+		parseTSVercelAgentInline("import { generateText } from \"ai\";\n" +
+			"import { anthropic } from \"@ai-sdk/anthropic\";\n" +
+			"const r = await generateText({ model: anthropic(\"claude-sonnet-4\"), toolChoice: \"required\", tools: { bash: anthropic.tools.bash_20250124() } });\n"),
+		models.RepoInventory{},
+		true},
+	{"VAI-008 silent when toolChoice auto", "VAI-008",
+		parseTSVercelAgentInline("import { generateText } from \"ai\";\n" +
+			"import { anthropic } from \"@ai-sdk/anthropic\";\n" +
+			"const r = await generateText({ model: anthropic(\"claude-sonnet-4\"), toolChoice: \"auto\", tools: { bash: anthropic.tools.bash_20250124() } });\n"),
 		models.RepoInventory{},
 		false},
 }
