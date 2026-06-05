@@ -7,7 +7,8 @@ description: >-
   committing. Triggers on adding or editing an agent definition, a tool /
   @function_tool / @tool / tool() handler, a subagent markdown file, an MCP
   server registration, agent guardrails, or .claude/settings.json permissions.
-  Runs the local `trustabl scan` CLI and guides remediation of the findings.
+  Runs Trustabl's `scan` tool via the plugin's bundled MCP server and guides
+  remediation of the findings.
 ---
 
 # Self-audit agent code with Trustabl
@@ -44,66 +45,44 @@ or agents are extracted from them.
 
 ## How to run the scan
 
-> **Which `trustabl` to run.** This plugin auto-installs a pinned CLI build at
-> session start. Resolve the binary in this order and use the first that works:
-> (1) `"$TRUSTABL_BIN"` when that environment variable is set; (2) the
-> plugin-managed path the Trustabl `SessionStart` check reported this session
-> (under the plugin data dir); (3) `trustabl` on `PATH`. In the commands below,
-> `trustabl` stands for that resolved binary — e.g. run `"$TRUSTABL_BIN" scan .`
-> when `$TRUSTABL_BIN` is set.
+Scanning runs through this plugin's **bundled MCP server** (`trustabl`), which
+exposes a `scan` tool. Call the tool **`mcp__trustabl__scan`** with the path to
+the repo you just edited:
 
-From the repo you just edited (or pass its path), run:
+- `mcp__trustabl__scan` with `{"path": "."}` — scan the current repo.
+- Optionally `{"path": ".", "rules_ref": "<branch-or-tag>"}` to pin the
+  detection-rules ref.
 
-```bash
-trustabl scan .
-```
+The tool returns the full scan result as JSON — the same `ScanResult` shape as
+the CLI's `--format json` output, with a `findings` array to reason over. There
+is no exit code: decide what is actionable by reading finding **severities**
+(`medium` and above are commit-blockers; see "How to read findings"). The server
+fetches and caches the `trustabl-rules` pack itself, falling back to its local
+cache when offline.
 
-That prints a human-readable summary to stdout and live progress to stderr. The
-process exit code is the gate:
-
-- `0` no findings of medium severity or higher (clean enough to commit).
-- `1` at least one finding of medium severity or higher (fix before committing).
-- `2` scanner or I/O error, or no usable rules available.
-
-Useful flags (all verified against `trustabl scan --help`):
+**CLI fallback.** If the `mcp__trustabl__scan` tool is not available this session
+(for example the MCP server failed to start), run the CLI directly with the
+resolved binary — `"$TRUSTABL_BIN"` when that variable is set, else `trustabl`
+on `PATH`:
 
 ```bash
-# Machine-readable output to reason over programmatically
-trustabl scan . --format json
-trustabl scan . --format sarif > trustabl.sarif
-
-# Tighten the gate: exit 1 on any finding of low severity or higher.
-# info / META signals never fail the build, even under --strict.
-trustabl scan . --strict
-
-# Narrow to the SDK you just touched (faster, focused):
-#   claude_sdk | openai_sdk | google_adk | openshell
-trustabl scan . --detectors claude_sdk
-
-# Disable progress animation / color (useful in captured logs)
-trustabl scan . --no-progress --no-color
+"$TRUSTABL_BIN" scan . --format json          # JSON, same shape the tool returns
+"$TRUSTABL_BIN" scan . --strict               # exit 1 on low+ findings (info/META never fail)
+"$TRUSTABL_BIN" scan . --detectors claude_sdk # narrow to one SDK: claude_sdk|openai_sdk|google_adk|openshell
 ```
 
-When you want findings you can parse and act on precisely, prefer
-`--format json` and read the `findings` array; the human format is for the
-developer reading along.
-
-Rules are not bundled in the binary. They are fetched from the public
-`trustabl-rules` repo on first scan and cached locally, then refreshed on later
-scans (falling back to the cache when offline). If a scan exits `2` saying no
-usable rules were found, pre-populate the cache once:
-
-```bash
-trustabl rules pull
-```
+In the CLI fallback the exit code is the gate: `0` = no findings of medium
+severity or higher, `1` = at least one, `2` = scanner/I-O error or no usable
+rules (run `"$TRUSTABL_BIN" rules pull` once to pre-populate the rules cache).
 
 ## How to read findings
 
 Each finding carries:
 
 - **severity** (`info` / `low` / `medium` / `high` / `critical`) how bad it is.
-  Only `medium` and above drive the non-zero exit code (and `low` only under
-  `--strict`).
+  Treat `medium` and above as commit-blockers; `info` / `META` never block. (In
+  the CLI fallback these map to the exit code: `medium`+ → exit 1, or `low`+
+  under `--strict`.)
 - **confidence** a heuristic score for how sure the rule is. It is not
   LLM-judged and not yet calibrated, so treat findings as signal to investigate,
   not ground truth. Look at higher-confidence findings first.
@@ -128,31 +107,33 @@ whole.
 
 ## Remediation loop
 
-1. Run `trustabl scan .` (add `--format json` when you want to act on findings
-   precisely).
+1. Call `mcp__trustabl__scan` with `{"path": "."}` and read the `findings` array.
 2. For each finding of `medium` or higher, read its `explanation` and
    `suggested_fix` and apply the fix to the code (Trustabl will not edit files
    for you).
-3. Re-run the same scan and confirm the finding is gone and the exit code
-   dropped to `0`.
-4. Repeat until the scan is clean (or only `info` / `META` signals remain). For
-   a stricter bar before committing, gate on `trustabl scan . --strict`.
+3. Call the scan tool again and confirm the finding is gone from `findings`.
+4. Repeat until only `info` / `META` signals remain. For a stricter bar before
+   committing, treat `low` findings as blockers too (or use the CLI fallback's
+   `--strict`).
 
 ## Installing the binary
 
-Normally you do not need to. At session start this plugin runs
-`scripts/check-trustabl.sh`, which downloads the pinned CLI version, verifies it
-against the release `checksums.txt`, installs it into the plugin's private data
-directory, and exposes it as `$TRUSTABL_BIN` (see "Which `trustabl` to run"
-above). This installs only into the plugin's own data dir — it never touches the
-user's system or their own `trustabl`, and is reversible.
+Normally you do not need to. The plugin installs the pinned CLI itself: the
+bundled MCP launcher (`scripts/trustabl-mcp.sh`) and the `SessionStart` hook
+(`scripts/check-trustabl.sh`) share install logic (`scripts/lib-trustabl.sh`)
+that downloads the pinned version, verifies it against the release
+`checksums.txt`, and installs it into the plugin's private data directory. That
+one binary both backs the `mcp__trustabl__scan` server and is exposed as
+`$TRUSTABL_BIN` for direct CLI use. It installs only into the plugin's own data
+dir — never the user's system or their own `trustabl` — and is reversible.
 
 Auto-install is skipped only when it cannot run: offline on the very first
 session, an unsupported platform (e.g. native Windows without bash), or missing
-`curl` / `tar`. The check then falls back to whatever `trustabl` is on `PATH` and
-prints a hint. If you see a `[trustabl] CLI not found …` notice — or no binary
-resolves at all — offer to install it system-wide, **asking the user before you
-run any install command; never install silently**:
+`curl` / `tar`. It then falls back to whatever `trustabl` is on `PATH`. If you
+see a `[trustabl] could not provide the trustabl CLI …` notice, or the
+`mcp__trustabl__scan` tool is missing and no binary resolves, offer to install it
+system-wide, **asking the user before you run any install command; never install
+silently**:
 
 ```bash
 # macOS / Linux (Homebrew)

@@ -503,27 +503,33 @@ Trustabl ships a Claude Code plugin under [`.claude-plugin/`](.claude-plugin/)
 with two skills that form a scan-and-fix loop:
 
 - **[`trustabl-scan`](skills/trustabl-scan/)** — triggers right after agent,
-  tool, subagent, or MCP-server code is written or changed and runs
-  `trustabl scan` to self-audit it before committing, upstream of CI.
+  tool, subagent, or MCP-server code is written or changed and calls Trustabl's
+  `scan` tool (the bundled MCP server, `mcp__trustabl__scan`) to self-audit it
+  before committing, upstream of CI.
 - **[`trustabl-enrich`](skills/trustabl-enrich/)** — takes the output of a
   `trustabl scan` run (JSON, SARIF, or pasted terminal text) and applies each
   finding as a targeted code edit, guided entirely by the scan's own
   `explanation` and `suggested_fix` fields. It does not re-run the scanner; use
   `trustabl-scan` first, then invoke `trustabl-enrich` with the results.
 
-Both skills shell out to the same `trustabl` binary. A `SessionStart` hook
+Scanning runs through a **bundled MCP server**: [`.mcp.json`](.mcp.json)
+registers a `trustabl` server whose command is a launcher
+([`scripts/trustabl-mcp.sh`](scripts/trustabl-mcp.sh)) exposing the
+`mcp__trustabl__scan` tool. The launcher and a `SessionStart` hook
 ([`hooks/hooks.json`](hooks/hooks.json) →
-[`scripts/check-trustabl.sh`](scripts/check-trustabl.sh)) keeps that binary
-current automatically: at session start it downloads the pinned CLI version from
-GitHub Releases, verifies it against the release `checksums.txt`, installs it
-into the plugin's private data directory (`$CLAUDE_PLUGIN_DATA` — no `sudo`, and
-nothing outside that dir is touched), and exposes it to the skills as
-`$TRUSTABL_BIN`. The install is idempotent: it re-runs only when the pin changes
-or the copy is missing/corrupt. When auto-install cannot run (offline first
-session, an unsupported platform, or missing `curl`/`tar`) it falls back to
-whatever `trustabl` is on `PATH` and prints an install hint — the system-wide
-install then stays a consented step inside `trustabl-scan`. Neither skill runs a
-network service or modifies files outside the scan target.
+[`scripts/check-trustabl.sh`](scripts/check-trustabl.sh)) share install logic
+([`scripts/lib-trustabl.sh`](scripts/lib-trustabl.sh)) that downloads the pinned
+CLI version from GitHub Releases, verifies it against the release
+`checksums.txt`, and installs it into the plugin's private data directory
+(`$CLAUDE_PLUGIN_DATA` — no `sudo`, nothing outside that dir touched). The
+install is idempotent (re-runs only when the pin changes or the copy is
+missing/corrupt), and the launcher installs synchronously before starting the
+server, so there is no first-session race. The same binary is exposed as
+`$TRUSTABL_BIN` for the enrich skill's direct-CLI path. When auto-install cannot
+run (offline first session, an unsupported platform, or missing `curl`/`tar`) it
+falls back to whatever `trustabl` is on `PATH`; the system-wide install stays a
+consented step inside `trustabl-scan`. The plugin runs no network service of its
+own and modifies nothing outside the scan target.
 
 ### "no schema-compatible rules available"
 
