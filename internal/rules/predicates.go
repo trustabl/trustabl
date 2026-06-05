@@ -237,6 +237,21 @@ func PredHasDynamicURLCall(t models.ToolDef, pf analysis.ParsedFile) bool {
 	return found
 }
 
+// PredHasHTTPCallWithoutTimeout reports whether a TypeScript tool handler makes
+// an HTTP call (fetch / axios / got / undici) with no timeout bound — its
+// options object carries no `signal`, `timeout`, or `abortSignal` key. It is
+// TS-ONLY: the signal is the discovery-computed `http_no_timeout` fact set by
+// tsHandlerFacts. Python tools express the same gap via `call_without_kwarg`
+// with `timeout` (OAI-005 / OAI-011), so the non-TS branch returns false rather
+// than duplicating that logic — no Python rule uses this predicate. This is the
+// first predicate with no Python AST path, by design.
+func PredHasHTTPCallWithoutTimeout(t models.ToolDef) bool {
+	if t.Language != models.LanguageTypeScript {
+		return false
+	}
+	return t.Facts["http_no_timeout"] == "true"
+}
+
 // ─── string-list predicates ───────────────────────────────────────────────────
 
 func PredNameIn(names []string, t models.ToolDef) bool {

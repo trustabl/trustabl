@@ -94,12 +94,19 @@ currently `https://github.com/trustabl/trustabl-rules`; the engine embeds
 none — see `internal/rulesource/`) and hands them to `scanner.Run` as an
 `fs.FS`. The
 resolution path fetches the configured ref, caches the clone under
-`os.UserCacheDir()/trustabl/rules/<sha>/`, falls back to the cache when the
-network is unreachable, and gates the pack's `manifest.yaml`
-`schema_version` against the engine's `rules.SupportedSchemaVersion`. No
-usable rules (none cached and none fetchable, or none compatible) is a
-hard exit 2 — the engine never runs rule-less. The resolved rules SHA is
-recorded on `ScanResult` and folded into `ScanID`.
+`os.UserCacheDir()/trustabl/rules/<sha>/`, and falls back to the cache when
+the network is unreachable. Rule loading is **forward-compatible**: a pack
+whose `manifest.yaml` `schema_version` exceeds the engine's
+`rules.SupportedSchemaVersion` is loaded leniently rather than refused — a rule
+referencing a predicate this build lacks is skipped (recorded on
+`ScanResult.RulesSkipped` and warned on stderr) and the scan runs the rest. A
+hard exit 2 happens only when *nothing* is usable: no pack cached or fetchable
+(`ErrNoRules`), an unreadable manifest (`ErrNoCompatibleRules`), a genuinely
+empty pack (`ErrNoRulesInPack`), or one whose every rule is forward-incompatible
+(`ErrAllRulesIncompatible`). The engine never runs rule-less. The resolved rules
+SHA is recorded on `ScanResult` and folded into `ScanID` (with the engine's
+`SupportedSchemaVersion`). See `internal/rules/schema_version.go` for the
+bump/rename discipline this enables.
 
 ### Step 1 — Recon (cheap, no AST)
 
@@ -335,8 +342,15 @@ The rule-authoring contract (required fields, ID conventions, per-scope
 [`testdata/rules-fixture/CLAUDE.md`](testdata/rules-fixture/CLAUDE.md) and the
 mirror copy in the rules repo. Schema changes (a new predicate or match field)
 are **engine-repo** changes (schema.go + predicates.go + evaluator.go +
-schema.yaml in one commit) and require bumping `manifest.yaml`'s
-`schema_version` in both the fixture and the rules repo.
+schema.yaml in one commit) and bump `SupportedSchemaVersion` + `manifest.yaml`'s
+`schema_version` in both the fixture and the rules repo. With forward-compatible
+loading that bump *advertises* this build's support level (and drives the "rules
+newer than this build" warning) — it is **not** a fleet-wide gate: an older
+binary loads a newer pack leniently, skipping only the rules it cannot evaluate.
+Make **breaking** changes by *renaming* a predicate, never by silently
+redefining one — an old binary then skips the unknown-key rule rather than
+mis-evaluating it. See
+[`internal/rules/schema_version.go`](internal/rules/schema_version.go).
 
 > **Future direction (not yet done):** the duplication between the fixture and
 > the live rules repo is a known cost. The intended end state points the test

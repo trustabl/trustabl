@@ -41,26 +41,13 @@ func TestSchemaYAML_DocumentsEveryPredicate(t *testing.T) {
 // the per-rule coverage guard in policies_test.go — any predicate used by a
 // real rule with a fire case must dispatch or the fire case fails.
 
-// combinatorAndAlways are the scope-agnostic MatchExpr fields that are
-// intentionally absent from both predicatesByScope and setPredicateNames.
-var combinatorAndAlways = map[string]bool{
-	"all": true, "any": true, "not": true, "always": true,
-}
-
 // reflectedPredicateNames returns the YAML name of every MatchExpr field that
-// is a predicate (i.e. not a combinator or `always`).
+// is a predicate (i.e. not a combinator or `always`). It delegates to the
+// non-test KnownPredicateKeys so the loader's forward-compatibility check and
+// these drift tests share one source of truth for the predicate-name set.
 func reflectedPredicateNames(t *testing.T) map[string]bool {
 	t.Helper()
-	names := map[string]bool{}
-	rt := reflect.TypeOf(MatchExpr{})
-	for i := 0; i < rt.NumField(); i++ {
-		name := strings.Split(rt.Field(i).Tag.Get("yaml"), ",")[0]
-		if name == "" || name == "-" || combinatorAndAlways[name] {
-			continue
-		}
-		names[name] = true
-	}
-	return names
+	return KnownPredicateKeys()
 }
 
 func TestPredicatesByScope_MirrorsStruct(t *testing.T) {
@@ -97,7 +84,7 @@ func TestSetPredicateNames_MirrorsStruct(t *testing.T) {
 	rt := rv.Type()
 	for i := 0; i < rt.NumField(); i++ {
 		name := strings.Split(rt.Field(i).Tag.Get("yaml"), ",")[0]
-		if name == "" || name == "-" || combinatorAndAlways[name] {
+		if name == "" || name == "-" || combinatorsAndAlways[name] {
 			continue
 		}
 		f := rv.Field(i)

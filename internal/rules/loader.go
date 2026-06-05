@@ -15,12 +15,35 @@ import (
 
 // Load walks fsys recursively, decodes every .yaml file, validates it, and
 // returns the collected policies. All errors are batched (not fail-fast) so a
-// contributor sees every problem in one run.
+// contributor sees every problem in one run. This is the STRICT path
+// (KnownFields(true)): an unknown YAML key fails the load, so authoring typos
+// and bad rules are caught. Used by tests/CI and any caller validating a pack
+// authored against THIS engine build.
 //
 // Recursive walk supports the by-category directory layout
 // (e.g. policies/claude_sdk/*.yaml, policies/openshell/*.yaml). The flat
 // layout still works — fs.WalkDir at "." is a strict superset of fs.Glob.
 func Load(fsys fs.FS) ([]PolicyFile, error) {
+	policies, _, err := loadPolicies(fsys, false)
+	return policies, err
+}
+
+// LoadLenient is the forward-compatible runtime path. It behaves like Load but
+// tolerates a rules pack from a NEWER schema than this build: a rule whose
+// match references a predicate key this engine does not understand is dropped
+// whole (its ID collected into the returned skipped slice) instead of failing
+// the entire pack. This lets a deployed binary degrade gracefully against an
+// updated rules repo — scanning with the rules it understands — rather than
+// refusing to run. All other validation stays strict, so a genuine defect in a
+// rule this build CAN evaluate still fails the load.
+func LoadLenient(fsys fs.FS) ([]PolicyFile, []string, error) {
+	return loadPolicies(fsys, true)
+}
+
+// loadPolicies is the shared implementation behind Load (lenient=false) and
+// LoadLenient (lenient=true). When lenient, the second return holds the IDs of
+// rules dropped as forward-incompatible (see decodePolicyFileLenient).
+func loadPolicies(fsys fs.FS, lenient bool) ([]PolicyFile, []string, error) {
 	var entries []string
 	if err := fs.WalkDir(fsys, ".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -40,7 +63,7 @@ func Load(fsys fs.FS) ([]PolicyFile, error) {
 		}
 		return nil
 	}); err != nil {
-		return nil, fmt.Errorf("walk: %w", err)
+		return nil, nil, fmt.Errorf("walk: %w", err)
 	}
 	// Sort for deterministic load order — matters for the duplicate-rule-ID
 	// "previously defined in" message and for any stable iteration downstream.
@@ -49,18 +72,33 @@ func Load(fsys fs.FS) ([]PolicyFile, error) {
 	var (
 		policies []PolicyFile
 		errs     []error
+		skipped  []string              // forward-incompatible rule IDs (lenient only)
 		seenIDs  = map[string]string{} // rule ID → file that defined it
 	)
+	var known map[string]bool
+	if lenient {
+		known = knownMatchKeys()
+	}
 
 	for _, name := range entries {
 		// Per-file work in a closure so the file is closed at the end of each
 		// iteration, not deferred to the end of Load (which would leak fds
 		// proportional to the number of policy files).
-		pf, decErr := decodePolicyFile(fsys, name)
+		var (
+			pf       PolicyFile
+			fileSkip []string
+			decErr   error
+		)
+		if lenient {
+			pf, fileSkip, decErr = decodePolicyFileLenient(fsys, name, known)
+		} else {
+			pf, decErr = decodePolicyFile(fsys, name)
+		}
 		if decErr != nil {
 			errs = append(errs, decErr)
 			continue
 		}
+		skipped = append(skipped, fileSkip...)
 
 		// Validate policy-level required fields.
 		policyErrCount := len(errs)
@@ -210,9 +248,9 @@ func Load(fsys fs.FS) ([]PolicyFile, error) {
 	}
 
 	if len(errs) > 0 {
-		return nil, errors.Join(errs...)
+		return nil, nil, errors.Join(errs...)
 	}
-	return policies, nil
+	return policies, skipped, nil
 }
 
 // validRepoHasSDKInCode reports whether tok is a value RepoInventory.SDKsDetected
@@ -286,4 +324,129 @@ func decodePolicyFile(fsys fs.FS, name string) (PolicyFile, error) {
 		return pf, fmt.Errorf("%s: decode: %w", name, err)
 	}
 	return pf, nil
+}
+
+// decodePolicyFileLenient decodes one YAML policy file in forward-compatible
+// mode. It parses to a yaml.Node (malformed YAML is still a hard error),
+// identifies rules whose match references a predicate key not in `known` (a
+// newer rule schema this build cannot evaluate), decodes the file leniently
+// (unknown keys ignored — additive forward-compat for non-match fields too),
+// and drops the forward-incompatible rules wholesale. Returns the dropped rule
+// IDs. Dropping the WHOLE rule is essential: a lenient struct decode silently
+// omits the unknown predicate, which would collapse the rule's match to
+// vacuous-true (firing on every entity) — so the rule must be removed, not
+// half-decoded.
+func decodePolicyFileLenient(fsys fs.FS, name string, known map[string]bool) (PolicyFile, []string, error) {
+	var pf PolicyFile
+	b, err := fs.ReadFile(fsys, name)
+	if err != nil {
+		return pf, nil, fmt.Errorf("%s: open: %w", name, err)
+	}
+	var root yaml.Node
+	if err := yaml.Unmarshal(b, &root); err != nil {
+		return pf, nil, fmt.Errorf("%s: decode: %w", name, err)
+	}
+	skipIdx, skipIDs := forwardIncompatibleRules(&root, known, name)
+	if err := root.Decode(&pf); err != nil {
+		return pf, nil, fmt.Errorf("%s: decode: %w", name, err)
+	}
+	if len(skipIdx) > 0 {
+		pf.Rules = dropRulesAt(pf.Rules, skipIdx)
+	}
+	return pf, skipIDs, nil
+}
+
+// forwardIncompatibleRules returns the indices (into the rules sequence, which
+// align 1:1 with pf.Rules after a lenient decode) and IDs of rules whose match
+// tree references a key outside `known`. fileName labels rules missing an id.
+func forwardIncompatibleRules(root *yaml.Node, known map[string]bool, fileName string) ([]int, []string) {
+	doc := root
+	if doc.Kind == yaml.DocumentNode && len(doc.Content) > 0 {
+		doc = doc.Content[0]
+	}
+	rulesNode := mappingValue(doc, "rules")
+	if rulesNode == nil || rulesNode.Kind != yaml.SequenceNode {
+		return nil, nil
+	}
+	var (
+		idx []int
+		ids []string
+	)
+	for i, ruleNode := range rulesNode.Content {
+		matchNode := mappingValue(ruleNode, "match")
+		if matchNode == nil || matchNode.Kind != yaml.MappingNode {
+			continue
+		}
+		if !matchHasUnknownKey(matchNode, known) {
+			continue
+		}
+		idx = append(idx, i)
+		id := ""
+		if idNode := mappingValue(ruleNode, "id"); idNode != nil {
+			id = idNode.Value
+		}
+		if id == "" {
+			id = fmt.Sprintf("%s rule[%d]", fileName, i)
+		}
+		ids = append(ids, id)
+	}
+	return idx, ids
+}
+
+// matchHasUnknownKey reports whether a match mapping (recursing through the
+// all/any/not combinators) references any key not in `known`. A leaf predicate
+// key not in `known` is a predicate from a newer schema; its value is NOT
+// descended into (a known predicate's nested struct keys, e.g.
+// param_name_matches.exact, are not match-level keys).
+func matchHasUnknownKey(m *yaml.Node, known map[string]bool) bool {
+	for i := 0; i+1 < len(m.Content); i += 2 {
+		key := m.Content[i].Value
+		val := m.Content[i+1]
+		if !known[key] {
+			return true
+		}
+		switch key {
+		case "all", "any":
+			if val.Kind == yaml.SequenceNode {
+				for _, el := range val.Content {
+					if el.Kind == yaml.MappingNode && matchHasUnknownKey(el, known) {
+						return true
+					}
+				}
+			}
+		case "not":
+			if val.Kind == yaml.MappingNode && matchHasUnknownKey(val, known) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// mappingValue returns the value node for key in a YAML mapping node, or nil.
+func mappingValue(m *yaml.Node, key string) *yaml.Node {
+	if m == nil || m.Kind != yaml.MappingNode {
+		return nil
+	}
+	for i := 0; i+1 < len(m.Content); i += 2 {
+		if m.Content[i].Value == key {
+			return m.Content[i+1]
+		}
+	}
+	return nil
+}
+
+// dropRulesAt returns rules with the entries at the given indices removed.
+func dropRulesAt(rules []RuleDef, idx []int) []RuleDef {
+	skip := make(map[int]bool, len(idx))
+	for _, i := range idx {
+		skip[i] = true
+	}
+	out := make([]RuleDef, 0, len(rules)-len(idx))
+	for i, r := range rules {
+		if !skip[i] {
+			out = append(out, r)
+		}
+	}
+	return out
 }

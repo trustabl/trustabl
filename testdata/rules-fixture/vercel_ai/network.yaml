@@ -1,0 +1,38 @@
+policy:
+  id: vercel_ai_network
+  name: Vercel AI SDK network safety
+  category: vercel_ai
+  description: >
+    Flags Vercel AI SDK tools whose execute() body makes an outbound HTTP call
+    with no timeout, so a slow or unresponsive host can hang the agent's tool
+    loop indefinitely.
+
+rules:
+  - id: VAI-011
+    title: Vercel AI tool HTTP call has no timeout
+    severity: high
+    confidence: 0.6
+    language: typescript
+    applies_to:
+      - vercel_ai_tool
+    scope: tool
+    match:
+      has_http_call_without_timeout: true
+    explanation: >
+      This Vercel AI SDK tool's execute() handler makes an outbound HTTP call
+      (fetch / axios / got / undici) without a timeout bound — no `signal`,
+      `timeout`, or `abortSignal` option. Node's `fetch` has no implicit
+      deadline, so a slow or unresponsive host blocks the tool callback
+      indefinitely; because the call sits inside the model's tool loop, it ties
+      up the request worker and burns the conversation's wall-clock budget with
+      no way to cancel. The risk compounds with VAI-003: a model-controlled URL
+      that also cannot time out can be steered at an internal host that simply
+      never responds.
+    fix: >
+      Attach a deadline. Modern runtimes:
+      `await fetch(url, { signal: AbortSignal.timeout(15_000) })`. For older
+      runtimes, create an `AbortController`, call `controller.abort()` from a
+      `setTimeout`, pass `controller.signal`, and clear the timer in a
+      `finally`. axios and got take a `timeout` option directly. Surface the
+      resulting abort as a structured tool error the model can react to rather
+      than letting the turn hang.

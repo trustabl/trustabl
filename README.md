@@ -515,38 +515,36 @@ Both skills shell out to the same `trustabl` binary, so the binary must be
 installed and on `PATH`. Neither runs a network service or modifies files
 outside the scan target.
 
-### "no schema-compatible rules available"
+### "rules are newer than this Trustabl build"
 
-This means the resolved rule pack targets a newer rule-schema version than
-your Trustabl binary understands (the engine gates packs on
-`schema_version`; see `internal/rules/schema_version.go`). The fallback to
-cached rules can only help when a *compatible* pack is already cached — if
-the only cached pack is the too-new one, the scan exits 2.
+Trustabl loads rules **forward-compatibly**. If the resolved pack targets a
+newer rule-schema version than your binary understands, the scan still runs: it
+evaluates every rule your build *can* understand and **skips** the rest, warning
+on stderr (and recording the skipped rule IDs on `ScanResult.RulesSkipped`):
 
-Two fixes:
+```
+warning: the rules target schema version 9 but this Trustabl build supports up to 8; 2 rule(s) newer than this build were skipped. Upgrade Trustabl to evaluate them.
+```
 
-- **Upgrade Trustabl** to a build that supports the newer schema (the usual
-  fix — the binary is simply behind the rules repo).
-- **Pin an older rules branch or tag** whose pack targets a schema your build
-  supports:
+To evaluate the skipped rules, **upgrade Trustabl** to a build whose
+`SupportedSchemaVersion` (see `internal/rules/schema_version.go`) covers the
+pack. No action is needed if you're comfortable running the subset.
+
+The scan only **fails** (exit 2) when nothing usable remains:
+
+- **"all rules require a newer engine schema"** — *every* rule is too new for
+  your build, so there is nothing to run. Upgrade Trustabl, or pin an older
+  rules branch/tag your build fully understands (`--rules-ref` resolves branches
+  and tags only, not raw commit SHAs, so a compatible ref must already exist):
 
   ```bash
   trustabl scan ./repo --rules-ref <branch-or-tag>
   ```
-
-  `--rules-ref` resolves **branches and tags only** — not raw commit SHAs — so
-  a compatible ref must already exist in the rules repo. If every branch is
-  on the newer schema, tag a known-good older commit there first and pin that
-  tag:
-
-  ```bash
-  # in the rules repo, at the newest commit whose manifest.yaml schema_version
-  # is <= what your build supports (git log -p -- manifest.yaml shows each bump)
-  git tag schema-8 <sha> && git push origin schema-8
-  ```
-
-  `--no-rules-update` does **not** help here: it is cache-only, so if your
-  cache already holds the too-new pack the scan still fails.
+- **"no usable rules manifest"** — the pack's `manifest.yaml` is missing,
+  unparseable, or declares a non-positive version (a corrupt/truncated pack).
+  Run `trustabl rules pull` to refresh.
+- **"no usable rules found"** — nothing cached and nothing fetchable (offline
+  with a cold cache). Run `trustabl rules pull` while online.
 
 ## Where the code lives
 

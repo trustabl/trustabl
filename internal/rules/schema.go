@@ -51,7 +51,10 @@ type MatchExpr struct {
 	HasPrintCall      *bool `yaml:"has_print_call,omitempty"`
 	HasWriteCall      *bool `yaml:"has_write_call,omitempty"`
 	HasDynamicURLCall *bool `yaml:"has_dynamic_url_call,omitempty"`
-	Always            *bool `yaml:"always,omitempty"`
+	// HasHTTPCallWithoutTimeout is TypeScript-only (backed by the http_no_timeout
+	// discovery fact); see PredHasHTTPCallWithoutTimeout.
+	HasHTTPCallWithoutTimeout *bool `yaml:"has_http_call_without_timeout,omitempty"`
+	Always                    *bool `yaml:"always,omitempty"`
 
 	// String-list predicates
 	NameIn        []string `yaml:"name_in,omitempty"`
