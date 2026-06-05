@@ -32,10 +32,13 @@ fi
 # every <category>/*.yaml plus the top-level manifest.yaml.
 list_yaml() { # $1 = root
   ( cd "$1"
-    for d in claude_sdk openai_sdk google_adk; do
-      [ -d "$d" ] && find "$d" -name '*.yaml'
-    done
-    [ -f manifest.yaml ] && echo manifest.yaml
+    # Every <category>/*.yaml at depth >= 2 (one entry per pack file, any
+    # category, nested or flat), discovered dynamically so a new SDK pack is
+    # covered automatically. The previous hardcoded list (claude_sdk openai_sdk
+    # google_adk) silently skipped langchain, mcp, and every later pack, so a
+    # fixture/production drift in those categories went unchecked.
+    find . -mindepth 2 -name '*.yaml'
+    [ -f manifest.yaml ] && echo ./manifest.yaml
   ) | sed 's#^\./##' | sort
 }
 
