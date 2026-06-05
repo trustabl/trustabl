@@ -1,0 +1,33 @@
+policy:
+  id: vercel_ai_code_execution
+  name: Vercel AI SDK code-execution safety
+  category: vercel_ai
+  description: >
+    Flags Vercel AI SDK tools whose execute() body evaluates code with eval or
+    the Function constructor. Either turns model-supplied text into executing
+    code with no sandbox.
+
+rules:
+  - id: VAI-002
+    title: Vercel AI tool execute() evaluates code (eval / new Function)
+    severity: high
+    confidence: 0.9
+    language: typescript
+    applies_to:
+      - vercel_ai_tool
+    scope: tool
+    match:
+      has_code_exec_call: true
+    explanation: >
+      This Vercel AI SDK tool's execute() handler calls eval(...) or constructs
+      a function with new Function(...). Because the tool is model-callable, a
+      string the model emits becomes executing JavaScript in the agent process —
+      a single prompt injection yields arbitrary code execution with no sandbox
+      between the model and the host. This is strictly more dangerous than a
+      shell-out: there is not even a separate process boundary to constrain.
+    fix: >
+      Remove eval / new Function from the tool. If the tool must interpret a
+      model-provided expression, parse it with a real parser into a constrained
+      AST you evaluate yourself, or hand it to an isolated sandbox (a separate
+      process or a hardened runner with no filesystem, network, or credentials)
+      gated behind an explicit allow-list. Never feed model output to eval.

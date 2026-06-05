@@ -1,0 +1,122 @@
+policy:
+  id: pydantic_ai_agent_safety
+  name: Pydantic AI agent safety
+  category: pydantic_ai
+  description: >
+    Agent-scope safety rules for Pydantic AI agents (the Agent(...) constructor).
+    These flag missing output validation, model-driven code execution and URL
+    fetching wired as native tools, and a retry strategy that re-runs an
+    already-executed tool.
+
+rules:
+  - id: PYD-101
+    title: Pydantic AI agent has no structured output validation
+    severity: low
+    confidence: 0.7
+    language: python
+    applies_to:
+      - pydantic_ai_agent
+    scope: agent
+    match:
+      any:
+        - agent_kwarg_missing:
+            - output_type
+        - agent_kwarg_value:
+            kwarg: output_type
+            value: str
+    explanation: >
+      This agent does not constrain its output to a validated type: output_type is
+      absent (defaulting to free-form str) or set explicitly to str. Pydantic AI's
+      core value is that output_type can be a Pydantic model the framework
+      validates and, on failure, asks the model to correct — turning model output
+      into a typed contract. Without it, the agent returns whatever text the model
+      produced, so downstream code parses unvalidated strings and a prompt
+      injection or a confused model can return malformed or unexpected content
+      that is consumed as if it were trusted.
+    fix: >
+      Set output_type to a Pydantic model (or a typed union) describing the
+      result the agent must return. Pydantic AI then validates each run against
+      that schema and re-prompts the model on a validation failure, so callers
+      receive a checked, typed object instead of raw text.
+
+  - id: PYD-102
+    title: Pydantic AI agent wires the code-execution native tool
+    severity: high
+    confidence: 0.85
+    language: python
+    applies_to:
+      - pydantic_ai_agent
+    scope: agent
+    match:
+      agent_uses_hosted_tool_class:
+        - CodeExecutionTool
+    explanation: >
+      This agent wires Pydantic AI's CodeExecutionTool (via capabilities= or
+      builtin_tools=), a provider-native tool that executes code the model
+      generates. Once it is in the tool set, a prompt injection or a confused
+      model can run attacker-chosen code in the execution environment the provider
+      grants the tool. Because the agent's instructions, tool outputs, and any
+      retrieved content are all model-reachable, this is a direct path from prompt
+      injection to arbitrary code execution.
+    fix: >
+      Remove CodeExecutionTool from production agents. If code execution is a
+      genuine requirement, run it outside the agent in a hardened sandbox (no
+      filesystem, no network, no credentials, hard timeout) and gate it behind an
+      explicit human approval rather than exposing a model-invokable code runner.
+
+  - id: PYD-103
+    title: Pydantic AI agent wires a model-driven URL-fetching native tool
+    severity: medium
+    confidence: 0.75
+    language: python
+    applies_to:
+      - pydantic_ai_agent
+    scope: agent
+    match:
+      agent_uses_hosted_tool_class:
+        - WebFetchTool
+        - UrlContextTool
+    explanation: >
+      This agent wires a native URL-fetching tool (WebFetchTool or UrlContextTool)
+      that retrieves model-chosen URLs. The model controls the destination, so a
+      prompt injection can point it at internal services, the cloud metadata
+      endpoint (169.254.169.254), or localhost admin ports the agent host can
+      reach — a server-side request forgery surface — and can also exfiltrate
+      retrieved or in-context data to an attacker-controlled URL. Pydantic AI's
+      built-in fetchers have already needed SSRF hardening (CVE-2026-46678,
+      CVE-2026-25580), so enabling one without network egress controls reintroduces
+      that exposure.
+    fix: >
+      Only enable a native fetch tool when the agent genuinely needs open web
+      access, and put network egress controls around the agent process: an
+      allow-list of permitted hosts, blocked private/link-local IP ranges, and a
+      proxy that rejects requests to internal addresses. Prefer a purpose-built
+      tool that fetches from a fixed, vetted set of endpoints over an open URL
+      fetcher.
+
+  - id: PYD-105
+    title: Pydantic AI agent retries with the exhaustive end strategy
+    severity: low
+    confidence: 0.7
+    language: python
+    applies_to:
+      - pydantic_ai_agent
+    scope: agent
+    match:
+      agent_kwarg_value:
+        kwarg: end_strategy
+        value: exhaustive
+    explanation: >
+      This agent sets end_strategy="exhaustive". When the model emits a final
+      result alongside still-pending tool calls, the exhaustive strategy runs
+      those remaining tool calls anyway before ending the run, instead of
+      returning immediately (the "early" default). If any of those pending calls
+      is side-effecting — a write, a charge, a send — exhaustive mode executes it
+      even though the model already considered the task done, widening the blast
+      radius of a single run and making duplicate or unintended side effects more
+      likely.
+    fix: >
+      Leave end_strategy at its "early" default so the run ends as soon as the
+      model produces a final result, skipping pending tool calls. Only choose
+      exhaustive when every tool the agent can call is side-effect-free and you
+      specifically need the remaining calls to complete.

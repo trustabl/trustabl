@@ -136,8 +136,13 @@ func Run(cfg Config) (models.ScanResult, error) {
 	agents := analysis.DiscoverAgents(parsed)
 	agents = append(agents, analysis.DiscoverADKAgents(parsed)...)
 	agents = append(agents, analysis.DiscoverLangChainAgents(parsed)...)
+	agents = append(agents, analysis.DiscoverCrewAIAgents(parsed)...)
+	agents = append(agents, analysis.DiscoverAutoGenAgents(parsed)...)
+	agents = append(agents, analysis.DiscoverPydanticAIAgents(parsed)...)
 	tools = append(tools, analysis.DiscoverADKTools(parsed)...)
 	tools = append(tools, analysis.DiscoverLangChainTools(parsed)...)
+	tools = append(tools, analysis.DiscoverAutoGenTools(parsed)...)
+	tools = append(tools, analysis.DiscoverPydanticAITools(parsed)...)
 	guardrails := analysis.DiscoverGuardrails(parsed)
 	sessions := analysis.DiscoverSessions(parsed)
 
@@ -181,6 +186,11 @@ func Run(cfg Config) (models.ScanResult, error) {
 	// LangChain / LangGraph TS
 	tools = append(tools, analysis.DiscoverTSLangChainTools(tsFiles, nil)...)
 	agents = append(agents, analysis.DiscoverTSLangChainAgents(tsFiles, nil)...)
+	// Vercel AI SDK TS — tool()/dynamicTool() and generateText/streamText/
+	// generateObject/streamObject + ToolLoopAgent agents. Emits KindVercelAITool,
+	// so deriveSDKsDetected stamps SDKVercelAI and the vercel_ai pack loads.
+	tools = append(tools, analysis.DiscoverTSVercelTools(tsFiles, nil)...)
+	agents = append(agents, analysis.DiscoverTSVercelAgents(tsFiles, nil)...)
 	// MCP server authoring (@modelcontextprotocol/sdk) TS — registerTool/tool.
 	// Emits KindMCPTool, so deriveSDKsDetected stamps SDKMCP and the mcp pack
 	// loads automatically (same path as the Python MCP tools).
@@ -341,6 +351,14 @@ func deriveSDKsDetected(tools []models.ToolDef, agents []models.AgentDef, subage
 			seen[models.SDKGoogleADK] = true
 		case models.KindLangChainTool:
 			seen[models.SDKLangChain] = true
+		case models.KindCrewAITool:
+			seen[models.SDKCrewAI] = true
+		case models.KindPydanticAITool:
+			seen[models.SDKPydanticAI] = true
+		case models.KindVercelAITool:
+			seen[models.SDKVercelAI] = true
+		case models.KindAutoGenTool:
+			seen[models.SDKAutoGen] = true
 		}
 	}
 	for _, a := range agents {

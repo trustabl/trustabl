@@ -151,6 +151,31 @@ func agentKindMatches(kind string, a models.AgentDef) bool {
 		return a.SDK == models.SDKLangChain && a.Class == "AgentExecutor"
 	case "langchain_state_graph":
 		return a.SDK == models.SDKLangChain && a.Class == "StateGraph"
+	// CrewAI: the single Agent(...) constructor, SDK-stamped at discovery to
+	// disambiguate from the identically-named OpenAI and ADK Agent classes.
+	case "crewai_agent":
+		return a.SDK == models.SDKCrewAI && a.Class == "Agent"
+	// Pydantic AI: the lone Agent(...) constructor, normalized Class "PydanticAgent".
+	case "pydantic_ai_agent":
+		return a.SDK == models.SDKPydanticAI && a.Class == "PydanticAgent"
+	// Vercel AI SDK: one token spans every call/class agent shape
+	// (generateText / streamText / generateObject / streamObject / ToolLoopAgent);
+	// the SDK stamp is the disambiguator, so no per-Class gate is needed.
+	case "vercel_ai_agent":
+		return a.SDK == models.SDKVercelAI
+	// AutoGen / AG2: distinct tokens per class so a rule can target the executor
+	// presets (UserProxy/ConversableAgent/CodeExecutorAgent) without firing on the
+	// LLM-only AssistantAgent, and vice-versa.
+	case "autogen_conversable_agent":
+		return a.SDK == models.SDKAutoGen && a.Class == "ConversableAgent"
+	case "autogen_user_proxy_agent":
+		return a.SDK == models.SDKAutoGen && a.Class == "UserProxyAgent"
+	case "autogen_assistant_agent":
+		return a.SDK == models.SDKAutoGen && a.Class == "AssistantAgent"
+	case "autogen_group_chat_manager":
+		return a.SDK == models.SDKAutoGen && (a.Class == "GroupChatManager" || a.Class == "GroupChat")
+	case "autogen_code_executor_agent":
+		return a.SDK == models.SDKAutoGen && a.Class == "CodeExecutorAgent"
 	}
 	return false
 }
@@ -228,6 +253,14 @@ func LoadFor(fsys fs.FS, sdks []models.SDK) (*detectors.Registry, error) {
 			wanted["google_adk"] = true
 		case models.SDKLangChain:
 			wanted["langchain"] = true
+		case models.SDKCrewAI:
+			wanted["crewai"] = true
+		case models.SDKPydanticAI:
+			wanted["pydantic_ai"] = true
+		case models.SDKVercelAI:
+			wanted["vercel_ai"] = true
+		case models.SDKAutoGen:
+			wanted["autogen"] = true
 		}
 	}
 	all, err := Load(fsys)

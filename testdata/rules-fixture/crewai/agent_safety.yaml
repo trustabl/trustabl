@@ -1,0 +1,89 @@
+policy:
+  id: crewai_agent_safety
+  name: CrewAI agent safety
+  category: crewai
+  description: >
+    Agent-scope safety rules for CrewAI agents (the Agent(...) constructor).
+    These flag constructor kwargs that hand the model code-execution or
+    delegation capabilities — the entry points of CrewAI's published RCE and
+    confused-deputy chains.
+
+rules:
+  - id: CREW-101
+    title: CrewAI agent enables built-in code execution
+    severity: high
+    confidence: 0.9
+    language: python
+    applies_to:
+      - crewai_agent
+    scope: agent
+    match:
+      agent_kwarg_value:
+        kwarg: allow_code_execution
+        value: "True"
+    explanation: >
+      This Agent sets allow_code_execution=True, which makes CrewAI auto-inject a
+      CodeInterpreterTool into the agent's tool set. From that point the model can
+      run arbitrary Python it generates — and because the agent's instructions and
+      tool outputs are model-reachable, a prompt injection has a direct path to
+      code execution. This flag is the entry point of CrewAI's published RCE chain:
+      CVE-2026-2275 escapes the SandboxPython interpreter via a ctypes call, and
+      CVE-2026-2287 silently falls back from the Docker sandbox to host execution
+      when Docker is unavailable. The flag is also deprecated upstream.
+    fix: >
+      Remove allow_code_execution=True. If the agent genuinely needs to run code,
+      do it outside CrewAI in a hardened external sandbox (E2B, Modal, or an
+      equivalent isolated runner with no filesystem, no network, no credentials,
+      and a hard timeout) and gate it behind an explicit human approval rather than
+      letting the model invoke an in-process interpreter.
+
+  - id: CREW-102
+    title: CrewAI agent runs code execution in unsafe mode
+    severity: high
+    confidence: 0.9
+    language: python
+    applies_to:
+      - crewai_agent
+    scope: agent
+    match:
+      agent_kwarg_value:
+        kwarg: code_execution_mode
+        value: unsafe
+    explanation: >
+      This Agent sets code_execution_mode="unsafe", which tells CrewAI to run
+      model-generated code directly on the host instead of inside the Docker
+      sandbox. There is no boundary left to escape: a single prompt injection or a
+      confused model yields arbitrary code execution with the agent process's
+      privileges. This is strictly worse than the default "safe" mode, which at
+      least confines execution to a container.
+    fix: >
+      Remove code_execution_mode="unsafe" (the default "safe" mode keeps execution
+      in Docker). Better still, do not run model-chosen code in-process at all —
+      move it to a hardened external sandbox and require a human approval before
+      any code runs.
+
+  - id: CREW-104
+    title: CrewAI agent allows delegation to peer agents
+    severity: medium
+    confidence: 0.75
+    language: python
+    applies_to:
+      - crewai_agent
+    scope: agent
+    match:
+      agent_kwarg_value:
+        kwarg: allow_delegation
+        value: "True"
+    explanation: >
+      This Agent sets allow_delegation=True, so it can hand work to any peer agent
+      in the crew and invoke their tools. Delegation widens the agent's effective
+      trust boundary to the union of every peer's capabilities with no
+      per-delegation gate — a classic confused-deputy setup. If any peer holds the
+      code interpreter or an unconstrained file reader, a prompt injection against
+      this agent can reach that capability indirectly, even though this agent was
+      never granted it directly.
+    fix: >
+      Set allow_delegation=False unless delegation is essential to the workflow.
+      If the crew must delegate, keep high-risk tools (code execution, file read,
+      shell) off every agent reachable through delegation, and constrain each
+      peer's tool set to the minimum its role requires.

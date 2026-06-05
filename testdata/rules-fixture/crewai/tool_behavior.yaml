@@ -1,0 +1,34 @@
+policy:
+  id: crewai_tool_behavior
+  name: CrewAI tool behavior safety
+  category: crewai
+  description: >
+    Flags CrewAI tool configuration that alters the agent's control flow in ways
+    that bypass the model's reasoning and any post-tool validation.
+
+rules:
+  - id: CREW-108
+    title: CrewAI tool returns its output as the final answer
+    severity: medium
+    confidence: 0.6
+    language: python
+    applies_to:
+      - crewai_tool
+    scope: tool
+    match:
+      tool_decorator_kwarg_value:
+        kwarg: result_as_answer
+        value: "True"
+    explanation: >
+      This tool sets result_as_answer=True, so CrewAI takes the tool's raw output
+      as the agent's final answer and stops — the model never reviews the result,
+      cannot validate or summarize it, and no post-tool step runs. If the tool
+      returns model- or attacker-influenced content (a scraped page, a file read, a
+      search result), that unvalidated output flows straight to the caller. This is
+      the CrewAI analog of LangChain's return_direct: convenient for a deterministic
+      passthrough, dangerous when the tool's output is not already trusted.
+    fix: >
+      Leave result_as_answer at its default (False) unless you specifically intend
+      to short-circuit the agent with a tool whose output is already trusted and
+      sanitized. If you do use it, shape and sanitize the tool's output inside the
+      tool body, since no model step or guardrail runs after it.

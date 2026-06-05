@@ -1,0 +1,47 @@
+policy:
+  id: pydantic_ai_idempotency
+  name: Pydantic AI mutating-tool idempotency
+  category: pydantic_ai
+  description: >
+    Flags mutating tools (create/send/refund/...) without an idempotency key.
+    Pydantic AI retries tool calls under validation failures and the agent loop
+    re-invokes tools, so without a key the same side-effecting action can fire
+    twice.
+
+rules:
+  - id: PYD-007
+    title: Mutating Pydantic AI tool has no idempotency key
+    severity: medium
+    confidence: 0.55
+    language: python
+    applies_to:
+      - pydantic_ai_tool
+    scope: tool
+    match:
+      all:
+        - name_has_prefix:
+            - create_
+            - send_
+            - delete_
+            - post_
+            - update_
+            - refund_
+            - charge_
+            - issue_
+        - not:
+            param_name_matches:
+              contains:
+                - idempot
+              exact:
+                - request_id
+                - txn_id
+    explanation: >
+      Tool name suggests a side effect (create/send/refund/…). Pydantic AI retries
+      a tool call when the model's arguments fail validation, and the agent loop
+      can re-select the same tool across turns; without an idempotency key the
+      same action can fire twice — a duplicate charge, a double-sent message, a
+      repeated delete. The downstream service must also honor the key for this
+      protection to be effective.
+    fix: >
+      Add an idempotency_key: str parameter and pass it through to the backing API
+      so a retried call is recognized and deduplicated rather than re-executed.

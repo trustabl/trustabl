@@ -1,0 +1,45 @@
+policy:
+  id: crewai_idempotency
+  name: CrewAI mutating-tool idempotency
+  category: crewai
+  description: >
+    Rules that flag mutating tools (create/send/refund/...) without an
+    idempotency key. CrewAI retries tool calls under timeouts and ambiguous
+    failures; without a key the same side-effecting action can fire twice.
+
+rules:
+  - id: CREW-006
+    title: Mutating CrewAI tool has no idempotency key
+    severity: medium
+    confidence: 0.55
+    language: python
+    applies_to:
+      - crewai_tool
+    scope: tool
+    match:
+      all:
+        - name_has_prefix:
+            - create_
+            - send_
+            - delete_
+            - post_
+            - update_
+            - refund_
+            - charge_
+            - issue_
+        - not:
+            param_name_matches:
+              contains:
+                - idempot
+              exact:
+                - request_id
+                - txn_id
+    explanation: >
+      Tool name suggests a side effect (create/send/refund/…). CrewAI retries tool
+      calls under timeouts and ambiguous failures; without an idempotency key the
+      same action can fire twice — a duplicate charge, a double-sent message, a
+      repeated delete. Downstream services must also honor the key for this
+      protection to be effective.
+    fix: >
+      Add an `idempotency_key: str` parameter and pass it through to the backing
+      API so a retried call is recognized and deduplicated rather than re-executed.

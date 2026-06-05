@@ -4,7 +4,7 @@ Coverage matrix for Trustabl's static analysis: which agent SDKs (and which
 languages) we currently scan, analyse, and detect against. This file is the
 at-a-glance reference; `ARCHITECTURE.md` has the implementation detail.
 
-_Last reviewed: 2026-06-04 (LangChain / LangGraph SDK row added)._
+_Last reviewed: 2026-06-05 (CrewAI, AutoGen/AG2, Vercel AI SDK, Pydantic AI rows added)._
 
 > **Note:** Detection rules are not shipped in the binary. They live in the
 > separate `trustabl-rules` git repository
@@ -30,8 +30,12 @@ Legend: ✅ full · ◐ partial · ❌ none · — N/A
 | **Google ADK** | Python | ✅ dep-scan (`google-adk`) + file inventory | ✅ LlmAgent (+ Agent alias), SequentialAgent, ParallelAgent, LoopAgent, LanggraphAgent; FunctionTool wrapping; 13 built-in hosted tools; sub_agents edges | ✅ tool ADK-001..007, 009..012 (009 = print to stdout, 010 = subprocess, 011 = eval/exec/compile, 012 = SSRF); agent ADK-008, 101..108, 110; repo ADK-201 (SDK code without an agent-guidance doc: AGENTS.md/CLAUDE.md) |
 | **Google ADK** | TypeScript | ✅ dep-scan (`@google/adk`) + file inventory | ✅ tools (`new FunctionTool({...})`), agents (5 constructors: LlmAgent + SequentialAgent + ParallelAgent + LoopAgent + RoutedAgent), hosted tools (13 classes), subAgents edges | ◐ tool ADK-013 (no description), 015 (eval / new Function), 016 (SSRF / dynamic URL); agent ADK-109 (LlmAgent no description); first ADK TS pack; META-004 no longer fires |
 | **Google ADK** | Go / Java / Kotlin | ❌ | ❌ | ❌ |
-| **LangChain / LangGraph** | Python | ✅ dep-scan (`langchain` / `langgraph` needles, all manifests) + file inventory | ✅ tools (`@tool` decorator — import-gated to disambiguate from the Claude SDK's `@tool`; `StructuredTool` / `Tool` factories + `.from_function`), agents (`create_react_agent`, `create_agent`, `AgentExecutor`; positional `tools` captured), dangerous built-ins (`PythonREPLTool` / `PythonAstREPLTool` / `ShellTool` / `Requests*` → `HostedToolDef` edges) | ✅ tool LC-001 (no description), LC-002 (untyped params), LC-003 (shell), LC-004 (code-exec), LC-005 (SSRF), LC-006 (`return_direct`); agent LC-101 (code-exec/shell built-in), LC-102 (AgentExecutor no `max_iterations`); repo LC-201 (no agent-guidance doc) |
+| **LangChain / LangGraph** | Python | ✅ dep-scan (`langchain` / `langgraph` needles, all manifests) + file inventory | ✅ tools (`@tool` decorator — import-gated to disambiguate from the Claude SDK's `@tool`; `StructuredTool` / `Tool` factories + `.from_function`), agents (`create_react_agent`, `create_agent`, `AgentExecutor` + `AgentExecutor.from_agent_and_tools`; positional `tools` captured), dangerous built-ins (`PythonREPLTool` / `PythonAstREPLTool` / `ShellTool` / `Requests*` → `HostedToolDef` edges) | ✅ tool LC-001 (no description), LC-002 (untyped params), LC-003 (shell), LC-004 (code-exec), LC-005 (SSRF), LC-006 (`return_direct`); agent LC-101 (code-exec/shell built-in), LC-102 (AgentExecutor no `max_iterations`); repo LC-201 (no agent-guidance doc) |
 | **LangChain / LangGraph** | TypeScript | ✅ dep-scan (`@langchain/*` / `langchain` / `langgraph`) + file inventory | ✅ tools (`tool(fn, {...})` factory — import-gated, config from arg 1; `DynamicStructuredTool` / `DynamicTool`), agents (`createReactAgent`, `createAgent`, `new AgentExecutor`) | ◐ tool LC-010 (no description), LC-011 (shell), LC-012 (code-exec), LC-013 (SSRF), LC-014 (`returnDirect`); agent LC-111 (AgentExecutor no `maxIterations`). Provider hosted tools (`shell()` / `bash_*` / `applyPatch`) and the raw `StateGraph` graph agent are documented gaps |
+| **CrewAI** | Python | ✅ dep-scan (`crewai` / `crewai-tools`) + file inventory | ✅ agents (`Agent(...)`, import-gated to `crewai` so it doesn't collide with OpenAI/ADK `Agent`), tools (`@tool` decorator routed in `kindFromDecorators` by import binding; `Tool(fn)` factory), dangerous built-ins (`CodeInterpreterTool` / `FileReadTool` / scrape+RAG tools → `HostedToolDef`) | ✅ tool CREW-001..006 (no-desc, untyped, code-exec, shell, SSRF, idempotency), CREW-108 (`result_as_answer`); agent CREW-101..104 (`allow_code_execution`, `code_execution_mode=unsafe`, wired `CodeInterpreterTool`, `allow_delegation`), CREW-106 (unconstrained `FileReadTool`), CREW-107 (URL-fetching tools); repo CREW-201. `class X(BaseTool)` and `Crew(...)` orchestration are v1 gaps |
+| **AutoGen / AG2** | Python | ✅ dep-scan (`pyautogen` / `ag2` / `autogen-agentchat`) + file inventory | ✅ two import gates (AG2/0.2 `autogen`; Microsoft v0.4 `autogen_agentchat`/`_core`/`_ext`): agents `ConversableAgent` / `UserProxyAgent` / `AssistantAgent` / `GroupChat` / `GroupChatManager` / `CodeExecutorAgent`; tools `register_function(fn,...)` + stacked `@x.register_for_llm` / `@x.register_for_execution` attribute decorators; nested `code_execution_config` dict captured | ✅ agent AG2-001 (`use_docker=False`), 002 (`human_input_mode=NEVER` + code exec), 004 (`GroupChat` no `max_round`), 005 (`AssistantAgent` code exec), 006 (no `max_consecutive_auto_reply`); tool AG2-007..012 (no-desc, untyped, shell, code-exec, SSRF, timeout); repo AG2-201. AG2-003 (v0.4 executor-class), the `register_function` caller/executor edge, and AG2 `@tool` are v1 gaps |
+| **Vercel AI SDK** | TypeScript | ✅ dep-scan (quoted `"ai"` key + `@ai-sdk/`) + file inventory | ✅ tools (`tool({...})` / `dynamicTool({...})` single-object factory, import-gated to `ai`), agents (call-based `generateText` / `streamText` / `generateObject` / `streamObject` carrying a `tools` record + class `ToolLoopAgent` / `Experimental_Agent`; **`tools` is an object/record**, walked by property value, not an array), provider hosted tools (`<provider>.tools.*()` → `HostedToolDef`) | ◐ tool VAI-001..005 (shell, code-exec, SSRF, no-desc, untyped); agent VAI-006 (provider shell/computer/code-exec tool), VAI-007 (no loop bound), VAI-008 (`toolChoice:'required'` + dangerous tool); repo VAI-012. VAI-009/010 (name rules — Vercel tools carry no `Name`) and VAI-011 (needs a TS abort-signal predicate) are gaps; `.js`/`.mjs` apps are recognized but not AST-parsed |
+| **Pydantic AI** | Python | ✅ dep-scan (`pydantic-ai` / `pydantic-ai-slim`) + file inventory | ✅ agents (`Agent(...)` → Class `PydanticAgent`, import-gated to `pydantic_ai`), tools (`@agent.tool` / `@agent.tool_plain` attribute decorators — routed in `kindFromDecorators`, disambiguated from the Claude SDK's `@agent.tool` by import; `Tool(fn)` factory), native tools (`capabilities=[NativeTool(CodeExecutionTool())]` / `builtin_tools=[...]` unwrapped → `HostedToolDef`) | ✅ tool PYD-001..007 (no-desc, untyped, shell, code-exec, SSRF, timeout, idempotency); agent PYD-101 (no `output_type` validation), 102 (`CodeExecutionTool`), 103 (`WebFetchTool` / `UrlContextTool`), 105 (`end_strategy='exhaustive'`); repo PYD-201. PYD-104 (`force_download` — needs a new predicate), the bare-`tools=[fn]` ToolDef shape, and `RunContext` param-strip for PYD-002 are gaps |
 | **OpenShell** | Python | ✅ shell-invocation discovery + `openshell/*.yaml` policy files surfaced | ✅ `KindShellInvocation` tools → `RepoInventory.HasShellInvocations` (the "openshell" risk surface; not an SDK, never in `SDKsDetected`) | ❌ rules moved to closed-source companion project (no rule fires; no META finding — openshell is not treated as an unaudited SDK) |
 
 ## What we parse exactly (per SDK)
@@ -186,6 +190,102 @@ prefix-matched (`astutil.TSImportAliasesMatch`) so the many subpaths
 class-based tools (`extends StructuredTool`) are documented gaps; the raw
 `StateGraph` graph agent is not modeled.
 
+### CrewAI — Python
+
+Discovery sources: `internal/analysis/crewai_agents.go`,
+`crewai_hosted_tools.go`, plus the `@tool` decorator routed in
+`internal/analysis/discovery.go` (`kindFromDecorators`). Import gate
+(AST-based): a file is in scope when it imports the CrewAI ecosystem
+(`crewai`, `crewai.*`, `crewai_tools`, `crewai_tools.*`) — the dot/underscore
+boundary keeps an unrelated `crewaix` from matching. The gate disambiguates the
+bare `Agent` class name from the OpenAI Agents SDK and Google ADK classes of the
+same name.
+
+| Construct | Recognition |
+|---|---|
+| Agents | `Agent(...)` constructor calls. Class is `Agent`; `agentKindMatches("crewai_agent")` keys on BOTH `SDK==crewai` AND Class, so an OpenAI/ADK `Agent` never cross-matches. All kwargs captured into a typed `KwargTree` (`role`, `goal`, `backstory`, `tools`, `allow_code_execution`, `code_execution_mode`, `allow_delegation`, …). CrewAI agents carry no `name=`; the human-facing label falls back to `role=`, then the assignment-target variable. `VarName` from `researcher = Agent(...)` so `tools=[...]` references resolve |
+| Tools (`@tool`) | The `crewai.tools` `@tool` decorator (shared name with the Claude SDK and LangChain), classified in `kindFromDecorators` by the **import binding** of the `tool` symbol (`collectToolImports`): `tool` bound from a crewai module → `KindCrewAITool`. A file-level import-presence check (`crewaiImport && !claudeImport && !lcImport`) is the fallback for a star-import / locally defined `tool`. Captures name, docstring → Description, typed-params, decorator kwargs (incl. `result_as_answer`) → Config |
+| Tools (factory) | `Tool(fn)` factory call — the wrapped first-positional function is resolved to a same-file def so the body predicates scan the implementation |
+| Dangerous built-ins | Closed set of 13 high-risk `crewai_tools` classes inside an agent's resolved `tools=[...]` → `HostedToolDef` (SDK `crewai`): `CodeInterpreterTool` (code exec); `FileReadTool` / `FileWriterTool` / `FileWriteTool` (older spelling) / `DirectoryReadTool` / `DirectorySearchTool` (filesystem); `ScrapeWebsiteTool` / `SeleniumScrapingTool` / `WebsiteSearchTool` / `SerperDevTool` / `JSONSearchTool` / `PDFSearchTool` / `CSVSearchTool` (model-chosen URL fetch). Benign built-ins are intentionally omitted so a match is always a security signal; consumed by agent rules CREW-103 / 106 / 107 |
+
+**v1 gaps:** the `class X(BaseTool)` subclass tool shape (the analog of
+LangChain's class-tool gap) and `Crew(...)` orchestration discovery are not
+modeled.
+
+### AutoGen / AG2 — Python
+
+Discovery sources: `internal/analysis/autogen_agents.go`, `autogen_tools.go`.
+Import gate (AST-based): a file is in scope when it imports **either** upstream
+line. The two lines share class names but live under different roots:
+
+- **AG2 / 0.2** (`autogen`, formerly distributed as `pyautogen` / `ag2`) —
+  matched by `autogen` or `autogen.*`. The dot boundary deliberately excludes
+  the v0.4 roots.
+- **Microsoft v0.4** (`autogen_agentchat`, `autogen_core`, `autogen_ext`) —
+  matched by each root or its dotted submodules.
+
+The union of the two is the discovery gate; `agentKindMatches` keys each
+`applies_to` token on BOTH `SDK==autogen` AND the class name, so a colliding
+`AssistantAgent` / `GroupChat` never produces a cross-SDK match.
+
+| Construct | Recognition |
+|---|---|
+| Agents | Closed set of 6 constructors across both lines: `ConversableAgent`, `UserProxyAgent`, `AssistantAgent`, `GroupChat`, `GroupChatManager`, `CodeExecutorAgent`. `GroupChat` is a config object, not a runtime agent, but it carries the `max_round` speaker-loop bound AG2-004 audits, so it is discovered and `agentKindMatches("autogen_group_chat_manager")` accepts both it and `GroupChatManager`. All kwargs captured; the nested `code_execution_config={...}` dict literal is descended (via `exprFromNode`'s `dictChildren`) so dotted-path lookups reach `code_execution_config.use_docker`. `name=` is the label; `VarName` captured |
+| Tools (`register_function`) | `register_function(fn, caller=, executor=, name=, description=)` call — the first positional ident is resolved to a same-file top-level function so the body predicates scan it. `name=` / `description=` override its metadata; remaining kwargs (e.g. `api_style=`) land in Config. Neither flows through `kindFromDecorators` (it is a call, not a decorator) |
+| Tools (attribute decorators) | Stacked `@<executor>.register_for_execution()` / `@<assistant>.register_for_llm(name=, description=)` decorators. The callee is an **attribute** (`<agentvar>.register_for_llm`), not a bare name, so `kindFromDecorators` does not classify it — this pass walks `decorated_definition` nodes and emits one `KindAutoGenTool` per function whose decorator suffix is `register_for_llm` / `register_for_execution`. `register_for_llm`'s `name=` / `description=` override the function's |
+
+**v1 gaps:** the v0.4 executor-class hosted surface (`CodeExecutorAgent` +
+`LocalCommandLineCodeExecutor`) that AG2-003 would target, the
+`register_function` caller/executor two-agent edge (`VarName` is captured for a
+future pass but not yet resolved), and an AG2 bare-name `@tool` decorator shape
+are not modeled.
+
+### Vercel AI SDK — TypeScript
+
+Discovery sources: `internal/analysis/ts_vercel_tools.go`,
+`ts_vercel_agents.go`, `ts_vercel_hosted_tools.go`, plus the shared
+`ts_handler_facts.go`. Import gate: the bare `ai` core module (matched exactly —
+the `@ai-sdk/*` provider packages are not gated here; their hosted tools are
+recognized structurally in the agent walk). The gate disambiguates the
+identically-named `tool()` factory from the Claude / OpenAI / LangChain passes.
+
+| Construct | Recognition |
+|---|---|
+| Tools | `tool({ description, inputSchema \| parameters, execute })` (v5/v6 `inputSchema`, v4 `parameters`) and `dynamicTool({...})`. Unlike LangChain's `tool(fn, {...})` (handler arg 0, config arg 1), the Vercel factory takes a SINGLE options object (arg 0). A Vercel tool's NAME comes from the agent's tools-record KEY, not the definition, so `ToolDef.Name` is empty and the binding identifier is captured as `VarName`. `description` is the only model-visible signal (no docstring fallback). Params: a typed Zod object → real names + `HasTypedParams`; an OPEN schema (`z.any()` / `z.unknown()` / `z.object({})` / `{}`) or `dynamicTool` → synthetic `"input"` param, `HasTypedParams=false` (the VAI-005 untyped signal); no schema key → empty params. `execute` body facts via `tsHandlerFacts` |
+| Agents (call-based) | `generateText` / `streamText` / `generateObject` / `streamObject` ({ model, system, tools, stopWhen, maxSteps, toolChoice }) — emitted as an `AgentDef` ONLY when the options object carries a `tools` property (a bare completion is not an agent and emitting one would flood findings). Class is the normalized callee (`GenerateText` / `StreamText` / `GenerateObject` / `StreamObject`) |
+| Agents (class-based) | `new ToolLoopAgent({...})` and `new Experimental_Agent({...})` (often imported `as Agent`; alias-resolved via the `ai` import map). Both normalize to Class `ToolLoopAgent`. The system-prompt slot here is `instructions` (vs `system` in the call form); both keys are captured |
+| tools record walk | In BOTH agent forms, `tools` is an OBJECT / RECORD (`{ weather: weatherTool, search: tool({...}) }`), NOT an array — every other TS agent pass reads `tools: [...]` arrays; this walk iterates the object's property **values**. A bare identifier → `ToolRef{Name}` (wired by `ResolveEdges`); an inline `tool({...})` / `dynamicTool({...})` → agent marked `Opaque` (no symbol edge); a `<provider>.tools.<name>()` call → `HostedToolRef`; a spread (`...mcpTools`) or any other value → `Opaque` |
+| Provider hosted tools | Member-call shape `<provider>.tools.<name>()` read directly from the `member_expression` text (`TSCalleeText` cannot resolve it — the provider object is a runtime value, not an import alias). Closed set across `@ai-sdk/anthropic` (`anthropic.tools.bash` / `textEditor` / `computer` / `codeExecution` / `webSearch`), `@ai-sdk/openai` (`openai.tools.localShell` / `computerUsePreview` / `codeInterpreter` / `webSearch` / `webSearchPreview` / `fileSearch`), `@ai-sdk/google` (`google.tools.codeExecution` / `googleSearch` / `urlContext`). A trailing `_<date>` version suffix (e.g. `bash_20250124`) is stripped to a canonical class. The shell / computer / code-exec subset is what VAI-006 flags; web-search / URL-context tools are excluded (SSRF-class, not RCE) |
+
+**v1 gaps:** VAI-009 / 010 (name-quality rules — Vercel tools carry no `Name`,
+so there is nothing to lint) and VAI-011 (network-timeout — needs a TS
+abort-signal predicate) are not shipped; `.js` / `.mjs` apps are recognized in
+the inventory but not AST-parsed (the TS parser only handles `.ts` / `.tsx`).
+
+### Pydantic AI — Python
+
+Discovery sources: `internal/analysis/pydantic_ai_agents.go`,
+`pydantic_ai_tools.go`, `pydantic_ai_hosted_tools.go`, plus the
+`@agent.tool` / `@agent.tool_plain` decorators routed in
+`internal/analysis/discovery.go` (`kindFromDecorators`). Import gate
+(AST-based): a file is in scope when it imports `pydantic_ai` / `pydantic_ai.*`
+(the dot boundary excludes `pydantic_aix`). The gate disambiguates the bare
+`Agent` class name from the OpenAI, ADK, and CrewAI classes of the same name.
+
+| Construct | Recognition |
+|---|---|
+| Agents | `Agent(...)` constructor calls, normalized to Class `PydanticAgent` (the upstream token is `Agent`; the stamped name disambiguates from the other SDKs' `Agent`). `agentKindMatches("pydantic_ai_agent")` keys on BOTH SDK and Class. All kwargs captured (`model`, `output_type`, `system_prompt`, `instructions`, `tools`, `retries`, `end_strategy`, …); optional `name=` is the label; `VarName` captured so the `@agent.tool` decorator owner and `tools=[...]` references resolve |
+| Tools (`@agent.tool` / `@agent.tool_plain`) | Attribute decorators on the agent var (`@agent.tool` takes a leading `RunContext`; `@agent.tool_plain` does not). Routed in `kindFromDecorators` ONLY when the file imports `pydantic_ai` AND does NOT import the Claude SDK — the `&& !claudeImport` guard is load-bearing because the Claude SDK also exposes an `@agent.tool`, so a Claude-only file (and a file importing both) falls through to the Claude case (claude wins the collision). Emits `KindPydanticAITool` |
+| Tools (factory) | `Tool(fn, takes_ctx=, requires_approval=, name=, description=)` call — gated on `pydantic_ai` imported AND NOT LangChain imported (LangChain ships an identically-named `Tool(...)`; LangChain's gate wins, mirroring the Claude `@agent.tool` precedence). First positional ident resolved to a same-file def so the body predicates scan it; `name=` / `description=` override; remaining kwargs land in Config |
+| Native (built-in) tools | The dangerous subset `CodeExecutionTool` (code exec), `WebFetchTool` / `UrlContextTool` / `WebSearchTool` (model-chosen URL fetch). Wired in two shapes under the `capabilities=` / `builtin_tools=` kwargs (NOT the generic `tools=` list, so `ResolveEdges` scans those two kwargs specifically): the modern `capabilities=[NativeTool(CodeExecutionTool())]` wrapper (unwrapped one level to the inner class) and the legacy `builtin_tools=[CodeExecutionTool()]` direct form → `HostedToolDef` (SDK `pydantic_ai`), consumed by agent rules PYD-102 / 103 |
+
+**v1 gaps:** PYD-104 (`force_download` on a native tool — needs a new
+predicate), the bare-function `tools=[fn]` ToolDef-synthesis shape (the agent
+edge still works via the `tools=` kwarg, but no standalone `ToolDef` is
+emitted), and stripping the leading `RunContext` param for PYD-002 (so a
+`@agent.tool` whose only "param" is the injected context is not mis-flagged as
+typed) are not modeled.
+
 ### OpenShell — Python
 
 | Construct | Recognition |
@@ -217,6 +317,10 @@ not fire for it.
 | **MCP cross-language** (TS, Rust, Go) | Two prerequisites are missing today: (1) MCP dep-scan needles in `internal/ingestion/normalizer.go` — currently only `claude-agent-sdk` / `claude_agent_sdk` / `openai-agents` / `@openai/agents` / `google-adk` / `@google/adk` are matched; there is no `@modelcontextprotocol/sdk` (npm), no `rmcp` / `anthropic-mcp` (Cargo), no Go MCP module needle. (2) per-language AST parsers and discovery for the SDK shapes (`Server.tool()` factory in TS, `#[tool]` macros in Rust, etc.). File paths are recorded by the generic walk but no MCP-specific extraction happens against them |
 | **MCP server-side completeness** | We discover tools registered with `@server.tool` etc., but don't extract `Prompt`, `Resource`, `Sampling` registrations — those exist in the spec and would be a small additional pass |
 | **LangChain class tools + raw `StateGraph` + TS provider hosted tools** | Three additive discovery gaps in the LangChain pack: `class X(BaseTool)` / `extends StructuredTool` (a class shape, not a call); the raw `StateGraph` → `.compile()` graph agent (emergent across call sites — needs data-flow from the `StateGraph` var through `add_node` / `ToolNode` / `compile`, not a single-call capture); and the date-stamped TS provider hosted tools (`shell()` / `bash_*` / `applyPatch`). Each is discovery-only, no schema change |
+| **CrewAI class tools + `Crew(...)` orchestration** | Two discovery-only gaps: the `class X(BaseTool)` subclass tool shape (a class, not a call or `@tool` decorator — the same shape missing for LangChain) and the `Crew(...)` orchestration unit (the agent constructor `Agent(...)` is covered; the crew that wires agents + tasks together is not). No schema change |
+| **AutoGen v0.4 executor + caller/executor edge + AG2 `@tool`** | Three additive gaps: the v0.4 executor-class hosted surface (`CodeExecutorAgent` + `LocalCommandLineCodeExecutor`) that an AG2-003 rule would target; resolving the `register_function(caller=, executor=)` two-agent edge (the agents' `VarName`s are already captured, so this is edge-resolution work, not new discovery); and an AG2 bare-name `@tool` decorator arm in `kindFromDecorators`. Discovery / edge-resolution only |
+| **Vercel name rules + TS timeout predicate + `.js` parsing** | VAI-009 / 010 need a tool `Name` to lint, but Vercel tools take their name from the agent's tools-record key, not the definition — closing this means propagating the record key onto the `ToolDef` during edge resolution. VAI-011 (network timeout) needs a new TS abort-signal predicate (the same predicate the Claude/OpenAI TS packs still lack). And `.js` / `.mjs` apps are inventoried but not AST-parsed — the TS parser is gated to `.ts` / `.tsx` |
+| **Pydantic `force_download` predicate + bare-`tools=[fn]` + `RunContext` strip** | PYD-104 needs a new predicate for a native tool's `force_download` kwarg. The bare-function `tools=[fn]` shape resolves the agent edge but emits no standalone `ToolDef` (so tool-scope rules don't fire on it) — closing it means synthesizing a `ToolDef` from each resolved function in `tools=`. And PYD-002 should strip the leading `RunContext` param a `@agent.tool` injects before judging type-annotation coverage, so a ctx-only tool is not mis-read as typed |
 
 ## Recommended next moves
 
@@ -268,6 +372,20 @@ rationale, not as a binding roadmap.
    discovery, not a single-call capture), class-based tools (`class X(BaseTool)`
    / `extends StructuredTool`), and the date-stamped TS provider hosted tools
    (`shell()` / `bash_*` / `applyPatch`).
+6. **Four SDK rows landed 2026-06-05** — CrewAI, AutoGen / AG2, and Pydantic AI
+   (Python) plus the Vercel AI SDK (TypeScript). Each ships discovery in the
+   engine binary and a rule pack in `trustabl-rules`: CrewAI CREW-001..006 / 101..108
+   / 201, AutoGen AG2-001..012 / 201, Vercel VAI-001..008 / 012, Pydantic
+   PYD-001..007 / 101..105 / 201. The bare `Agent` name is import-gated per SDK
+   so CrewAI / Pydantic / OpenAI / ADK never cross-match, and `kindFromDecorators`
+   now also routes CrewAI `@tool` (by import binding) and Pydantic `@agent.tool` /
+   `@agent.tool_plain` (import-gated, with the Claude SDK winning the collision).
+   Remaining per-SDK work is tracked in the gaps table above: CrewAI `class X(BaseTool)`
+   + `Crew(...)`; AutoGen v0.4 executor-class (AG2-003) + the `register_function`
+   caller/executor edge + an AG2 `@tool` arm; Vercel VAI-009/010 name rules +
+   VAI-011 TS-timeout predicate + `.js` parsing; Pydantic PYD-104 `force_download`
+   predicate + bare-`tools=[fn]` synthesis + the `RunContext` param-strip for
+   PYD-002.
 
 ## Sources
 

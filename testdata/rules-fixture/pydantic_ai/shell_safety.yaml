@@ -1,0 +1,35 @@
+policy:
+  id: pydantic_ai_shell_safety
+  name: Pydantic AI shell-execution safety
+  category: pydantic_ai
+  description: >
+    Flags Pydantic AI tools whose body shells out to the operating system. A
+    model-callable tool that runs shell commands is the most direct
+    prompt-injection path to arbitrary code execution.
+
+rules:
+  - id: PYD-003
+    title: Pydantic AI tool body spawns a subprocess
+    severity: high
+    confidence: 0.85
+    language: python
+    applies_to:
+      - pydantic_ai_tool
+    scope: tool
+    match:
+      has_shell_call: true
+    explanation: >
+      This Pydantic AI tool's body invokes a shell primitive (subprocess.*,
+      os.system, os.popen, or os.spawn*). Because the tool is registered with the
+      agent and therefore model-callable, a prompt-injected or confused model can
+      drive it to run arbitrary commands with the agent process's privileges —
+      shell execution selected by model output is the most direct path from
+      prompt injection to remote code execution. The model controls both whether
+      the tool is called and the arguments it receives, so any command string
+      assembled from those arguments is attacker-influenced.
+    fix: >
+      Do not let model-controlled input reach a shell. Replace shell-outs with a
+      typed library call; if a subprocess is unavoidable, pass an argument list
+      (never shell=True), allow-list the exact commands, and run it in a sandbox
+      with no ambient credentials. Keep shell logic out of any agent-callable
+      tool.

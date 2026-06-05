@@ -1,0 +1,33 @@
+policy:
+  id: autogen_code_execution
+  name: AutoGen code-execution safety
+  category: autogen
+  description: >
+    Flags AutoGen tools whose body evaluates code at runtime. Model-selected code
+    execution is a direct arbitrary-execution path; AutoGen's own docs recommend
+    Docker and warn that local execution is not recommended.
+
+rules:
+  - id: AG2-010
+    title: AutoGen tool body evaluates dynamic code
+    severity: high
+    confidence: 0.85
+    language: python
+    applies_to:
+      - autogen_tool
+    scope: tool
+    match:
+      has_code_exec_call: true
+    explanation: >
+      This AutoGen tool's body calls eval(), exec(), or compile() — Python's
+      dynamic-code-execution builtins. Because the tool is registered with an agent
+      and exposed to the model, a prompt injection can steer it to run attacker-chosen
+      Python in the agent process. This is the same arbitrary-execution risk AutoGen's
+      code executor carries — and AutoGen's documentation strongly recommends running
+      such code inside Docker, not directly via in-process eval/exec.
+    fix: >
+      Remove eval/exec/compile from agent-callable tool bodies. If the tool must
+      compute over structured input, parse it with a real parser (ast.literal_eval
+      for data, a typed schema for arguments). If running code is genuinely the
+      product, route it through AutoGen's Docker code executor or a locked-down
+      external sandbox with no filesystem or network and a hard timeout.

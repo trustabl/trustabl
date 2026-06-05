@@ -1,0 +1,56 @@
+policy:
+  id: autogen_tool_definition
+  name: AutoGen tool definition hygiene
+  category: autogen
+  description: >
+    Hygiene rules for AutoGen tools registered via register_function or the
+    register_for_llm / register_for_execution decorators. AutoGen turns the
+    registered function's docstring and parameter type hints into the tool's
+    description and argument schema for the model.
+
+rules:
+  - id: AG2-007
+    title: AutoGen tool has no description
+    severity: low
+    confidence: 0.9
+    language: python
+    applies_to:
+      - autogen_tool
+    scope: tool
+    match:
+      has_docstring: false
+    explanation: >
+      AutoGen advertises a registered function to the model through its description,
+      which it derives from the function's docstring (unless an explicit description=
+      is passed at registration). A tool with neither reaches the model as a bare
+      name, so the model cannot tell what the tool does or when to call it — it will
+      skip the tool or invoke it with the wrong arguments. This is the single
+      highest-leverage authoring fix.
+    fix: >
+      Add a one-paragraph docstring to the registered function describing what the
+      tool does, the inputs it expects, and what it returns — or pass description= at
+      registration. AutoGen passes this text to the model verbatim, so write it for
+      the model rather than a human maintainer.
+
+  - id: AG2-008
+    title: AutoGen tool parameters are not type-annotated
+    severity: medium
+    confidence: 0.85
+    language: python
+    applies_to:
+      - autogen_tool
+    scope: tool
+    match:
+      all:
+        - has_params: true
+        - has_typed_params: false
+    explanation: >
+      AutoGen builds a tool's argument schema from the registered function's type
+      hints. A tool whose parameters carry no annotations produces an underspecified
+      schema: the model gets no type guidance and passes arguments of the wrong
+      shape, which the SDK then rejects at validation time — a silent reliability tax
+      on every call.
+    fix: >
+      Annotate every parameter with a concrete type (str, int, list[str], a
+      typing.Annotated description, etc.). AutoGen propagates these annotations into
+      the schema the model sees, so the model emits correctly-shaped arguments.

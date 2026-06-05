@@ -1,0 +1,62 @@
+policy:
+  id: crewai_code_execution
+  name: CrewAI code-execution safety
+  category: crewai
+  description: >
+    Flags CrewAI agents wired with the code-interpreter built-in and CrewAI
+    tools whose body evaluates code at runtime. Model-selected code execution is
+    a direct arbitrary-execution path and the root of CrewAI's published RCE
+    advisories.
+
+rules:
+  - id: CREW-103
+    title: CrewAI agent wires the code-interpreter built-in tool
+    severity: high
+    confidence: 0.85
+    language: python
+    applies_to:
+      - crewai_agent
+    scope: agent
+    match:
+      agent_uses_hosted_tool_class:
+        - CodeInterpreterTool
+    explanation: >
+      This agent's tools list includes CodeInterpreterTool, CrewAI's built-in that
+      executes Python the model generates. It is the same arbitrary-execution
+      capability that allow_code_execution=True auto-injects (CREW-101), reached
+      here by wiring the tool by hand. Once it is in the tool set, a prompt
+      injection or a confused model can run attacker-chosen code in the agent
+      process — the vector behind CVE-2026-2275 (SandboxPython ctypes escape) and
+      CVE-2026-2287 (Docker-availability fallback to host execution). The CERT
+      remediation for those advisories is literally to remove or disable the Code
+      Interpreter Tool.
+    fix: >
+      Remove CodeInterpreterTool from production agents. If code execution is a
+      genuine requirement, run it outside CrewAI in a hardened external sandbox
+      (no filesystem, no network, no credentials, hard timeout) and gate it behind
+      an explicit human approval rather than exposing an in-process interpreter to
+      the model.
+
+  - id: CREW-003
+    title: CrewAI tool body evaluates dynamic code
+    severity: high
+    confidence: 0.85
+    language: python
+    applies_to:
+      - crewai_tool
+    scope: tool
+    match:
+      has_code_exec_call: true
+    explanation: >
+      This CrewAI tool's body calls eval(), exec(), or compile() — Python's
+      dynamic-code-execution builtins. Because the tool is exposed to the model, a
+      prompt injection can steer it to run attacker-chosen Python in the agent
+      process. This is the same mechanism behind CrewAI's CodeInterpreterTool;
+      hand-rolling it inside a @tool body carries the identical risk while bypassing
+      whatever sandboxing the built-in would have applied.
+    fix: >
+      Remove eval/exec/compile from agent-callable tool bodies. If the tool must
+      compute over structured input, parse it with a real parser (ast.literal_eval
+      for data, a typed schema for arguments). If running code is genuinely the
+      product, isolate it in a locked-down sandbox with no filesystem or network
+      and a hard timeout.

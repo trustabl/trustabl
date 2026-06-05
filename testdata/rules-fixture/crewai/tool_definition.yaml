@@ -1,0 +1,54 @@
+policy:
+  id: crewai_tool_definition
+  name: CrewAI tool definition hygiene
+  category: crewai
+  description: >
+    Hygiene rules for CrewAI tools defined with the @tool decorator from
+    crewai.tools. The docstring and the parameter type hints are what CrewAI
+    turns into the tool's description and argument schema for the model.
+
+rules:
+  - id: CREW-001
+    title: CrewAI tool has no description
+    severity: low
+    confidence: 0.9
+    language: python
+    applies_to:
+      - crewai_tool
+    scope: tool
+    match:
+      has_docstring: false
+    explanation: >
+      CrewAI exposes a @tool-decorated function to the model through its docstring:
+      that string becomes the tool's description in the prompt. A tool with no
+      docstring reaches the model as a bare name, so the model cannot tell what the
+      tool does or when to call it — it will skip the tool or invoke it with the
+      wrong arguments. This is the single highest-leverage authoring fix.
+    fix: >
+      Add a one-paragraph docstring to the decorated function describing what the
+      tool does, the inputs it expects, and what it returns. CrewAI passes this
+      string to the model verbatim, so write it for the model rather than a human
+      maintainer.
+
+  - id: CREW-002
+    title: CrewAI tool parameters are not type-annotated
+    severity: medium
+    confidence: 0.85
+    language: python
+    applies_to:
+      - crewai_tool
+    scope: tool
+    match:
+      all:
+        - has_params: true
+        - has_typed_params: false
+    explanation: >
+      CrewAI builds a tool's argument schema from the decorated function's type
+      hints. A tool whose parameters carry no annotations produces an
+      underspecified schema: the model gets no type guidance and passes arguments
+      of the wrong shape, which Pydantic then rejects at validation time — a silent
+      reliability tax on every call.
+    fix: >
+      Annotate every parameter with a concrete type (str, int, list[str], a
+      Pydantic model, etc.). CrewAI propagates these annotations into the schema the
+      model sees, so the model emits correctly-shaped arguments.

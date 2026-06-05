@@ -74,10 +74,12 @@ func Load(fsys fs.FS) ([]PolicyFile, error) {
 			switch pf.Policy.Category {
 			case models.CategoryClaudeSDK, models.CategoryOpenAISDK,
 				models.CategoryOpenShell, models.CategoryGoogleADK,
-				models.CategoryMCP, models.CategoryLangChain:
+				models.CategoryMCP, models.CategoryLangChain,
+				models.CategoryCrewAI, models.CategoryPydanticAI,
+				models.CategoryVercelAI, models.CategoryAutoGen:
 				// valid
 			default:
-				errs = append(errs, fmt.Errorf("%s: unknown category %q (allowed: claude_sdk, openai_sdk, openshell, google_adk, mcp, langchain)", name, pf.Policy.Category))
+				errs = append(errs, fmt.Errorf("%s: unknown category %q (allowed: claude_sdk, openai_sdk, openshell, google_adk, mcp, langchain, crewai, pydantic_ai, vercel_ai, autogen)", name, pf.Policy.Category))
 			}
 		}
 		if len(errs) > policyErrCount {
@@ -221,7 +223,9 @@ func validRepoHasSDKInCode(tok string) bool {
 	switch tok {
 	case string(models.SDKClaudeAgentSDK), string(models.SDKOpenAIAgents),
 		string(models.SDKGoogleADK), string(models.SDKMCP),
-		string(models.SDKLangChain), "openshell":
+		string(models.SDKLangChain), "openshell",
+		string(models.SDKCrewAI), string(models.SDKPydanticAI),
+		string(models.SDKVercelAI), string(models.SDKAutoGen):
 		return true
 	}
 	return false
@@ -233,7 +237,8 @@ func validAppliesToForScope(scope models.Scope, kind string) bool {
 		switch kind {
 		case "claude_sdk_tool", "openai_tool", "mcp_tool",
 			"shell_invocation", "unknown", "adk_function_tool",
-			"langchain_tool":
+			"langchain_tool",
+			"crewai_tool", "pydantic_ai_tool", "vercel_ai_tool", "autogen_tool":
 			return true
 		}
 	case models.ScopeAgent:
@@ -242,13 +247,18 @@ func validAppliesToForScope(scope models.Scope, kind string) bool {
 			"claude_query_main",
 			"adk_llm_agent", "adk_sequential_agent", "adk_parallel_agent",
 			"adk_loop_agent", "adk_langgraph_agent",
-			"langchain_agent", "langchain_agent_executor", "langchain_state_graph":
+			"langchain_agent", "langchain_agent_executor", "langchain_state_graph",
+			"crewai_agent", "pydantic_ai_agent", "vercel_ai_agent",
+			"autogen_conversable_agent", "autogen_user_proxy_agent",
+			"autogen_assistant_agent", "autogen_group_chat_manager",
+			"autogen_code_executor_agent":
 			return true
 		}
 	case models.ScopeRepo:
 		switch kind {
 		case "claude_sdk", "openai_agents", "openshell", "mcp", "google_adk",
-			"langchain":
+			"langchain",
+			"crewai", "pydantic_ai", "vercel_ai", "autogen":
 			return true
 		}
 	case models.ScopeSubagent:

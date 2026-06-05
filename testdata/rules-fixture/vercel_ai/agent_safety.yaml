@@ -1,0 +1,110 @@
+policy:
+  id: vercel_ai_agent_safety
+  name: Vercel AI SDK agent safety
+  category: vercel_ai
+  description: >
+    Agent-scope safety rules for Vercel AI SDK agents — the generateText /
+    streamText / generateObject / streamObject tool-loop calls and the
+    ToolLoopAgent class. These flag agents wired with provider tools that hand
+    the model shell, computer-control, or code-execution reach, and agents whose
+    tool loop has no bound, the two ways a Vercel agent turns a prompt injection
+    into runaway or arbitrary execution.
+
+rules:
+  - id: VAI-006
+    title: Vercel AI agent wires a provider shell / computer / code-execution tool
+    severity: high
+    confidence: 0.85
+    language: typescript
+    applies_to:
+      - vercel_ai_agent
+    scope: agent
+    match:
+      agent_uses_hosted_tool_class:
+        - anthropic.tools.bash
+        - anthropic.tools.computer
+        - anthropic.tools.codeExecution
+        - openai.tools.localShell
+        - openai.tools.computerUsePreview
+        - openai.tools.codeInterpreter
+        - google.tools.codeExecution
+    explanation: >
+      This agent's tools record includes a Vercel-provider tool that gives the
+      model shell, full computer control, or a code interpreter — anthropic's
+      bash / computer / codeExecution, openai's localShell / computerUsePreview /
+      codeInterpreter, or google's codeExecution. The Vercel AI SDK ships and
+      markets these provider tools as first-class, so wiring one is a single line
+      that hands a model-driven loop direct execution on the host or sandbox.
+      Because the agent's prompts and prior tool outputs are model-reachable, a
+      prompt injection has a direct path to running attacker-chosen commands or
+      code with the agent's privileges.
+    fix: >
+      Drop the provider execution tool unless the workflow truly requires it. If
+      it is essential, run it against an isolated, ephemeral sandbox with no
+      credentials, no private-network reach, and a hard timeout; constrain which
+      commands or code may run; and gate every invocation behind an explicit
+      human approval rather than letting the tool loop call it autonomously.
+
+  - id: VAI-007
+    title: Vercel AI agent tool loop has no step bound
+    severity: medium
+    confidence: 0.6
+    language: typescript
+    applies_to:
+      - vercel_ai_agent
+    scope: agent
+    match:
+      all:
+        - agent_kwarg_missing:
+            - stopWhen
+        - agent_kwarg_missing:
+            - maxSteps
+    explanation: >
+      This agent runs a multi-step tool loop (generateText / streamText /
+      ToolLoopAgent with a tools record) but sets neither stopWhen nor maxSteps,
+      so the loop's only stopping condition is the model deciding to stop calling
+      tools. A prompt injection or a model that loops on a tool whose output keeps
+      re-triggering it can run the loop unbounded — burning tokens, hammering the
+      wired tools (including any side-effecting or billed ones), and stalling the
+      request. The SDK does not impose a default ceiling.
+    fix: >
+      Set an explicit bound: pass maxSteps (a small integer ceiling on tool
+      round-trips) or a stopWhen condition (e.g. stepCountIs(n) or a predicate
+      that ends the loop once the task is done). Choose the lowest bound the
+      workflow tolerates so a misbehaving loop fails fast instead of running away.
+
+  - id: VAI-008
+    title: Vercel AI agent forces a provider execution tool every step
+    severity: medium
+    confidence: 0.65
+    language: typescript
+    applies_to:
+      - vercel_ai_agent
+    scope: agent
+    match:
+      all:
+        - agent_kwarg_value:
+            kwarg: toolChoice
+            value: required
+        - agent_uses_hosted_tool_class:
+            - anthropic.tools.bash
+            - anthropic.tools.computer
+            - anthropic.tools.codeExecution
+            - openai.tools.localShell
+            - openai.tools.computerUsePreview
+            - openai.tools.codeInterpreter
+            - google.tools.codeExecution
+    explanation: >
+      This agent sets toolChoice: "required" while wiring a provider shell /
+      computer / code-execution tool. "required" forces the model to call a tool
+      on every step instead of letting it answer directly, so the high-risk
+      execution tool is far more likely to be invoked — and on a step the model
+      had no real need for it. Combined with a model-reachable prompt surface,
+      forcing a tool call narrows the model's options toward exactly the
+      capability you least want it reaching for.
+    fix: >
+      Use toolChoice: "auto" (the default) so the model calls the execution tool
+      only when the task needs it, or pin toolChoice to a specific safe tool when
+      a call is genuinely mandatory. Keep shell / computer / code-execution tools
+      out of any agent that forces a tool call, and gate their use behind an
+      explicit approval.

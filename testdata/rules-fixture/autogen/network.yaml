@@ -1,0 +1,47 @@
+policy:
+  id: autogen_network
+  name: AutoGen tool network hygiene
+  category: autogen
+  description: >
+    Network-call hygiene inside AutoGen-registered tool functions. A tool that
+    makes a network request without a timeout can hang the conversation loop
+    indefinitely.
+
+rules:
+  - id: AG2-012
+    title: AutoGen tool network call has no timeout
+    severity: medium
+    confidence: 0.8
+    language: python
+    applies_to:
+      - autogen_tool
+    scope: tool
+    match:
+      call_without_kwarg:
+        callees:
+          - requests.get
+          - requests.post
+          - requests.put
+          - requests.delete
+          - requests.patch
+          - requests.head
+          - requests.request
+          - httpx.get
+          - httpx.post
+          - httpx.put
+          - httpx.delete
+          - httpx.patch
+          - httpx.head
+          - httpx.request
+        missing: timeout
+    explanation: >
+      This AutoGen tool makes a network request without a timeout, so it will hang
+      indefinitely on a slow or unresponsive remote. AutoGen has no tool-level
+      timeout — the entire agent conversation blocks until the request returns, and
+      under load this exhausts whatever runtime the agent is hosted on without ever
+      surfacing the failure to the model.
+    fix: >
+      Pass timeout= (typically 5–30 seconds) to the request. Choose a value tight
+      enough to fail fast and loose enough to allow legitimate slow responses for
+      this endpoint, and surface failures as a structured error the model can react
+      to.

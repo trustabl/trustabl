@@ -1,0 +1,32 @@
+policy:
+  id: pydantic_ai_code_execution
+  name: Pydantic AI code-execution safety
+  category: pydantic_ai
+  description: >
+    Flags Pydantic AI tools whose body evaluates code at runtime. Model-selected
+    dynamic code execution is a direct arbitrary-execution path.
+
+rules:
+  - id: PYD-004
+    title: Pydantic AI tool body evaluates dynamic code
+    severity: high
+    confidence: 0.85
+    language: python
+    applies_to:
+      - pydantic_ai_tool
+    scope: tool
+    match:
+      has_code_exec_call: true
+    explanation: >
+      This Pydantic AI tool's body calls eval(), exec(), or compile() — Python's
+      dynamic-code-execution builtins. Because the tool is exposed to the model, a
+      prompt injection can steer it to run attacker-chosen Python in the agent
+      process. This is the same arbitrary-execution capability as Pydantic AI's
+      built-in CodeExecutionTool, hand-rolled inside a tool body, and it bypasses
+      whatever sandboxing the built-in would have applied.
+    fix: >
+      Remove eval/exec/compile from agent-callable tool bodies. If the tool must
+      compute over structured input, parse it with a real parser
+      (ast.literal_eval for data, a typed Pydantic schema for arguments). If
+      running code is genuinely the product, isolate it in a locked-down sandbox
+      with no filesystem or network and a hard timeout.

@@ -1,0 +1,64 @@
+policy:
+  id: pydantic_ai_tool_definition
+  name: Pydantic AI tool definition hygiene
+  category: pydantic_ai
+  description: >
+    Hygiene rules for Pydantic AI tools defined with the @agent.tool /
+    @agent.tool_plain decorators or the Tool(...) factory. Pydantic AI builds the
+    tool's description from the function docstring and its argument schema from
+    the parameter type hints, so a missing docstring or untyped parameters
+    degrade exactly what the model sees.
+
+rules:
+  - id: PYD-001
+    title: Pydantic AI tool has no description
+    severity: low
+    confidence: 0.9
+    language: python
+    applies_to:
+      - pydantic_ai_tool
+    scope: tool
+    match:
+      has_docstring: false
+    explanation: >
+      Pydantic AI turns a tool function's docstring into the tool description it
+      sends to the model. A tool with no docstring reaches the model as a bare
+      name with no guidance on what it does or when to call it, so the model
+      skips it or invokes it with the wrong arguments. The docstring is also where
+      Pydantic AI extracts per-parameter descriptions (it parses Google/NumPy/
+      Sphinx styles), so an absent docstring strips both the tool- and
+      argument-level guidance at once.
+    fix: >
+      Add a docstring to the tool function describing what it does, the inputs it
+      expects, and what it returns. Pydantic AI passes this to the model verbatim
+      and parses the parameter sections into the argument schema, so write it for
+      the model rather than only a human maintainer.
+
+  - id: PYD-002
+    title: Pydantic AI tool parameters are not type-annotated
+    severity: medium
+    confidence: 0.85
+    language: python
+    applies_to:
+      - pydantic_ai_tool
+    scope: tool
+    match:
+      all:
+        - has_params: true
+        - has_typed_params: false
+    explanation: >
+      Pydantic AI builds a tool's JSON argument schema from the function's
+      parameter type hints. A tool whose parameters carry no annotations produces
+      an underspecified schema: the model gets no type guidance and emits
+      arguments of the wrong shape, which Pydantic then rejects at validation
+      time — a silent reliability tax on every call, and on a retrying agent a
+      source of wasted turns. Note for reviewers: a context tool's leading
+      ctx: RunContext[...] parameter is itself typed, so an @agent.tool whose
+      business parameters are untyped but whose ctx is annotated may not be
+      flagged here (a false negative, never a false positive); @agent.tool_plain
+      tools and no-arg tools are unaffected.
+    fix: >
+      Annotate every business parameter with a concrete type (str, int,
+      list[str], a Pydantic model, etc.). Pydantic AI propagates these
+      annotations into the schema the model sees, so the model emits
+      correctly-shaped arguments and validation stops rejecting them.

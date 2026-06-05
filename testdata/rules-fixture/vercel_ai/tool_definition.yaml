@@ -1,0 +1,60 @@
+policy:
+  id: vercel_ai_tool_definition
+  name: Vercel AI SDK tool definition hygiene
+  category: vercel_ai
+  description: >
+    Hygiene rules for Vercel AI SDK tools built with tool({...}) / dynamicTool({...})
+    from the `ai` package. The `description` is the only model-visible account of
+    what the tool does (the SDK has no docstring fallback), and the inputSchema
+    is what the SDK turns into the model's argument schema.
+
+rules:
+  - id: VAI-004
+    title: Vercel AI tool has no description
+    severity: low
+    confidence: 0.9
+    language: typescript
+    applies_to:
+      - vercel_ai_tool
+    scope: tool
+    match:
+      has_docstring: false
+    explanation: >
+      The Vercel AI SDK exposes a tool to the model through its `description`
+      field — that string is the entire account of what the tool does in the
+      prompt. Unlike Python frameworks there is no docstring fallback, so a tool
+      defined with no `description` (or an empty one) reaches the model as a bare
+      name: the model cannot tell what the tool does or when to call it, and it
+      will skip the tool or invoke it with the wrong arguments. This is the
+      single highest-leverage authoring fix.
+    fix: >
+      Add a `description` to the tool({...}) options describing what the tool
+      does, the inputs it expects, and what it returns. The SDK passes this
+      string to the model verbatim, so write it for the model rather than a human
+      maintainer.
+
+  - id: VAI-005
+    title: Vercel AI tool accepts untyped input
+    severity: medium
+    confidence: 0.8
+    language: typescript
+    applies_to:
+      - vercel_ai_tool
+    scope: tool
+    match:
+      all:
+        - has_params: true
+        - has_typed_params: false
+    explanation: >
+      The Vercel AI SDK builds a tool's argument schema from its inputSchema (or
+      the v4 `parameters`). This tool takes input but imposes no field types — it
+      either uses dynamicTool (whose input is always `unknown`) or an open schema
+      (z.any(), z.unknown(), or an empty z.object({})). The model then gets no
+      argument-shape guidance and passes values of the wrong shape, which the SDK
+      rejects at validation time or, worse, forwards unchecked into execute() — a
+      reliability and injection tax on every call.
+    fix: >
+      Give the tool a concrete Zod object schema in inputSchema with a typed
+      field per argument (z.object({ city: z.string(), units: z.enum([...]) })).
+      Reserve dynamicTool for the rare case where the input genuinely cannot be
+      typed, and even then validate the shape inside execute() before using it.

@@ -1,0 +1,35 @@
+policy:
+  id: crewai_shell_safety
+  name: CrewAI shell-execution safety
+  category: crewai
+  description: >
+    Flags CrewAI tools whose body shells out to the operating system. A
+    model-callable tool that runs shell commands is the most direct
+    prompt-injection path to arbitrary code execution, and CrewAI ships no
+    dedicated shell-tool class, so this hand-rolled shape is the real shell
+    surface to watch.
+
+rules:
+  - id: CREW-004
+    title: CrewAI tool body spawns a subprocess
+    severity: high
+    confidence: 0.85
+    language: python
+    applies_to:
+      - crewai_tool
+    scope: tool
+    match:
+      has_shell_call: true
+    explanation: >
+      This CrewAI tool's body invokes a shell primitive (subprocess.*, os.system,
+      os.popen, or os.spawn*). Because the tool is exposed to the model, a
+      prompt-injected or confused model can drive it to run arbitrary commands with
+      the agent process's privileges — shell execution selected by model output is
+      the most direct path from prompt injection to remote code execution. CrewAI
+      ships no built-in shell-tool class, so a tool that shells out by hand is the
+      shell surface a reviewer must inspect.
+    fix: >
+      Do not let model-controlled input reach a shell. Replace shell-outs with a
+      typed library call; if a subprocess is unavoidable, pass an argument list
+      (never shell=True), allow-list the exact commands, and run it in a sandbox
+      with no ambient credentials. Keep shell logic out of any agent-callable tool.

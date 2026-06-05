@@ -76,6 +76,8 @@ func parseTSTool(t *testing.T, src string, kind models.ToolKind) (models.ToolDef
 		tools = analysis.DiscoverTSMCPProper([]analysis.ParsedFile{pf}, func(string) {})
 	case models.KindLangChainTool:
 		tools = analysis.DiscoverTSLangChainTools([]analysis.ParsedFile{pf}, func(string) {})
+	case models.KindVercelAITool:
+		tools = analysis.DiscoverTSVercelTools([]analysis.ParsedFile{pf}, func(string) {})
 	default:
 		t.Fatalf("parseTSTool: unsupported kind %q", kind)
 	}
@@ -130,6 +132,24 @@ func parseTSADKAgentInline(src string) models.AgentDef {
 	agents := analysis.DiscoverTSADKAgents([]analysis.ParsedFile{pf}, func(string) {})
 	if len(agents) == 0 {
 		panic("parseTSADKAgentInline: no agent discovered")
+	}
+	return agents[0]
+}
+
+// parseTSVercelAgentInline parses a TS snippet and returns the first discovered
+// Vercel AI SDK agent. HostedToolRefs carry their canonical Class at discovery
+// (agent_uses_hosted_tool_class matches on Class, not Resolved), so no
+// ResolveEdges pass is needed for the hosted-tool-class rules. Panics (no
+// *testing.T available in package-level case tables).
+func parseTSVercelAgentInline(src string) models.AgentDef {
+	tree, err := astutil.NewTSParser().ParseCtx(context.Background(), nil, []byte(src))
+	if err != nil {
+		panic("parseTSVercelAgentInline parse: " + err.Error())
+	}
+	pf := analysis.ParsedFile{RelPath: "src/a.ts", Tree: tree, Source: []byte(src)}
+	agents := analysis.DiscoverTSVercelAgents([]analysis.ParsedFile{pf}, func(string) {})
+	if len(agents) == 0 {
+		panic("parseTSVercelAgentInline: no agent discovered")
 	}
 	return agents[0]
 }
