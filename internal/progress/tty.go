@@ -235,20 +235,59 @@ func (m model) renderStage(s *stage, withSpinner bool) string {
 
 // TTYReporter forwards Reporter calls to a running bubbletea program. It
 // implements Reporter and adds Run/Done to drive the render loop.
-type TTYReporter struct{ p *tea.Program }
+//
+// Reporter methods do NOT call p.Send directly. bubbletea's msgs channel is
+// unbuffered and has no reader until Run() starts the event loop, so a Send
+// from the scan goroutine before Run() would block forever — and Run() is
+// simultaneously blocking to start that loop, deadlocking both goroutines on
+// the default interactive path. Instead methods enqueue onto a buffered channel
+// that a pump goroutine (started by Run) forwards into p.Send once the loop is
+// reading. Enqueue never blocks on the not-yet-running program, removing the
+// startup race.
+type TTYReporter struct {
+	p    *tea.Program
+	msgs chan tea.Msg
+}
 
 // NewTTY builds a TTYReporter rendering to w (stderr). The caller runs the loop
 // with Run() on the main goroutine while emitting events from another goroutine.
 func NewTTY(w io.Writer) *TTYReporter {
 	p := tea.NewProgram(newModel(), tea.WithOutput(w))
-	return &TTYReporter{p: p}
+	// The buffer only needs to hold events produced in the sliver of time between
+	// the first Reporter call and Run() starting the loop; 1024 is ample headroom.
+	return &TTYReporter{p: p, msgs: make(chan tea.Msg, 1024)}
 }
+
+// send enqueues a message for the render loop without ever blocking on the
+// program-not-yet-running (the deadlock this guards against). The pump in Run
+// forwards it. If the buffer ever fills (a flood before Run starts — practically
+// impossible since Run is called immediately after spawning the worker), the
+// caller blocks only until the pump drains, never indefinitely.
+func (r *TTYReporter) send(m tea.Msg) { r.msgs <- m }
 
 // Run renders until Done/Fatal triggers quit. Call on the main goroutine. A
 // user interrupt (Ctrl-C) surfaces as ErrInterrupted so the caller can exit
 // cleanly rather than printing bubbletea's raw kill error.
 func (r *TTYReporter) Run() error {
-	if _, err := r.p.Run(); err != nil {
+	// Forward buffered events into the program once its loop is reading. Started
+	// before p.Run() so it is ready the instant the loop comes up; p.Send blocks
+	// only until then, then delivers in FIFO order. The pump stops when the
+	// program ends (done closed); a pump left mid-Send after an interrupt is
+	// harmless because the process is exiting.
+	done := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case m := <-r.msgs:
+				r.p.Send(m)
+			case <-done:
+				return
+			}
+		}
+	}()
+	_, err := r.p.Run()
+	close(done)
+	if err != nil {
 		if errors.Is(err, tea.ErrProgramKilled) {
 			return ErrInterrupted
 		}
@@ -258,14 +297,14 @@ func (r *TTYReporter) Run() error {
 }
 
 // Done signals the render loop to stop (call after the job finishes).
-func (r *TTYReporter) Done() { r.p.Send(doneMsg{}) }
+func (r *TTYReporter) Done() { r.send(doneMsg{}) }
 
-func (r *TTYReporter) StartPhase(key, label string) { r.p.Send(startPhaseMsg{key, label}) }
-func (r *TTYReporter) SetTotal(n int)               { r.p.Send(setTotalMsg{n}) }
-func (r *TTYReporter) Advance(detail string)        { r.p.Send(advanceMsg{detail}) }
-func (r *TTYReporter) SetDetail(detail string)      { r.p.Send(setDetailMsg{detail}) }
-func (r *TTYReporter) ResetPhase()                  { r.p.Send(resetPhaseMsg{}) }
-func (r *TTYReporter) EndPhase(summary string)      { r.p.Send(endPhaseMsg{summary}) }
-func (r *TTYReporter) Fatal(err error)              { r.p.Send(fatalMsg{err}) }
+func (r *TTYReporter) StartPhase(key, label string) { r.send(startPhaseMsg{key, label}) }
+func (r *TTYReporter) SetTotal(n int)               { r.send(setTotalMsg{n}) }
+func (r *TTYReporter) Advance(detail string)        { r.send(advanceMsg{detail}) }
+func (r *TTYReporter) SetDetail(detail string)      { r.send(setDetailMsg{detail}) }
+func (r *TTYReporter) ResetPhase()                  { r.send(resetPhaseMsg{}) }
+func (r *TTYReporter) EndPhase(summary string)      { r.send(endPhaseMsg{summary}) }
+func (r *TTYReporter) Fatal(err error)              { r.send(fatalMsg{err}) }
 
 var _ Reporter = (*TTYReporter)(nil)

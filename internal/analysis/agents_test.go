@@ -1,6 +1,7 @@
 package analysis_test
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -298,7 +299,7 @@ def do_thing(x: str) -> str:
 		t.Fatal(err)
 	}
 	manifest := models.ScanManifest{RepoRoot: dir, PythonFiles: []string{"t.py"}}
-	tools, _, _, err := analysis.DiscoverTools(manifest, nil)
+	tools, _, _, err := analysis.DiscoverTools(context.Background(), manifest, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -337,7 +338,7 @@ def ok(x: str) -> str:
 	// "missing.py" is listed in the manifest but never written — an unreadable file.
 	manifest := models.ScanManifest{RepoRoot: dir, PythonFiles: []string{"good.py", "broken.py", "missing.py"}}
 
-	tools, _, skipped, err := analysis.DiscoverTools(manifest, nil)
+	tools, _, skipped, err := analysis.DiscoverTools(context.Background(), manifest, nil)
 	if err != nil {
 		t.Fatalf("DiscoverTools must not abort on a bad file: %v", err)
 	}

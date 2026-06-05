@@ -56,6 +56,16 @@ func loadPolicies(fsys fs.FS, lenient bool) ([]PolicyFile, []string, error) {
 		if d.IsDir() && d.Name() == ".git" {
 			return fs.SkipDir
 		}
+		// Never load a symlink. os.DirFS follows symlinks on Open, so a hostile
+		// rules pack (a custom --rules-repo / TRUSTABL_RULES_REPO) containing e.g.
+		// rules/x.yaml -> /etc/passwd would otherwise read outside the pack
+		// directory and feed host-filesystem content into the loader. fs.WalkDir
+		// does not descend symlinked directories, so skipping the entry suffices.
+		// This is the single chokepoint covering both clone paths (plumbing fetch
+		// and PlainClone fallback) and any cached pack.
+		if d.Type()&fs.ModeSymlink != 0 {
+			return nil
+		}
 		// manifest.yaml at the pack root carries schema metadata, not a
 		// policy. The rulesource package reads it; the loader skips it.
 		if !d.IsDir() && strings.HasSuffix(path, ".yaml") && path != "manifest.yaml" {
@@ -187,6 +197,15 @@ func loadPolicies(fsys fs.FS, lenient bool) ([]PolicyFile, []string, error) {
 			} else if !models.ValidScope(rule.Scope) {
 				errs = append(errs, fmt.Errorf("%s: unknown scope %q (allowed: tool, agent, repo, subagent)", tag, rule.Scope))
 			}
+			// Reject a match nested beyond the depth bound BEFORE any recursive
+			// walk (outOfScopePredicates / degenerateCombinators below, or the
+			// evaluator at scan time) touches it — a hostile pack could otherwise
+			// exhaust the stack. exceedsMatchDepth is itself depth-bounded, so it
+			// cannot overflow while measuring.
+			if exceedsMatchDepth(rule.Match, maxMatchDepth) {
+				errs = append(errs, fmt.Errorf("%s: match nesting exceeds the maximum depth of %d", tag, maxMatchDepth))
+				continue
+			}
 			// Scope-DEPENDENT checks: these need a known scope to evaluate
 			// (validAppliesToForScope and outOfScopePredicates both take the
 			// scope as input), so they can only run once the scope is valid. A
@@ -308,11 +327,36 @@ func validAppliesToForScope(scope models.Scope, kind string) bool {
 	return false
 }
 
+// maxRuleFileBytes caps an individual rule YAML file. The rules pack is cloned
+// from a git repo operators can override (--rules-repo / TRUSTABL_RULES_REPO), so
+// a hostile pack could ship a giant YAML to OOM the loader (the lenient path
+// holds the raw bytes AND a full yaml.Node tree at once). Real rule files are a
+// few KiB; 4 MiB is generous headroom.
+const maxRuleFileBytes = 4 << 20
+
+// checkRuleFileSize rejects a rule file larger than maxRuleFileBytes before it is
+// read into memory. fs.Stat falls back to Open+Stat for any fs.FS, so this works
+// for the production os.DirFS and for in-memory test filesystems alike; a stat
+// error is left for the subsequent read to surface with a clearer message.
+func checkRuleFileSize(fsys fs.FS, name string) error {
+	fi, err := fs.Stat(fsys, name)
+	if err != nil {
+		return nil
+	}
+	if fi.Size() > maxRuleFileBytes {
+		return fmt.Errorf("%s: rule file is %d bytes, exceeds the %d-byte limit", name, fi.Size(), int64(maxRuleFileBytes))
+	}
+	return nil
+}
+
 // decodePolicyFile opens, decodes, and closes one YAML file from fsys.
 // Returning errors as values rather than holding the fd open via defer keeps
 // the descriptor budget bounded by Load's iteration, not by total policy count.
 func decodePolicyFile(fsys fs.FS, name string) (PolicyFile, error) {
 	var pf PolicyFile
+	if err := checkRuleFileSize(fsys, name); err != nil {
+		return pf, err
+	}
 	f, err := fsys.Open(name)
 	if err != nil {
 		return pf, fmt.Errorf("%s: open: %w", name, err)
@@ -338,6 +382,9 @@ func decodePolicyFile(fsys fs.FS, name string) (PolicyFile, error) {
 // half-decoded.
 func decodePolicyFileLenient(fsys fs.FS, name string, known map[string]bool) (PolicyFile, []string, error) {
 	var pf PolicyFile
+	if err := checkRuleFileSize(fsys, name); err != nil {
+		return pf, nil, err
+	}
 	b, err := fs.ReadFile(fsys, name)
 	if err != nil {
 		return pf, nil, fmt.Errorf("%s: open: %w", name, err)
@@ -377,7 +424,7 @@ func forwardIncompatibleRules(root *yaml.Node, known map[string]bool, fileName s
 		if matchNode == nil || matchNode.Kind != yaml.MappingNode {
 			continue
 		}
-		if !matchHasUnknownKey(matchNode, known) {
+		if !matchHasUnknownKey(matchNode, known, 0) {
 			continue
 		}
 		idx = append(idx, i)
@@ -398,7 +445,13 @@ func forwardIncompatibleRules(root *yaml.Node, known map[string]bool, fileName s
 // key not in `known` is a predicate from a newer schema; its value is NOT
 // descended into (a known predicate's nested struct keys, e.g.
 // param_name_matches.exact, are not match-level keys).
-func matchHasUnknownKey(m *yaml.Node, known map[string]bool) bool {
+func matchHasUnknownKey(m *yaml.Node, known map[string]bool, depth int) bool {
+	// Bound recursion: a pathologically nested match in a hostile rules pack
+	// would otherwise exhaust the stack during this forward-compat pre-pass.
+	// Treat over-deep nesting as "unknown" so the rule is dropped, not crashed.
+	if depth > maxMatchDepth {
+		return true
+	}
 	for i := 0; i+1 < len(m.Content); i += 2 {
 		key := m.Content[i].Value
 		val := m.Content[i+1]
@@ -409,13 +462,13 @@ func matchHasUnknownKey(m *yaml.Node, known map[string]bool) bool {
 		case "all", "any":
 			if val.Kind == yaml.SequenceNode {
 				for _, el := range val.Content {
-					if el.Kind == yaml.MappingNode && matchHasUnknownKey(el, known) {
+					if el.Kind == yaml.MappingNode && matchHasUnknownKey(el, known, depth+1) {
 						return true
 					}
 				}
 			}
 		case "not":
-			if val.Kind == yaml.MappingNode && matchHasUnknownKey(val, known) {
+			if val.Kind == yaml.MappingNode && matchHasUnknownKey(val, known, depth+1) {
 				return true
 			}
 		}

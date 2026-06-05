@@ -110,6 +110,12 @@ func fetchTreeToDir(ctx context.Context, remoteURL, dir string, prog CloneProgre
 		if f.Mode == filemode.Symlink || f.Mode == filemode.Submodule {
 			return nil // not source we parse; skip (also avoids symlink escapes)
 		}
+		// Skip blobs over the scan's per-file cap: a hostile remote could advertise
+		// a giant file, and writing it to the working tree wastes disk for content
+		// no downstream reader (which honors maxScannedFileBytes) will ever open.
+		if f.Size > maxScannedFileBytes {
+			return nil
+		}
 		dst, err := safeJoin(dir, f.Name)
 		if err != nil {
 			return err

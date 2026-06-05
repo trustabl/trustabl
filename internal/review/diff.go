@@ -457,7 +457,7 @@ func wrapAt(s string, n int) string {
 	for i, w := range words {
 		if col > 0 && col+1+len(w) > n {
 			b.WriteString("\n        ")
-			col = 0
+			col = 8 // continuation indent width — count it so later wraps measure from the true column
 		} else if i > 0 {
 			b.WriteString(" ")
 			col++

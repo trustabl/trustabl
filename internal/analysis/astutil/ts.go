@@ -109,7 +109,7 @@ func collectImportSpec(n *sitter.Node, src []byte, out map[string]string) {
 		// `import * as ns from "..."` — find the trailing identifier.
 		for i := 0; i < int(n.NamedChildCount()); i++ {
 			c := n.NamedChild(i)
-			if c.Type() == "identifier" {
+			if c != nil && c.Type() == "identifier" {
 				out[NodeText(c, src)] = "*"
 			}
 		}
@@ -117,7 +117,7 @@ func collectImportSpec(n *sitter.Node, src []byte, out map[string]string) {
 		// Iterate `import_specifier` children.
 		for i := 0; i < int(n.NamedChildCount()); i++ {
 			spec := n.NamedChild(i)
-			if spec.Type() != "import_specifier" {
+			if spec == nil || spec.Type() != "import_specifier" {
 				continue
 			}
 			nameNode := spec.ChildByFieldName("name")
@@ -164,7 +164,7 @@ func TSObjectKwargs(obj *sitter.Node, src []byte) *models.KwargTree {
 	}
 	for i := 0; i < int(obj.NamedChildCount()); i++ {
 		prop := obj.NamedChild(i)
-		if prop.Type() != "pair" {
+		if prop == nil || prop.Type() != "pair" {
 			continue // skip spread_element and shorthand_property_identifier
 		}
 		key := prop.ChildByFieldName("key")

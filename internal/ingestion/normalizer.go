@@ -123,6 +123,12 @@ func detectSDKDeps(root string) []models.SDKDep {
 	for _, n := range needles {
 		for _, mfile := range n.Manifests {
 			path := filepath.Join(root, mfile)
+			// Size-cap before reading: these hardcoded root paths bypass the
+			// manifest walk's maxScannedFileBytes gate, so a hostile multi-GiB
+			// pyproject.toml/package.json would otherwise be slurped into memory.
+			if fi, serr := os.Stat(path); serr != nil || fi.IsDir() || fi.Size() > maxScannedFileBytes {
+				continue
+			}
 			b, err := os.ReadFile(path)
 			if err != nil {
 				continue
@@ -197,7 +203,9 @@ func Normalize(src *Source, onFile func(string)) (models.ScanManifest, error) {
 			return nil
 		}
 		// Cap individual file size so a giant file cannot OOM a downstream reader.
-		if info, ierr := d.Info(); ierr == nil && info.Size() > maxScannedFileBytes {
+		// Skip the file on a stat error too: the manifest is the sole size gate,
+		// so an un-stattable entry must not slip through unbounded.
+		if info, ierr := d.Info(); ierr != nil || info.Size() > maxScannedFileBytes {
 			return nil
 		}
 		rel, err := filepath.Rel(src.RootPath, path)
@@ -288,6 +296,10 @@ func detectClaudeSDKDependency(root string) bool {
 		"anthropic[agent",
 	}
 	for _, p := range candidates {
+		// Size-cap: these root manifests bypass the walk's size gate (see detectSDKDeps).
+		if fi, serr := os.Stat(p); serr != nil || fi.IsDir() || fi.Size() > maxScannedFileBytes {
+			continue
+		}
 		b, err := os.ReadFile(p)
 		if err != nil {
 			continue
@@ -310,7 +322,11 @@ func detectOpenShellArtifact(yamls []string, root string) bool {
 		if strings.HasPrefix(y, "openshell/") {
 			return true
 		}
-		b, err := os.ReadFile(filepath.Join(root, y))
+		p := filepath.Join(root, y)
+		if fi, serr := os.Stat(p); serr != nil || fi.Size() > maxScannedFileBytes {
+			continue // already walk-filtered, but guard against a TOCTOU grow
+		}
+		b, err := os.ReadFile(p)
 		if err != nil {
 			continue
 		}
@@ -337,7 +353,9 @@ func discoverComponents(root string, m models.ScanManifest, onFile func(string))
 		"claude_desktop_config.json": true,
 	}
 	for _, p := range m.JSONFiles {
-		if mcpNames[filepath.Base(p)] {
+		// Case-insensitive: MCP config names are conventionally lowercase, but a
+		// repo on a case-sensitive FS could ship MCP.json / Claude_Desktop_Config.json.
+		if mcpNames[strings.ToLower(filepath.Base(p))] {
 			out = append(out, models.AgentComponent{Kind: models.ComponentMCPConfig, Path: p})
 		}
 	}

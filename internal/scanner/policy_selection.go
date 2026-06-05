@@ -27,9 +27,12 @@ var depNameToSDK = map[string]models.SDK{
 	"claude-agent-sdk": models.SDKClaudeAgentSDK,
 	"openai-agents":    models.SDKOpenAIAgents,
 	"google-adk":       models.SDKGoogleADK,
+	"mcp":              models.SDKMCP,
+	"langchain":        models.SDKLangChain,
 	"crewai":           models.SDKCrewAI,
 	"autogen":          models.SDKAutoGen,
 	"pydantic-ai":      models.SDKPydanticAI,
+	"vercel-ai":        models.SDKVercelAI,
 }
 
 // SelectAndEmitMETA inspects the profile + inventory and emits engine-level

@@ -131,7 +131,7 @@ func Run(cfg Config) (models.ScanResult, error) {
 	// Step 2: inventory (per-language AST; Python only for now)
 	rep.StartPhase("inventory", "Inventory")
 	rep.SetTotal(len(profile.Manifest.PythonFiles) + len(profile.Manifest.TypeScriptFiles))
-	tools, parsed, pySkipped, err := analysis.DiscoverTools(profile.Manifest, func(path string) {
+	tools, parsed, pySkipped, err := analysis.DiscoverTools(ctx, profile.Manifest, func(path string) {
 		rep.Advance(path)
 	})
 	if err != nil {
@@ -153,7 +153,7 @@ func Run(cfg Config) (models.ScanResult, error) {
 
 	// TS block: parse TypeScript files, then run TS-specific discovery
 	// (Claude SDK + OpenAI Agents + Google ADK).
-	tsFiles, tsSkipped := parseTSFiles(profile.Manifest.TypeScriptFiles, profile.Manifest.RepoRoot, func(path string) {
+	tsFiles, tsSkipped := parseTSFiles(ctx, profile.Manifest.TypeScriptFiles, profile.Manifest.RepoRoot, func(path string) {
 		rep.Advance(path)
 	})
 
@@ -512,9 +512,7 @@ func languagesLabel(langs []models.Language) string {
 // be read or parsed are silently skipped — one bad file should not abort the
 // scan. The optional onFile callback fires once per file attempted (progress
 // hook), mirroring the same callback convention used by analysis.DiscoverTools.
-func parseTSFiles(paths []string, root string, onFile func(string)) ([]analysis.ParsedFile, []string) {
-	tsParser := astutil.NewTSParser()
-	tsxParser := astutil.NewTSXParser()
+func parseTSFiles(ctx context.Context, paths []string, root string, onFile func(string)) ([]analysis.ParsedFile, []string) {
 	var out []analysis.ParsedFile
 	var skipped []string
 	for _, rel := range paths {
@@ -527,17 +525,21 @@ func parseTSFiles(paths []string, root string, onFile func(string)) ([]analysis.
 			skipped = append(skipped, rel) // unreadable — not analyzed
 			continue
 		}
+		// Fresh parser per file: ParseCtxTimeout's cancelable context arms
+		// go-tree-sitter's per-parser cancellation flag, so a reused parser could
+		// have a prior parse's timeout goroutine set that flag and abort the next
+		// file's parse. Isolate by constructing per file (cheap vs. parsing).
 		var parser *sitter.Parser
 		switch astutil.ParserKindForExtension(rel) {
 		case "typescript":
-			parser = tsParser
+			parser = astutil.NewTSParser()
 		case "tsx":
-			parser = tsxParser
+			parser = astutil.NewTSXParser()
 		default:
 			skipped = append(skipped, rel) // unknown extension — not analyzed
 			continue
 		}
-		tree, err := parser.ParseCtx(context.Background(), nil, body)
+		tree, err := astutil.ParseCtxTimeout(ctx, parser, body)
 		if err != nil {
 			skipped = append(skipped, rel) // unparseable — not analyzed
 			continue
