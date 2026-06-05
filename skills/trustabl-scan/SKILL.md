@@ -132,7 +132,12 @@ whole.
 
 ## Installing the binary
 
-If `trustabl` is not on `PATH`, install it (from the project README):
+This plugin runs a non-destructive `SessionStart` check
+(`scripts/check-trustabl.sh`) that reports, into the session, when `trustabl` is
+missing from `PATH` or older than the minimum the skills need. When you see a
+`[trustabl] CLI not found …` or `… older than the minimum …` notice — or a scan
+fails because `trustabl` isn't found — install it (from the project README),
+**asking the user before you run any install command; never install silently**:
 
 ```bash
 # macOS / Linux (Homebrew)

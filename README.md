@@ -512,8 +512,14 @@ with two skills that form a scan-and-fix loop:
   `trustabl-scan` first, then invoke `trustabl-enrich` with the results.
 
 Both skills shell out to the same `trustabl` binary, so the binary must be
-installed and on `PATH`. Neither runs a network service or modifies files
-outside the scan target.
+installed and on `PATH`. A non-destructive `SessionStart` hook
+([`hooks/hooks.json`](hooks/hooks.json) →
+[`scripts/check-trustabl.sh`](scripts/check-trustabl.sh)) checks at session
+start whether the binary is present and meets the minimum version the skills
+need, surfacing an install hint when it is missing or outdated. The hook never
+installs anything itself — the install stays a consented step inside
+`trustabl-scan`. Neither skill runs a network service or modifies files outside
+the scan target.
 
 ### "no schema-compatible rules available"
 
