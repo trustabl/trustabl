@@ -313,3 +313,27 @@ type ScanResult struct {
 	RulesFromCache      bool               `json:"rules_from_cache"` // true if rules came from cache (network skipped/unreachable)
 	Coverage            Coverage           `json:"coverage"`         // how many source files parsed vs. were skipped
 }
+
+// EnrichedFinding extends Finding with AI-generated context and an optional
+// in-place code replacement produced by trustabl enrich.
+type EnrichedFinding struct {
+	Finding
+	AIExplanation string `json:"ai_explanation,omitempty"`
+	AIFix         string `json:"ai_fix,omitempty"`
+	CodeSnippet   string `json:"code_snippet,omitempty"`
+	LineStart     int    `json:"line_start,omitempty"`
+	LineEnd       int    `json:"line_end,omitempty"`
+	Replacement   string `json:"replacement,omitempty"`
+	FalsePositive bool   `json:"false_positive,omitempty"`
+	Enriched      bool   `json:"enriched"`
+	Applied       bool   `json:"applied,omitempty"`
+}
+
+// EnrichmentResult is the top-level output of trustabl enrich.
+type EnrichmentResult struct {
+	ScanID       string            `json:"scan_id,omitempty"`
+	Repo         string            `json:"repo,omitempty"`
+	RulesVersion string            `json:"rules_version,omitempty"`
+	Findings     []EnrichedFinding `json:"findings"`
+	EnrichedAt   int64             `json:"enriched_at"` // Unix milliseconds
+}

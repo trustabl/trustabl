@@ -3,6 +3,7 @@
 // Subcommands:
 //
 //	trustabl scan <target> [flags]   primary command: scan a repo
+//	trustabl enrich [flags]          enrich a scan result with AI fixes
 //	trustabl mcp [flags]             run a stdio MCP server exposing the scan
 //	trustabl version                 print version
 //
@@ -56,6 +57,7 @@ func main() {
 	rootCmd.AddCommand(newRulesCommand())
 	rootCmd.AddCommand(newMCPCommand())
 	rootCmd.AddCommand(newLLMCommand())
+	rootCmd.AddCommand(newEnrichCommand())
 
 	if err := rootCmd.Execute(); err != nil {
 		var ec exitCodeError

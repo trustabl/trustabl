@@ -1705,6 +1705,8 @@ trustabl scan <target> [--detectors=…] [--format=human|json|sarif]
                        [--json-out=FILE] [--sarif-out=FILE]
                        [--strict] [--no-color] [--no-progress]
                        [--rules-repo=URL] [--rules-ref=REF] [--no-rules-update]
+trustabl enrich        [-i SCAN_JSON] [-r REPO_ROOT] [-o OUTPUT_FILE]
+                       [--apply] [--only-enriched] [--rule RULE_ID]
 trustabl mcp           [--rules-repo=URL] [--rules-ref=REF] [--no-rules-update]
 trustabl rules pull    [--rules-repo=URL] [--rules-ref=REF]
 trustabl version
@@ -1767,6 +1769,44 @@ the "server ready" line and any diagnostics go to stderr. The server serializes
 results itself; the byte-stable `ScanResult` is reused verbatim, so the
 determinism contract holds across this frontend too.
 
+### 8.2 Enrich subcommand ([cmd/trustabl/enrich.go](cmd/trustabl/enrich.go) + [internal/enrichment/](internal/enrichment/))
+
+`trustabl enrich` is a post-scan enrichment step: it reads a `ScanResult`
+produced by `trustabl scan --format json`, runs each finding through a
+two-layer enrichment pipeline, and writes an `EnrichmentResult` with
+AI-generated explanations, concrete code fixes, and exact line replacements.
+
+**BYOK model.** The Anthropic API key is stored in `~/.config/trustabl/keys.json`
+(managed by `trustabl llm key set`). The active provider must be `anthropic`;
+the command exits with a clear message if it is not. Only a small code snippet
+(~10–30 lines) per finding is sent to Anthropic directly — never via any
+Trustabl service.
+
+**Two-layer pipeline.** For each finding:
+
+1. **Layer 1 — Code scope** (`internal/enrichment/scope.go`): read the flagged
+   source file from disk and extract the enclosing function or class block
+   around the flagged line. A `→` marker is placed on the flagged line. Falls
+   back to ±5 context lines if no enclosing block is found.
+2. **Layer 2 — Finding metadata**: rule ID, title, severity, scope, explanation,
+   and suggested fix are read directly from the `ScanResult` JSON — no re-scan.
+
+All findings in one file are batched into a single LLM call
+(`internal/enrichment/llm.go`). Three worker goroutines process files in parallel.
+The LLM client calls the active provider's model (from `llm.Load()`) and parses
+a JSON array response — one `enrichResult` per finding. A `salvagePartialJSON`
+fallback recovers partial objects if the response is truncated.
+
+The `--apply` flag writes replacements back to disk in descending line order
+(so earlier replacements don't shift subsequent line indices). Without `--apply`,
+replacements appear in the JSON output only.
+
+**Exit codes for enrich:**
+
+- `0` — success (even if some findings could not be enriched)
+- `1` — I/O error or bad input JSON
+- `2` — LLM not configured (no key or non-anthropic provider)
+
 ---
 
 ## 9. Build constraint: CGO
@@ -1782,7 +1822,7 @@ take it absent a concrete distribution requirement.
 
 ## 10. What is intentionally out
 
-- **LLM enrichment is opt-in.** `internal/llm/` owns key storage
+- **LLM enrichment is a separate post-scan step.** `internal/llm/` owns key storage
   (`~/.config/trustabl/keys.json`, mode 0600) and is managed via
   `trustabl llm` (list / key set|get|delete / model set / provider set|list).
   The package exposes `Load`/`Save` (atomic write, mode 0600), `SetActive`
@@ -1790,13 +1830,10 @@ take it absent a concrete distribution requirement.
   model), `ValidateKey`, and `MaskKey`. A `defaultModels` map supplies
   fast/cheap defaults per known provider (`anthropic → claude-haiku-4-5`,
   `openai → gpt-4.1-nano`, `google → gemini-2.5-flash-lite`).
-  `internal/inference/router.go` defines the BYOK call interface, but it is
-  a non-functional placeholder today: `Call()` returns `ErrLLMDisabled` with
-  no key and a "not implemented" error with one, and the `Router` is never
-  instantiated by the scan pipeline. Rule-based detection is therefore the
-  entire scan and makes no network call at all, with or without a key. The
-  first planned enrichment target is upgrading low-confidence rule-based hits
-  to confirmed findings (CSDK-005 is the highest-leverage rule for this).
+  `trustabl enrich` (§8.2) reads this config to call Claude with BYOK.
+  `internal/inference/router.go` remains a non-functional placeholder — the
+  scan pipeline makes no LLM call. Rule-based detection is therefore the
+  entire scan, with or without a key configured.
 - **No corpus-eval benchmark.** Detection quality measured on a 20–40
   real-agent-repo corpus is the detection-quality target. The shipped
   rule-based detectors carry three-layer test coverage (see §6) — that is
