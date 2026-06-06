@@ -169,10 +169,11 @@ type SubagentDef struct {
 	Location                    // file_path / start_line / end_line (flat in JSON via anonymous embed)
 }
 
-// SkillDef is one parsed Claude Code skill (a SKILL.md file). allowed-tools may
-// be space-separated or a YAML list; AllowedTools keeps the verbatim tokens and
-// ToolGrants the parsed grammar. DisableModelInvocation mirrors the frontmatter
-// flag (manual-only skills).
+// SkillDef is one parsed Claude Code skill (a SKILL.md file). allowed-tools and
+// disallowed-tools may be space-separated or a YAML list; AllowedTools keeps the
+// verbatim tokens and ToolGrants the parsed grammar. DisableModelInvocation and
+// UserInvocable mirror the invocation-control frontmatter; Context/Agent capture
+// the `context: fork` subagent-execution form; HasHooks records a `hooks:` block.
 //
 // The body-fact fields are parsed from the markdown body below the frontmatter —
 // a skill's high-risk surface. DynamicExecCommands holds the shell payloads from
@@ -180,18 +181,35 @@ type SubagentDef struct {
 // which Claude Code runs during preprocessing, before the model sees the
 // rendered skill — so model-level prompt-injection defenses never see them.
 // ExternalURLs and InjectionMarkers carry the indirect- and direct-injection
-// signals found in the body.
+// signals found in the body. BundledFiles inventories the skill's other shipped
+// files (scripts are the highest-risk bundled surface).
 type SkillDef struct {
-	Name                   string      `json:"name"`
-	Description            string      `json:"description,omitempty"`
-	AllowedTools           []string    `json:"allowed_tools,omitempty"`
-	ToolGrants             []ToolGrant `json:"tool_grants,omitempty"`
-	ArgumentHint           string      `json:"argument_hint,omitempty"`
-	DisableModelInvocation bool        `json:"disable_model_invocation,omitempty"`
-	DynamicExecCommands    []string    `json:"dynamic_exec_commands,omitempty"`
-	ExternalURLs           []string    `json:"external_urls,omitempty"`
-	InjectionMarkers       []string    `json:"injection_markers,omitempty"`
-	Location                           // file_path = SKILL.md path
+	Name                   string        `json:"name"`
+	Description            string        `json:"description,omitempty"`
+	AllowedTools           []string      `json:"allowed_tools,omitempty"`
+	ToolGrants             []ToolGrant   `json:"tool_grants,omitempty"`
+	DisallowedTools        []string      `json:"disallowed_tools,omitempty"`
+	ArgumentHint           string        `json:"argument_hint,omitempty"`
+	DisableModelInvocation bool          `json:"disable_model_invocation,omitempty"`
+	UserInvocable          *bool         `json:"user_invocable,omitempty"`
+	Context                string        `json:"context,omitempty"`
+	Agent                  string        `json:"agent,omitempty"`
+	HasHooks               bool          `json:"has_hooks,omitempty"`
+	DynamicExecCommands    []string      `json:"dynamic_exec_commands,omitempty"`
+	ExternalURLs           []string      `json:"external_urls,omitempty"`
+	InjectionMarkers       []string      `json:"injection_markers,omitempty"`
+	BundledFiles           []BundledFile `json:"bundled_files,omitempty"`
+	Location                             // file_path = SKILL.md path
+}
+
+// BundledFile is one non-SKILL.md file shipped in a skill's directory tree. Kind
+// classifies it by extension for downstream analysis: "script" (executable code
+// a skill runs via bash — the highest-risk bundled surface), "markdown"
+// (additional instructions/reference), "binary" (precompiled/opaque), or
+// "resource" (everything else: templates, data, assets).
+type BundledFile struct {
+	Path string `json:"path"` // repo-relative, slash-separated
+	Kind string `json:"kind"`
 }
 
 // SlashCommandDef is one parsed .claude/commands/*.md slash command. The command

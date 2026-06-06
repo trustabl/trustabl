@@ -122,3 +122,53 @@ func TestSkills_BodyFacts_URLsAndInjectionMarkers(t *testing.T) {
 		t.Errorf("DynamicExecCommands = %v, want none", s.DynamicExecCommands)
 	}
 }
+
+func TestSkills_BundledFileInventory(t *testing.T) {
+	dir := t.TempDir()
+	writeFixture(t, dir, "x/SKILL.md", "---\nname: x\n---\nbody\n")
+	writeFixture(t, dir, "x/scripts/helper.py", "print('hi')\n")
+	writeFixture(t, dir, "x/reference.md", "# ref\n")
+	writeFixture(t, dir, "x/data.bin", "\x00\x01\x02")
+	writeFixture(t, dir, "x/notes.txt", "notes\n")
+	manifest := models.ScanManifest{RepoRoot: dir, MarkdownFiles: []string{"x/SKILL.md"}}
+	got := analysis.DiscoverSkills(manifest)
+	if len(got) != 1 {
+		t.Fatalf("got %d skills, want 1", len(got))
+	}
+	// Sorted by path; the SKILL.md entrypoint is excluded.
+	want := []models.BundledFile{
+		{Path: "x/data.bin", Kind: "binary"},
+		{Path: "x/notes.txt", Kind: "resource"},
+		{Path: "x/reference.md", Kind: "markdown"},
+		{Path: "x/scripts/helper.py", Kind: "script"},
+	}
+	if !reflect.DeepEqual(got[0].BundledFiles, want) {
+		t.Errorf("BundledFiles = %+v, want %+v", got[0].BundledFiles, want)
+	}
+}
+
+func TestSkills_FrontmatterFields(t *testing.T) {
+	dir := t.TempDir()
+	writeFixture(t, dir, "f/SKILL.md",
+		"---\nname: forked\ndescription: d\ndisallowed-tools: AskUserQuestion\n"+
+			"context: fork\nagent: Explore\nuser-invocable: false\n"+
+			"hooks:\n  PreToolUse:\n    - type: command\n      command: echo hi\n---\nbody\n")
+	manifest := models.ScanManifest{RepoRoot: dir, MarkdownFiles: []string{"f/SKILL.md"}}
+	got := analysis.DiscoverSkills(manifest)
+	if len(got) != 1 {
+		t.Fatalf("got %d skills, want 1", len(got))
+	}
+	s := got[0]
+	if !reflect.DeepEqual(s.DisallowedTools, []string{"AskUserQuestion"}) {
+		t.Errorf("DisallowedTools = %v", s.DisallowedTools)
+	}
+	if s.Context != "fork" || s.Agent != "Explore" {
+		t.Errorf("Context/Agent = %q/%q, want fork/Explore", s.Context, s.Agent)
+	}
+	if !s.HasHooks {
+		t.Errorf("HasHooks = false, want true")
+	}
+	if s.UserInvocable == nil || *s.UserInvocable {
+		t.Errorf("UserInvocable = %v, want explicit false", s.UserInvocable)
+	}
+}

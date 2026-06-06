@@ -1,6 +1,7 @@
 package analysis
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -16,8 +17,13 @@ type skillFrontmatter struct {
 	Name                   string       `yaml:"name"`
 	Description            string       `yaml:"description"`
 	AllowedTools           stringOrList `yaml:"allowed-tools"`
+	DisallowedTools        stringOrList `yaml:"disallowed-tools"`
 	ArgumentHint           string       `yaml:"argument-hint"`
 	DisableModelInvocation bool         `yaml:"disable-model-invocation"`
+	UserInvocable          *bool        `yaml:"user-invocable"`
+	Context                string       `yaml:"context"`
+	Agent                  string       `yaml:"agent"`
+	Hooks                  yaml.Node    `yaml:"hooks"`
 }
 
 // DiscoverSkills parses every SKILL.md in the manifest's markdown files. A skill
@@ -54,11 +60,17 @@ func DiscoverSkills(manifest models.ScanManifest) []models.SkillDef {
 			Description:            parsed.Description,
 			AllowedTools:           tokens,
 			ToolGrants:             parseToolGrants(tokens),
+			DisallowedTools:        splitToolsTokens([]string(parsed.DisallowedTools)),
 			ArgumentHint:           parsed.ArgumentHint,
 			DisableModelInvocation: parsed.DisableModelInvocation,
+			UserInvocable:          parsed.UserInvocable,
+			Context:                parsed.Context,
+			Agent:                  parsed.Agent,
+			HasHooks:               parsed.Hooks.Kind == yaml.MappingNode && len(parsed.Hooks.Content) > 0,
 			DynamicExecCommands:    dynExec,
 			ExternalURLs:           urls,
 			InjectionMarkers:       markers,
+			BundledFiles:           bundledFiles(manifest.RepoRoot, p),
 			Location:               models.Location{FilePath: p, Line: startLine, EndLine: endLine},
 		})
 	}
@@ -144,4 +156,50 @@ func dedupeStrings(in []string) []string {
 		}
 	}
 	return out
+}
+
+// bundledFiles inventories the non-SKILL.md files shipped alongside a skill, by
+// walking the skill's own directory (filepath.Dir of the SKILL.md path) under
+// repoRoot. A skill whose SKILL.md sits at the repo root has no bounded skill
+// directory, so it returns nil rather than walking the whole repository. Any
+// SKILL.md (the entrypoint, or a nested skill's) is skipped. Paths are
+// repo-relative and slash-separated; the result is sorted for determinism.
+func bundledFiles(repoRoot, skillPath string) []models.BundledFile {
+	dir := filepath.Dir(skillPath)
+	if dir == "." || dir == "" {
+		return nil
+	}
+	var out []models.BundledFile
+	_ = filepath.WalkDir(filepath.Join(repoRoot, dir), func(abs string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || d.Name() == "SKILL.md" {
+			return nil
+		}
+		rel, rerr := filepath.Rel(repoRoot, abs)
+		if rerr != nil {
+			return nil
+		}
+		out = append(out, models.BundledFile{Path: filepath.ToSlash(rel), Kind: classifyBundledFile(d.Name())})
+		return nil
+	})
+	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
+	return out
+}
+
+// classifyBundledFile buckets a bundled file by extension. "script" is the
+// security-relevant bucket: code a skill can execute via bash. Classification is
+// extension-only (no content sniffing), so an extension-less script reads as
+// "resource" — a known v1 gap.
+func classifyBundledFile(name string) string {
+	switch strings.ToLower(filepath.Ext(name)) {
+	case ".sh", ".bash", ".zsh", ".fish", ".py", ".js", ".mjs", ".cjs",
+		".ts", ".rb", ".pl", ".php", ".ps1", ".bat", ".cmd", ".lua", ".r":
+		return "script"
+	case ".md", ".markdown":
+		return "markdown"
+	case ".exe", ".dll", ".so", ".dylib", ".bin", ".wasm", ".node",
+		".o", ".a", ".class", ".pyc":
+		return "binary"
+	default:
+		return "resource"
+	}
 }
