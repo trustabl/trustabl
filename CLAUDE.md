@@ -330,12 +330,12 @@ When changing a rule (add / remove / edit severity, confidence, match, text):
 6. Commit and push the rules repo **and** the rulebook (the user pushes engine
    commits manually; confirm before pushing any of the three).
 
-> **Rulebook status (2026-06-04):** the rulebook documents all shipped rules —
-> production ships **117** rules (the 102-rule pack plus the 15 LangChain LC-*
-> rules) across the four SDK categories plus `langchain`, and the rulebook carries
-> a rationale doc for every one (52 docs). `check_rulebook.py --strict` and
-> `gen_index.py --check` both pass against the live pack with zero warnings. The
-> earlier MCP-doc backfill gap is closed.
+> **Rulebook status (2026-06-06):** production ships **165** rules across nine
+> SDK categories (`autogen`, `claude_sdk`, `crewai`, `google_adk`, `langchain`,
+> `mcp`, `openai_sdk`, `pydantic_ai`, `vercel_ai`). The rulebook carries a
+> rationale doc for every shipped rule except the newly-added VAI-011 (82 docs);
+> `check_rulebook.py` flags that single gap until the vercel network rationale
+> doc lands.
 
 The rule-authoring contract (required fields, ID conventions, per-scope
 `applies_to` values, framing discipline) lives in
