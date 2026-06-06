@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/trustabl/trustabl/internal/models"
 	"github.com/trustabl/trustabl/internal/scanner"
@@ -60,6 +61,101 @@ export const q = query({ options: { agents: { analyst: { description: "a", promp
 	}
 	if !sawClaudeSDK {
 		t.Errorf("SDKsDetected missing claude_agent_sdk: %+v", res.SDKs)
+	}
+}
+
+// TestScanRun_EmitsMETA005ForSkippedRule is the end-to-end forward-compat
+// contract (TR-200): when the lenient loader drops a forward-incompatible rule
+// from a pack that otherwise loads, the scan still succeeds, records the dropped
+// ID on RulesSkipped, and emits a single honest META-005 info finding in the
+// report — so a degraded scan is visible in the report itself, not just on
+// stderr. The custom rules FS pairs one valid claude_sdk rule with one rule
+// using an unknown `skill` scope (a rule a future engine could evaluate but this
+// build cannot).
+func TestScanRun_EmitsMETA005ForSkippedRule(t *testing.T) {
+	dir := t.TempDir()
+	mustWrite := func(rel, content string) {
+		t.Helper()
+		full := filepath.Join(dir, rel)
+		if err := os.MkdirAll(filepath.Dir(full), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mustWrite("package.json", `{"dependencies": {"@anthropic-ai/claude-agent-sdk": "^1.0.0"}}`)
+	mustWrite("src/agent.ts", `
+import { tool } from "@anthropic-ai/claude-agent-sdk";
+import { z } from "zod";
+export const searchTool = tool("search", "Search", { q: z.string() }, async () => ({ content: [] }));
+`)
+
+	// One valid rule (so the pack is not entirely incompatible — that would be a
+	// distinct hard error) plus one rule authored against a newer engine (unknown
+	// `skill` scope). LoadFor walks the FS for *.yaml; a manifest is not required.
+	rulesFS := fstest.MapFS{
+		"claude_sdk/pack.yaml": &fstest.MapFile{Data: []byte(`
+policy:
+  id: cs
+  name: Claude SDK
+  category: claude_sdk
+  description: t
+rules:
+  - id: GOOD-001
+    title: Known rule
+    scope: tool
+    severity: low
+    confidence: 0.8
+    applies_to: [claude_sdk_tool]
+    match:
+      has_docstring: true
+    explanation: x
+    fix: y
+  - id: FUTURE-001
+    title: Future-engine rule
+    scope: skill
+    severity: high
+    confidence: 0.9
+    applies_to: [claude_sdk_tool]
+    match:
+      has_docstring: true
+    explanation: x
+    fix: y
+`)},
+	}
+
+	res, err := scanner.Run(scanner.Config{Target: dir, RulesFS: rulesFS})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	// The forward-incompatible rule is recorded as skipped...
+	var sawSkipped bool
+	for _, id := range res.RulesSkipped {
+		if id == "FUTURE-001" {
+			sawSkipped = true
+		}
+	}
+	if !sawSkipped {
+		t.Errorf("RulesSkipped should contain FUTURE-001, got %v", res.RulesSkipped)
+	}
+
+	// ...and surfaced as exactly one META-005 info finding that names it.
+	var meta005 []models.Finding
+	for _, f := range res.Findings {
+		if f.RuleID == "META-005" {
+			meta005 = append(meta005, f)
+		}
+	}
+	if len(meta005) != 1 {
+		t.Fatalf("expected exactly one META-005 finding, got %d: %+v", len(meta005), meta005)
+	}
+	if meta005[0].Severity != models.SeverityInfo {
+		t.Errorf("META-005 severity = %q, want info", meta005[0].Severity)
+	}
+	if !strings.Contains(meta005[0].Explanation, "FUTURE-001") {
+		t.Errorf("META-005 should name the skipped rule, got: %q", meta005[0].Explanation)
 	}
 }
 

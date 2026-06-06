@@ -173,3 +173,179 @@ func TestLoadLenient_MalformedYAMLStillErrors(t *testing.T) {
 		t.Error("LoadLenient must still error on malformed YAML")
 	}
 }
+
+// TestLoadLenient_SkipsUnknownScope is the forward-compat contract for a NEW
+// scope: a rule whose scope this build does not know — e.g. a future `skill`
+// scope shipped by a newer rules release on a binary that predates skill support
+// — is dropped whole (its ID returned in skipped) while its known-scope sibling
+// loads. The unknown-scope rule deliberately uses a KNOWN predicate and a known
+// applies_to value, so the ONLY reason it is skipped is the scope itself —
+// isolating this from the predicate-drop path. Strict Load still rejects it, so
+// the typo-vs-new ambiguity is resolved at authoring time, not at runtime.
+func TestLoadLenient_SkipsUnknownScope(t *testing.T) {
+	const pack = `
+policy:
+  id: len
+  name: Lenient
+  category: claude_sdk
+  description: t
+rules:
+  - id: LEN-100
+    title: Known scope rule
+    scope: tool
+    severity: low
+    confidence: 0.8
+    applies_to: [claude_sdk_tool]
+    match:
+      has_docstring: true
+    explanation: x
+    fix: y
+  - id: LEN-101
+    title: Future scope rule
+    scope: skill
+    severity: high
+    confidence: 0.9
+    applies_to: [claude_sdk_tool]
+    match:
+      has_docstring: true
+    explanation: x
+    fix: y
+`
+	fsys := makeFS(map[string]string{"len.yaml": pack})
+	policies, skipped, err := rules.LoadLenient(fsys)
+	if err != nil {
+		t.Fatalf("LoadLenient unexpected error: %v", err)
+	}
+	ids := ruleIDs(policies)
+	if !ids["LEN-100"] {
+		t.Error("LEN-100 (known scope) should have loaded")
+	}
+	if ids["LEN-101"] {
+		t.Error("LEN-101 (unknown scope `skill`) should have been skipped, not loaded")
+	}
+	if len(skipped) != 1 || skipped[0] != "LEN-101" {
+		t.Errorf("skipped = %v, want [LEN-101]", skipped)
+	}
+
+	if _, err := rules.Load(fsys); err == nil {
+		t.Error("strict Load must error on an unknown scope")
+	} else if !strings.Contains(err.Error(), "scope") {
+		t.Errorf("strict Load error should name the scope problem, got: %v", err)
+	}
+}
+
+// TestLoadLenient_SkipsUnknownAppliesTo: a rule with a KNOWN scope but an
+// applies_to value this build does not recognize (a tool/agent kind a newer
+// engine added) is skipped at runtime, not hard-failed, while a sibling loads.
+// As with predicates and scope, strict Load rejects it so an authoring typo is
+// caught in CI rather than silently degrading every deployed scan.
+func TestLoadLenient_SkipsUnknownAppliesTo(t *testing.T) {
+	const pack = `
+policy:
+  id: len
+  name: Lenient
+  category: claude_sdk
+  description: t
+rules:
+  - id: LEN-110
+    title: Known applies_to rule
+    scope: tool
+    severity: low
+    confidence: 0.8
+    applies_to: [claude_sdk_tool]
+    match:
+      has_docstring: true
+    explanation: x
+    fix: y
+  - id: LEN-111
+    title: Future applies_to rule
+    scope: tool
+    severity: low
+    confidence: 0.8
+    applies_to: [future_sdk_tool]
+    match:
+      has_docstring: true
+    explanation: x
+    fix: y
+`
+	fsys := makeFS(map[string]string{"len.yaml": pack})
+	policies, skipped, err := rules.LoadLenient(fsys)
+	if err != nil {
+		t.Fatalf("LoadLenient unexpected error: %v", err)
+	}
+	ids := ruleIDs(policies)
+	if !ids["LEN-110"] {
+		t.Error("LEN-110 (known applies_to) should have loaded")
+	}
+	if ids["LEN-111"] {
+		t.Error("LEN-111 (unknown applies_to `future_sdk_tool`) should have been skipped")
+	}
+	if len(skipped) != 1 || skipped[0] != "LEN-111" {
+		t.Errorf("skipped = %v, want [LEN-111]", skipped)
+	}
+
+	if _, err := rules.Load(fsys); err == nil {
+		t.Error("strict Load must error on an unknown applies_to value")
+	}
+}
+
+// TestLoadLenient_MalformedKnownRuleStillErrors is the AC#3 regression: lenient
+// loading is forward-compat ONLY — it must NOT swallow a real authoring error in
+// a rule this build fully understands. A rule with a known scope, known
+// applies_to, and a known predicate but a genuine defect still hard-fails
+// LoadLenient, exactly as strict Load does. This is the "not a license to
+// silently drop real authoring errors" line from the ticket: only an UNKNOWN
+// scope/applies_to/predicate is forward-incompatible; a malformed KNOWN rule is
+// a defect, not a newer-engine signal.
+func TestLoadLenient_MalformedKnownRuleStillErrors(t *testing.T) {
+	cases := map[string]string{
+		// Missing the required `explanation` field.
+		"missing required field": `
+policy:
+  id: len
+  name: Lenient
+  category: claude_sdk
+  description: t
+rules:
+  - id: LEN-120
+    title: Known but missing explanation
+    scope: tool
+    severity: low
+    confidence: 0.8
+    applies_to: [claude_sdk_tool]
+    match:
+      has_docstring: true
+    fix: y
+`,
+		// Confidence outside the (0,1] probability range.
+		"out-of-range confidence": `
+policy:
+  id: len
+  name: Lenient
+  category: claude_sdk
+  description: t
+rules:
+  - id: LEN-121
+    title: Known but bad confidence
+    scope: tool
+    severity: low
+    confidence: 1.7
+    applies_to: [claude_sdk_tool]
+    match:
+      has_docstring: true
+    explanation: x
+    fix: y
+`,
+	}
+	for name, pack := range cases {
+		t.Run(name, func(t *testing.T) {
+			fsys := makeFS(map[string]string{"m.yaml": pack})
+			if _, _, err := rules.LoadLenient(fsys); err == nil {
+				t.Errorf("LoadLenient must still hard-fail a malformed KNOWN rule (%s)", name)
+			}
+			if _, err := rules.Load(fsys); err == nil {
+				t.Errorf("strict Load must also hard-fail a malformed KNOWN rule (%s)", name)
+			}
+		})
+	}
+}

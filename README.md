@@ -542,6 +542,16 @@ on stderr (and recording the skipped rule IDs on `ScanResult.RulesSkipped`):
 warning: the rules target schema version 9 but this Trustabl build supports up to 8; 2 rule(s) newer than this build were skipped. Upgrade Trustabl to evaluate them.
 ```
 
+The same per-rule skip happens for any *individual* rule that references a
+`scope`, an `applies_to` value, or a predicate your build does not understand —
+that rule is dropped while its siblings still run, so a newer rules release never
+forces a lockstep binary upgrade. Every skip is also surfaced **in the report
+itself** as a single `META-005` info finding ("N rules require a newer Trustabl
+engine"), so a degraded scan is never mistaken for a clean one. A *malformed*
+rule your build does understand (a missing field, a bad value) is **not**
+forward-skipped — it still hard-fails the load, so real authoring errors are
+never silently dropped.
+
 To evaluate the skipped rules, **upgrade Trustabl** to a build whose
 `SupportedSchemaVersion` (see `internal/rules/schema_version.go`) covers the
 pack. No action is needed if you're comfortable running the subset.

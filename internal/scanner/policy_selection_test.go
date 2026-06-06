@@ -1,6 +1,7 @@
 package scanner_test
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/trustabl/trustabl/internal/models"
@@ -97,5 +98,56 @@ func TestEmitCoverageMETA_SilentForUnmappedSDK(t *testing.T) {
 	inv := models.RepoInventory{SDKsDetected: []models.SDK{models.SDKMCP, models.SDK("langgraph")}}
 	if f := scanner.EmitCoverageMETA(map[models.DetectorCategory]bool{}, inv); len(f) != 0 {
 		t.Errorf("expected no META-004 for unmapped SDKs, got %+v", f)
+	}
+}
+
+func TestEmitSkippedRulesMETA_SilentWhenNothingSkipped(t *testing.T) {
+	if f := scanner.EmitSkippedRulesMETA(nil); len(f) != 0 {
+		t.Errorf("expected no META-005 when nothing was skipped, got %+v", f)
+	}
+	if f := scanner.EmitSkippedRulesMETA([]string{}); len(f) != 0 {
+		t.Errorf("expected no META-005 for an empty skip slice, got %+v", f)
+	}
+}
+
+func TestEmitSkippedRulesMETA_EmitsInfoFinding(t *testing.T) {
+	findings := scanner.EmitSkippedRulesMETA([]string{"CSKILL-001", "CSKILL-002"})
+	if len(findings) != 1 {
+		t.Fatalf("expected exactly one META-005 finding, got %+v", findings)
+	}
+	f := findings[0]
+	if f.RuleID != "META-005" {
+		t.Errorf("RuleID = %q, want META-005", f.RuleID)
+	}
+	if f.Severity != models.SeverityInfo {
+		t.Errorf("Severity = %q, want info", f.Severity)
+	}
+	// The finding must name how many rules were skipped and which ones, so the
+	// report itself (not just the JSON RulesSkipped field) is honest about the
+	// degraded scan.
+	if !strings.Contains(f.Explanation, "2 rule(s)") {
+		t.Errorf("explanation should state the count, got: %q", f.Explanation)
+	}
+	if !strings.Contains(f.Explanation, "CSKILL-001") || !strings.Contains(f.Explanation, "CSKILL-002") {
+		t.Errorf("explanation should list the skipped IDs, got: %q", f.Explanation)
+	}
+}
+
+// TestEmitSkippedRulesMETA_Deterministic guards the byte-stable-report contract:
+// the finding text must not depend on the order (or duplication) of the IDs the
+// loader returned. Two differently-ordered, differently-deduped inputs naming the
+// same set of rules must produce identical findings.
+func TestEmitSkippedRulesMETA_Deterministic(t *testing.T) {
+	a := scanner.EmitSkippedRulesMETA([]string{"B-2", "A-1", "C-3"})
+	b := scanner.EmitSkippedRulesMETA([]string{"C-3", "A-1", "B-2", "A-1"})
+	if len(a) != 1 || len(b) != 1 {
+		t.Fatalf("expected one finding each, got %d and %d", len(a), len(b))
+	}
+	if a[0].Explanation != b[0].Explanation {
+		t.Errorf("explanation is order/dup-sensitive:\n a=%q\n b=%q", a[0].Explanation, b[0].Explanation)
+	}
+	// Deduped: three distinct IDs, reported as "3 rule(s)".
+	if !strings.Contains(b[0].Explanation, "3 rule(s)") {
+		t.Errorf("duplicate IDs should be deduped to 3, got: %q", b[0].Explanation)
 	}
 }

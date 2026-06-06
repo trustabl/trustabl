@@ -30,12 +30,15 @@ func Load(fsys fs.FS) ([]PolicyFile, error) {
 
 // LoadLenient is the forward-compatible runtime path. It behaves like Load but
 // tolerates a rules pack from a NEWER schema than this build: a rule whose
-// match references a predicate key this engine does not understand is dropped
-// whole (its ID collected into the returned skipped slice) instead of failing
-// the entire pack. This lets a deployed binary degrade gracefully against an
-// updated rules repo — scanning with the rules it understands — rather than
-// refusing to run. All other validation stays strict, so a genuine defect in a
-// rule this build CAN evaluate still fails the load.
+// scope, applies_to value, or match predicate this engine does not understand
+// is dropped whole (its ID collected into the returned skipped slice) instead
+// of failing the entire pack. This lets a deployed binary degrade gracefully
+// against an updated rules repo — scanning with the rules it understands —
+// rather than refusing to run. All other validation stays strict, so a genuine
+// defect in a rule this build CAN evaluate (a missing required field, an
+// out-of-range confidence, a duplicate ID, a degenerate match) still fails the
+// load. Forward-incompatibility is narrow by design: an EMPTY scope/applies_to
+// is a missing required field, not a newer-engine signal, so it still hard-fails.
 func LoadLenient(fsys fs.FS) ([]PolicyFile, []string, error) {
 	return loadPolicies(fsys, true)
 }
@@ -383,14 +386,14 @@ func decodePolicyFile(fsys fs.FS, name string) (PolicyFile, error) {
 
 // decodePolicyFileLenient decodes one YAML policy file in forward-compatible
 // mode. It parses to a yaml.Node (malformed YAML is still a hard error),
-// identifies rules whose match references a predicate key not in `known` (a
-// newer rule schema this build cannot evaluate), decodes the file leniently
-// (unknown keys ignored — additive forward-compat for non-match fields too),
-// and drops the forward-incompatible rules wholesale. Returns the dropped rule
-// IDs. Dropping the WHOLE rule is essential: a lenient struct decode silently
-// omits the unknown predicate, which would collapse the rule's match to
-// vacuous-true (firing on every entity) — so the rule must be removed, not
-// half-decoded.
+// identifies rules that reference a scope, applies_to value, or match predicate
+// this build does not understand (a newer rule schema this build cannot
+// evaluate — see ruleNeedsNewerEngine), decodes the file leniently (unknown keys
+// ignored — additive forward-compat for non-match fields too), and drops the
+// forward-incompatible rules wholesale. Returns the dropped rule IDs. Dropping
+// the WHOLE rule is essential: a lenient struct decode silently omits the
+// unknown predicate, which would collapse the rule's match to vacuous-true
+// (firing on every entity) — so the rule must be removed, not half-decoded.
 func decodePolicyFileLenient(fsys fs.FS, name string, known map[string]bool) (PolicyFile, []string, error) {
 	var pf PolicyFile
 	if err := checkRuleFileSize(fsys, name); err != nil {
@@ -415,8 +418,10 @@ func decodePolicyFileLenient(fsys fs.FS, name string, known map[string]bool) (Po
 }
 
 // forwardIncompatibleRules returns the indices (into the rules sequence, which
-// align 1:1 with pf.Rules after a lenient decode) and IDs of rules whose match
-// tree references a key outside `known`. fileName labels rules missing an id.
+// align 1:1 with pf.Rules after a lenient decode) and IDs of rules that
+// reference a scope, applies_to value, or match predicate outside this build's
+// vocabulary — i.e. rules authored against a newer engine (see
+// ruleNeedsNewerEngine). fileName labels rules missing an id.
 func forwardIncompatibleRules(root *yaml.Node, known map[string]bool, fileName string) ([]int, []string) {
 	doc := root
 	if doc.Kind == yaml.DocumentNode && len(doc.Content) > 0 {
@@ -431,11 +436,7 @@ func forwardIncompatibleRules(root *yaml.Node, known map[string]bool, fileName s
 		ids []string
 	)
 	for i, ruleNode := range rulesNode.Content {
-		matchNode := mappingValue(ruleNode, "match")
-		if matchNode == nil || matchNode.Kind != yaml.MappingNode {
-			continue
-		}
-		if !matchHasUnknownKey(matchNode, known, 0) {
+		if !ruleNeedsNewerEngine(ruleNode, known) {
 			continue
 		}
 		idx = append(idx, i)
@@ -449,6 +450,46 @@ func forwardIncompatibleRules(root *yaml.Node, known map[string]bool, fileName s
 		ids = append(ids, id)
 	}
 	return idx, ids
+}
+
+// ruleNeedsNewerEngine reports whether a rule node references a scope,
+// applies_to value, or match predicate this build does not understand — the
+// signal that the rule was authored against a newer engine and so must be
+// skipped (not evaluated) by the lenient runtime loader. The three checks mirror
+// the strict validation in loadPolicies, but here an unknown value means "skip"
+// instead of "fail".
+//
+// Crucially, an EMPTY scope or applies_to is NOT forward-incompatible: it is a
+// missing required field — a real authoring defect — which the strict validation
+// loop must still hard-fail in BOTH modes (this is what the ticket means by "not
+// a license to silently drop real authoring errors"). So each check fires only
+// on a NON-empty, unrecognized value, never on absence.
+func ruleNeedsNewerEngine(ruleNode *yaml.Node, known map[string]bool) bool {
+	// Unknown scope: a scope kind (e.g. a future `skill`) this build lacks. An
+	// unknown scope also makes applies_to unvalidatable (validAppliesToForScope
+	// keys off the scope), so it is checked first and short-circuits.
+	scope := models.Scope(scalarValue(ruleNode, "scope"))
+	if scope != "" && !models.ValidScope(scope) {
+		return true
+	}
+	// Unknown applies_to value for an otherwise-known scope: a tool/agent kind a
+	// newer engine added. Only meaningful once the scope is known (above).
+	if scope != "" {
+		for _, kind := range sequenceValues(ruleNode, "applies_to") {
+			if !validAppliesToForScope(scope, kind) {
+				return true
+			}
+		}
+	}
+	// Unknown predicate key anywhere in the match tree: a predicate from a newer
+	// schema. A known predicate's nested struct keys are NOT match-level keys, so
+	// matchHasUnknownKey does not descend into them (see its doc).
+	if matchNode := mappingValue(ruleNode, "match"); matchNode != nil && matchNode.Kind == yaml.MappingNode {
+		if matchHasUnknownKey(matchNode, known, 0) {
+			return true
+		}
+	}
+	return false
 }
 
 // matchHasUnknownKey reports whether a match mapping (recursing through the
@@ -498,6 +539,28 @@ func mappingValue(m *yaml.Node, key string) *yaml.Node {
 		}
 	}
 	return nil
+}
+
+// scalarValue returns the scalar string at key in a YAML mapping node, or "".
+func scalarValue(m *yaml.Node, key string) string {
+	if v := mappingValue(m, key); v != nil {
+		return v.Value
+	}
+	return ""
+}
+
+// sequenceValues returns the scalar values of the sequence at key in a YAML
+// mapping node, or nil if the key is absent or not a sequence.
+func sequenceValues(m *yaml.Node, key string) []string {
+	v := mappingValue(m, key)
+	if v == nil || v.Kind != yaml.SequenceNode {
+		return nil
+	}
+	out := make([]string, 0, len(v.Content))
+	for _, el := range v.Content {
+		out = append(out, el.Value)
+	}
+	return out
 }
 
 // dropRulesAt returns rules with the entries at the given indices removed.
