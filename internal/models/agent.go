@@ -173,6 +173,14 @@ type SubagentDef struct {
 // be space-separated or a YAML list; AllowedTools keeps the verbatim tokens and
 // ToolGrants the parsed grammar. DisableModelInvocation mirrors the frontmatter
 // flag (manual-only skills).
+//
+// The body-fact fields are parsed from the markdown body below the frontmatter —
+// a skill's high-risk surface. DynamicExecCommands holds the shell payloads from
+// dynamic-context injection (the inline !`cmd` form and ```! fenced blocks),
+// which Claude Code runs during preprocessing, before the model sees the
+// rendered skill — so model-level prompt-injection defenses never see them.
+// ExternalURLs and InjectionMarkers carry the indirect- and direct-injection
+// signals found in the body.
 type SkillDef struct {
 	Name                   string      `json:"name"`
 	Description            string      `json:"description,omitempty"`
@@ -180,6 +188,9 @@ type SkillDef struct {
 	ToolGrants             []ToolGrant `json:"tool_grants,omitempty"`
 	ArgumentHint           string      `json:"argument_hint,omitempty"`
 	DisableModelInvocation bool        `json:"disable_model_invocation,omitempty"`
+	DynamicExecCommands    []string    `json:"dynamic_exec_commands,omitempty"`
+	ExternalURLs           []string    `json:"external_urls,omitempty"`
+	InjectionMarkers       []string    `json:"injection_markers,omitempty"`
 	Location                           // file_path = SKILL.md path
 }
 
