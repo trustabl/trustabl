@@ -311,6 +311,25 @@ Because an animated progress panel and interleaved log lines would corrupt each
 other on the same stderr, `--verbose`/`--debug` automatically render progress as
 plain `[phase]` lines instead of the live spinner.
 
+**Saving diagnostics to a file.** There is no dedicated `--log-file` flag —
+because diagnostics are a separate stream (stderr), redirecting stderr is the
+intended mechanism:
+
+```bash
+# Report and diagnostics to separate files (stdout vs stderr)
+trustabl scan ./repo --debug --format json >report.json 2>diagnostics.log
+
+# Human report on screen, diagnostics to a file
+trustabl scan ./repo --debug 2>diagnostics.log
+
+# Everything (report + diagnostics) in one file
+trustabl scan ./repo --debug &>everything.log
+```
+
+With `--format json`/`sarif` progress is off, so the stderr file is
+diagnostics-only; with `--format human` it also carries the plain `[phase]`
+progress lines.
+
 Exit codes:
 - `0` — no findings ≥ medium severity (or no findings at all).
 - `1` — at least one finding ≥ medium severity, OR `--strict` with any
