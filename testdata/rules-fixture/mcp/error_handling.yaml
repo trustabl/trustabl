@@ -10,7 +10,7 @@ policy:
 rules:
   - id: MCP-006
     title: Tool raises exceptions without a structured error contract
-    severity: medium
+    severity: low
     confidence: 0.6
     language: python
     applies_to:

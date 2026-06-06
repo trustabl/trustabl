@@ -35,11 +35,13 @@ rules:
                 - request_id
                 - txn_id
     explanation: >
-      The tool name signals a side effect (create/send/refund/…). MCP clients
-      retry tool calls under timeouts and ambiguous failures, and the same
-      model may be driven to repeat an action; without an idempotency key the
-      handler executes the mutation twice — a duplicate charge, order, or
-      message.
+      The tool name signals a side effect (create/send/refund/…). A retry of a
+      call whose result was lost re-runs the mutation: an MCP client or
+      orchestrator may re-issue after a timeout, the model may repeat the action
+      when a result reads as inconclusive, or a response may be lost after the
+      side effect already committed (at-least-once delivery). Without an
+      idempotency key the handler executes the mutation twice — a duplicate
+      charge, order, or message.
     fix: >
       Accept an idempotency key parameter (idempotency_key / request_id) and
       de-duplicate server-side so a retried call is a no-op after the first

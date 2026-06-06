@@ -4,8 +4,9 @@ policy:
   category: crewai
   description: >
     Rules that flag mutating tools (create/send/refund/...) without an
-    idempotency key. CrewAI retries tool calls under timeouts and ambiguous
-    failures; without a key the same side-effecting action can fire twice.
+    idempotency key. Retries (model re-invocation, an orchestrator or your own
+    retry policy, or a lost response) can re-run a side-effecting call; without a
+    key the same action can fire twice.
 
 rules:
   - id: CREW-006
@@ -35,9 +36,13 @@ rules:
                 - request_id
                 - txn_id
     explanation: >
-      Tool name suggests a side effect (create/send/refund/…). CrewAI retries tool
-      calls under timeouts and ambiguous failures; without an idempotency key the
-      same action can fire twice — a duplicate charge, a double-sent message, a
+      Tool name suggests a side effect (create/send/refund/…). A mutating tool
+      with no idempotency key cannot tell a new request from a retry of one whose
+      result was lost, and retries happen for reasons outside the tool — the model
+      re-invokes it when a result reads as inconclusive, an orchestrator or your
+      own retry policy re-issues after a timeout, or a response is lost after the
+      side effect already committed (at-least-once delivery). Without a key the
+      same action fires twice — a duplicate charge, a double-sent message, a
       repeated delete. Downstream services must also honor the key for this
       protection to be effective.
     fix: >

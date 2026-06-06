@@ -37,7 +37,7 @@ rules:
 
   - id: CSDK-102
     title: Claude subagent is granted the WebSearch tool
-    severity: high
+    severity: medium
     confidence: 0.8
     language: python
     applies_to:

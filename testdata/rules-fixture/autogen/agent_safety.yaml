@@ -69,9 +69,9 @@ rules:
       the AutoGen executor.
 
   - id: AG2-004
-    title: AutoGen GroupChatManager has no max_round bound
-    severity: medium
-    confidence: 0.8
+    title: AutoGen GroupChatManager has no explicit max_round bound
+    severity: low
+    confidence: 0.6
     language: python
     applies_to:
       - autogen_group_chat_manager
@@ -80,13 +80,14 @@ rules:
       agent_kwarg_missing:
         - max_round
     explanation: >
-      This group chat does not set max_round, so the speaker-selection loop has no
-      upper bound on the number of turns. A degenerate conversation — two agents that
-      keep handing work back and forth, or a model that never emits the termination
-      signal — runs until something else stops it, burning token budget the whole
-      time. When the participating agents wield side-effecting tools (file writes,
-      shell, network), an unbounded loop is not just a cost incident but a
-      correctness one: the same mutation can be applied many times over.
+      This group chat does not set max_round explicitly, so the speaker-selection
+      loop falls back to AutoGen's built-in max_round default rather than running
+      unbounded. That default bounds the loop, but generically — not at a value
+      sized to this workflow: a degenerate conversation (two agents handing work
+      back and forth, or a model that never emits the termination signal) still
+      runs to the default ceiling, burning token budget, and when the participating
+      agents wield side-effecting tools (file writes, shell, network) the same
+      mutation can be applied repeatedly up to that bound.
     fix: >
       Pass max_round= to GroupChat / GroupChatManager with a concrete cap sized to
       the workflow (often 10–25). Pair it with a clear termination condition so the
@@ -118,7 +119,7 @@ rules:
       human_input_mode) on that proxy rather than on the assistant.
 
   - id: AG2-006
-    title: AutoGen executor with code execution has no auto-reply cap
+    title: AutoGen executor with code execution has no explicit auto-reply cap
     severity: medium
     confidence: 0.7
     language: python
@@ -134,11 +135,11 @@ rules:
             - max_consecutive_auto_reply
     explanation: >
       This executor enables code execution (code_execution_config is set) but does
-      not set max_consecutive_auto_reply, so there is no cap on how many times it will
-      auto-respond — and therefore auto-execute model-emitted code — in a single
-      exchange. An agent that keeps replying without limit can run generated code an
-      unbounded number of times, amplifying both the cost and the blast radius of a
-      single injected instruction.
+      not set max_consecutive_auto_reply, so it falls back to AutoGen's class
+      default of 100 (MAX_CONSECUTIVE_AUTO_REPLY). That is a cap, but a very loose
+      one for an agent that auto-executes model-emitted code: up to 100 consecutive
+      auto-replies — each able to run generated code — in a single exchange amplify
+      both the cost and the blast radius of a single injected instruction.
     fix: >
       Set max_consecutive_auto_reply= to a small integer on any code-executing agent
       so the auto-reply loop is bounded, and combine it with human_input_mode and
