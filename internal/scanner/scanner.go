@@ -22,6 +22,7 @@ import (
 	"github.com/trustabl/trustabl/internal/analysis"
 	"github.com/trustabl/trustabl/internal/analysis/astutil"
 	"github.com/trustabl/trustabl/internal/ingestion"
+	"github.com/trustabl/trustabl/internal/logx"
 	"github.com/trustabl/trustabl/internal/models"
 	"github.com/trustabl/trustabl/internal/progress"
 	"github.com/trustabl/trustabl/internal/rules"
@@ -48,6 +49,12 @@ type Config struct {
 	// Progress receives real-time phase events. Nil means no progress output.
 	Progress progress.Reporter
 
+	// Log receives verbose/debug diagnostics on stderr. Nil disables them (a nil
+	// *logx.Logger is a safe no-op). It is independent of Progress: Progress
+	// renders the phase UI, Log narrates detail at -v/--debug. Both are
+	// stderr-only and never feed ScanResult, so neither affects determinism.
+	Log *logx.Logger
+
 	// Ctx, when non-nil, cancels the scan. The CLI ties this to its interrupt
 	// handler so a Ctrl-C aborts the run at the next phase boundary and lets the
 	// deferred temp-dir cleanup fire before the process exits. Nil means an
@@ -66,6 +73,8 @@ func Run(cfg Config) (models.ScanResult, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	log := cfg.Log // a nil *logx.Logger is a safe no-op
+	defer log.Timer("scan total")()
 
 	// Step 0: resolve the target. For a remote target this shallow-clones to a
 	// temp dir — potentially the longest single wait of the whole scan, and the
@@ -92,6 +101,8 @@ func Run(cfg Config) (models.ScanResult, error) {
 	defer src.Cleanup()
 	if remote {
 		rep.EndPhase(cfg.Target)
+		log.Verbosef("clone: %s", cfg.Target)
+		log.Debugf("clone: checked out to %s", src.RootPath)
 	}
 	// Cancellation checkpoint. The expensive phases below (recon walk, per-language
 	// AST, analysis) have no internal cancellation, but checking here — right after
@@ -121,15 +132,27 @@ func Run(cfg Config) (models.ScanResult, error) {
 
 	// Step 1: recon (cheap, no AST)
 	rep.StartPhase("recon", "Recon")
+	reconStop := log.Timer("recon")
 	profile, err := ingestion.Recon(src, func(path string) { rep.Advance(path) })
 	if err != nil {
 		rep.Fatal(err)
 		return models.ScanResult{}, fmt.Errorf("recon: %w", err)
 	}
 	rep.EndPhase(fmt.Sprintf("%d files · %s", len(profile.Manifest.PythonFiles), languagesLabel(profile.Languages)))
+	reconStop()
+	log.Verbosef("recon: languages %s · %d SDK deps declared", languagesLabel(profile.Languages), len(profile.SDKDeps))
+	if log.Enabled(logx.LevelDebug) {
+		m := profile.Manifest
+		log.Debugf("recon: files py=%d ts=%d js=%d yaml=%d json=%d md=%d",
+			len(m.PythonFiles), len(m.TypeScriptFiles), len(m.JavaScriptFiles), len(m.YAMLFiles), len(m.JSONFiles), len(m.MarkdownFiles))
+		for _, d := range profile.SDKDeps {
+			log.Debugf("recon: dep %s (source=%s confidence=%.2f)", d.Name, d.Source, d.Confidence)
+		}
+	}
 
 	// Step 2: inventory (per-language AST; Python only for now)
 	rep.StartPhase("inventory", "Inventory")
+	inventoryStop := log.Timer("inventory")
 	rep.SetTotal(len(profile.Manifest.PythonFiles) + len(profile.Manifest.TypeScriptFiles))
 	tools, parsed, pySkipped, err := analysis.DiscoverTools(ctx, profile.Manifest, func(path string) {
 		rep.Advance(path)
@@ -261,6 +284,13 @@ func Run(cfg Config) (models.ScanResult, error) {
 	// Fold them into SDKsDetected so LoadFor loads the claude_sdk pack (CSDK-110).
 	inventory.SDKsDetected = deriveSDKsDetected(tools, agents, inventory.Subagents, inventory.ClaudeSettings, inventory.ClaudeAgentOptions)
 	rep.EndPhase(fmt.Sprintf("%d tools · %d agents", len(tools), len(agents)))
+	inventoryStop()
+	log.Verbosef("inventory: %d tools · %d agents · %d guardrails · %d sessions · %d subagents · %d mcp servers · %d skills",
+		len(tools), len(agents), len(guardrails), len(sessions), len(inventory.Subagents), len(mcpServers), len(inventory.Skills))
+	log.Verbosef("inventory: SDKs detected: %s", sdkListLabel(inventory.SDKsDetected))
+	if log.Enabled(logx.LevelDebug) {
+		logDiscoveredEntities(log, tools, agents)
+	}
 
 	// Step 3: policy selection
 	if cfg.RulesFS == nil {
@@ -270,8 +300,14 @@ func Run(cfg Config) (models.ScanResult, error) {
 	if err != nil {
 		return models.ScanResult{}, fmt.Errorf("load rules: %w", err)
 	}
+	log.Verbosef("policy: loaded %d detectors for SDKs: %s", registry.Count(), sdkListLabel(inventory.SDKsDetected))
+	if un := unauditedSDKs(inventory.SDKsDetected); len(un) > 0 {
+		log.Verbosef("policy: unaudited SDKs (no pack shipped): %s", sdkListLabel(un))
+	}
 	if len(cfg.Categories) > 0 {
 		registry = registry.Subset(cfg.Categories...)
+		log.Verbosef("policy: --detectors filter → %d detectors for categories: %s",
+			registry.Count(), categoryListLabel(cfg.Categories))
 	}
 	metaFindings := SelectAndEmitMETA(profile, inventory)
 	metaFindings = append(metaFindings,
@@ -283,12 +319,19 @@ func Run(cfg Config) (models.ScanResult, error) {
 
 	// Step 4: analysis
 	rep.StartPhase("analysis", "Analysis")
+	analysisStop := log.Timer("analysis")
 	rep.SetTotal(len(inventory.Tools) + len(inventory.Agents))
 	ruleFindings := registry.Run(profile, inventory, allParsed, func(label string) {
 		rep.Advance(label)
 	})
 	findings := append(metaFindings, ruleFindings...)
 	rep.EndPhase(fmt.Sprintf("%d findings", len(findings)))
+	analysisStop()
+	log.Verbosef("analysis: %d findings (%d META + %d rule) · %s",
+		len(findings), len(metaFindings), len(ruleFindings), severitySummary(findings))
+	if log.Enabled(logx.LevelDebug) {
+		logFindingsDetail(log, findings)
+	}
 
 	// Step 5: scoring
 	surfaces, overall := analysis.Score(tools, inventory.Agents, inventory.Subagents, findings)

@@ -8,6 +8,22 @@ to follow Semantic Versioning once it reaches 1.0.
 
 ### Added
 
+- **`--verbose` / `--debug` diagnostics.** New global (persistent) flags on the
+  root command, valid on every subcommand and placeable before or after it
+  (`-v`/`--verbose`, `--debug`; `--debug` implies `--verbose`). `--verbose`
+  narrates the scan on stderr — rule provenance (repo, ref, resolved SHA, cache
+  fallback), per-phase discovery counts (languages, tools, agents, detected and
+  unaudited SDKs, loaded detectors), output destinations, and a result summary
+  (scan ID, score, findings by severity, exit code). `--debug` adds per-phase
+  timing and capped per-entity / per-finding detail. Backed by a new leaf
+  package `internal/logx` (nil-safe leveled logger). All diagnostics are
+  **stderr-only**, so the report on stdout and the JSON/SARIF byte-stability
+  contract are unaffected (`--format json --debug` still emits a clean
+  document). Diagnostic color follows the report's rules (off under
+  `--no-color`, `NO_COLOR`, or a non-terminal stderr). Because an animated
+  progress panel and interleaved log lines would corrupt each other,
+  `--verbose`/`--debug` render progress as plain `[phase]` lines.
+
 - **`trustabl llm provider` — provider switching.** New subcommand group for
   managing which LLM provider is active:
   - `trustabl llm provider set <provider>` — switch the active provider;

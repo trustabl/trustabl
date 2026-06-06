@@ -290,6 +290,27 @@ terminal (TTY vs pipe, `NO_COLOR`), so the same scan can render with or without
 color. Use `--no-color`, or diff the JSON/SARIF output, when byte-stability
 matters.
 
+### Diagnostics (`--verbose` / `--debug`)
+
+`--verbose` (`-v`) narrates the scan on **stderr**: rule provenance (repo, ref,
+resolved SHA, and any cache fallback), per-phase discovery counts (languages,
+tools, agents, detected SDKs, loaded detectors, unaudited SDKs), output
+destinations, and a final result summary (scan ID, score, findings by severity,
+exit code). `--debug` adds everything `--verbose` shows plus per-phase timing and
+capped per-entity / per-finding detail (each discovered tool/agent and each
+finding with its `file:line`).
+
+Both are **global** flags — they work on `scan`, `mcp`, and `rules pull`, and may
+appear before or after the subcommand (`trustabl -v scan …` or `trustabl scan -v
+…`). `--debug` implies `--verbose`. Both write **only to stderr**, so they never
+perturb the report on stdout or the JSON/SARIF byte-stability contract:
+`--format json --debug` still emits a clean document on stdout while the
+diagnostics stream to stderr. Diagnostic color follows the same rules as the
+report (off under `--no-color`, `NO_COLOR`, or when stderr is not a terminal).
+Because an animated progress panel and interleaved log lines would corrupt each
+other on the same stderr, `--verbose`/`--debug` automatically render progress as
+plain `[phase]` lines instead of the live spinner.
+
 Exit codes:
 - `0` — no findings ≥ medium severity (or no findings at all).
 - `1` — at least one finding ≥ medium severity, OR `--strict` with any
@@ -406,6 +427,11 @@ trustabl scan ./repo --no-rules-update
 # Progress output (human format): animated on a terminal, plain lines when piped
 trustabl scan ./repo                 # spinner + bars on a TTY; "[phase] summary" lines when piped
 trustabl scan ./repo --no-progress   # disable progress entirely
+
+# Diagnostics on stderr (global flags; stdout/report unaffected)
+trustabl scan ./repo --verbose       # -v: rule provenance, discovery counts, result summary
+trustabl scan ./repo --debug         # + per-phase timing and per-entity/per-finding detail
+trustabl scan ./repo --debug --format json > out.json   # clean JSON on stdout, diagnostics on stderr
 
 # Run as a stdio MCP server so an MCP client (Claude Code, Cursor, Claude
 # Desktop) can scan code an agent just wrote (see "Run as an MCP server" below)
