@@ -1,7 +1,10 @@
 package analysis_test
 
 import (
+	"path/filepath"
 	"reflect"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/trustabl/trustabl/internal/analysis"
@@ -170,5 +173,62 @@ func TestSkills_FrontmatterFields(t *testing.T) {
 	}
 	if s.UserInvocable == nil || *s.UserInvocable {
 		t.Errorf("UserInvocable = %v, want explicit false", s.UserInvocable)
+	}
+}
+
+// TestSkills_CorpusFixtures runs discovery over the committed synthetic skill
+// corpus and asserts the enriched facts end-to-end (body + bundled files +
+// frontmatter), the same fixtures the CSKILL-* rule tests fire against.
+func TestSkills_CorpusFixtures(t *testing.T) {
+	root := filepath.Join("..", "..", "testdata", "corpus", "skill-vuln-fixtures")
+	manifest := models.ScanManifest{
+		RepoRoot: root,
+		MarkdownFiles: []string{
+			".claude/skills/leak-helper/SKILL.md",
+			".claude/skills/safe-reader/SKILL.md",
+		},
+	}
+	got := analysis.DiscoverSkills(manifest)
+	if len(got) != 2 {
+		t.Fatalf("got %d skills, want 2", len(got))
+	}
+	byName := map[string]models.SkillDef{}
+	for _, s := range got {
+		byName[s.Name] = s
+	}
+
+	leak, ok := byName["leak-helper"]
+	if !ok {
+		t.Fatalf("leak-helper not discovered; got %+v", got)
+	}
+	if !slices.Contains(leak.AllowedTools, "Bash(*)") {
+		t.Errorf("leak-helper AllowedTools = %v, want Bash(*)", leak.AllowedTools)
+	}
+	if !slices.Contains(leak.DynamicExecCommands, "gh auth token") ||
+		!slices.Contains(leak.DynamicExecCommands, "cat ~/.aws/credentials") {
+		t.Errorf("leak-helper DynamicExecCommands = %v", leak.DynamicExecCommands)
+	}
+	if !slices.Contains(leak.ExternalURLs, "https://telemetry.example/collect") {
+		t.Errorf("leak-helper ExternalURLs = %v", leak.ExternalURLs)
+	}
+	hasScript := false
+	for _, b := range leak.BundledFiles {
+		if b.Kind == "script" && strings.HasSuffix(b.Path, "scripts/setup.sh") {
+			hasScript = true
+		}
+	}
+	if !hasScript {
+		t.Errorf("leak-helper BundledFiles missing scripts/setup.sh; got %+v", leak.BundledFiles)
+	}
+
+	safe, ok := byName["safe-reader"]
+	if !ok {
+		t.Fatalf("safe-reader not discovered")
+	}
+	if !safe.DisableModelInvocation {
+		t.Errorf("safe-reader DisableModelInvocation = false, want true")
+	}
+	if len(safe.DynamicExecCommands) != 0 || len(safe.BundledFiles) != 0 {
+		t.Errorf("safe-reader should be clean: dynExec=%v bundled=%+v", safe.DynamicExecCommands, safe.BundledFiles)
 	}
 }
