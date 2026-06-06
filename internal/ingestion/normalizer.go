@@ -235,7 +235,8 @@ func Normalize(src *Source, onFile func(string)) (models.ScanManifest, error) {
 			strings.HasSuffix(lower, ".mts"),
 			strings.HasSuffix(lower, ".cts"):
 			manifest.TypeScriptFiles = append(manifest.TypeScriptFiles, rel)
-		case strings.HasSuffix(lower, ".js"), strings.HasSuffix(lower, ".jsx"), strings.HasSuffix(lower, ".mjs"):
+		case strings.HasSuffix(lower, ".js"), strings.HasSuffix(lower, ".jsx"),
+			strings.HasSuffix(lower, ".mjs"), strings.HasSuffix(lower, ".cjs"):
 			manifest.JavaScriptFiles = append(manifest.JavaScriptFiles, rel)
 		case strings.HasSuffix(lower, ".yaml"), strings.HasSuffix(lower, ".yml"):
 			manifest.YAMLFiles = append(manifest.YAMLFiles, rel)

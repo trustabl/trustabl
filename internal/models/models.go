@@ -117,6 +117,17 @@ const (
 	LanguageGo         Language = "go"
 )
 
+// IsTSOrJS reports whether l is in the TypeScript/JavaScript family. The two
+// share the tree-sitter grammar (the tsx parser parses plain JS), every
+// discovery pass, and the discovery-computed body facts — so JavaScript
+// tools/agents are audited by the same rule packs and predicates as TypeScript.
+// The rule language-gate and the TS-branch predicates treat the two
+// interchangeably; JS-sourced defs are re-tagged LanguageJavaScript for honest
+// output after edge resolution (see scanner.retagJavaScriptDefs).
+func IsTSOrJS(l Language) bool {
+	return l == LanguageTypeScript || l == LanguageJavaScript
+}
+
 // ToolDef is one discovered surface that an agent can invoke at runtime.
 // Mirrors the Tool Discovery node in architecture §2.
 type ToolDef struct {

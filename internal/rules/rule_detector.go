@@ -23,13 +23,27 @@ var ErrNoRulesInPack = errors.New("rule pack contains no rules")
 // a hard exit 2 with an upgrade hint.
 var ErrAllRulesIncompatible = errors.New("all rules require a newer engine schema")
 
+// languageGateOK reports whether a rule typed for ruleLang should run against a
+// def whose language is defLang. An untyped rule (ruleLang == "") matches any
+// language; otherwise it matches the same language OR any other member of the
+// TypeScript/JavaScript family — JS-sourced defs are audited by the TypeScript
+// rule packs because they share the grammar, discovery, and body facts (see
+// models.IsTSOrJS). Used by the tool, agent, and repo language gates so all
+// three stay consistent.
+func languageGateOK(ruleLang, defLang models.Language) bool {
+	if ruleLang == "" || ruleLang == defLang {
+		return true
+	}
+	return models.IsTSOrJS(ruleLang) && models.IsTSOrJS(defLang)
+}
+
 // toolRuleDetector adapts a tool-scoped RuleDef into a ToolDetector.
 type toolRuleDetector struct{ rule RuleDef }
 
 func (d toolRuleDetector) RuleID() string                    { return d.rule.ID }
 func (d toolRuleDetector) Category() models.DetectorCategory { return d.rule.Category }
 func (d toolRuleDetector) Applies(t models.ToolDef) bool {
-	if d.rule.Language != "" && d.rule.Language != t.Language {
+	if !languageGateOK(d.rule.Language, t.Language) {
 		return false
 	}
 	for _, k := range d.rule.AppliesTo {
@@ -52,7 +66,7 @@ type agentRuleDetector struct{ rule RuleDef }
 func (d agentRuleDetector) RuleID() string                    { return d.rule.ID }
 func (d agentRuleDetector) Category() models.DetectorCategory { return d.rule.Category }
 func (d agentRuleDetector) Applies(a models.AgentDef) bool {
-	if d.rule.Language != "" && d.rule.Language != a.Language {
+	if !languageGateOK(d.rule.Language, a.Language) {
 		return false
 	}
 	for _, k := range d.rule.AppliesTo {
@@ -85,7 +99,7 @@ func (d repoRuleDetector) Applies(p models.RepoProfile, inv models.RepoInventory
 	if d.rule.Language != "" {
 		var hasLang bool
 		for _, l := range p.Languages {
-			if l == d.rule.Language {
+			if languageGateOK(d.rule.Language, l) {
 				hasLang = true
 				break
 			}

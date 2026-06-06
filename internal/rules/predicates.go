@@ -45,7 +45,7 @@ func PredHasShellCall(t models.ToolDef, pf analysis.ParsedFile) bool {
 	// tsHandlerFacts for child_process / exec / spawn callees); the Python AST
 	// walk below does not understand the TS grammar. Branch on language so the
 	// Python path stays byte-identical.
-	if t.Language == models.LanguageTypeScript {
+	if models.IsTSOrJS(t.Language) {
 		return t.Facts["shells_out"] == "true"
 	}
 	root := analysis.FindFunctionNode(t, pf)
@@ -86,7 +86,7 @@ func PredHasCodeExecCall(t models.ToolDef, pf analysis.ParsedFile) bool {
 	// TypeScript tools carry the signal as a discovery-computed fact; the
 	// Python AST walk below does not understand the TS grammar. Branch on
 	// language so the Python path stays byte-identical.
-	if t.Language == models.LanguageTypeScript {
+	if models.IsTSOrJS(t.Language) {
 		return t.Facts["code_exec"] == "true"
 	}
 	root := analysis.FindFunctionNode(t, pf)
@@ -149,7 +149,7 @@ func PredHasWriteCall(t models.ToolDef, pf analysis.ParsedFile) bool {
 	// TypeScript tools carry the signal as a discovery-computed fact (set by
 	// tsHandlerFacts for writeFile / writeFileSync / createWriteStream /
 	// appendFile callees). Branch on language so the Python path is unchanged.
-	if t.Language == models.LanguageTypeScript {
+	if models.IsTSOrJS(t.Language) {
 		return t.Facts["writes_fs"] == "true"
 	}
 	root := analysis.FindFunctionNode(t, pf)
@@ -196,7 +196,7 @@ func PredHasDynamicURLCall(t models.ToolDef, pf analysis.ParsedFile) bool {
 	// TypeScript tools carry the signal as a discovery-computed fact; the
 	// Python AST walk below does not understand the TS grammar. Branch on
 	// language so the Python path stays byte-identical.
-	if t.Language == models.LanguageTypeScript {
+	if models.IsTSOrJS(t.Language) {
 		return t.Facts["dynamic_url"] == "true"
 	}
 	root := analysis.FindFunctionNode(t, pf)
@@ -246,7 +246,7 @@ func PredHasDynamicURLCall(t models.ToolDef, pf analysis.ParsedFile) bool {
 // than duplicating that logic — no Python rule uses this predicate. This is the
 // first predicate with no Python AST path, by design.
 func PredHasHTTPCallWithoutTimeout(t models.ToolDef) bool {
-	if t.Language != models.LanguageTypeScript {
+	if !models.IsTSOrJS(t.Language) {
 		return false
 	}
 	return t.Facts["http_no_timeout"] == "true"

@@ -26,11 +26,20 @@ func NewTSXParser() *sitter.Parser {
 	return p
 }
 
-// ParserKindForExtension returns "typescript" for .ts/.mts/.cts, "tsx" for
-// .tsx, "" otherwise. Callers dispatch on the result to pick a parser.
+// ParserKindForExtension returns "typescript" for .ts/.mts/.cts, "tsx" for .tsx
+// and for every JavaScript extension (.js/.jsx/.mjs/.cjs), "" otherwise. Callers
+// dispatch on the result to pick a parser. JavaScript routes to the tsx grammar
+// deliberately: tsx is a superset that parses plain JS and tolerates JSX inside
+// a .js file, so one parser covers the whole JS family. Discovery stamps these
+// defs LanguageTypeScript; the scanner re-tags JS-sourced defs to
+// LanguageJavaScript after edge resolution (see scanner.retagJavaScriptDefs).
 func ParserKindForExtension(path string) string {
 	switch {
-	case strings.HasSuffix(path, ".tsx"):
+	case strings.HasSuffix(path, ".tsx"),
+		strings.HasSuffix(path, ".jsx"),
+		strings.HasSuffix(path, ".js"),
+		strings.HasSuffix(path, ".mjs"),
+		strings.HasSuffix(path, ".cjs"):
 		return "tsx"
 	case strings.HasSuffix(path, ".ts"),
 		strings.HasSuffix(path, ".mts"),
@@ -38,6 +47,17 @@ func ParserKindForExtension(path string) string {
 		return "typescript"
 	}
 	return ""
+}
+
+// IsJavaScriptExtension reports whether path names a JavaScript source file
+// (.js/.jsx/.mjs/.cjs): the set recon classifies into ScanManifest.JavaScriptFiles
+// and the set ParserKindForExtension routes to the tsx grammar. The scanner uses
+// it to re-tag JS-sourced defs (discovery stamps the TS-family LanguageTypeScript)
+// to LanguageJavaScript after edge resolution. Case-sensitive, mirroring
+// ParserKindForExtension.
+func IsJavaScriptExtension(path string) bool {
+	return strings.HasSuffix(path, ".js") || strings.HasSuffix(path, ".jsx") ||
+		strings.HasSuffix(path, ".mjs") || strings.HasSuffix(path, ".cjs")
 }
 
 // TSImportAliases walks a parsed TS file's top-level import_statement nodes
