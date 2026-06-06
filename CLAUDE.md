@@ -98,8 +98,12 @@ resolution path fetches the configured ref, caches the clone under
 the network is unreachable. Rule loading is **forward-compatible**: a pack
 whose `manifest.yaml` `schema_version` exceeds the engine's
 `rules.SupportedSchemaVersion` is loaded leniently rather than refused — a rule
-referencing a predicate this build lacks is skipped (recorded on
-`ScanResult.RulesSkipped` and warned on stderr) and the scan runs the rest. A
+referencing a `scope`, an `applies_to` value, or a predicate this build lacks is
+skipped (recorded on `ScanResult.RulesSkipped`, warned on stderr, and summarized
+in a `META-005` info finding) and the scan runs the rest. A malformed *known*
+rule — empty/missing required field, out-of-range confidence, duplicate ID — is
+**not** forward-incompatible and still hard-fails, in both strict and lenient
+loading. A
 hard exit 2 happens only when *nothing* is usable: no pack cached or fetchable
 (`ErrNoRules`), an unreadable manifest (`ErrNoCompatibleRules`), a genuinely
 empty pack (`ErrNoRulesInPack`), or one whose every rule is forward-incompatible

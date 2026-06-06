@@ -276,6 +276,10 @@ func Run(cfg Config) (models.ScanResult, error) {
 	metaFindings := SelectAndEmitMETA(profile, inventory)
 	metaFindings = append(metaFindings,
 		EmitCoverageMETA(registry.ApplicableCategories(profile, inventory), inventory)...)
+	// Honest-coverage signal for forward-incompatible rules the lenient loader
+	// dropped (scope/applies_to/predicate this build predates). META-005 fires
+	// only when something was actually skipped, so an in-sync pack adds nothing.
+	metaFindings = append(metaFindings, EmitSkippedRulesMETA(rulesSkipped)...)
 
 	// Step 4: analysis
 	rep.StartPhase("analysis", "Analysis")

@@ -157,10 +157,15 @@ only when its manifest is missing / unparseable / non-positive
 eagerly without scanning.
 
 **Lenient rule loading (forward compatibility).** The deployed scanner loads the
-pack via `rules.LoadLenient`: a rule whose `match` references a predicate this
-build does not understand (a rule from a newer schema) is **dropped whole** —
-its ID collected into `ScanResult.RulesSkipped` and surfaced as a stderr
-warning — and the scan proceeds with the rules it understands. Likewise, a pack
+pack via `rules.LoadLenient`: a rule that references a `scope`, an `applies_to`
+value, or a `match` predicate this build does not understand (a rule from a newer
+schema — e.g. a future `skill`-scoped rule on a binary that predates skill
+support) is **dropped whole** — its ID collected into `ScanResult.RulesSkipped`,
+surfaced as a stderr warning, and summarized in a single deterministic
+`META-005` info finding in the report — and the scan proceeds with the rules it
+understands. The unknown-value check (`rules.ruleNeedsNewerEngine`) is narrow: an
+*empty* scope/applies_to is a missing required field, not a newer-engine signal,
+so it still hard-fails. Likewise, a pack
 whose `category` this build does not recognize — an SDK a *newer* rules release
 added — is **skipped as a whole file** (its rule IDs collected into
 `RulesSkipped` the same way) rather than hard-failing the entire load and taking
@@ -170,8 +175,10 @@ authoring. The whole rule is
 dropped, not partially decoded, because a silently-omitted predicate would
 collapse the rule's `match` to vacuous-true (firing on every entity). Authoring
 and CI use the **strict** `rules.Load` (`KnownFields(true)`), so typos and bad
-rules are still caught against the in-repo fixture; only the runtime path
-degrades. The engine exits `2` only when *no* rule is usable: a genuinely empty
+rules — including a malformed *known* rule (missing required field, out-of-range
+confidence, duplicate ID) — are still caught against the in-repo fixture; the
+runtime path degrades only for genuinely-newer rules, never for real authoring
+errors, which it still hard-fails in both modes. The engine exits `2` only when *no* rule is usable: a genuinely empty
 pack (`ErrNoRulesInPack`) or one whose every rule is forward-incompatible
 (`ErrAllRulesIncompatible`, which hints "upgrade Trustabl"). This decouples
 additive rule updates from binary upgrades — see the `SupportedSchemaVersion`

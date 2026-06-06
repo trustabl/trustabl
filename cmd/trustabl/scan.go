@@ -293,7 +293,7 @@ func finishScan(result models.ScanResult, jobErr error, f scanFlags) error {
 				result.RulesSchemaVersion, rules.SupportedSchemaVersion, len(result.RulesSkipped))
 		} else {
 			fmt.Fprintf(os.Stderr,
-				"warning: %d rule(s) were skipped because they use predicates this Trustabl build does not understand.\n",
+				"warning: %d rule(s) were skipped because they use a scope, applies_to value, or predicate this Trustabl build does not understand.\n",
 				len(result.RulesSkipped))
 		}
 		const maxShownRules = 10
