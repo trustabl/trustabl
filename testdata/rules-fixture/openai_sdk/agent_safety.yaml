@@ -139,7 +139,7 @@ rules:
 
   - id: OAI-110
     title: Agent wires a content-fetching tool without output_guardrails
-    severity: high
+    severity: medium
     confidence: 0.6
     language: python
     applies_to:

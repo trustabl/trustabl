@@ -35,10 +35,14 @@ rules:
                 - request_id
                 - txn_id
     explanation: >
-      Tool name suggests a side effect (create/send/refund/…). The OpenAI
-      Agents SDK retries tool calls on timeout and ambiguous failures; without
-      an idempotency key the same action can fire twice. Downstream services
-      must also honor the key for this protection to be effective.
+      Tool name suggests a side effect (create/send/refund/…). A mutating tool
+      with no idempotency key cannot tell a new request from a retry of one whose
+      result was lost. Retries are not automatic in the OpenAI Agents SDK, but
+      they still happen — the model re-invokes a tool when a result reads as
+      inconclusive, an orchestrator or your own retry policy re-issues after a
+      timeout, or a response is lost after the side effect already committed
+      (at-least-once delivery). Without a key the same action fires twice; the
+      downstream service must also honor the key for this to help.
     fix: >
       Add an `idempotency_key: str` parameter and pass it to the backing API.
 
@@ -73,11 +77,13 @@ rules:
     explanation: >
       An OpenAI Agents SDK tool authored in TypeScript whose name implies a
       side effect (create_/send_/delete_/refund_/...) has no idempotency token
-      visible in its body. The SDK retries tool calls on timeouts and
-      ambiguous failures and the model itself will retry whenever a tool
-      result reads as inconclusive; without a key threaded through to the
-      backing API the same action fires twice, producing duplicate tickets,
-      payments, emails, or deletions. Provisional: this rule loads and
+      visible in its body. The SDK does not retry tool calls for you by default,
+      but retries still happen — the model re-invokes the tool whenever a result
+      reads as inconclusive, and an orchestrator, your own retry policy, or a
+      lost response (at-least-once delivery) can re-issue the call; without a key
+      threaded through to the backing API the same action fires twice, producing
+      duplicate tickets, payments, emails, or deletions. Provisional: this rule
+      loads and
       validates today but will not fire until the engine's TypeScript tool
       parser ships.
     fix: >

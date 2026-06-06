@@ -32,7 +32,7 @@ rules:
 
   - id: OAI-004
     title: Tool has no failure_error_function
-    severity: medium
+    severity: low
     confidence: 0.7
     language: python
     applies_to:
