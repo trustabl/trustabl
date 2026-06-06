@@ -82,8 +82,8 @@ per-SDK/language matrix lives in COVERAGE.md. JavaScript
 pipeline: discovery stamps the shared `LanguageTypeScript`, then the scanner
 re-tags JS-sourced defs to `LanguageJavaScript` after edge resolution
 (`retagJavaScriptDefs`) so the inventory honestly names the source language
-while the `language: typescript` rule packs still audit it (ES-module `import`s
-only; CommonJS `require()` is a documented gap). The scanner can also recognize
+while the `language: typescript` rule packs still audit it (both ES `import` and
+CommonJS `require()` bindings are recognized). The scanner can also recognize
 Go *files* (they appear in the file inventory) but has no AST parser for them.
 
 The rule schema's `language:` field gates per-language rule sets. Existing
@@ -601,8 +601,8 @@ For each language recon cleared, do the AST work and produce a `RepoInventory`:
   `[...]` array like every other TS pass): bare identifier → `ToolRef`; inline
   `tool({...})` / spread / other → agent `Opaque`; `<provider>.tools.<name>()` →
   `HostedToolRef` (canonicalized in `ts_vercel_hosted_tools.go`). `.js` / `.mjs`
-  / `.cjs` apps are now AST-parsed via the shared TS-family pipeline (ES-module
-  imports only; CommonJS require() is a documented gap); VAI-009/010 (name
+  / `.cjs` apps are now AST-parsed via the shared TS-family pipeline (ES `import`
+  and CommonJS require() bindings); VAI-009/010 (name
   rules) are v1 gaps.
   VAI-011 (HTTP-call-without-timeout) ships via the structural
   `has_http_call_without_timeout` predicate.

@@ -180,8 +180,8 @@ func Run(cfg Config) (models.ScanResult, error) {
 	// plain JS) and every discovery/predicate path, so .js/.jsx/.mjs/.cjs flow
 	// through the same passes; discovery stamps them LanguageTypeScript and
 	// retagJavaScriptDefs (after ResolveEdges, below) corrects them to
-	// LanguageJavaScript for honest output. ES-module imports are recognized;
-	// CommonJS require() is not yet gated in (documented gap).
+	// LanguageJavaScript for honest output. Both ES-module imports and CommonJS
+	// require() bindings are recognized (astutil.TSImportAliases handles both).
 	tsAndJSPaths := make([]string, 0, len(profile.Manifest.TypeScriptFiles)+len(profile.Manifest.JavaScriptFiles))
 	tsAndJSPaths = append(tsAndJSPaths, profile.Manifest.TypeScriptFiles...)
 	tsAndJSPaths = append(tsAndJSPaths, profile.Manifest.JavaScriptFiles...)
