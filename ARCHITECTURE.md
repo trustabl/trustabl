@@ -87,7 +87,10 @@ CommonJS `require()` bindings are recognized). Go has tree-sitter-go discovery
 for MCP tools (mark3labs/mcp-go + the official modelcontextprotocol/go-sdk),
 emitted as `ToolDef{Kind: mcp_tool, Language: go}` and audited by the
 `language: go` rules in the mcp/ pack; other Go SDKs are recognized as files but
-not yet AST-parsed.
+not yet AST-parsed. C# has tree-sitter-c-sharp discovery for the official
+ModelContextProtocol SDK's `[McpServerTool]` methods, emitted as
+`ToolDef{Kind: mcp_tool, Language: csharp}` and audited by the `language: csharp`
+rules; other .NET agent SDKs (Semantic Kernel, AutoGen) are not yet parsed.
 
 The rule schema's `language:` field gates per-language rule sets. Existing
 rules declare `language: python` explicitly and the loader rejects any
@@ -620,6 +623,16 @@ For each language recon cleared, do the AST work and produce a `RepoInventory`:
   (MCP-015/016) audit them. metoro-io/mcp-golang's reflection-based
   `RegisterTool`, the official SDK's handler-struct param schema, and Go
   body-fact predicates are v1 gaps.
+- **DiscoverCSharpMCPTools** (`csharp_mcp.go`) — C# MCP tools parsed with
+  tree-sitter-c-sharp (a dedicated parse pass, `parseCSharpFiles`), gated to
+  files that `using` a ModelContextProtocol namespace. Recognizes the official
+  SDK's `[McpServerTool]`-attributed methods: name = the method name, description
+  from a co-located `[Description("...")]` attribute, params from the method
+  signature (typed — C# is statically typed). Emits
+  `ToolDef{Kind: mcp_tool, Language: csharp}`, so deriveSDKsDetected stamps
+  SDKMCP and the mcp/ pack's `language: csharp` rules (MCP-017/018) audit them.
+  The `[McpServerTool(Name=...)]` override and the Semantic Kernel
+  `[KernelFunction]` / AutoGen `[Function]` shapes are v1 gaps.
 - **ResolveEdges** — links agent `tools=`, `handoffs=`, `input_guardrails=`
   references to discovered definitions in the same repo; cross-module resolution
   uses import statements; unresolvable references are flagged `External=true`.

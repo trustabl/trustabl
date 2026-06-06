@@ -1265,6 +1265,27 @@ def run_cmd(name: str) -> str:
 		kind: models.KindMCPTool, lang: models.LanguageGo, wantFires: false,
 		src: "package main\n\nimport \"github.com/mark3labs/mcp-go/mcp\"\n\nfunc run() {\n\t_ = mcp.NewTool(\"summarize_invoice\", mcp.WithDescription(\"Summarize\"))\n}\n",
 	},
+	// ── MCP C# rules (official ModelContextProtocol SDK) ──
+	{
+		name: "MCP-017 fires on C# tool with no description", ruleID: "MCP-017",
+		kind: models.KindMCPTool, lang: models.LanguageCSharp, wantFires: true,
+		src: "using ModelContextProtocol.Server;\n\npublic class T {\n    [McpServerTool]\n    public string FetchWeather(string city) { return city; }\n}\n",
+	},
+	{
+		name: "MCP-017 silent when description present", ruleID: "MCP-017",
+		kind: models.KindMCPTool, lang: models.LanguageCSharp, wantFires: false,
+		src: "using ModelContextProtocol.Server;\nusing System.ComponentModel;\n\npublic class T {\n    [McpServerTool, Description(\"Fetch the weather\")]\n    public string FetchWeather(string city) { return city; }\n}\n",
+	},
+	{
+		name: "MCP-018 fires on ambiguous C# tool name", ruleID: "MCP-018",
+		kind: models.KindMCPTool, lang: models.LanguageCSharp, wantFires: true,
+		src: "using ModelContextProtocol.Server;\nusing System.ComponentModel;\n\npublic class T {\n    [McpServerTool, Description(\"Does a thing\")]\n    public string Process(string input) { return input; }\n}\n",
+	},
+	{
+		name: "MCP-018 silent on descriptive name", ruleID: "MCP-018",
+		kind: models.KindMCPTool, lang: models.LanguageCSharp, wantFires: false,
+		src: "using ModelContextProtocol.Server;\nusing System.ComponentModel;\n\npublic class T {\n    [McpServerTool, Description(\"Summarize an invoice\")]\n    public string SummarizeInvoice(string input) { return input; }\n}\n",
+	},
 	{
 		name: "MCP-012 fires on TS tool shelling out", ruleID: "MCP-012",
 		kind: models.KindMCPTool, lang: models.LanguageTypeScript, wantFires: true,
@@ -3247,6 +3268,8 @@ func TestPolicyRules(t *testing.T) {
 				tool, pf = parseTSTool(t, tc.src, tc.kind)
 			case models.LanguageGo:
 				tool, pf = parseGoTool(t, tc.src, tc.kind)
+			case models.LanguageCSharp:
+				tool, pf = parseCSharpTool(t, tc.src, tc.kind)
 			default:
 				tool, pf = parsePy(t, tc.src, tc.kind)
 			}

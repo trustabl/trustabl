@@ -214,7 +214,9 @@ TypeScript-family pipeline: its tools and agents are discovered, tagged
 `import` and CommonJS `require()` bindings are recognized). Go has
 tree-sitter-go discovery for MCP tools (mark3labs/mcp-go and the official
 modelcontextprotocol/go-sdk), audited by the `language: go` rules in the MCP
-pack; other Go SDKs are recognized as files by Recon but not yet AST-parsed.
+pack. C# has tree-sitter-c-sharp discovery for the official ModelContextProtocol
+SDK's `[McpServerTool]` methods, audited by the `language: csharp` rules; other
+Go and .NET SDKs are recognized as files by Recon but not yet AST-parsed.
 The rule schema's `language:` field gates per-language rule sets.
 
 ### Scope boundaries

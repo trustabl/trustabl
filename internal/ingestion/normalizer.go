@@ -44,6 +44,9 @@ func languagesFromManifest(m models.ScanManifest) []models.Language {
 	if len(m.GoFiles) > 0 {
 		langs = append(langs, models.LanguageGo)
 	}
+	if len(m.CSharpFiles) > 0 {
+		langs = append(langs, models.LanguageCSharp)
+	}
 	return langs
 }
 
@@ -94,6 +97,16 @@ func detectSDKDeps(root string) []models.SDKDep {
 			Manifests: []string{"go.mod"}},
 		{Name: "mcp", Pattern: "github.com/metoro-io/mcp-golang",
 			Manifests: []string{"go.mod"}},
+		// MCP C#/.NET SDK (the official ModelContextProtocol NuGet package +
+		// sub-packages). Scanned in Central Package Management's
+		// Directory.Packages.props and legacy packages.config (fixed-name root
+		// manifests). The common per-project *.csproj has a variable filename the
+		// fixed-name dep scan can't reach, so this needle is best-effort — drift
+		// signal only; pack loading is driven by SDKMCP from discovery (the
+		// [McpServerTool] attribute walk), not this scan. Pattern is lowercase to
+		// match the lowercased manifest text.
+		{Name: "mcp", Pattern: "modelcontextprotocol",
+			Manifests: []string{"Directory.Packages.props", "packages.config"}},
 		// LangChain + LangGraph — one ecosystem, one SDK row (SDKLangChain). The
 		// "langchain" pattern matches the umbrella plus every langchain-* /
 		// @langchain/* distribution (langchain-core, langchain_community,
@@ -253,6 +266,8 @@ func Normalize(src *Source, onFile func(string)) (models.ScanManifest, error) {
 			manifest.JavaScriptFiles = append(manifest.JavaScriptFiles, rel)
 		case strings.HasSuffix(lower, ".go"):
 			manifest.GoFiles = append(manifest.GoFiles, rel)
+		case strings.HasSuffix(lower, ".cs"):
+			manifest.CSharpFiles = append(manifest.CSharpFiles, rel)
 		case strings.HasSuffix(lower, ".yaml"), strings.HasSuffix(lower, ".yml"):
 			manifest.YAMLFiles = append(manifest.YAMLFiles, rel)
 		case strings.HasSuffix(lower, ".json"):
