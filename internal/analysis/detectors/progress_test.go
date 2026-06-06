@@ -12,7 +12,7 @@ func TestRunInvokesOnEntityPerToolAndAgent(t *testing.T) {
 		Tools:  []models.ToolDef{{Name: "a"}, {Name: "b"}},
 		Agents: []models.AgentDef{{Name: "agent1", Language: models.LanguagePython}},
 	}
-	r := New(nil, nil, nil, nil)
+	r := New(nil, nil, nil, nil, nil)
 	var labels []string
 	r.Run(models.RepoProfile{}, inv, []analysis.ParsedFile{}, func(label string) {
 		labels = append(labels, label)

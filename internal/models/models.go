@@ -13,12 +13,13 @@ const (
 	ScopeAgent    Scope = "agent"
 	ScopeRepo     Scope = "repo"
 	ScopeSubagent Scope = "subagent"
+	ScopeSkill    Scope = "skill"
 )
 
 // ValidScope reports whether s is a known scope value.
 func ValidScope(s Scope) bool {
 	switch s {
-	case ScopeTool, ScopeAgent, ScopeRepo, ScopeSubagent:
+	case ScopeTool, ScopeAgent, ScopeRepo, ScopeSubagent, ScopeSkill:
 		return true
 	}
 	return false
@@ -65,6 +66,10 @@ const (
 	CategoryPydanticAI DetectorCategory = "pydantic_ai"
 	CategoryVercelAI   DetectorCategory = "vercel_ai"
 	CategoryAutoGen    DetectorCategory = "autogen"
+	// CategoryClaudeSkill covers Claude Code Agent Skills (SKILL.md). Skills are
+	// not an SDK import, so this category is loaded unconditionally (like
+	// openshell) rather than gated on SDKsDetected.
+	CategoryClaudeSkill DetectorCategory = "claude_skill"
 )
 
 // ToolKind drives detector applicability.

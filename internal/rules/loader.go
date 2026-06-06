@@ -76,10 +76,11 @@ func Load(fsys fs.FS) ([]PolicyFile, error) {
 				models.CategoryOpenShell, models.CategoryGoogleADK,
 				models.CategoryMCP, models.CategoryLangChain,
 				models.CategoryCrewAI, models.CategoryPydanticAI,
-				models.CategoryVercelAI, models.CategoryAutoGen:
+				models.CategoryVercelAI, models.CategoryAutoGen,
+				models.CategoryClaudeSkill:
 				// valid
 			default:
-				errs = append(errs, fmt.Errorf("%s: unknown category %q (allowed: claude_sdk, openai_sdk, openshell, google_adk, mcp, langchain, crewai, pydantic_ai, vercel_ai, autogen)", name, pf.Policy.Category))
+				errs = append(errs, fmt.Errorf("%s: unknown category %q (allowed: claude_sdk, openai_sdk, openshell, google_adk, mcp, langchain, crewai, pydantic_ai, vercel_ai, autogen, claude_skill)", name, pf.Policy.Category))
 			}
 		}
 		if len(errs) > policyErrCount {
@@ -145,9 +146,9 @@ func Load(fsys fs.FS) ([]PolicyFile, error) {
 				}
 			}
 			if rule.Scope == "" {
-				errs = append(errs, fmt.Errorf("%s: scope is required (tool|agent|repo|subagent)", tag))
+				errs = append(errs, fmt.Errorf("%s: scope is required (tool|agent|repo|subagent|skill)", tag))
 			} else if !models.ValidScope(rule.Scope) {
-				errs = append(errs, fmt.Errorf("%s: unknown scope %q (allowed: tool, agent, repo, subagent)", tag, rule.Scope))
+				errs = append(errs, fmt.Errorf("%s: unknown scope %q (allowed: tool, agent, repo, subagent, skill)", tag, rule.Scope))
 			}
 			// Scope-DEPENDENT checks: these need a known scope to evaluate
 			// (validAppliesToForScope and outOfScopePredicates both take the
@@ -264,6 +265,11 @@ func validAppliesToForScope(scope models.Scope, kind string) bool {
 	case models.ScopeSubagent:
 		switch kind {
 		case "claude_subagent":
+			return true
+		}
+	case models.ScopeSkill:
+		switch kind {
+		case "claude_skill":
 			return true
 		}
 	}
