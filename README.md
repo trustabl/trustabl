@@ -211,11 +211,11 @@ Tool/agent AST discovery is wired for:
 JavaScript (`.js` / `.jsx` / `.mjs` / `.cjs`) is AST-parsed through the shared
 TypeScript-family pipeline: its tools and agents are discovered, tagged
 `javascript`, and audited by the `language: typescript` rule packs (both ES
-`import` and CommonJS `require()` bindings are recognized). Go files
-are still recognized by Recon (they appear in the file inventory and feed
-component discovery) but no AST parser for them is wired in, so no tools or
-agents are extracted from them. The rule schema's `language:` field gates
-per-language rule sets.
+`import` and CommonJS `require()` bindings are recognized). Go has
+tree-sitter-go discovery for MCP tools (mark3labs/mcp-go and the official
+modelcontextprotocol/go-sdk), audited by the `language: go` rules in the MCP
+pack; other Go SDKs are recognized as files by Recon but not yet AST-parsed.
+The rule schema's `language:` field gates per-language rule sets.
 
 ### Scope boundaries
 

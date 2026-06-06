@@ -87,6 +87,28 @@ func parseTSTool(t *testing.T, src string, kind models.ToolKind) (models.ToolDef
 	return tools[0], pf
 }
 
+// parseGoTool parses a Go snippet and returns the first discovered Go MCP tool,
+// mirroring parseTSTool for the language:go rule cases.
+func parseGoTool(t *testing.T, src string, kind models.ToolKind) (models.ToolDef, analysis.ParsedFile) {
+	t.Helper()
+	tree, err := astutil.NewGoParser().ParseCtx(context.Background(), nil, []byte(src))
+	if err != nil {
+		t.Fatalf("parse Go: %v", err)
+	}
+	pf := analysis.ParsedFile{RelPath: "main.go", Tree: tree, Source: []byte(src)}
+	var tools []models.ToolDef
+	switch kind {
+	case models.KindMCPTool:
+		tools = analysis.DiscoverGoMCPTools([]analysis.ParsedFile{pf}, func(string) {})
+	default:
+		t.Fatalf("parseGoTool: unsupported kind %q", kind)
+	}
+	if len(tools) == 0 {
+		t.Fatal("parseGoTool: no tool discovered (check the import gate in the snippet)")
+	}
+	return tools[0], pf
+}
+
 // parseTSAgentInline parses a TS snippet and returns the first discovered
 // Claude agent. For use in package-level agent-rule case tables (no *testing.T
 // available), so it panics rather than failing a test.

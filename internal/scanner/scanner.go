@@ -153,7 +153,7 @@ func Run(cfg Config) (models.ScanResult, error) {
 	// Step 2: inventory (per-language AST; Python only for now)
 	rep.StartPhase("inventory", "Inventory")
 	inventoryStop := log.Timer("inventory")
-	rep.SetTotal(len(profile.Manifest.PythonFiles) + len(profile.Manifest.TypeScriptFiles) + len(profile.Manifest.JavaScriptFiles))
+	rep.SetTotal(len(profile.Manifest.PythonFiles) + len(profile.Manifest.TypeScriptFiles) + len(profile.Manifest.JavaScriptFiles) + len(profile.Manifest.GoFiles))
 	tools, parsed, pySkipped, err := analysis.DiscoverTools(ctx, profile.Manifest, func(path string) {
 		rep.Advance(path)
 	})
@@ -233,6 +233,24 @@ func Run(cfg Config) (models.ScanResult, error) {
 	// loads automatically (same path as the Python MCP tools).
 	tools = append(tools, analysis.DiscoverTSMCPProper(tsFiles, nil)...)
 
+	// Go block: parse .go files and run Go MCP discovery (mark3labs/mcp-go +
+	// official modelcontextprotocol/go-sdk). Discovery is import-gated; Go MCP
+	// tools carry Kind=mcp_tool / Language=go, so deriveSDKsDetected stamps
+	// SDKMCP and the shared mcp/ pack's language:go rules audit them. Go has its
+	// own tree-sitter grammar, so it gets a dedicated parse pass (not the
+	// TS-family one).
+	goFiles, goSkipped := parseGoFiles(ctx, profile.Manifest.GoFiles, profile.Manifest.RepoRoot, func(path string) {
+		rep.Advance(path)
+	})
+	defer func() {
+		for _, pf := range goFiles {
+			if pf.Tree != nil {
+				pf.Tree.Close()
+			}
+		}
+	}()
+	tools = append(tools, analysis.DiscoverGoMCPTools(goFiles, nil)...)
+
 	// Canonicalize tool/agent order before anything reads them. Discovery appends
 	// in walk order (Python -> ADK -> TS), which is deterministic only by accident
 	// of single-threaded lexical traversal — the same assumption the rest of the
@@ -273,14 +291,16 @@ func Run(cfg Config) (models.ScanResult, error) {
 		HasShellInvocations: deriveHasShellInvocations(tools),
 		UsesDefaultTracing:  computeUsesDefaultTracing(parsed),
 	}
-	// Combine the Python and TS parsed files into one explicitly-allocated slice.
-	// Using append(parsed, tsFiles...) inline would be unsafe if DiscoverTools ever
-	// returned a slice with spare capacity: two separate appends from the same base
-	// would alias the same backing array and could be mutated out from under each
-	// other. Allocate once, reuse for both ResolveEdges and registry.Run.
-	allParsed := make([]analysis.ParsedFile, 0, len(parsed)+len(tsFiles))
+	// Combine the Python, TS, and Go parsed files into one explicitly-allocated
+	// slice. Using append(parsed, tsFiles...) inline would be unsafe if
+	// DiscoverTools ever returned a slice with spare capacity: two separate
+	// appends from the same base would alias the same backing array and could be
+	// mutated out from under each other. Allocate once, reuse for both
+	// ResolveEdges and registry.Run.
+	allParsed := make([]analysis.ParsedFile, 0, len(parsed)+len(tsFiles)+len(goFiles))
 	allParsed = append(allParsed, parsed...)
 	allParsed = append(allParsed, tsFiles...)
+	allParsed = append(allParsed, goFiles...)
 	analysis.ResolveEdges(&inventory, allParsed)
 	inventory.Subagents = analysis.DiscoverSubagents(profile.Manifest)
 	inventory.Skills = analysis.DiscoverSkills(profile.Manifest)
@@ -361,13 +381,15 @@ func Run(cfg Config) (models.ScanResult, error) {
 	// that silently dropped half the repo must not look like a clean result.
 	// `parsed` holds the successfully parsed Python files; `tsFiles` the
 	// successfully parsed TypeScript AND JavaScript files (the JS family shares
-	// the tsx grammar). All three inventoried source languages count as attempted.
-	filesParsed := len(parsed) + len(tsFiles)
+	// the tsx grammar); `goFiles` the parsed Go files. All inventoried source
+	// languages count as attempted.
+	filesParsed := len(parsed) + len(tsFiles) + len(goFiles)
 	filesAttempted := len(profile.Manifest.PythonFiles) +
-		len(profile.Manifest.TypeScriptFiles) + len(profile.Manifest.JavaScriptFiles)
-	// Name the skipped files (Python + TS/JS), not just count them, so the report
-	// can say which inputs went unanalyzed. Sorted+deduped for determinism.
-	skippedFiles := append(append([]string{}, pySkipped...), tsSkipped...)
+		len(profile.Manifest.TypeScriptFiles) + len(profile.Manifest.JavaScriptFiles) +
+		len(profile.Manifest.GoFiles)
+	// Name the skipped files (Python + TS/JS + Go), not just count them, so the
+	// report can say which inputs went unanalyzed. Sorted+deduped for determinism.
+	skippedFiles := append(append(append([]string{}, pySkipped...), tsSkipped...), goSkipped...)
 	skippedFiles = sortedUnique(skippedFiles)
 	coverage := models.Coverage{
 		FilesParsed:  filesParsed,
@@ -615,6 +637,36 @@ func parseTSFiles(ctx context.Context, paths []string, root string, onFile func(
 	return out, skipped
 }
 
+// parseGoFiles reads and parses each .go path with the tree-sitter-go grammar.
+// Unreadable/unparseable files are skipped (one bad file must not abort the
+// scan). Mirrors parseTSFiles but uses a single grammar — Go has no per-file
+// dialect split. The optional onFile callback drives the progress bar.
+func parseGoFiles(ctx context.Context, paths []string, root string, onFile func(string)) ([]analysis.ParsedFile, []string) {
+	var out []analysis.ParsedFile
+	var skipped []string
+	for _, rel := range paths {
+		if onFile != nil {
+			onFile(rel)
+		}
+		body, err := os.ReadFile(filepath.Join(root, rel))
+		if err != nil {
+			skipped = append(skipped, rel)
+			continue
+		}
+		// Fresh parser per file: ParseCtxTimeout's cancelable context arms
+		// go-tree-sitter's per-parser cancellation flag, so a reused parser could
+		// carry a prior parse's timeout into the next file. Isolate per file.
+		parser := astutil.NewGoParser()
+		tree, err := astutil.ParseCtxTimeout(ctx, parser, body)
+		if err != nil {
+			skipped = append(skipped, rel)
+			continue
+		}
+		out = append(out, analysis.ParsedFile{RelPath: rel, Source: body, Tree: tree})
+	}
+	return out, skipped
+}
+
 // retagJavaScriptDefs corrects the Language of every discovered tool, agent, and
 // MCP server sourced from a JavaScript file to LanguageJavaScript. Discovery
 // runs JS through the shared TS-family passes and stamps LanguageTypeScript (the
@@ -665,6 +717,7 @@ func scanID(idLabel string, manifest models.ScanManifest, rulesVersion string, e
 		{"py", manifest.PythonFiles},
 		{"ts", manifest.TypeScriptFiles},
 		{"js", manifest.JavaScriptFiles},
+		{"go", manifest.GoFiles},
 		{"yaml", manifest.YAMLFiles},
 		{"json", manifest.JSONFiles},
 		{"md", manifest.MarkdownFiles},

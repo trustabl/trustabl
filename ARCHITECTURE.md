@@ -83,8 +83,11 @@ pipeline: discovery stamps the shared `LanguageTypeScript`, then the scanner
 re-tags JS-sourced defs to `LanguageJavaScript` after edge resolution
 (`retagJavaScriptDefs`) so the inventory honestly names the source language
 while the `language: typescript` rule packs still audit it (both ES `import` and
-CommonJS `require()` bindings are recognized). The scanner can also recognize
-Go *files* (they appear in the file inventory) but has no AST parser for them.
+CommonJS `require()` bindings are recognized). Go has tree-sitter-go discovery
+for MCP tools (mark3labs/mcp-go + the official modelcontextprotocol/go-sdk),
+emitted as `ToolDef{Kind: mcp_tool, Language: go}` and audited by the
+`language: go` rules in the mcp/ pack; other Go SDKs are recognized as files but
+not yet AST-parsed.
 
 The rule schema's `language:` field gates per-language rule sets. Existing
 rules declare `language: python` explicitly and the loader rejects any
@@ -606,6 +609,17 @@ For each language recon cleared, do the AST work and produce a `RepoInventory`:
   rules) are v1 gaps.
   VAI-011 (HTTP-call-without-timeout) ships via the structural
   `has_http_call_without_timeout` predicate.
+- **DiscoverGoMCPTools** (`go_mcp.go`) — Go MCP tools parsed with tree-sitter-go
+  (a dedicated parse pass, `parseGoFiles`), import-gated to the mcp-go modules
+  (mark3labs/mcp-go + the official modelcontextprotocol/go-sdk). Two shapes:
+  mark3labs `mcp.NewTool("name", mcp.WithDescription(...), mcp.WithString(...))`
+  (name + description + typed params from the `WithX` builders) and the official
+  `mcp.AddTool(server, &mcp.Tool{Name, Description}, fn)` (name + description from
+  the composite literal). Emits `ToolDef{Kind: mcp_tool, Language: go}`, so
+  deriveSDKsDetected stamps SDKMCP and the mcp/ pack's `language: go` rules
+  (MCP-015/016) audit them. metoro-io/mcp-golang's reflection-based
+  `RegisterTool`, the official SDK's handler-struct param schema, and Go
+  body-fact predicates are v1 gaps.
 - **ResolveEdges** — links agent `tools=`, `handoffs=`, `input_guardrails=`
   references to discovered definitions in the same repo; cross-module resolution
   uses import statements; unresolvable references are flagged `External=true`.

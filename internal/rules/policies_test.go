@@ -1244,6 +1244,27 @@ def run_cmd(name: str) -> str:
 			"const server = new McpServer({ name: \"s\", version: \"1.0.0\" });\n" +
 			"server.registerTool(\"search\", { description: \"Search the docs\", inputSchema: { q: z.string() } }, async ({ q }) => ({ content: [] }));\n",
 	},
+	// ── MCP Go rules (mark3labs/mcp-go + official go-sdk) ──
+	{
+		name: "MCP-015 fires on Go tool with no description", ruleID: "MCP-015",
+		kind: models.KindMCPTool, lang: models.LanguageGo, wantFires: true,
+		src: "package main\n\nimport \"github.com/mark3labs/mcp-go/mcp\"\n\nfunc run() {\n\t_ = mcp.NewTool(\"fetch_weather\")\n}\n",
+	},
+	{
+		name: "MCP-015 silent when description present", ruleID: "MCP-015",
+		kind: models.KindMCPTool, lang: models.LanguageGo, wantFires: false,
+		src: "package main\n\nimport \"github.com/mark3labs/mcp-go/mcp\"\n\nfunc run() {\n\t_ = mcp.NewTool(\"fetch_weather\", mcp.WithDescription(\"Fetch the weather\"))\n}\n",
+	},
+	{
+		name: "MCP-016 fires on ambiguous Go tool name", ruleID: "MCP-016",
+		kind: models.KindMCPTool, lang: models.LanguageGo, wantFires: true,
+		src: "package main\n\nimport \"github.com/mark3labs/mcp-go/mcp\"\n\nfunc run() {\n\t_ = mcp.NewTool(\"process\", mcp.WithDescription(\"Process things\"))\n}\n",
+	},
+	{
+		name: "MCP-016 silent on descriptive name", ruleID: "MCP-016",
+		kind: models.KindMCPTool, lang: models.LanguageGo, wantFires: false,
+		src: "package main\n\nimport \"github.com/mark3labs/mcp-go/mcp\"\n\nfunc run() {\n\t_ = mcp.NewTool(\"summarize_invoice\", mcp.WithDescription(\"Summarize\"))\n}\n",
+	},
 	{
 		name: "MCP-012 fires on TS tool shelling out", ruleID: "MCP-012",
 		kind: models.KindMCPTool, lang: models.LanguageTypeScript, wantFires: true,
@@ -3221,9 +3242,12 @@ func TestPolicyRules(t *testing.T) {
 			d := loadToolRule(t, tc.ruleID)
 			var tool models.ToolDef
 			var pf analysis.ParsedFile
-			if tc.lang == models.LanguageTypeScript {
+			switch tc.lang {
+			case models.LanguageTypeScript:
 				tool, pf = parseTSTool(t, tc.src, tc.kind)
-			} else {
+			case models.LanguageGo:
+				tool, pf = parseGoTool(t, tc.src, tc.kind)
+			default:
 				tool, pf = parsePy(t, tc.src, tc.kind)
 			}
 			if tc.toolConfig != nil {

@@ -228,6 +228,7 @@ type ScanManifest struct {
 	PythonFiles            []string         `json:"python_files"`
 	TypeScriptFiles        []string         `json:"typescript_files,omitempty"`
 	JavaScriptFiles        []string         `json:"javascript_files,omitempty"`
+	GoFiles                []string         `json:"go_files,omitempty"`
 	YAMLFiles              []string         `json:"yaml_files"`
 	JSONFiles              []string         `json:"json_files,omitempty"`
 	MarkdownFiles          []string         `json:"markdown_files,omitempty"`
