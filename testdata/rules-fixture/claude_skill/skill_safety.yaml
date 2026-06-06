@@ -1,0 +1,139 @@
+policy:
+  id: claude_skill_safety
+  name: Claude Agent Skill safety
+  category: claude_skill
+  description: >
+    High-risk patterns in Claude Code Agent Skills (SKILL.md): auto-approved
+    shell, pre-model dynamic-context execution, exfiltration primitives, and
+    prompt-injection signals. Skill rules audit SKILL.md frontmatter + body and
+    are language-agnostic (markdown), so they carry no language: field.
+
+rules:
+  - id: CSKILL-001
+    title: Skill auto-approves unrestricted shell
+    severity: critical
+    confidence: 0.95
+    applies_to:
+      - claude_skill
+    scope: skill
+    match:
+      skill_allows_unrestricted_shell: true
+    explanation: >
+      This skill's allowed-tools pre-approves unrestricted shell — a bare `Bash`
+      grant or `Bash(*)`. In Claude Code allowed-tools is an auto-approval list,
+      not a sandbox: while the skill is active Claude runs any shell command it
+      lists WITHOUT prompting you. Combined with a skill's ability to run bundled
+      scripts and dynamic-context commands, this is effectively arbitrary local
+      code execution on activation.
+    fix: >
+      Replace the wildcard with the specific commands the skill needs, e.g.
+      `allowed-tools: Bash(git status *) Bash(git diff *)`. Never grant `Bash(*)`
+      or a bare `Bash` in a skill checked into a shared repository.
+
+  - id: CSKILL-002
+    title: Skill runs shell during load (dynamic-context execution)
+    severity: high
+    confidence: 0.9
+    applies_to:
+      - claude_skill
+    scope: skill
+    match:
+      skill_body_has_dynamic_exec: true
+    explanation: >
+      This skill's body uses dynamic-context execution (the inline !`cmd` form or
+      a ```! fenced block). Claude Code runs these commands during preprocessing
+      — BEFORE the rendered skill reaches the model — so the model's
+      prompt-injection defenses never see them. Any side effect or data access in
+      the command has already happened by the time Claude could refuse.
+    fix: >
+      Move the work into the skill's instructions so Claude runs it as a normal,
+      model-visible tool call, or into a reviewed bundled script invoked
+      explicitly. Reserve dynamic-context commands for read-only, side-effect-free
+      data — and even then prefer model-visible tool calls.
+
+  - id: CSKILL-003
+    title: Dynamic-context command performs network egress or reads secrets
+    severity: critical
+    confidence: 0.85
+    applies_to:
+      - claude_skill
+    scope: skill
+    match:
+      skill_dynamic_exec_touches_network_or_secrets: true
+    explanation: >
+      A dynamic-context command in this skill performs network egress (curl /
+      wget / nc / …) or reads credentials/secrets (gh auth, $AWS_*, ~/.aws,
+      ~/.ssh, id_rsa, *_key, …). Because these run pre-model during skill load,
+      this is a credential-exfiltration primitive: the secret is read — and can be
+      shipped to an external host — before you or the model can intervene.
+    fix: >
+      Remove the network and credential access from dynamic-context commands
+      entirely. If the skill genuinely needs a secret, have Claude request it as a
+      normal, auditable tool call at runtime — never read it during preprocessing.
+
+  - id: CSKILL-020
+    title: Skill fetches untrusted external content
+    severity: medium
+    confidence: 0.7
+    applies_to:
+      - claude_skill
+    scope: skill
+    match:
+      skill_references_external_url: true
+    explanation: >
+      This skill's body references an external http(s) URL. Content fetched from
+      an external source is an indirect-prompt-injection vector — the fetched text
+      can carry instructions the model then follows — and the URL can double as an
+      exfiltration endpoint. External dependencies can also change after the skill
+      is reviewed.
+    fix: >
+      Avoid fetching external content from a skill. If a reference is required,
+      pin it to a trusted, version-locked source and treat any fetched content as
+      untrusted data, never as instructions.
+
+  - id: CSKILL-040
+    title: Skill body contains prompt-injection markers
+    severity: medium
+    confidence: 0.6
+    applies_to:
+      - claude_skill
+    scope: skill
+    match:
+      skill_body_has_injection_marker: true
+    explanation: >
+      This skill's body carries a prompt-injection signal — instruction-override
+      phrasing ("ignore previous instructions"), zero-width characters used to
+      smuggle hidden text, or a long base64 blob that may conceal instructions.
+      Because the skill description and body enter Claude's context, an injected
+      instruction here can hijack the agent.
+    fix: >
+      Remove the override phrasing, zero-width characters, or encoded blob. A
+      legitimate skill states its guidance in plain, visible text; it never needs
+      to override prior instructions or hide content from review.
+
+  - id: CSKILL-050
+    title: Model-invocable skill grants side-effecting tools
+    severity: high
+    confidence: 0.8
+    applies_to:
+      - claude_skill
+    scope: skill
+    match:
+      all:
+        - skill_model_invocable: true
+        - skill_allows_tool:
+            - Bash
+            - Write
+            - Edit
+            - WebFetch
+            - NotebookEdit
+    explanation: >
+      Claude can auto-invoke this skill (disable-model-invocation is not set) and
+      it pre-approves a side-effecting or exfiltration-capable tool (Bash / Write
+      / Edit / WebFetch / NotebookEdit). The model can therefore be steered — by
+      an ambiguous request or an injected instruction — into triggering the skill
+      and its tools without the user choosing to.
+    fix: >
+      Add `disable-model-invocation: true` so only the user can invoke this skill,
+      or narrow allowed-tools to read-only tools (Read, Grep, Glob). Reserve
+      auto-invocation for skills that carry knowledge, not side effects.
