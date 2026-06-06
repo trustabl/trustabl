@@ -157,7 +157,9 @@ The resolved commit SHA is recorded on `ScanResult` (`RulesSource`,
 `scanner.Run` takes an optional `Config.Progress` (`progress.Reporter`); nil
 means no output. It emits phase events (clone for remote targets, recon
 per-file, inventory per-file, analysis per-entity) that the CLI renders to
-**stderr** — animated on a TTY, plain lines when piped, silent for JSON. The
+**stderr** — animated on a TTY, plain lines when piped, silent for JSON. (A
+second optional stderr channel, `Config.Log`, carries `--verbose`/`--debug`
+diagnostics — see the **Diagnostics** subsection below.) The
 TTY renderer is a **live multi-row panel** (`internal/progress/tty.go`): every
 stage is a row drawn together and repainted in place — finished rows show a green
 `✔ <label>  <summary>`, the active row its spinner and (where a total is known) a
@@ -191,6 +193,36 @@ live line is a running counter rather than a bar; the callback fires both on the
 tree walk and on the per-file body reads in component discovery (the slow span
 on large repos). Progress never touches stdout, preserving the determinism
 contract (§7).
+
+### Diagnostics (`--verbose` / `--debug`)
+
+Separate from progress (the phase UI) is **diagnostic logging**: opt-in
+verbose/debug narration via a small leveled logger,
+[`internal/logx`](internal/logx/logx.go). It is a leaf package (no project
+imports) holding a `Logger` with three levels — `LevelNormal` (silent),
+`LevelVerbose`, `LevelDebug` — and `Verbosef` / `Debugf` / `Enabled` / `Timer`
+methods. A **nil `*logx.Logger` is a valid silent logger** (every method
+short-circuits before touching a field), so `Config.Log` defaults to a safe
+no-op. `Timer` reads no clock unless debug is on, so per-phase timing is free on
+the normal path and cannot introduce a time-dependent value near the report.
+
+The two flags are **persistent (global)** on the root command (`-v`/`--verbose`,
+`--debug`; `--debug` implies verbose), resolved by `logLevelFor(cmd)`. `scan`
+wires the logger fully (`scanner.Config.Log`), narrating each pipeline phase —
+rule provenance, recon/inventory/policy/analysis counts, detected and unaudited
+SDKs, per-entity and per-finding detail (debug, capped at 50), output
+destinations, and a result summary; `mcp` and `rules pull` wire it lightly. Like
+progress, **diagnostics are stderr-only** and never feed `ScanResult`, so the
+report stays byte-stable even under `--format json --debug`. Diagnostic color is
+gated by `diagColor` (off under `--no-color`, `NO_COLOR`, or a non-terminal
+stderr), matching the report's color contract.
+
+Because an animated TTY panel repaints in place, interleaving log lines into that
+region on the same stderr corrupts both. `pickScanMode` therefore calls
+`modeForLogs`, which **downgrades `ModeTTY` to `ModePlain` whenever verbose is
+on** (other modes pass through). A verbose run thus always takes the synchronous
+path, so the logger and the plain reporter write to stderr in order from one
+goroutine.
 
 ### Steps
 
@@ -1339,6 +1371,8 @@ internal/
 │   ├── reporter.go              Reporter iface, Mode, PickMode, nop.
 │   ├── plain.go                 Static-line reporter (piped human).
 │   └── tty.go                   bubbletea model + TTYReporter (interactive).
+├── logx/                        Leveled --verbose/--debug diagnostics (stderr-only,
+│                                nil-safe, leaf package).
 ├── analysis/
 │   ├── astutil/                 Tiny tree-sitter ergonomic layer (NodeText,
 │   │                            Walk, FindAll, FunctionName, FunctionParams,
@@ -1708,6 +1742,9 @@ trustabl scan <target> [--detectors=…] [--format=human|json|sarif]
 trustabl mcp           [--rules-repo=URL] [--rules-ref=REF] [--no-rules-update]
 trustabl rules pull    [--rules-repo=URL] [--rules-ref=REF]
 trustabl version
+
+Global (persistent) flags, valid on every subcommand:
+                       [-v|--verbose] [--debug]   stderr diagnostics; --debug implies --verbose
 ```
 
 `--rules-repo` (env `TRUSTABL_RULES_REPO`) overrides the rules repository URL;

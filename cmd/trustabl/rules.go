@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/trustabl/trustabl/internal/logx"
 	"github.com/trustabl/trustabl/internal/rules"
 	"github.com/trustabl/trustabl/internal/rulesource"
 )
@@ -22,10 +23,17 @@ func newRulesCommand() *cobra.Command {
 		Use:   "pull",
 		Short: "Download the detection rule packs into the local cache",
 		Args:  cobra.NoArgs,
-		RunE: func(_ *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			log := logx.New(os.Stderr, logLevelFor(cmd), diagColor(false))
 			if repo == "" {
 				repo = os.Getenv("TRUSTABL_RULES_REPO")
 			}
+			src := repo
+			if src == "" {
+				src = rulesource.DefaultRepoURL
+			}
+			log.Verbosef("rules pull: fetching %s @ %s", src, refOrDefault(ref))
+			defer log.Timer("rules pull")()
 			res, err := rulesource.Pull(
 				rulesource.Config{RepoURL: repo, Ref: ref},
 				rules.SupportedSchemaVersion,
@@ -39,6 +47,7 @@ func newRulesCommand() *cobra.Command {
 				}
 				return fmt.Errorf("rules pull: %w", err)
 			}
+			log.Verbosef("rules pull: resolved %s from %s", res.SHA, res.RepoURL)
 			fmt.Printf("Pulled rules from %s at %s\n", res.RepoURL, res.SHA)
 			return nil
 		},

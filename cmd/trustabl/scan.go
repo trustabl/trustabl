@@ -13,6 +13,7 @@ import (
 	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
 
+	"github.com/trustabl/trustabl/internal/logx"
 	"github.com/trustabl/trustabl/internal/models"
 	"github.com/trustabl/trustabl/internal/progress"
 	"github.com/trustabl/trustabl/internal/review"
@@ -43,7 +44,7 @@ func newScanCommand() *cobra.Command {
 		Short: "Scan a local repo or GitHub URL",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runScan(args[0], f)
+			return runScan(args[0], f, logLevelFor(cmd))
 		},
 	}
 	cmd.Flags().StringVar(&f.detectors, "detectors", "",
@@ -71,11 +72,18 @@ func newScanCommand() *cobra.Command {
 	return cmd
 }
 
-func runScan(target string, f scanFlags) error {
+func runScan(target string, f scanFlags, level logx.Level) error {
 	if err := validateOutputFlags(f); err != nil {
 		return err
 	}
-	cfg := scanner.Config{Target: target}
+	// Diagnostics are stderr-only. A LevelNormal logger emits nothing; color is
+	// gated like the report (see diagColor).
+	log := logx.New(os.Stderr, level, diagColor(f.noColor))
+	log.Verbosef("scan: target %s", target)
+	log.Debugf("scan: flags format=%s strict=%v no-color=%v no-progress=%v output=%q json-out=%q sarif-out=%q detectors=%q",
+		f.format, f.strict, f.noColor, f.noProgress, f.output, f.jsonOut, f.sarifOut, f.detectors)
+
+	cfg := scanner.Config{Target: target, Log: log}
 	if f.detectors != "" {
 		cats, err := parseCategories(f.detectors)
 		if err != nil {
@@ -84,9 +92,12 @@ func runScan(target string, f scanFlags) error {
 		cfg.Categories = cats
 	}
 
-	mode := pickScanMode(f)
+	mode := pickScanMode(f, log)
+	log.Debugf("scan: progress mode %s", modeName(mode))
 
-	// Non-TTY paths run synchronously: resolve, scan, render.
+	// Non-TTY paths run synchronously: resolve, scan, render. Verbose/debug always
+	// land here — pickScanMode downgrades an animated TTY panel to plain lines so
+	// it cannot fight interleaved diagnostic output on the same stderr.
 	if mode != progress.ModeTTY {
 		var rep progress.Reporter = progress.NewNop()
 		if mode == progress.ModePlain {
@@ -144,7 +155,7 @@ func runScan(target string, f scanFlags) error {
 		return err
 	}
 	out := <-done
-	return finishScan(out.result, out.err, f)
+	return finishScan(out.result, out.err, f, log)
 }
 
 // validateOutputFlags rejects output destinations that collide. --output writes
@@ -167,21 +178,57 @@ func validateOutputFlags(f scanFlags) error {
 	return nil
 }
 
-// pickScanMode maps flags + stderr TTY state to a progress mode.
-func pickScanMode(f scanFlags) progress.Mode {
+// pickScanMode maps flags + stderr TTY state to a progress mode, then downgrades
+// the animated panel when verbose/debug logging is on (see modeForLogs).
+func pickScanMode(f scanFlags, log *logx.Logger) progress.Mode {
 	isTTY := isatty.IsTerminal(os.Stderr.Fd())
-	return progress.PickMode(f.format, isTTY, f.noColor, f.noProgress)
+	base := progress.PickMode(f.format, isTTY, f.noColor, f.noProgress)
+	return modeForLogs(base, log.Verbose())
+}
+
+// modeForLogs forces an animated TTY panel down to plain lines when verbose is
+// true: bubbletea repaints its panel in place, and interleaving diagnostic log
+// lines into that region on the same stderr corrupts both. ModeOff (JSON/SARIF)
+// and ModePlain are returned unchanged — the logger writes alongside them fine.
+func modeForLogs(base progress.Mode, verbose bool) progress.Mode {
+	if verbose && base == progress.ModeTTY {
+		return progress.ModePlain
+	}
+	return base
+}
+
+// diagColor decides whether logx diagnostics get a dim ANSI tag. Mirroring the
+// human report's color contract, color is suppressed by --no-color, by the
+// NO_COLOR convention, and whenever stderr is not a terminal (piped / CI) — so
+// diagnostics stay plain ASCII wherever a machine or a log file is reading them.
+func diagColor(noColor bool) bool {
+	return !noColor && os.Getenv("NO_COLOR") == "" && isatty.IsTerminal(os.Stderr.Fd())
+}
+
+// modeName renders a progress.Mode for a --debug line.
+func modeName(m progress.Mode) string {
+	switch m {
+	case progress.ModeOff:
+		return "off"
+	case progress.ModePlain:
+		return "plain"
+	case progress.ModeTTY:
+		return "tty"
+	default:
+		return "unknown"
+	}
 }
 
 // runScanSync runs resolution + scan + render inline (plain/nop modes).
 func runScanSync(f scanFlags, cfg scanner.Config, rep progress.Reporter) error {
 	result, err := resolveAndScan(&cfg, f, rep)
-	return finishScan(result, err, f)
+	return finishScan(result, err, f, cfg.Log)
 }
 
 // resolveAndScan resolves rules (reporting a "rules" phase) and runs the scan
 // with the reporter attached.
 func resolveAndScan(cfg *scanner.Config, f scanFlags, rep progress.Reporter) (models.ScanResult, error) {
+	log := cfg.Log
 	rep.StartPhase("rules", "Resolving rules")
 	// Resolve makes a network round-trip (and a full clone on a cold cache) with
 	// no internal progress; without a detail line the pre-flight spinner reads as
@@ -191,8 +238,19 @@ func resolveAndScan(cfg *scanner.Config, f scanFlags, rep progress.Reporter) (mo
 	if rulesRepo == "" {
 		rulesRepo = rulesource.DefaultRepoURL
 	}
+	noUpdateNote := ""
+	if rcfg.NoUpdate {
+		noUpdateNote = " (no-update: cache only)"
+	}
+	log.Verbosef("rules: resolving %s @ %s%s", rulesRepo, refOrDefault(rcfg.Ref), noUpdateNote)
+	log.Debugf("rules: engine supports rule schema version <= %d", rules.SupportedSchemaVersion)
+	if dir, err := os.UserCacheDir(); err == nil {
+		log.Debugf("rules: cache root %s", filepath.Join(dir, "trustabl", "rules"))
+	}
 	rep.SetDetail("fetching " + rulesRepo)
+	stop := log.Timer("rules resolution")
 	res, err := rulesource.Resolve(rcfg, rules.SupportedSchemaVersion)
+	stop()
 	if err != nil {
 		rep.Fatal(err)
 		return models.ScanResult{}, err
@@ -200,6 +258,9 @@ func resolveAndScan(cfg *scanner.Config, f scanFlags, rep progress.Reporter) (mo
 	summary := res.SHA
 	if res.FromCache {
 		summary = res.SHA + " (cached, offline)"
+		log.Verbosef("rules: resolved %s from %s (cached, offline — could not fetch newer)", res.SHA, res.RepoURL)
+	} else {
+		log.Verbosef("rules: resolved %s from %s", res.SHA, res.RepoURL)
 	}
 	rep.EndPhase(summary)
 
@@ -218,7 +279,7 @@ func resolveAndScan(cfg *scanner.Config, f scanFlags, rep progress.Reporter) (mo
 }
 
 // finishScan turns a job outcome into output + the process exit code.
-func finishScan(result models.ScanResult, jobErr error, f scanFlags) error {
+func finishScan(result models.ScanResult, jobErr error, f scanFlags, log *logx.Logger) error {
 	if jobErr != nil {
 		if errors.Is(jobErr, rulesource.ErrNoCompatibleRules) {
 			fmt.Fprintf(os.Stderr,
@@ -255,7 +316,7 @@ func finishScan(result models.ScanResult, jobErr error, f scanFlags) error {
 		// Returning it raw here would make main() print "Error: …" a second
 		// time. Only in silent (off) mode did nothing present it, so let main
 		// be the single presenter there.
-		if pickScanMode(f) != progress.ModeOff {
+		if pickScanMode(f, log) != progress.ModeOff {
 			return exitCodeError{2}
 		}
 		return jobErr
@@ -264,7 +325,7 @@ func finishScan(result models.ScanResult, jobErr error, f scanFlags) error {
 	// In silent mode (JSON or --no-progress) the "(cached, offline)" rules
 	// phase line is suppressed, so surface the cache-fallback as a stderr
 	// warning — stale rules should never be used without a human-visible signal.
-	if result.RulesFromCache && pickScanMode(f) == progress.ModeOff {
+	if result.RulesFromCache && pickScanMode(f, log) == progress.ModeOff {
 		fmt.Fprintf(os.Stderr,
 			"warning: using cached rules %s; could not fetch or use newer rules\n",
 			result.RulesVersion)
@@ -298,6 +359,9 @@ func finishScan(result models.ScanResult, jobErr error, f scanFlags) error {
 	if err := writeReport(report, f.output); err != nil {
 		return err
 	}
+	if f.output != "" {
+		log.Verbosef("output: wrote %s report to %s", f.format, f.output)
+	}
 
 	// --json-out / --sarif-out persist the respective format to a file
 	// independent of --format, so one scan can print the human panel to stdout
@@ -306,11 +370,44 @@ func finishScan(result models.ScanResult, jobErr error, f scanFlags) error {
 	if err := writeSideOutputs(result, f); err != nil {
 		return err
 	}
+	if f.jsonOut != "" {
+		log.Verbosef("output: wrote JSON to %s", f.jsonOut)
+	}
+	if f.sarifOut != "" {
+		log.Verbosef("output: wrote SARIF to %s", f.sarifOut)
+	}
 
-	if code := exitCode(result, f.strict); code != 0 {
+	code := exitCode(result, f.strict)
+	log.Verbosef("result: scan_id %s · overall %.0f%% · %d findings (%s) · exit %d",
+		result.ScanID, result.OverallScore*100, len(result.Findings), severitySummary(result.Findings), code)
+	if code != 0 {
 		return exitCodeError{code}
 	}
 	return nil
+}
+
+// severitySummary renders a deterministic, human-legible severity histogram for
+// a finding set, e.g. "2 high, 1 medium, 3 info" — highest severity first, zero
+// tiers omitted. Used in the verbose result line. "none" for an empty set.
+func severitySummary(findings []models.Finding) string {
+	counts := map[models.Severity]int{}
+	for _, f := range findings {
+		counts[f.Severity]++
+	}
+	order := []models.Severity{
+		models.SeverityCritical, models.SeverityHigh, models.SeverityMedium,
+		models.SeverityLow, models.SeverityInfo,
+	}
+	var parts []string
+	for _, s := range order {
+		if n := counts[s]; n > 0 {
+			parts = append(parts, fmt.Sprintf("%d %s", n, s))
+		}
+	}
+	if len(parts) == 0 {
+		return "none"
+	}
+	return strings.Join(parts, ", ")
 }
 
 // renderReport turns a ScanResult into the report bytes for the chosen format.
