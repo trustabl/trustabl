@@ -18,6 +18,7 @@ type enrichFlags struct {
 	outputFile   string
 	apply        bool
 	onlyEnriched bool
+	diff         bool
 	rules        []string
 }
 
@@ -46,9 +47,11 @@ Requires the active LLM provider to be "anthropic". Configure with:
 	cmd.Flags().StringVarP(&f.outputFile, "output", "o", "",
 		"output file path (default: stdout)")
 	cmd.Flags().BoolVar(&f.apply, "apply", false,
-		"write AI-generated fixes to source files on disk (default: dry-run)")
+		"write AI-generated fixes to source files on disk; combine with --diff to preview before writing")
 	cmd.Flags().BoolVar(&f.onlyEnriched, "only-enriched", false,
 		"omit findings that could not be enriched from the output")
+	cmd.Flags().BoolVar(&f.diff, "diff", false,
+		"print a unified diff of proposed replacements to stderr; combine with --apply to also write them")
 	cmd.Flags().StringArrayVar(&f.rules, "rule", nil,
 		"filter to a specific rule ID (repeatable, e.g. --rule CSDK-010)")
 	return cmd
@@ -80,6 +83,7 @@ func runEnrich(cmd *cobra.Command, f enrichFlags) error {
 		RuleFilter:   f.rules,
 		Apply:        f.apply,
 		OnlyEnriched: f.onlyEnriched,
+		Diff:         f.diff,
 	}
 
 	enriched, err := pipeline.Run(cmd.Context(), result)

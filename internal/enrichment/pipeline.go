@@ -26,6 +26,7 @@ type Pipeline struct {
 	RuleFilter   []string // if non-empty, only enrich findings whose RuleID is in this list
 	Apply        bool     // write AI-generated replacements to disk
 	OnlyEnriched bool     // drop findings that could not be enriched from output
+	Diff         bool     // write unified diff of proposed replacements to stderr
 
 	llm llmEnricher // injected in tests; nil = create real client from LLMKey/LLMModel
 }
@@ -109,6 +110,14 @@ func (p *Pipeline) Run(ctx context.Context, result *models.ScanResult) (*models.
 	}
 	wg.Wait()
 
+	if p.Diff {
+		for _, ef := range enriched {
+			if ef.Diff != "" {
+				fmt.Fprint(os.Stderr, ef.Diff)
+			}
+		}
+	}
+
 	out := enriched
 	if p.OnlyEnriched {
 		filtered := out[:0]
@@ -166,6 +175,8 @@ func (p *Pipeline) enrichFile(ctx context.Context, client llmEnricher, filePath 
 		log.Printf("warn: llm returned %d results for %d issues in %s", len(results), len(issues), filePath)
 	}
 
+	lines := strings.Split(string(fileContent), "\n")
+
 	type indexedPatch struct {
 		idx   int
 		patch filePatch
@@ -185,6 +196,10 @@ func (p *Pipeline) enrichFile(ctx context.Context, client llmEnricher, filePath 
 		out[i].FalsePositive = r.FalsePositive
 		out[i].CodeSnippet = issues[i].codeBlock
 		out[i].Enriched = r.Explanation != ""
+
+		if p.Diff && r.LineStart > 0 && r.LineEnd >= r.LineStart && r.Replacement != "" {
+			out[i].Diff = unifiedDiff(filePath, lines, r.LineStart, r.LineEnd, r.Replacement)
+		}
 
 		if p.Apply && r.LineStart > 0 && r.LineEnd >= r.LineStart && r.Replacement != "" && !r.FalsePositive {
 			patches = append(patches, indexedPatch{
@@ -260,6 +275,45 @@ func applyPatches(content string, patches []filePatch) (string, error) {
 	}
 
 	return strings.Join(lines, "\n"), nil
+}
+
+// unifiedDiff returns a unified-diff string comparing original lines [lineStart-1:lineEnd]
+// with replacement. lineStart and lineEnd are 1-based. Returns "" if content is identical
+// or if the line range is out of bounds.
+func unifiedDiff(filePath string, allLines []string, lineStart, lineEnd int, replacement string) string {
+	if lineStart < 1 || lineEnd > len(allLines) || lineStart > lineEnd {
+		return ""
+	}
+	origSlice := allLines[lineStart-1 : lineEnd]
+	if strings.Join(origSlice, "\n") == replacement {
+		return ""
+	}
+
+	replLines := strings.Split(replacement, "\n")
+	ctxBefore := allLines[max(0, lineStart-1-2) : lineStart-1]
+	ctxAfter := allLines[lineEnd:min(len(allLines), lineEnd+2)]
+
+	hunkStart := lineStart - len(ctxBefore)
+	origCount := len(ctxBefore) + len(origSlice) + len(ctxAfter)
+	newCount := len(ctxBefore) + len(replLines) + len(ctxAfter)
+
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "--- a/%s\n", filePath)
+	fmt.Fprintf(&sb, "+++ b/%s\n", filePath)
+	fmt.Fprintf(&sb, "@@ -%d,%d +%d,%d @@\n", hunkStart, origCount, hunkStart, newCount)
+	for _, l := range ctxBefore {
+		fmt.Fprintf(&sb, " %s\n", l)
+	}
+	for _, l := range origSlice {
+		fmt.Fprintf(&sb, "-%s\n", l)
+	}
+	for _, l := range replLines {
+		fmt.Fprintf(&sb, "+%s\n", l)
+	}
+	for _, l := range ctxAfter {
+		fmt.Fprintf(&sb, " %s\n", l)
+	}
+	return sb.String()
 }
 
 // writeTmp writes data to a temp file in the same directory as dest and returns its path.

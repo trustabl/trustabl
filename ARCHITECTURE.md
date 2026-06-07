@@ -1706,7 +1706,7 @@ trustabl scan <target> [--detectors=…] [--format=human|json|sarif]
                        [--strict] [--no-color] [--no-progress]
                        [--rules-repo=URL] [--rules-ref=REF] [--no-rules-update]
 trustabl enrich        [-i SCAN_JSON] [-r REPO_ROOT] [-o OUTPUT_FILE]
-                       [--apply] [--only-enriched] [--rule RULE_ID]
+                       [--diff] [--apply] [--only-enriched] [--rule RULE_ID]
 trustabl mcp           [--rules-repo=URL] [--rules-ref=REF] [--no-rules-update]
 trustabl rules pull    [--rules-repo=URL] [--rules-ref=REF]
 trustabl version
@@ -1796,6 +1796,14 @@ All findings in one file are batched into a single LLM call
 The LLM client calls the active provider's model (from `llm.Load()`) and parses
 a JSON array response — one `enrichResult` per finding. A `salvagePartialJSON`
 fallback recovers partial objects if the response is truncated.
+
+The `--diff` flag renders a unified diff of all proposed replacements to **stderr**
+(in finding order, after all workers finish) so users can preview exactly what
+`--apply` would write. The diff is also stored as a `diff` field on each
+`EnrichedFinding` in the JSON output (`omitempty` — absent when `--diff` is not
+set). `--diff` and `--apply` are independent: `--diff` alone previews without
+writing; `--diff --apply` previews and writes; `--apply` alone writes without a
+diff preview.
 
 The `--apply` flag writes replacements back to disk in descending line order
 (so earlier replacements don't shift subsequent line indices). Without `--apply`,

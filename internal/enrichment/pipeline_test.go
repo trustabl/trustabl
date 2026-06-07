@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/trustabl/trustabl/internal/models"
@@ -14,11 +15,11 @@ import (
 type mockLLM struct {
 	results []enrichResult
 	err     error
-	calls   int
+	calls   atomic.Int32
 }
 
 func (m *mockLLM) enrichFile(_ context.Context, _ string, issues []issueContext) ([]enrichResult, error) {
-	m.calls++
+	m.calls.Add(1)
 	if m.err != nil {
 		return nil, m.err
 	}
@@ -136,8 +137,8 @@ func TestPipeline_RuleFilter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Run() error: %v", err)
 	}
-	if mock.calls != 1 {
-		t.Errorf("LLM calls = %d, want 1 (only one file)", mock.calls)
+	if mock.calls.Load() != 1 {
+		t.Errorf("LLM calls = %d, want 1 (only one file)", mock.calls.Load())
 	}
 	// CSDK-010 is enriched; CSDK-011 passes through unenriched
 	var enrichedCount int
@@ -172,8 +173,8 @@ func TestPipeline_FindingsGroupedByFile(t *testing.T) {
 		t.Fatalf("Run() error: %v", err)
 	}
 	// Both findings are in the same file → exactly one LLM call
-	if mock.calls != 1 {
-		t.Errorf("LLM calls = %d, want 1 (batched by file)", mock.calls)
+	if mock.calls.Load() != 1 {
+		t.Errorf("LLM calls = %d, want 1 (batched by file)", mock.calls.Load())
 	}
 }
 
@@ -313,6 +314,191 @@ func TestPipeline_Apply_SkipsFalsePositive(t *testing.T) {
 	}
 }
 
+func TestUnifiedDiff_BasicReplacement(t *testing.T) {
+	allLines := []string{"def run():", "    agent = Agent()", "    return agent"}
+	result := unifiedDiff("agent.py", allLines, 2, 2, "    agent = Agent(input_guardrails=[g])")
+	if !strings.Contains(result, "--- a/agent.py") {
+		t.Errorf("missing --- header: %q", result)
+	}
+	if !strings.Contains(result, "+++ b/agent.py") {
+		t.Errorf("missing +++ header: %q", result)
+	}
+	if !strings.Contains(result, "-    agent = Agent()") {
+		t.Errorf("missing - line: %q", result)
+	}
+	if !strings.Contains(result, "+    agent = Agent(input_guardrails=[g])") {
+		t.Errorf("missing + line: %q", result)
+	}
+}
+
+func TestUnifiedDiff_NoChange(t *testing.T) {
+	allLines := []string{"def run():", "    agent = Agent()", "    return agent"}
+	result := unifiedDiff("agent.py", allLines, 2, 2, "    agent = Agent()")
+	if result != "" {
+		t.Errorf("expected empty string for identical replacement, got: %q", result)
+	}
+}
+
+func TestUnifiedDiff_MultiLineReplacement(t *testing.T) {
+	allLines := []string{"a", "b", "c", "d", "e"}
+	// Replace lines 2-3 ("b","c") with 3 lines ("x","y","z")
+	result := unifiedDiff("file.py", allLines, 2, 3, "x\ny\nz")
+	if !strings.Contains(result, "--- a/file.py") {
+		t.Errorf("missing --- header: %q", result)
+	}
+	// orig: 1 ctx + 2 orig + 2 ctx = 5; new: 1 ctx + 3 repl + 2 ctx = 6
+	if !strings.Contains(result, "-1,5") {
+		t.Errorf("orig count wrong in hunk header: %q", result)
+	}
+	if !strings.Contains(result, "+1,6") {
+		t.Errorf("new count wrong in hunk header: %q", result)
+	}
+	if !strings.Contains(result, "-b") || !strings.Contains(result, "-c") {
+		t.Errorf("missing - lines for original content: %q", result)
+	}
+	if !strings.Contains(result, "+x") || !strings.Contains(result, "+y") || !strings.Contains(result, "+z") {
+		t.Errorf("missing + lines for replacement: %q", result)
+	}
+}
+
+func TestUnifiedDiff_LineStartOne(t *testing.T) {
+	// lineStart=1: no context lines before, should not panic
+	allLines := []string{"line1", "line2", "line3"}
+	result := unifiedDiff("f.py", allLines, 1, 1, "replaced")
+	if !strings.Contains(result, "-line1") {
+		t.Errorf("missing - line: %q", result)
+	}
+	if !strings.Contains(result, "+replaced") {
+		t.Errorf("missing + line: %q", result)
+	}
+}
+
+func TestUnifiedDiff_LineEndAtBoundary(t *testing.T) {
+	// lineEnd == len(allLines): no context lines after, should not panic
+	allLines := []string{"a", "b", "c"}
+	result := unifiedDiff("f.py", allLines, 3, 3, "replaced")
+	if !strings.Contains(result, "-c") {
+		t.Errorf("missing - line: %q", result)
+	}
+	if !strings.Contains(result, "+replaced") {
+		t.Errorf("missing + line: %q", result)
+	}
+}
+
+func TestUnifiedDiff_OutOfBounds(t *testing.T) {
+	allLines := []string{"a", "b"}
+	// lineEnd > len(allLines) — LLM hallucinated line number; must return "" not panic
+	result := unifiedDiff("f.py", allLines, 1, 99, "x")
+	if result != "" {
+		t.Errorf("expected empty string for out-of-bounds range, got: %q", result)
+	}
+	// lineStart > len(allLines)
+	result = unifiedDiff("f.py", allLines, 99, 99, "x")
+	if result != "" {
+		t.Errorf("expected empty string for out-of-bounds lineStart, got: %q", result)
+	}
+}
+
+func TestPipeline_DiffPopulated(t *testing.T) {
+	dir := t.TempDir()
+	writeTempFile(t, dir, "agent.py", "def run():\n    agent = Agent()\n    return agent\n")
+
+	result := &models.ScanResult{
+		Findings: []models.Finding{
+			{RuleID: "CSDK-010", FilePath: "agent.py", Line: 2, Title: "No guardrail"},
+		},
+	}
+
+	p := &Pipeline{
+		RepoRoot: dir,
+		Diff:     true,
+		llm: &mockLLM{results: []enrichResult{
+			{Explanation: "missing guardrail", Fix: "add guardrail", LineStart: 2, LineEnd: 2, Replacement: "    agent = Agent(input_guardrails=[g])"},
+		}},
+	}
+
+	enriched, err := p.Run(context.Background(), result)
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	diff := enriched.Findings[0].Diff
+	if diff == "" {
+		t.Error("Diff = empty, want non-empty")
+	}
+	if !strings.Contains(diff, "---") || !strings.Contains(diff, "+++") {
+		t.Errorf("Diff missing headers: %q", diff)
+	}
+}
+
+func TestPipeline_DiffFalse_NoDiffField(t *testing.T) {
+	dir := t.TempDir()
+	writeTempFile(t, dir, "agent.py", "def run():\n    agent = Agent()\n    return agent\n")
+
+	result := &models.ScanResult{
+		Findings: []models.Finding{
+			{RuleID: "CSDK-010", FilePath: "agent.py", Line: 2, Title: "No guardrail"},
+		},
+	}
+
+	p := &Pipeline{
+		RepoRoot: dir,
+		// Diff defaults to false
+		llm: &mockLLM{results: []enrichResult{
+			{Explanation: "missing guardrail", Fix: "add guardrail", LineStart: 2, LineEnd: 2, Replacement: "    agent = Agent(input_guardrails=[g])"},
+		}},
+	}
+
+	enriched, err := p.Run(context.Background(), result)
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if enriched.Findings[0].Diff != "" {
+		t.Errorf("Diff = %q, want empty when Diff=false", enriched.Findings[0].Diff)
+	}
+}
+
+func TestPipeline_DiffWithApply(t *testing.T) {
+	dir := t.TempDir()
+	writeTempFile(t, dir, "agent.py", "def run():\n    agent = Agent()\n    return agent\n")
+
+	result := &models.ScanResult{
+		Findings: []models.Finding{
+			{RuleID: "CSDK-010", FilePath: "agent.py", Line: 2, Title: "No guardrail"},
+		},
+	}
+
+	p := &Pipeline{
+		RepoRoot: dir,
+		Diff:     true,
+		Apply:    true,
+		llm: &mockLLM{results: []enrichResult{
+			{Explanation: "missing guardrail", Fix: "add guardrail", LineStart: 2, LineEnd: 2, Replacement: "    agent = Agent(input_guardrails=[g])"},
+		}},
+	}
+
+	enriched, err := p.Run(context.Background(), result)
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+
+	// Patch must be written to disk
+	if !enriched.Findings[0].Applied {
+		t.Error("Applied = false, want true")
+	}
+	content, err := os.ReadFile(filepath.Join(dir, "agent.py"))
+	if err != nil {
+		t.Fatalf("read patched file: %v", err)
+	}
+	if !strings.Contains(string(content), "input_guardrails") {
+		t.Errorf("patched file does not contain replacement; got:\n%s", content)
+	}
+
+	// Diff must still be populated
+	if enriched.Findings[0].Diff == "" {
+		t.Error("Diff = empty, want non-empty when Diff=true and Apply=true")
+	}
+}
+
 func TestPipeline_MultiFile_BatchedByFile(t *testing.T) {
 	dir := t.TempDir()
 	// Create 4 different files
@@ -347,7 +533,7 @@ func TestPipeline_MultiFile_BatchedByFile(t *testing.T) {
 	}
 
 	// 4 unique files → 4 LLM calls (a.py has 2 findings but 1 call)
-	if mock.calls != 4 {
-		t.Errorf("LLM calls = %d, want 4 (one per unique file)", mock.calls)
+	if mock.calls.Load() != 4 {
+		t.Errorf("LLM calls = %d, want 4 (one per unique file)", mock.calls.Load())
 	}
 }

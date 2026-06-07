@@ -423,7 +423,9 @@ trustabl llm provider list                 # list configured providers
 # Enrich a scan result (requires anthropic provider with a key set)
 trustabl scan ./myrepo --format json | trustabl enrich --repo ./myrepo        # pipe scan into enrich (stdout)
 trustabl enrich --input scan.json --repo ./myrepo --output enriched.json      # file in, file out
-trustabl enrich --input scan.json --repo ./myrepo --apply                     # apply fixes in place
+trustabl enrich --input scan.json --repo ./myrepo --diff                      # preview proposed fixes as a unified diff (stderr)
+trustabl enrich --input scan.json --repo ./myrepo --diff --apply              # preview and apply fixes
+trustabl enrich --input scan.json --repo ./myrepo --apply                     # apply fixes without previewing
 trustabl enrich --input scan.json --repo ./myrepo --rule CSDK-010             # focus on one rule
 trustabl enrich --input scan.json --repo ./myrepo --only-enriched             # CI: only enriched findings
 ```

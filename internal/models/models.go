@@ -324,6 +324,7 @@ type EnrichedFinding struct {
 	LineStart     int    `json:"line_start,omitempty"`
 	LineEnd       int    `json:"line_end,omitempty"`
 	Replacement   string `json:"replacement,omitempty"`
+	Diff          string `json:"diff,omitempty"` // unified diff of the proposed replacement (populated when --diff is set)
 	FalsePositive bool   `json:"false_positive,omitempty"`
 	Enriched      bool   `json:"enriched"`
 	Applied       bool   `json:"applied,omitempty"`
