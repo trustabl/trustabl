@@ -116,6 +116,7 @@ const (
 	LanguageJavaScript Language = "javascript"
 	LanguageGo         Language = "go"
 	LanguageCSharp     Language = "csharp"
+	LanguagePHP        Language = "php"
 )
 
 // IsTSOrJS reports whether l is in the TypeScript/JavaScript family. The two
@@ -231,6 +232,7 @@ type ScanManifest struct {
 	JavaScriptFiles        []string         `json:"javascript_files,omitempty"`
 	GoFiles                []string         `json:"go_files,omitempty"`
 	CSharpFiles            []string         `json:"csharp_files,omitempty"`
+	PHPFiles               []string         `json:"php_files,omitempty"`
 	YAMLFiles              []string         `json:"yaml_files"`
 	JSONFiles              []string         `json:"json_files,omitempty"`
 	MarkdownFiles          []string         `json:"markdown_files,omitempty"`

@@ -215,8 +215,10 @@ TypeScript-family pipeline: its tools and agents are discovered, tagged
 tree-sitter-go discovery for MCP tools (mark3labs/mcp-go and the official
 modelcontextprotocol/go-sdk), audited by the `language: go` rules in the MCP
 pack. C# has tree-sitter-c-sharp discovery for the official ModelContextProtocol
-SDK's `[McpServerTool]` methods, audited by the `language: csharp` rules; other
-Go and .NET SDKs are recognized as files by Recon but not yet AST-parsed.
+SDK's `[McpServerTool]` methods, audited by the `language: csharp` rules. PHP has
+tree-sitter-php discovery for `#[McpTool]`-attributed methods (official mcp/sdk
+and community php-mcp/server), audited by the `language: php` rules; other Go,
+.NET, and PHP SDKs are recognized as files by Recon but not yet AST-parsed.
 The rule schema's `language:` field gates per-language rule sets.
 
 ### Scope boundaries

@@ -90,7 +90,12 @@ emitted as `ToolDef{Kind: mcp_tool, Language: go}` and audited by the
 not yet AST-parsed. C# has tree-sitter-c-sharp discovery for the official
 ModelContextProtocol SDK's `[McpServerTool]` methods, emitted as
 `ToolDef{Kind: mcp_tool, Language: csharp}` and audited by the `language: csharp`
-rules; other .NET agent SDKs (Semantic Kernel, AutoGen) are not yet parsed.
+rules; other .NET agent SDKs (Semantic Kernel, AutoGen) are not yet parsed. PHP
+has tree-sitter-php discovery for `#[McpTool]`-attributed methods (official
+mcp/sdk + community php-mcp/server), emitted as
+`ToolDef{Kind: mcp_tool, Language: php}` and audited by the `language: php`
+rules; the smacker grammar parses single-line `#[...]` as a comment, so the
+attribute is read from comment text (multi-line attributes are a gap).
 
 The rule schema's `language:` field gates per-language rule sets. Existing
 rules declare `language: python` explicitly and the loader rejects any
@@ -633,6 +638,20 @@ For each language recon cleared, do the AST work and produce a `RepoInventory`:
   SDKMCP and the mcp/ pack's `language: csharp` rules (MCP-017/018) audit them.
   The `[McpServerTool(Name=...)]` override and the Semantic Kernel
   `[KernelFunction]` / AutoGen `[Function]` shapes are v1 gaps.
+- **DiscoverPHPMCPTools** (`php_mcp.go`) — PHP MCP tools parsed with
+  tree-sitter-php (a dedicated parse pass, `parsePHPFiles`), gated to files whose
+  `use` statements reference an `Mcp` namespace (covers the official `Mcp\...`
+  and community `PhpMcp\...` roots). Recognizes `#[McpTool]`-attributed methods:
+  name from the attribute's `name:` argument (falling back to the method name),
+  description from its `description:` argument, params + typed-params from the
+  method signature (PHP type hints are optional, so `HasTypedParams` is real
+  signal). The smacker grammar does not model PHP 8 attributes — a single-line
+  `#[...]` is parsed as a `comment` node — so the attribute is read from the
+  comment text immediately preceding the method via regex. Emits
+  `ToolDef{Kind: mcp_tool, Language: php}`, so deriveSDKsDetected stamps SDKMCP
+  and the mcp/ pack's `language: php` rules (MCP-019/020) audit them. Multi-line
+  `#[...]` attributes, `#[McpResource]` / `#[McpPrompt]`, and PHP body-fact
+  predicates are v1 gaps.
 - **ResolveEdges** — links agent `tools=`, `handoffs=`, `input_guardrails=`
   references to discovered definitions in the same repo; cross-module resolution
   uses import statements; unresolvable references are flagged `External=true`.

@@ -1286,6 +1286,27 @@ def run_cmd(name: str) -> str:
 		kind: models.KindMCPTool, lang: models.LanguageCSharp, wantFires: false,
 		src: "using ModelContextProtocol.Server;\nusing System.ComponentModel;\n\npublic class T {\n    [McpServerTool, Description(\"Summarize an invoice\")]\n    public string SummarizeInvoice(string input) { return input; }\n}\n",
 	},
+	// ── MCP PHP rules (official mcp/sdk + php-mcp/server) ──
+	{
+		name: "MCP-019 fires on PHP tool with no description", ruleID: "MCP-019",
+		kind: models.KindMCPTool, lang: models.LanguagePHP, wantFires: true,
+		src: "<?php\nuse PhpMcp\\Server\\Attributes\\McpTool;\nclass T {\n    #[McpTool(name: 'fetch_weather')]\n    public function fetchWeather(string $city): string { return $city; }\n}\n",
+	},
+	{
+		name: "MCP-019 silent when description present", ruleID: "MCP-019",
+		kind: models.KindMCPTool, lang: models.LanguagePHP, wantFires: false,
+		src: "<?php\nuse PhpMcp\\Server\\Attributes\\McpTool;\nclass T {\n    #[McpTool(name: 'fetch_weather', description: 'Fetch the weather')]\n    public function fetchWeather(string $city): string { return $city; }\n}\n",
+	},
+	{
+		name: "MCP-020 fires on ambiguous PHP tool name", ruleID: "MCP-020",
+		kind: models.KindMCPTool, lang: models.LanguagePHP, wantFires: true,
+		src: "<?php\nuse PhpMcp\\Server\\Attributes\\McpTool;\nclass T {\n    #[McpTool(name: 'process', description: 'Does a thing')]\n    public function process(string $input): string { return $input; }\n}\n",
+	},
+	{
+		name: "MCP-020 silent on descriptive name", ruleID: "MCP-020",
+		kind: models.KindMCPTool, lang: models.LanguagePHP, wantFires: false,
+		src: "<?php\nuse PhpMcp\\Server\\Attributes\\McpTool;\nclass T {\n    #[McpTool(name: 'summarize_invoice', description: 'Summarize')]\n    public function summarizeInvoice(string $input): string { return $input; }\n}\n",
+	},
 	{
 		name: "MCP-012 fires on TS tool shelling out", ruleID: "MCP-012",
 		kind: models.KindMCPTool, lang: models.LanguageTypeScript, wantFires: true,
@@ -3270,6 +3291,8 @@ func TestPolicyRules(t *testing.T) {
 				tool, pf = parseGoTool(t, tc.src, tc.kind)
 			case models.LanguageCSharp:
 				tool, pf = parseCSharpTool(t, tc.src, tc.kind)
+			case models.LanguagePHP:
+				tool, pf = parsePHPTool(t, tc.src, tc.kind)
 			default:
 				tool, pf = parsePy(t, tc.src, tc.kind)
 			}

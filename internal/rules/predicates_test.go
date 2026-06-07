@@ -131,6 +131,28 @@ func parseCSharpTool(t *testing.T, src string, kind models.ToolKind) (models.Too
 	return tools[0], pf
 }
 
+// parsePHPTool parses a PHP snippet and returns the first discovered PHP MCP
+// tool, mirroring parseCSharpTool for the language:php rule cases.
+func parsePHPTool(t *testing.T, src string, kind models.ToolKind) (models.ToolDef, analysis.ParsedFile) {
+	t.Helper()
+	tree, err := astutil.NewPHPParser().ParseCtx(context.Background(), nil, []byte(src))
+	if err != nil {
+		t.Fatalf("parse PHP: %v", err)
+	}
+	pf := analysis.ParsedFile{RelPath: "Tools.php", Tree: tree, Source: []byte(src)}
+	var tools []models.ToolDef
+	switch kind {
+	case models.KindMCPTool:
+		tools = analysis.DiscoverPHPMCPTools([]analysis.ParsedFile{pf}, func(string) {})
+	default:
+		t.Fatalf("parsePHPTool: unsupported kind %q", kind)
+	}
+	if len(tools) == 0 {
+		t.Fatal("parsePHPTool: no tool discovered (check the use gate in the snippet)")
+	}
+	return tools[0], pf
+}
+
 // parseTSAgentInline parses a TS snippet and returns the first discovered
 // Claude agent. For use in package-level agent-rule case tables (no *testing.T
 // available), so it panics rather than failing a test.
