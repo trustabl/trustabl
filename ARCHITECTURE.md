@@ -75,7 +75,7 @@ CSDK-120/130/131 agent rules), OpenAI Agents (OAI-016/017/019/022/024 tool
 rules, OAI-105 agent rule), Google ADK (ADK-013/015/016 tool rules, ADK-109
 agent rule), MCP (MCP-011/012/013/014 tool rules), LangChain
 (LC-010/011/012/013/014 tool rules, LC-111 agent rule), and the Vercel AI SDK
-(VAI-001..005 tool rules, VAI-006/007/008 agent rules, VAI-012 repo rule). A TS
+(VAI-001..005 + VAI-011 tool rules, VAI-006/007/008 agent rules, VAI-012 repo rule). A TS
 repo for any of these no longer produces a blanket META-004; the full
 per-SDK/language matrix lives in COVERAGE.md. The scanner
 can also recognize JavaScript and Go *files* (they appear in
@@ -145,19 +145,53 @@ Resolution order:
    deletes the sentinel *first*, so a pack left half-deleted by an interrupted
    prune is markerless and re-cloned rather than trusted as a thinned ruleset.
 
-The pack's `manifest.yaml` declares a `schema_version`; resolution rejects a
-pack whose version is incompatible with the engine's
-`rules.SupportedSchemaVersion` (treated as no compatible rules → exit `2`).
-The resolved commit SHA is recorded on `ScanResult` (`RulesSource`,
-`RulesVersion`, `RulesFromCache`) and folded into `ScanID` (see §7).
-`trustabl rules pull` performs the same fetch eagerly without scanning.
+The pack's `manifest.yaml` declares a `schema_version`. Resolution is
+**forward-compatible**: a pack whose version *exceeds*
+`rules.SupportedSchemaVersion` is **not** rejected — it is loaded leniently
+(below) and flagged `SchemaNewer` so the CLI warns. Resolution refuses a pack
+only when its manifest is missing / unparseable / non-positive
+(`ErrNoCompatibleRules`). The resolved commit SHA is recorded on `ScanResult`
+(`RulesSource`, `RulesVersion`, `RulesFromCache`, plus `RulesSchemaVersion` /
+`RulesSchemaNewer`) and folded into `ScanID` along with the engine's
+`SupportedSchemaVersion` (see §7). `trustabl rules pull` performs the same fetch
+eagerly without scanning.
+
+**Lenient rule loading (forward compatibility).** The deployed scanner loads the
+pack via `rules.LoadLenient`: a rule that references a `scope`, an `applies_to`
+value, or a `match` predicate this build does not understand (a rule from a newer
+schema — e.g. a future `skill`-scoped rule on a binary that predates skill
+support) is **dropped whole** — its ID collected into `ScanResult.RulesSkipped`,
+surfaced as a stderr warning, and summarized in a single deterministic
+`META-005` info finding in the report — and the scan proceeds with the rules it
+understands. The unknown-value check (`rules.ruleNeedsNewerEngine`) is narrow: an
+*empty* scope/applies_to is a missing required field, not a newer-engine signal,
+so it still hard-fails. Likewise, a pack
+whose `category` this build does not recognize — an SDK a *newer* rules release
+added — is **skipped as a whole file** (its rule IDs collected into
+`RulesSkipped` the same way) rather than hard-failing the entire load and taking
+every other SDK's rules down with it; `models.ValidCategory` is the recognized
+set, and strict load still rejects an unknown category so a typo is caught at
+authoring. The whole rule is
+dropped, not partially decoded, because a silently-omitted predicate would
+collapse the rule's `match` to vacuous-true (firing on every entity). Authoring
+and CI use the **strict** `rules.Load` (`KnownFields(true)`), so typos and bad
+rules — including a malformed *known* rule (missing required field, out-of-range
+confidence, duplicate ID) — are still caught against the in-repo fixture; the
+runtime path degrades only for genuinely-newer rules, never for real authoring
+errors, which it still hard-fails in both modes. The engine exits `2` only when *no* rule is usable: a genuinely empty
+pack (`ErrNoRulesInPack`) or one whose every rule is forward-incompatible
+(`ErrAllRulesIncompatible`, which hints "upgrade Trustabl"). This decouples
+additive rule updates from binary upgrades — see the `SupportedSchemaVersion`
+contract in [`internal/rules/schema_version.go`](internal/rules/schema_version.go).
 
 ### Progress reporting
 
 `scanner.Run` takes an optional `Config.Progress` (`progress.Reporter`); nil
 means no output. It emits phase events (clone for remote targets, recon
 per-file, inventory per-file, analysis per-entity) that the CLI renders to
-**stderr** — animated on a TTY, plain lines when piped, silent for JSON. The
+**stderr** — animated on a TTY, plain lines when piped, silent for JSON. (A
+second optional stderr channel, `Config.Log`, carries `--verbose`/`--debug`
+diagnostics — see the **Diagnostics** subsection below.) The
 TTY renderer is a **live multi-row panel** (`internal/progress/tty.go`): every
 stage is a row drawn together and repainted in place — finished rows show a green
 `✔ <label>  <summary>`, the active row its spinner and (where a total is known) a
@@ -191,6 +225,36 @@ live line is a running counter rather than a bar; the callback fires both on the
 tree walk and on the per-file body reads in component discovery (the slow span
 on large repos). Progress never touches stdout, preserving the determinism
 contract (§7).
+
+### Diagnostics (`--verbose` / `--debug`)
+
+Separate from progress (the phase UI) is **diagnostic logging**: opt-in
+verbose/debug narration via a small leveled logger,
+[`internal/logx`](internal/logx/logx.go). It is a leaf package (no project
+imports) holding a `Logger` with three levels — `LevelNormal` (silent),
+`LevelVerbose`, `LevelDebug` — and `Verbosef` / `Debugf` / `Enabled` / `Timer`
+methods. A **nil `*logx.Logger` is a valid silent logger** (every method
+short-circuits before touching a field), so `Config.Log` defaults to a safe
+no-op. `Timer` reads no clock unless debug is on, so per-phase timing is free on
+the normal path and cannot introduce a time-dependent value near the report.
+
+The two flags are **persistent (global)** on the root command (`-v`/`--verbose`,
+`--debug`; `--debug` implies verbose), resolved by `logLevelFor(cmd)`. `scan`
+wires the logger fully (`scanner.Config.Log`), narrating each pipeline phase —
+rule provenance, recon/inventory/policy/analysis counts, detected and unaudited
+SDKs, per-entity and per-finding detail (debug, capped at 50), output
+destinations, and a result summary; `mcp` and `rules pull` wire it lightly. Like
+progress, **diagnostics are stderr-only** and never feed `ScanResult`, so the
+report stays byte-stable even under `--format json --debug`. Diagnostic color is
+gated by `diagColor` (off under `--no-color`, `NO_COLOR`, or a non-terminal
+stderr), matching the report's color contract.
+
+Because an animated TTY panel repaints in place, interleaving log lines into that
+region on the same stderr corrupts both. `pickScanMode` therefore calls
+`modeForLogs`, which **downgrades `ModeTTY` to `ModePlain` whenever verbose is
+on** (other modes pass through). A verbose run thus always takes the synchronous
+path, so the logger and the plain reporter write to stderr in order from one
+goroutine.
 
 ### Steps
 
@@ -531,8 +595,9 @@ For each language recon cleared, do the AST work and produce a `RepoInventory`:
   `[...]` array like every other TS pass): bare identifier → `ToolRef`; inline
   `tool({...})` / spread / other → agent `Opaque`; `<provider>.tools.<name>()` →
   `HostedToolRef` (canonicalized in `ts_vercel_hosted_tools.go`). `.js` / `.mjs`
-  apps are inventoried but not AST-parsed; VAI-009/010 (name rules) and VAI-011
-  (TS timeout predicate) are v1 gaps.
+  apps are inventoried but not AST-parsed; VAI-009/010 (name rules) are v1 gaps.
+  VAI-011 (HTTP-call-without-timeout) ships via the structural
+  `has_http_call_without_timeout` predicate.
 - **ResolveEdges** — links agent `tools=`, `handoffs=`, `input_guardrails=`
   references to discovered definitions in the same repo; cross-module resolution
   uses import statements; unresolvable references are flagged `External=true`.
@@ -1339,6 +1404,8 @@ internal/
 │   ├── reporter.go              Reporter iface, Mode, PickMode, nop.
 │   ├── plain.go                 Static-line reporter (piped human).
 │   └── tty.go                   bubbletea model + TTYReporter (interactive).
+├── logx/                        Leveled --verbose/--debug diagnostics (stderr-only,
+│                                nil-safe, leaf package).
 ├── analysis/
 │   ├── astutil/                 Tiny tree-sitter ergonomic layer (NodeText,
 │   │                            Walk, FindAll, FunctionName, FunctionParams,
@@ -1710,6 +1777,9 @@ trustabl enrich        [-i SCAN_JSON] [-r REPO_ROOT] [-o OUTPUT_FILE]
 trustabl mcp           [--rules-repo=URL] [--rules-ref=REF] [--no-rules-update]
 trustabl rules pull    [--rules-repo=URL] [--rules-ref=REF]
 trustabl version
+
+Global (persistent) flags, valid on every subcommand:
+                       [-v|--verbose] [--debug]   stderr diagnostics; --debug implies --verbose
 ```
 
 `--rules-repo` (env `TRUSTABL_RULES_REPO`) overrides the rules repository URL;

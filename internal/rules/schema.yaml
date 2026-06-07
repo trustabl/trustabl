@@ -157,6 +157,10 @@ rules:
 #                           other callees containing "print" are not flagged)
 #   has_write_call:         body opens a file 'w'/'a'/'x', or shutil.copy/copy2/move/rmtree
 #   has_dynamic_url_call:   HTTP call where the URL is a non-literal (param/f-string)
+#   has_http_call_without_timeout: (TypeScript only) a fetch/axios/got/undici call
+#                           with no signal/timeout/abortSignal option — an unbounded
+#                           HTTP call that can hang the agent's run loop. Python
+#                           tools use call_without_kwarg with `timeout` instead.
 #   always:                 sentinel — `false` matches nothing; `true` is a no-op
 #                           (an empty match{} is already vacuously true)
 #

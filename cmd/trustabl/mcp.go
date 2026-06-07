@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/trustabl/trustabl/internal/logx"
 	"github.com/trustabl/trustabl/internal/mcpserver"
 	"github.com/trustabl/trustabl/internal/models"
 	"github.com/trustabl/trustabl/internal/progress"
@@ -41,9 +42,19 @@ func newMCPCommand() *cobra.Command {
 			"and returns the structured result as JSON.\n\n" +
 			"The MCP protocol uses stdout for its JSON-RPC stream, so this command\n" +
 			"writes nothing else to stdout; diagnostics go to stderr.",
+		Example: `  # Run the server (an MCP client normally launches this for you)
+  trustabl mcp
+
+  # Pin the rules ref the server resolves
+  trustabl mcp --rules-ref v1.2.0
+
+  # Example Claude Code / Cursor client config entry:
+  #   "mcpServers": {
+  #     "trustabl": { "command": "trustabl", "args": ["mcp"] }
+  #   }`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runMCP(cmd.Context(), f)
+			return runMCP(cmd.Context(), f, logLevelFor(cmd))
 		},
 	}
 	cmd.Flags().StringVar(&f.rulesRepo, "rules-repo", "",
@@ -59,16 +70,26 @@ func newMCPCommand() *cobra.Command {
 // scanner.Run exactly like the CLI scan path, but with progress disabled (the
 // nop reporter) so nothing touches stdout. A per-call rules_ref overrides the
 // command-level --rules-ref when the client supplies one.
-func runMCP(ctx context.Context, f mcpFlags) error {
+func runMCP(ctx context.Context, f mcpFlags, level logx.Level) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	// Diagnostics go to stderr; stdout is the JSON-RPC stream. diagColor keeps the
+	// output plain when stderr is captured into a client's server log (the common
+	// case) and only dims the tag when an operator runs the server in a terminal.
+	log := logx.New(os.Stderr, level, diagColor(false))
+	repo := rulesRepoFromFlag(f.rulesRepo)
+	if repo == "" {
+		repo = rulesource.DefaultRepoURL
+	}
+	log.Verbosef("mcp: rules repo %s", repo)
 
 	scan := func(ctx context.Context, req mcpserver.ScanRequest) (models.ScanResult, error) {
 		ref := f.rulesRef
 		if req.RulesRef != "" {
 			ref = req.RulesRef
 		}
+		log.Debugf("mcp: scan request path=%s rules_ref=%q", req.Path, ref)
 		rcfg := rulesource.Config{
 			RepoURL:  rulesRepoFromFlag(f.rulesRepo),
 			Ref:      ref,
@@ -80,7 +101,9 @@ func runMCP(ctx context.Context, f mcpFlags) error {
 		}
 		// Progress is the nop reporter: the MCP transport owns stdout, and even
 		// stderr progress would interleave noisily into a client's server log
-		// for every tool call. The scan stays a pure function over its config.
+		// for every tool call. Log is wired through, but it is silent unless the
+		// operator started the server with --verbose/--debug — an explicit opt-in
+		// to the per-call diagnostic stream (stderr only, never the RPC stream).
 		cfg := scanner.Config{
 			Target:         req.Path,
 			RulesFS:        res.FS,
@@ -88,6 +111,7 @@ func runMCP(ctx context.Context, f mcpFlags) error {
 			RulesVersion:   res.SHA,
 			RulesFromCache: res.FromCache,
 			Progress:       progress.NewNop(),
+			Log:            log,
 			Ctx:            ctx,
 		}
 		return scanner.Run(cfg)

@@ -46,8 +46,8 @@ rules:
       human approval rather than letting the tool loop call it autonomously.
 
   - id: VAI-007
-    title: Vercel AI agent tool loop has no step bound
-    severity: medium
+    title: Vercel AI agent tool loop has no explicit step bound
+    severity: low
     confidence: 0.6
     language: typescript
     applies_to:
@@ -61,12 +61,15 @@ rules:
             - maxSteps
     explanation: >
       This agent runs a multi-step tool loop (generateText / streamText /
-      ToolLoopAgent with a tools record) but sets neither stopWhen nor maxSteps,
-      so the loop's only stopping condition is the model deciding to stop calling
-      tools. A prompt injection or a model that loops on a tool whose output keeps
-      re-triggering it can run the loop unbounded — burning tokens, hammering the
-      wired tools (including any side-effecting or billed ones), and stalling the
-      request. The SDK does not impose a default ceiling.
+      ToolLoopAgent with a tools record) but sets neither stopWhen nor maxSteps.
+      The SDK is not unbounded by default: a bare generateText / streamText call
+      runs a single step and does not continue the tool loop without stopWhen, and
+      the Agent / ToolLoopAgent class defaults to stopWhen: stepCountIs(20). What
+      this flags is the missing explicit bound — the loop either silently does not
+      iterate or inherits a generic 20-step ceiling not sized to this task. A
+      prompt injection, or a tool whose output keeps re-triggering it, can then run
+      up to that default ceiling, burning tokens and hammering the wired tools
+      (including any side-effecting or billed ones) before it stops.
     fix: >
       Set an explicit bound: pass maxSteps (a small integer ceiling on tool
       round-trips) or a stopWhen condition (e.g. stepCountIs(n) or a predicate

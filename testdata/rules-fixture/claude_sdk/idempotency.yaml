@@ -35,11 +35,14 @@ rules:
                 - request_id
                 - txn_id
     explanation: >
-      Tool name suggests a side effect (create/send/refund/…). Agents retry
-      tool calls under timeouts and ambiguous failures; without an
-      idempotency key the same action can fire twice. The hook generator can
-      stamp a key into the request, but the downstream service has to honor
-      it.
+      Tool name suggests a side effect (create/send/refund/…). A mutating tool
+      with no idempotency key cannot tell a new request from a retry of one whose
+      result was lost, and retries happen for reasons outside the tool — the model
+      re-invokes it when a result reads as inconclusive, an orchestrator or your
+      own retry policy re-issues after a timeout, or a response is lost after the
+      side effect already committed (at-least-once delivery). Without a key the
+      same action can fire twice. The hook generator can stamp a key into the
+      request, but the downstream service has to honor it.
     fix: >
       Add an `idempotency_key: str` parameter; verify the receiving API
       respects it.
@@ -74,11 +77,14 @@ rules:
                 - txn_id
     explanation: >
       This TypeScript tool's name implies a side effect (create/send/refund/…)
-      but its Zod schema exposes no idempotency parameter. Agents re-issue tool
-      calls after timeouts and ambiguous failures, so the same charge, send, or
-      delete can fire twice. Without a key the model and the SDK cannot make the
-      retry safe. The prefix set matches both `create_charge` and `createCharge`
-      naming, so it fires on idiomatic TypeScript tool names.
+      but its Zod schema exposes no idempotency parameter. Retries happen for
+      reasons outside the tool — the model re-invokes it when a result reads as
+      inconclusive, an orchestrator or your own retry policy re-issues after a
+      timeout, or a response is lost after the side effect already committed
+      (at-least-once delivery) — so the same charge, send, or delete can fire
+      twice. Without a key the model and the SDK cannot make the retry safe. The
+      prefix set matches both `create_charge` and `createCharge` naming, so it
+      fires on idiomatic TypeScript tool names.
     fix: >
       Add an `idempotencyKey` (or `requestId`) field to the tool's Zod schema,
       thread it to the downstream API, and confirm that API treats a repeated

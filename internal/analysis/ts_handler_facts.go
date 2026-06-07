@@ -43,6 +43,9 @@ func tsHandlerFacts(handler *sitter.Node, src []byte) map[string]string {
 			if urlArgIsDynamic(n, src) {
 				out["dynamic_url"] = "true"
 			}
+			if !httpCallHasTimeout(n, src) {
+				out["http_no_timeout"] = "true"
+			}
 		case "execSync", "exec", "execFile", "execFileSync", "spawn", "spawnSync", "fork",
 			// Namespace-import / require shape: `child_process.exec(...)` from
 			// `import * as child_process` or `const child_process = require(...)`.
@@ -113,4 +116,58 @@ func urlArgIsDynamic(call *sitter.Node, src []byte) bool {
 		// identifier, member_expression, binary_expression (concat), call, etc.
 		return true
 	}
+}
+
+// timeoutOptionKeys are the option-object property names that bound an HTTP
+// call's duration: fetch's `signal` (an AbortSignal), axios/got's `timeout`,
+// and the Vercel AI SDK's `abortSignal`. A recognized HTTP call carrying an
+// options object with any of these keys has a timeout bound.
+var timeoutOptionKeys = map[string]bool{
+	"signal":      true,
+	"timeout":     true,
+	"abortSignal": true,
+}
+
+// httpCallHasTimeout reports whether a recognized HTTP call node passes a
+// timeout bound — an options-object argument carrying a `signal`, `timeout`, or
+// `abortSignal` key. A bare call (no options object) or one whose options omit
+// all three is treated as unbounded. This is a heuristic: it cannot see a
+// signal/timeout defined on another line and passed by identifier, so the rule
+// built on the resulting `http_no_timeout` fact is calibrated at modest
+// confidence (and its blind spots are documented in the rulebook).
+func httpCallHasTimeout(call *sitter.Node, src []byte) bool {
+	args := call.ChildByFieldName("arguments")
+	if args == nil {
+		return false
+	}
+	for i := 0; i < int(args.NamedChildCount()); i++ {
+		arg := args.NamedChild(i)
+		if arg == nil || arg.Type() != "object" {
+			continue
+		}
+		for j := 0; j < int(arg.NamedChildCount()); j++ {
+			prop := arg.NamedChild(j)
+			if prop == nil || prop.Type() != "pair" {
+				continue
+			}
+			k := prop.ChildByFieldName("key")
+			if k == nil {
+				continue
+			}
+			var kname string
+			switch k.Type() {
+			case "property_identifier":
+				kname = astutil.NodeText(k, src)
+			case "string":
+				raw := astutil.NodeText(k, src)
+				if len(raw) >= 2 {
+					kname = raw[1 : len(raw)-1]
+				}
+			}
+			if timeoutOptionKeys[kname] {
+				return true
+			}
+		}
+	}
+	return false
 }

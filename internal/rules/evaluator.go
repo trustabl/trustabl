@@ -213,6 +213,9 @@ func (e MatchExpr) EvaluateTool(t models.ToolDef, pf analysis.ParsedFile) bool {
 	if e.HasDynamicURLCall != nil && PredHasDynamicURLCall(t, pf) != *e.HasDynamicURLCall {
 		return false
 	}
+	if e.HasHTTPCallWithoutTimeout != nil && PredHasHTTPCallWithoutTimeout(t) != *e.HasHTTPCallWithoutTimeout {
+		return false
+	}
 	if e.Always != nil && !*e.Always {
 		// `always: false` matches nothing; `always: true` is a no-op (the
 		// vacuous-true semantics already make an empty MatchExpr match).
@@ -262,7 +265,8 @@ var predicatesByScope = map[models.Scope]map[string]bool{
 		"has_raise": true, "has_try_except": true, "has_shell_call": true,
 		"has_code_exec_call": true, "has_print_call": true,
 		"has_write_call": true, "has_dynamic_url_call": true,
-		"name_in": true, "name_has_prefix": true, "has_body_text": true,
+		"has_http_call_without_timeout": true,
+		"name_in":                       true, "name_has_prefix": true, "has_body_text": true,
 		"param_name_matches": true, "call_without_kwarg": true,
 		"call_uses_unnormalized_path_param": true,
 		"tool_decorator_kwarg_value":        true, "tool_decorator_kwarg_present": true,
@@ -308,6 +312,7 @@ func (e MatchExpr) setPredicateNames() []string {
 	add(e.HasPrintCall != nil, "has_print_call")
 	add(e.HasWriteCall != nil, "has_write_call")
 	add(e.HasDynamicURLCall != nil, "has_dynamic_url_call")
+	add(e.HasHTTPCallWithoutTimeout != nil, "has_http_call_without_timeout")
 	add(len(e.NameIn) > 0, "name_in")
 	add(len(e.NameHasPrefix) > 0, "name_has_prefix")
 	add(len(e.HasBodyText) > 0, "has_body_text")
@@ -392,6 +397,36 @@ func (e MatchExpr) repoSDKInCodeValues() []string {
 func (e MatchExpr) isEmpty() bool {
 	return e.All == nil && e.Any == nil && e.Not == nil &&
 		e.Always == nil && len(e.setPredicateNames()) == 0
+}
+
+// maxMatchDepth bounds match-expression nesting (all/any/not). A legitimate rule
+// nests a handful of levels; thousands is a malformed or hostile pack that would
+// otherwise exhaust the stack during loading or evaluation. The loader rejects
+// rules exceeding it (strict) and the lenient pre-pass skips them, so the
+// recursive evaluator and validation walks never see an over-deep tree.
+const maxMatchDepth = 64
+
+// exceedsMatchDepth reports whether e nests combinators deeper than limit. It
+// stops descending once the budget is spent, so it is itself bounded and cannot
+// overflow while measuring an adversarially-deep tree.
+func exceedsMatchDepth(e MatchExpr, limit int) bool {
+	if limit < 0 {
+		return true
+	}
+	for _, sub := range e.All {
+		if exceedsMatchDepth(sub, limit-1) {
+			return true
+		}
+	}
+	for _, sub := range e.Any {
+		if exceedsMatchDepth(sub, limit-1) {
+			return true
+		}
+	}
+	if e.Not != nil && exceedsMatchDepth(*e.Not, limit-1) {
+		return true
+	}
+	return false
 }
 
 // degenerateCombinators returns descriptions of meaningless combinators in the

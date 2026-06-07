@@ -54,15 +54,10 @@ func DiscoverToolsFromParsed(parsed []ParsedFile) []models.ToolDef {
 // the files it did not analyze (a silent drop on a security tool is the "clean
 // report that isn't" failure mode). The error return is reserved for a future
 // fatal condition; it is always nil today.
-func DiscoverTools(manifest models.ScanManifest, onFile func(path string)) ([]models.ToolDef, []ParsedFile, []string, error) {
+func DiscoverTools(ctx context.Context, manifest models.ScanManifest, onFile func(path string)) ([]models.ToolDef, []ParsedFile, []string, error) {
 	var tools []models.ToolDef
 	var parsed []ParsedFile
 	var skipped []string
-
-	// Reuse one parser across every file instead of allocating a fresh C parser
-	// per file (the prior astutil.Parse-per-file pattern). Parsers are reusable
-	// and not shared across goroutines; this loop is single-threaded.
-	parser := astutil.NewPyParser()
 
 	for _, rel := range manifest.PythonFiles {
 		if onFile != nil {
@@ -74,7 +69,14 @@ func DiscoverTools(manifest models.ScanManifest, onFile func(path string)) ([]mo
 			skipped = append(skipped, rel) // unreadable (perms, races) — not analyzed
 			continue
 		}
-		tree, err := parser.ParseCtx(context.Background(), nil, src)
+		// A fresh parser per file: ParseCtxTimeout uses a cancelable context, and
+		// go-tree-sitter's cancellation flag lives ON the parser. Reusing one
+		// parser across files lets a parse's timeout goroutine set that flag after
+		// the parse returns (a race with parseComplete), which then silently aborts
+		// the NEXT file's parse — discovery would go empty. A per-file parser keeps
+		// each parse's cancellation isolated; construction is cheap vs. parsing.
+		parser := astutil.NewPyParser()
+		tree, err := astutil.ParseCtxTimeout(ctx, parser, src)
 		if err != nil {
 			skipped = append(skipped, rel) // unparseable — not analyzed
 			continue

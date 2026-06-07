@@ -40,7 +40,7 @@ rules:
 
   - id: CSDK-012
     title: TypeScript Claude SDK tool writes to the filesystem
-    severity: medium
+    severity: low
     confidence: 0.5
     language: typescript
     applies_to:

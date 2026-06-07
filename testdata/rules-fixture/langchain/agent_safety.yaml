@@ -36,9 +36,9 @@ rules:
       rather than letting the model invoke it unattended.
 
   - id: LC-102
-    title: LangChain AgentExecutor has no max_iterations limit
-    severity: medium
-    confidence: 0.8
+    title: LangChain AgentExecutor has no explicit max_iterations limit
+    severity: low
+    confidence: 0.6
     language: python
     applies_to:
       - langchain_agent_executor
@@ -47,20 +47,22 @@ rules:
       agent_kwarg_missing:
         - max_iterations
     explanation: >
-      This AgentExecutor sets no max_iterations, so a model that never emits a
-      final answer (it loops calling tools, or oscillates between two) runs until
-      it exhausts the API budget or wall-clock — there is no built-in ceiling. A
-      runaway tool-calling loop is a cost incident and, when the tools have side
-      effects, a correctness and safety one.
+      This AgentExecutor sets no explicit max_iterations, so it falls back to
+      LangChain's default of 15 iterations. That default prevents a true runaway,
+      but it is a generic ceiling rather than one sized to this task: a model that
+      loops or oscillates still runs up to 15 tool round-trips — a cost the
+      workflow may not tolerate — and the implicit cap can shift between versions.
+      Relying on the default also means a malformed model step is retried up to the
+      limit instead of surfaced.
     fix: >
       Pass max_iterations= (and optionally max_execution_time=) to AgentExecutor,
       sized to the task. Also set handle_parsing_errors= so a malformed model step
       is surfaced rather than retried indefinitely.
 
   - id: LC-111
-    title: TypeScript LangChain AgentExecutor has no maxIterations limit
-    severity: medium
-    confidence: 0.8
+    title: TypeScript LangChain AgentExecutor has no explicit maxIterations limit
+    severity: low
+    confidence: 0.6
     language: typescript
     applies_to:
       - langchain_agent_executor
@@ -69,11 +71,13 @@ rules:
       agent_kwarg_missing:
         - maxIterations
     explanation: >
-      This AgentExecutor sets no maxIterations, so a model that never returns a
-      final answer (it loops calling tools, or oscillates) runs until it exhausts
-      the API budget or wall-clock — there is no built-in ceiling. A runaway loop
-      is a cost incident and, when the tools have side effects, a correctness and
-      safety one.
+      This AgentExecutor sets no explicit maxIterations, so it falls back to
+      LangChain's built-in default iteration cap rather than running unbounded.
+      That default prevents a true runaway, but it is a generic ceiling rather than
+      one sized to this task: a model that loops or oscillates still runs up to the
+      default number of tool round-trips — a cost the workflow may not tolerate —
+      and relying on it means a malformed model step is retried up to the limit
+      instead of surfaced.
     fix: >
       Pass maxIterations to the AgentExecutor options, sized to the task, and set
       handleParsingErrors so a malformed step is surfaced rather than retried

@@ -79,23 +79,27 @@ func newConn(r io.Reader, w io.Writer) *conn {
 
 // read returns the next request line, or io.EOF when the stream closes.
 func (c *conn) read() (*rpcRequest, error) {
-	if !c.r.Scan() {
-		if err := c.r.Err(); err != nil {
-			return nil, err
+	for {
+		if !c.r.Scan() {
+			if err := c.r.Err(); err != nil {
+				return nil, err
+			}
+			return nil, io.EOF
 		}
-		return nil, io.EOF
+		line := c.r.Bytes()
+		if len(line) == 0 {
+			// Blank keep-alive line: skip it and read the next. Iterative (not
+			// recursive) so an unbounded run of blank lines from the client cannot
+			// exhaust the goroutine stack.
+			continue
+		}
+		var req rpcRequest
+		if err := json.Unmarshal(line, &req); err != nil {
+			// A malformed line is a parse error with a null id, per JSON-RPC 2.0.
+			return &rpcRequest{Method: parseErrorSentinel}, nil
+		}
+		return &req, nil
 	}
-	line := c.r.Bytes()
-	if len(line) == 0 {
-		// Blank keep-alive line: skip it and read the next.
-		return c.read()
-	}
-	var req rpcRequest
-	if err := json.Unmarshal(line, &req); err != nil {
-		// A malformed line is a parse error with a null id, per JSON-RPC 2.0.
-		return &rpcRequest{Method: parseErrorSentinel}, nil
-	}
-	return &req, nil
 }
 
 // parseErrorSentinel is a private method marker the read path uses to flag a

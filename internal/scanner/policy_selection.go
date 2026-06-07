@@ -2,6 +2,7 @@ package scanner
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/trustabl/trustabl/internal/models"
 )
@@ -27,9 +28,12 @@ var depNameToSDK = map[string]models.SDK{
 	"claude-agent-sdk": models.SDKClaudeAgentSDK,
 	"openai-agents":    models.SDKOpenAIAgents,
 	"google-adk":       models.SDKGoogleADK,
+	"mcp":              models.SDKMCP,
+	"langchain":        models.SDKLangChain,
 	"crewai":           models.SDKCrewAI,
 	"autogen":          models.SDKAutoGen,
 	"pydantic-ai":      models.SDKPydanticAI,
+	"vercel-ai":        models.SDKVercelAI,
 }
 
 // SelectAndEmitMETA inspects the profile + inventory and emits engine-level
@@ -152,4 +156,34 @@ func EmitCoverageMETA(applicable map[models.DetectorCategory]bool, inv models.Re
 		})
 	}
 	return out
+}
+
+// EmitSkippedRulesMETA emits META-005 when the lenient loader dropped one or
+// more rules as forward-incompatible — rules referencing a scope, applies_to
+// value, or predicate this Trustabl build does not understand (a rules pack
+// authored against a newer engine). The skip would otherwise be invisible in the
+// report itself (it surfaces only on stderr and the JSON RulesSkipped field);
+// this honest info finding makes a degraded scan visible in the report,
+// upholding the "honest coverage > silent clean bill" principle. The skipped IDs
+// are sorted+deduped so the finding text is byte-stable regardless of the order
+// the loader returned them in.
+func EmitSkippedRulesMETA(skipped []string) []models.Finding {
+	if len(skipped) == 0 {
+		return nil
+	}
+	ids := sortedUnique(skipped)
+	return []models.Finding{{
+		RuleID:   "META-005",
+		Severity: models.SeverityInfo,
+		Title:    "Rules skipped — newer Trustabl engine required",
+		Explanation: fmt.Sprintf(
+			"%d rule(s) in the loaded pack reference a scope, applies_to value, or "+
+				"predicate that this Trustabl build does not understand, so they were "+
+				"skipped and did not run. The absence of findings from these rules does "+
+				"NOT mean this code is clean — this scan is incomplete for them. Skipped "+
+				"rule IDs: %s.", len(ids), strings.Join(ids, ", ")),
+		SuggestedFix: "Upgrade Trustabl to a build whose supported rule-schema version is at " +
+			"least the rules pack's, then re-scan to evaluate these rules.",
+		Confidence: 1.0,
+	}}
 }

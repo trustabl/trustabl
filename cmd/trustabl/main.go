@@ -5,6 +5,8 @@
 //	trustabl scan <target> [flags]   primary command: scan a repo
 //	trustabl enrich [flags]          enrich a scan result with AI fixes
 //	trustabl mcp [flags]             run a stdio MCP server exposing the scan
+//	trustabl rules pull [flags]      pre-fetch the detection rule packs
+//	trustabl llm ...                 manage optional LLM provider config (BYOK)
 //	trustabl version                 print version
 //
 // Exit codes:
@@ -26,6 +28,8 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+
+	"github.com/trustabl/trustabl/internal/logx"
 )
 
 // Build metadata, injected at release time via -ldflags -X (see .goreleaser.yaml).
@@ -47,11 +51,45 @@ func main() {
 	rootCmd := &cobra.Command{
 		Use:   "trustabl",
 		Short: "Static analyzer for agent reliability",
-		Long: "Trustabl scans agent SDK repos (Claude Agent SDK, OpenAI Agents SDK,\n" +
-			"MCP) for reliability and safety weaknesses and reports the findings.",
+		Long: `Trustabl is a static analyzer for AI-agent codebases.
+
+It scans repositories that use agent SDKs — Claude Agent SDK, OpenAI Agents SDK,
+Google ADK, LangChain, CrewAI, Pydantic AI, Vercel AI, and AutoGen — and Model
+Context Protocol (MCP) servers, then reports reliability and safety weaknesses in
+the tools, agents, and subagents it discovers. Python and TypeScript codebases
+are analyzed in depth; JavaScript and Go are recognized during recon but not yet
+AST-parsed.
+
+Detection rules are not built into this binary: they are resolved from the
+trustabl-rules repository at scan time and cached locally, with an offline
+fallback. Run "trustabl rules pull" to pre-fetch them.
+
+Exit codes: 0 = clean (no finding >= medium), 1 = findings >= medium (or >= low
+with --strict), 2 = scanner error or no usable rules.`,
+		Example: `  # Scan the current directory
+  trustabl scan .
+
+  # Scan a public GitHub repository
+  trustabl scan https://github.com/owner/repo
+
+  # Fail CI on any finding (low severity and above)
+  trustabl scan . --strict
+
+  # SARIF output for GitHub code scanning
+  trustabl scan . --format sarif -o trustabl.sarif
+
+  # Pre-download the rule packs for offline use
+  trustabl rules pull`,
 		SilenceUsage:  true,
 		SilenceErrors: true, // we handle error printing ourselves below
 	}
+	// Persistent (global) diagnostics flags, inherited by every subcommand. All
+	// diagnostics go to stderr only, so they never perturb the byte-stable report
+	// on stdout. --debug implies --verbose (see logLevelFor).
+	rootCmd.PersistentFlags().BoolP("verbose", "v", false,
+		"verbose diagnostics on stderr: rule provenance, discovery counts, phase summaries")
+	rootCmd.PersistentFlags().Bool("debug", false,
+		"debug diagnostics on stderr: everything --verbose shows plus per-phase timing and per-entity/per-finding detail (implies --verbose)")
 	rootCmd.AddCommand(newScanCommand())
 	rootCmd.AddCommand(newVersionCommand())
 	rootCmd.AddCommand(newRulesCommand())
@@ -67,4 +105,27 @@ func main() {
 		fmt.Fprintln(os.Stderr, "Error:", err)
 		os.Exit(2)
 	}
+}
+
+// logLevelFor reads the persistent --verbose / --debug flags off cmd (they are
+// defined on the root command and inherited by every subcommand) and maps them
+// to a logx.Level. --debug wins: it is strictly more output than --verbose, so
+// it implies it.
+func logLevelFor(cmd *cobra.Command) logx.Level {
+	if debug, _ := cmd.Flags().GetBool("debug"); debug {
+		return logx.LevelDebug
+	}
+	if verbose, _ := cmd.Flags().GetBool("verbose"); verbose {
+		return logx.LevelVerbose
+	}
+	return logx.LevelNormal
+}
+
+// refOrDefault renders a rules ref for a diagnostic line, naming the empty ref
+// (resolve the repo's default branch) explicitly so the line is not blank.
+func refOrDefault(ref string) string {
+	if ref == "" {
+		return "default branch"
+	}
+	return ref
 }

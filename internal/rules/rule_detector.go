@@ -15,6 +15,14 @@ import (
 // hard exit 2, the same outcome as no-pack / incompatible-pack.
 var ErrNoRulesInPack = errors.New("rule pack contains no rules")
 
+// ErrAllRulesIncompatible signals that the resolved pack contained rules but
+// every one was dropped as forward-incompatible — each references a predicate
+// this engine build does not understand (a rules repo wholly newer than the
+// binary). Distinct from ErrNoRulesInPack (a genuinely empty/truncated pack):
+// the remedy is to upgrade Trustabl, not to refresh the pack. Callers map it to
+// a hard exit 2 with an upgrade hint.
+var ErrAllRulesIncompatible = errors.New("all rules require a newer engine schema")
+
 // toolRuleDetector adapts a tool-scoped RuleDef into a ToolDetector.
 type toolRuleDetector struct{ rule RuleDef }
 
@@ -237,7 +245,7 @@ func findingFromRule(r RuleDef, scope models.Scope, filePath string, line int, t
 // LoadFor returns a Registry containing only policy packs whose category matches
 // one of the observed SDKs. openshell rules are always loaded.
 // If sdks is empty, only openshell rules are returned.
-func LoadFor(fsys fs.FS, sdks []models.SDK) (*detectors.Registry, error) {
+func LoadFor(fsys fs.FS, sdks []models.SDK) (*detectors.Registry, []string, error) {
 	wanted := map[string]bool{
 		"openshell": true,
 	}
@@ -263,9 +271,9 @@ func LoadFor(fsys fs.FS, sdks []models.SDK) (*detectors.Registry, error) {
 			wanted["autogen"] = true
 		}
 	}
-	all, err := Load(fsys)
+	all, skipped, err := LoadLenient(fsys)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	// Guard the "engine never runs rule-less" contract at the pack level. A
 	// pack that resolves and is schema-compatible but carries zero rules (an
@@ -279,7 +287,14 @@ func LoadFor(fsys fs.FS, sdks []models.SDK) (*detectors.Registry, error) {
 		totalRules += len(p.Rules)
 	}
 	if totalRules == 0 {
-		return nil, ErrNoRulesInPack
+		// Distinguish a genuinely empty/truncated pack from one whose every rule
+		// was dropped as forward-incompatible (a rules repo entirely newer than
+		// this build). The latter is fixed by upgrading Trustabl, not by
+		// refreshing the pack, so it carries a distinct error.
+		if len(skipped) > 0 {
+			return nil, skipped, ErrAllRulesIncompatible
+		}
+		return nil, skipped, ErrNoRulesInPack
 	}
 	var tool []detectors.ToolDetector
 	var agent []detectors.AgentDetector
@@ -302,7 +317,7 @@ func LoadFor(fsys fs.FS, sdks []models.SDK) (*detectors.Registry, error) {
 			}
 		}
 	}
-	return detectors.New(tool, agent, repo, subagent), nil
+	return detectors.New(tool, agent, repo, subagent), skipped, nil
 }
 
 // LoadRegistry loads policies from fsys and returns a populated detector Registry.

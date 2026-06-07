@@ -22,6 +22,7 @@ import (
 	"github.com/trustabl/trustabl/internal/analysis"
 	"github.com/trustabl/trustabl/internal/analysis/astutil"
 	"github.com/trustabl/trustabl/internal/ingestion"
+	"github.com/trustabl/trustabl/internal/logx"
 	"github.com/trustabl/trustabl/internal/models"
 	"github.com/trustabl/trustabl/internal/progress"
 	"github.com/trustabl/trustabl/internal/rules"
@@ -39,9 +40,20 @@ type Config struct {
 	RulesSource    string
 	RulesVersion   string
 	RulesFromCache bool
+	// RulesSchemaVersion is the resolved pack manifest's schema_version, and
+	// RulesSchemaNewer is true when it exceeds this build's support. Surfaced on
+	// ScanResult and used by the CLI's "rules newer than this build" warning.
+	RulesSchemaVersion int
+	RulesSchemaNewer   bool
 
 	// Progress receives real-time phase events. Nil means no progress output.
 	Progress progress.Reporter
+
+	// Log receives verbose/debug diagnostics on stderr. Nil disables them (a nil
+	// *logx.Logger is a safe no-op). It is independent of Progress: Progress
+	// renders the phase UI, Log narrates detail at -v/--debug. Both are
+	// stderr-only and never feed ScanResult, so neither affects determinism.
+	Log *logx.Logger
 
 	// Ctx, when non-nil, cancels the scan. The CLI ties this to its interrupt
 	// handler so a Ctrl-C aborts the run at the next phase boundary and lets the
@@ -61,6 +73,8 @@ func Run(cfg Config) (models.ScanResult, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	log := cfg.Log // a nil *logx.Logger is a safe no-op
+	defer log.Timer("scan total")()
 
 	// Step 0: resolve the target. For a remote target this shallow-clones to a
 	// temp dir — potentially the longest single wait of the whole scan, and the
@@ -87,6 +101,8 @@ func Run(cfg Config) (models.ScanResult, error) {
 	defer src.Cleanup()
 	if remote {
 		rep.EndPhase(cfg.Target)
+		log.Verbosef("clone: %s", cfg.Target)
+		log.Debugf("clone: checked out to %s", src.RootPath)
 	}
 	// Cancellation checkpoint. The expensive phases below (recon walk, per-language
 	// AST, analysis) have no internal cancellation, but checking here — right after
@@ -116,17 +132,29 @@ func Run(cfg Config) (models.ScanResult, error) {
 
 	// Step 1: recon (cheap, no AST)
 	rep.StartPhase("recon", "Recon")
+	reconStop := log.Timer("recon")
 	profile, err := ingestion.Recon(src, func(path string) { rep.Advance(path) })
 	if err != nil {
 		rep.Fatal(err)
 		return models.ScanResult{}, fmt.Errorf("recon: %w", err)
 	}
 	rep.EndPhase(fmt.Sprintf("%d files · %s", len(profile.Manifest.PythonFiles), languagesLabel(profile.Languages)))
+	reconStop()
+	log.Verbosef("recon: languages %s · %d SDK deps declared", languagesLabel(profile.Languages), len(profile.SDKDeps))
+	if log.Enabled(logx.LevelDebug) {
+		m := profile.Manifest
+		log.Debugf("recon: files py=%d ts=%d js=%d yaml=%d json=%d md=%d",
+			len(m.PythonFiles), len(m.TypeScriptFiles), len(m.JavaScriptFiles), len(m.YAMLFiles), len(m.JSONFiles), len(m.MarkdownFiles))
+		for _, d := range profile.SDKDeps {
+			log.Debugf("recon: dep %s (source=%s confidence=%.2f)", d.Name, d.Source, d.Confidence)
+		}
+	}
 
 	// Step 2: inventory (per-language AST; Python only for now)
 	rep.StartPhase("inventory", "Inventory")
+	inventoryStop := log.Timer("inventory")
 	rep.SetTotal(len(profile.Manifest.PythonFiles) + len(profile.Manifest.TypeScriptFiles))
-	tools, parsed, pySkipped, err := analysis.DiscoverTools(profile.Manifest, func(path string) {
+	tools, parsed, pySkipped, err := analysis.DiscoverTools(ctx, profile.Manifest, func(path string) {
 		rep.Advance(path)
 	})
 	if err != nil {
@@ -148,7 +176,7 @@ func Run(cfg Config) (models.ScanResult, error) {
 
 	// TS block: parse TypeScript files, then run TS-specific discovery
 	// (Claude SDK + OpenAI Agents + Google ADK).
-	tsFiles, tsSkipped := parseTSFiles(profile.Manifest.TypeScriptFiles, profile.Manifest.RepoRoot, func(path string) {
+	tsFiles, tsSkipped := parseTSFiles(ctx, profile.Manifest.TypeScriptFiles, profile.Manifest.RepoRoot, func(path string) {
 		rep.Advance(path)
 	})
 
@@ -256,30 +284,54 @@ func Run(cfg Config) (models.ScanResult, error) {
 	// Fold them into SDKsDetected so LoadFor loads the claude_sdk pack (CSDK-110).
 	inventory.SDKsDetected = deriveSDKsDetected(tools, agents, inventory.Subagents, inventory.ClaudeSettings, inventory.ClaudeAgentOptions)
 	rep.EndPhase(fmt.Sprintf("%d tools · %d agents", len(tools), len(agents)))
+	inventoryStop()
+	log.Verbosef("inventory: %d tools · %d agents · %d guardrails · %d sessions · %d subagents · %d mcp servers · %d skills",
+		len(tools), len(agents), len(guardrails), len(sessions), len(inventory.Subagents), len(mcpServers), len(inventory.Skills))
+	log.Verbosef("inventory: SDKs detected: %s", sdkListLabel(inventory.SDKsDetected))
+	if log.Enabled(logx.LevelDebug) {
+		logDiscoveredEntities(log, tools, agents)
+	}
 
 	// Step 3: policy selection
 	if cfg.RulesFS == nil {
 		return models.ScanResult{}, fmt.Errorf("scan: no rules filesystem provided")
 	}
-	registry, err := rules.LoadFor(cfg.RulesFS, inventory.SDKsDetected)
+	registry, rulesSkipped, err := rules.LoadFor(cfg.RulesFS, inventory.SDKsDetected)
 	if err != nil {
 		return models.ScanResult{}, fmt.Errorf("load rules: %w", err)
 	}
+	log.Verbosef("policy: loaded %d detectors for SDKs: %s", registry.Count(), sdkListLabel(inventory.SDKsDetected))
+	if un := unauditedSDKs(inventory.SDKsDetected); len(un) > 0 {
+		log.Verbosef("policy: unaudited SDKs (no pack shipped): %s", sdkListLabel(un))
+	}
 	if len(cfg.Categories) > 0 {
 		registry = registry.Subset(cfg.Categories...)
+		log.Verbosef("policy: --detectors filter → %d detectors for categories: %s",
+			registry.Count(), categoryListLabel(cfg.Categories))
 	}
 	metaFindings := SelectAndEmitMETA(profile, inventory)
 	metaFindings = append(metaFindings,
 		EmitCoverageMETA(registry.ApplicableCategories(profile, inventory), inventory)...)
+	// Honest-coverage signal for forward-incompatible rules the lenient loader
+	// dropped (scope/applies_to/predicate this build predates). META-005 fires
+	// only when something was actually skipped, so an in-sync pack adds nothing.
+	metaFindings = append(metaFindings, EmitSkippedRulesMETA(rulesSkipped)...)
 
 	// Step 4: analysis
 	rep.StartPhase("analysis", "Analysis")
+	analysisStop := log.Timer("analysis")
 	rep.SetTotal(len(inventory.Tools) + len(inventory.Agents))
 	ruleFindings := registry.Run(profile, inventory, allParsed, func(label string) {
 		rep.Advance(label)
 	})
 	findings := append(metaFindings, ruleFindings...)
 	rep.EndPhase(fmt.Sprintf("%d findings", len(findings)))
+	analysisStop()
+	log.Verbosef("analysis: %d findings (%d META + %d rule) · %s",
+		len(findings), len(metaFindings), len(ruleFindings), severitySummary(findings))
+	if log.Enabled(logx.LevelDebug) {
+		logFindingsDetail(log, findings)
+	}
 
 	// Step 5: scoring
 	surfaces, overall := analysis.Score(tools, inventory.Agents, inventory.Subagents, findings)
@@ -305,7 +357,7 @@ func Run(cfg Config) (models.ScanResult, error) {
 	}
 
 	return models.ScanResult{
-		ScanID:              scanID(idLabel, profile.Manifest, cfg.RulesVersion),
+		ScanID:              scanID(idLabel, profile.Manifest, cfg.RulesVersion, rules.SupportedSchemaVersion),
 		Repo:                repoLabel,
 		Languages:           profile.Languages,
 		SDKs:                inventory.SDKsDetected,
@@ -327,6 +379,9 @@ func Run(cfg Config) (models.ScanResult, error) {
 		RulesSource:         cfg.RulesSource,
 		RulesVersion:        cfg.RulesVersion,
 		RulesFromCache:      cfg.RulesFromCache,
+		RulesSchemaVersion:  cfg.RulesSchemaVersion,
+		RulesSchemaNewer:    cfg.RulesSchemaNewer,
+		RulesSkipped:        sortedUnique(rulesSkipped),
 		Coverage:            coverage,
 	}, nil
 }
@@ -504,9 +559,7 @@ func languagesLabel(langs []models.Language) string {
 // be read or parsed are silently skipped — one bad file should not abort the
 // scan. The optional onFile callback fires once per file attempted (progress
 // hook), mirroring the same callback convention used by analysis.DiscoverTools.
-func parseTSFiles(paths []string, root string, onFile func(string)) ([]analysis.ParsedFile, []string) {
-	tsParser := astutil.NewTSParser()
-	tsxParser := astutil.NewTSXParser()
+func parseTSFiles(ctx context.Context, paths []string, root string, onFile func(string)) ([]analysis.ParsedFile, []string) {
 	var out []analysis.ParsedFile
 	var skipped []string
 	for _, rel := range paths {
@@ -519,17 +572,21 @@ func parseTSFiles(paths []string, root string, onFile func(string)) ([]analysis.
 			skipped = append(skipped, rel) // unreadable — not analyzed
 			continue
 		}
+		// Fresh parser per file: ParseCtxTimeout's cancelable context arms
+		// go-tree-sitter's per-parser cancellation flag, so a reused parser could
+		// have a prior parse's timeout goroutine set that flag and abort the next
+		// file's parse. Isolate by constructing per file (cheap vs. parsing).
 		var parser *sitter.Parser
 		switch astutil.ParserKindForExtension(rel) {
 		case "typescript":
-			parser = tsParser
+			parser = astutil.NewTSParser()
 		case "tsx":
-			parser = tsxParser
+			parser = astutil.NewTSXParser()
 		default:
 			skipped = append(skipped, rel) // unknown extension — not analyzed
 			continue
 		}
-		tree, err := parser.ParseCtx(context.Background(), nil, body)
+		tree, err := astutil.ParseCtxTimeout(ctx, parser, body)
 		if err != nil {
 			skipped = append(skipped, rel) // unparseable — not analyzed
 			continue
@@ -544,8 +601,10 @@ func parseTSFiles(paths []string, root string, onFile func(string)) ([]analysis.
 // sorted set of inventoried files, and the rules version, so the same inputs
 // always produce the same ID regardless of where the repo is checked out.
 // Including the rules version means a different rule pack yields a distinct,
-// honest ID.
-func scanID(idLabel string, manifest models.ScanManifest, rulesVersion string) string {
+// honest ID; folding the engine's supported schema version likewise keeps the
+// ID honest when forward-compatible loading makes two builds skip different
+// rules from the same pack.
+func scanID(idLabel string, manifest models.ScanManifest, rulesVersion string, engineSchema int) string {
 	h := sha256.New()
 	h.Write([]byte(idLabel))
 	// Fold every inventoried file list so the ID is honest about all scanned
@@ -574,5 +633,12 @@ func scanID(idLabel string, manifest models.ScanManifest, rulesVersion string) s
 		h.Write([]byte{0})
 	}
 	h.Write([]byte(rulesVersion))
+	// Fold the engine's supported schema version. With forward-compatible
+	// loading, two builds supporting different schema versions can skip different
+	// (forward-incompatible) rules from the SAME pack and thus emit different
+	// findings; folding it keeps the ScanID honest about the effective ruleset,
+	// not just the pack SHA.
+	h.Write([]byte{0})
+	h.Write([]byte(fmt.Sprintf("%d", engineSchema)))
 	return "scan_" + hex.EncodeToString(h.Sum(nil)[:8])
 }

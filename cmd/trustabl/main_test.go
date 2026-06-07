@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/trustabl/trustabl/internal/models"
+	"github.com/trustabl/trustabl/internal/progress"
 	"github.com/trustabl/trustabl/internal/sarif"
 )
 
@@ -21,7 +22,8 @@ func TestFinishScan_GenericErrorNotDoublePrinted(t *testing.T) {
 	genErr := errors.New("boom")
 
 	// Plain mode (human format, non-tty in tests): reporter already showed it.
-	errPlain := finishScan(models.ScanResult{}, genErr, scanFlags{format: "human"})
+	// A nil logger is passed deliberately — finishScan must be nil-safe.
+	errPlain := finishScan(models.ScanResult{}, genErr, scanFlags{format: "human"}, nil)
 	var ec exitCodeError
 	if !errors.As(errPlain, &ec) {
 		t.Errorf("plain mode: got %v, want silent exitCodeError", errPlain)
@@ -29,9 +31,58 @@ func TestFinishScan_GenericErrorNotDoublePrinted(t *testing.T) {
 
 	// Off mode (json format forces progress off): main must print it, so the
 	// raw error propagates.
-	errOff := finishScan(models.ScanResult{}, genErr, scanFlags{format: "json"})
+	errOff := finishScan(models.ScanResult{}, genErr, scanFlags{format: "json"}, nil)
 	if !errors.Is(errOff, genErr) {
 		t.Errorf("off mode: got %v, want the raw error to propagate", errOff)
+	}
+}
+
+// modeForLogs downgrades only the animated TTY panel (which would corrupt
+// interleaved log lines) to plain; every other mode passes through unchanged,
+// and a non-verbose run is never downgraded.
+func TestModeForLogs(t *testing.T) {
+	cases := []struct {
+		name    string
+		base    progress.Mode
+		verbose bool
+		want    progress.Mode
+	}{
+		{"tty downgrades under verbose", progress.ModeTTY, true, progress.ModePlain},
+		{"tty unchanged without verbose", progress.ModeTTY, false, progress.ModeTTY},
+		{"plain unchanged under verbose", progress.ModePlain, true, progress.ModePlain},
+		{"off unchanged under verbose", progress.ModeOff, true, progress.ModeOff},
+		{"off unchanged without verbose", progress.ModeOff, false, progress.ModeOff},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := modeForLogs(c.base, c.verbose); got != c.want {
+				t.Errorf("modeForLogs(%v, %v) = %v, want %v", c.base, c.verbose, got, c.want)
+			}
+		})
+	}
+}
+
+func TestSeveritySummary(t *testing.T) {
+	f := func(s models.Severity) models.Finding { return models.Finding{Severity: s} }
+	cases := []struct {
+		name     string
+		findings []models.Finding
+		want     string
+	}{
+		{"empty is none", nil, "none"},
+		{"single high", []models.Finding{f(models.SeverityHigh)}, "1 high"},
+		{
+			"ordered highest first, zeros omitted",
+			[]models.Finding{f(models.SeverityInfo), f(models.SeverityHigh), f(models.SeverityHigh), f(models.SeverityMedium)},
+			"2 high, 1 medium, 1 info",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := severitySummary(c.findings); got != c.want {
+				t.Errorf("severitySummary = %q, want %q", got, c.want)
+			}
+		})
 	}
 }
 
@@ -79,6 +130,19 @@ func TestParseCategories(t *testing.T) {
 			name: "openshell",
 			in:   "openshell",
 			want: []models.DetectorCategory{models.CategoryOpenShell},
+		},
+		{
+			// Regression: every shipped SDK category must be filterable, not just
+			// the original five — parseCategories used to reject langchain, crewai,
+			// pydantic_ai, vercel_ai, and autogen.
+			name: "langchain",
+			in:   "langchain",
+			want: []models.DetectorCategory{models.CategoryLangChain},
+		},
+		{
+			name: "autogen and vercel_ai combined",
+			in:   "autogen,vercel_ai",
+			want: []models.DetectorCategory{models.CategoryAutoGen, models.CategoryVercelAI},
 		},
 		{
 			// Regression: the combined form from README § Use.

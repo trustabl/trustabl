@@ -94,12 +94,23 @@ currently `https://github.com/trustabl/trustabl-rules`; the engine embeds
 none — see `internal/rulesource/`) and hands them to `scanner.Run` as an
 `fs.FS`. The
 resolution path fetches the configured ref, caches the clone under
-`os.UserCacheDir()/trustabl/rules/<sha>/`, falls back to the cache when the
-network is unreachable, and gates the pack's `manifest.yaml`
-`schema_version` against the engine's `rules.SupportedSchemaVersion`. No
-usable rules (none cached and none fetchable, or none compatible) is a
-hard exit 2 — the engine never runs rule-less. The resolved rules SHA is
-recorded on `ScanResult` and folded into `ScanID`.
+`os.UserCacheDir()/trustabl/rules/<sha>/`, and falls back to the cache when
+the network is unreachable. Rule loading is **forward-compatible**: a pack
+whose `manifest.yaml` `schema_version` exceeds the engine's
+`rules.SupportedSchemaVersion` is loaded leniently rather than refused — a rule
+referencing a `scope`, an `applies_to` value, or a predicate this build lacks is
+skipped (recorded on `ScanResult.RulesSkipped`, warned on stderr, and summarized
+in a `META-005` info finding) and the scan runs the rest. A malformed *known*
+rule — empty/missing required field, out-of-range confidence, duplicate ID — is
+**not** forward-incompatible and still hard-fails, in both strict and lenient
+loading. A
+hard exit 2 happens only when *nothing* is usable: no pack cached or fetchable
+(`ErrNoRules`), an unreadable manifest (`ErrNoCompatibleRules`), a genuinely
+empty pack (`ErrNoRulesInPack`), or one whose every rule is forward-incompatible
+(`ErrAllRulesIncompatible`). The engine never runs rule-less. The resolved rules
+SHA is recorded on `ScanResult` and folded into `ScanID` (with the engine's
+`SupportedSchemaVersion`). See `internal/rules/schema_version.go` for the
+bump/rename discipline this enables.
 
 ### Step 1 — Recon (cheap, no AST)
 
@@ -323,20 +334,27 @@ When changing a rule (add / remove / edit severity, confidence, match, text):
 6. Commit and push the rules repo **and** the rulebook (the user pushes engine
    commits manually; confirm before pushing any of the three).
 
-> **Rulebook status (2026-06-04):** the rulebook documents all shipped rules —
-> production ships **117** rules (the 102-rule pack plus the 15 LangChain LC-*
-> rules) across the four SDK categories plus `langchain`, and the rulebook carries
-> a rationale doc for every one (52 docs). `check_rulebook.py --strict` and
-> `gen_index.py --check` both pass against the live pack with zero warnings. The
-> earlier MCP-doc backfill gap is closed.
+> **Rulebook status (2026-06-06):** production ships **165** rules across nine
+> SDK categories (`autogen`, `claude_sdk`, `crewai`, `google_adk`, `langchain`,
+> `mcp`, `openai_sdk`, `pydantic_ai`, `vercel_ai`). The rulebook carries a
+> rationale doc for every shipped rule except the newly-added VAI-011 (82 docs);
+> `check_rulebook.py` flags that single gap until the vercel network rationale
+> doc lands.
 
 The rule-authoring contract (required fields, ID conventions, per-scope
 `applies_to` values, framing discipline) lives in
 [`testdata/rules-fixture/CLAUDE.md`](testdata/rules-fixture/CLAUDE.md) and the
 mirror copy in the rules repo. Schema changes (a new predicate or match field)
 are **engine-repo** changes (schema.go + predicates.go + evaluator.go +
-schema.yaml in one commit) and require bumping `manifest.yaml`'s
-`schema_version` in both the fixture and the rules repo.
+schema.yaml in one commit) and bump `SupportedSchemaVersion` + `manifest.yaml`'s
+`schema_version` in both the fixture and the rules repo. With forward-compatible
+loading that bump *advertises* this build's support level (and drives the "rules
+newer than this build" warning) — it is **not** a fleet-wide gate: an older
+binary loads a newer pack leniently, skipping only the rules it cannot evaluate.
+Make **breaking** changes by *renaming* a predicate, never by silently
+redefining one — an old binary then skips the unknown-key rule rather than
+mis-evaluating it. See
+[`internal/rules/schema_version.go`](internal/rules/schema_version.go).
 
 > **Future direction (not yet done):** the duplication between the fixture and
 > the live rules repo is a known cost. The intended end state points the test

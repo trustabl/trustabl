@@ -289,6 +289,46 @@ terminal (TTY vs pipe, `NO_COLOR`), so the same scan can render with or without
 color. Use `--no-color`, or diff the JSON/SARIF output, when byte-stability
 matters.
 
+### Diagnostics (`--verbose` / `--debug`)
+
+`--verbose` (`-v`) narrates the scan on **stderr**: rule provenance (repo, ref,
+resolved SHA, and any cache fallback), per-phase discovery counts (languages,
+tools, agents, detected SDKs, loaded detectors, unaudited SDKs), output
+destinations, and a final result summary (scan ID, score, findings by severity,
+exit code). `--debug` adds everything `--verbose` shows plus per-phase timing and
+capped per-entity / per-finding detail (each discovered tool/agent and each
+finding with its `file:line`).
+
+Both are **global** flags — they work on `scan`, `mcp`, and `rules pull`, and may
+appear before or after the subcommand (`trustabl -v scan …` or `trustabl scan -v
+…`). `--debug` implies `--verbose`. Both write **only to stderr**, so they never
+perturb the report on stdout or the JSON/SARIF byte-stability contract:
+`--format json --debug` still emits a clean document on stdout while the
+diagnostics stream to stderr. Diagnostic color follows the same rules as the
+report (off under `--no-color`, `NO_COLOR`, or when stderr is not a terminal).
+Because an animated progress panel and interleaved log lines would corrupt each
+other on the same stderr, `--verbose`/`--debug` automatically render progress as
+plain `[phase]` lines instead of the live spinner.
+
+**Saving diagnostics to a file.** There is no dedicated `--log-file` flag —
+because diagnostics are a separate stream (stderr), redirecting stderr is the
+intended mechanism:
+
+```bash
+# Report and diagnostics to separate files (stdout vs stderr)
+trustabl scan ./repo --debug --format json >report.json 2>diagnostics.log
+
+# Human report on screen, diagnostics to a file
+trustabl scan ./repo --debug 2>diagnostics.log
+
+# Everything (report + diagnostics) in one file
+trustabl scan ./repo --debug &>everything.log
+```
+
+With `--format json`/`sarif` progress is off, so the stderr file is
+diagnostics-only; with `--format human` it also carries the plain `[phase]`
+progress lines.
+
 Exit codes:
 - `0` — no findings ≥ medium severity (or no findings at all).
 - `1` — at least one finding ≥ medium severity, OR `--strict` with any
@@ -406,6 +446,11 @@ trustabl scan ./repo --no-rules-update
 trustabl scan ./repo                 # spinner + bars on a TTY; "[phase] summary" lines when piped
 trustabl scan ./repo --no-progress   # disable progress entirely
 
+# Diagnostics on stderr (global flags; stdout/report unaffected)
+trustabl scan ./repo --verbose       # -v: rule provenance, discovery counts, result summary
+trustabl scan ./repo --debug         # + per-phase timing and per-entity/per-finding detail
+trustabl scan ./repo --debug --format json > out.json   # clean JSON on stdout, diagnostics on stderr
+
 # Run as a stdio MCP server so an MCP client (Claude Code, Cursor, Claude
 # Desktop) can scan code an agent just wrote (see "Run as an MCP server" below)
 trustabl mcp
@@ -511,50 +556,74 @@ Trustabl ships a Claude Code plugin under [`.claude-plugin/`](.claude-plugin/)
 with two skills that form a scan-and-fix loop:
 
 - **[`trustabl-scan`](skills/trustabl-scan/)** — triggers right after agent,
-  tool, subagent, or MCP-server code is written or changed and runs
-  `trustabl scan` to self-audit it before committing, upstream of CI.
+  tool, subagent, or MCP-server code is written or changed and calls Trustabl's
+  `scan` tool (the bundled MCP server, `mcp__trustabl__scan`) to self-audit it
+  before committing, upstream of CI.
 - **[`trustabl-enrich`](skills/trustabl-enrich/)** — takes the output of a
   `trustabl scan` run (JSON, SARIF, or pasted terminal text) and applies each
   finding as a targeted code edit, guided entirely by the scan's own
   `explanation` and `suggested_fix` fields. It does not re-run the scanner; use
   `trustabl-scan` first, then invoke `trustabl-enrich` with the results.
 
-Both skills shell out to the same `trustabl` binary, so the binary must be
-installed and on `PATH`. Neither runs a network service or modifies files
-outside the scan target.
+Scanning runs through a **bundled MCP server**: [`.mcp.json`](.mcp.json)
+registers a `trustabl` server whose command is a launcher
+([`scripts/trustabl-mcp.sh`](scripts/trustabl-mcp.sh)) exposing the
+`mcp__trustabl__scan` tool. The launcher and a `SessionStart` hook
+([`hooks/hooks.json`](hooks/hooks.json) →
+[`scripts/check-trustabl.sh`](scripts/check-trustabl.sh)) share install logic
+([`scripts/lib-trustabl.sh`](scripts/lib-trustabl.sh)) that downloads the pinned
+CLI version from GitHub Releases, verifies it against the release
+`checksums.txt`, and installs it into the plugin's private data directory
+(`$CLAUDE_PLUGIN_DATA` — no `sudo`, nothing outside that dir touched). The
+install is idempotent (re-runs only when the pin changes or the copy is
+missing/corrupt), and the launcher installs synchronously before starting the
+server, so there is no first-session race. The same binary is exposed as
+`$TRUSTABL_BIN` for the enrich skill's direct-CLI path. When auto-install cannot
+run (offline first session, an unsupported platform, or missing `curl`/`tar`) it
+falls back to whatever `trustabl` is on `PATH`; the system-wide install stays a
+consented step inside `trustabl-scan`. The plugin runs no network service of its
+own and modifies nothing outside the scan target.
 
-### "no schema-compatible rules available"
+### "rules are newer than this Trustabl build"
 
-This means the resolved rule pack targets a newer rule-schema version than
-your Trustabl binary understands (the engine gates packs on
-`schema_version`; see `internal/rules/schema_version.go`). The fallback to
-cached rules can only help when a *compatible* pack is already cached — if
-the only cached pack is the too-new one, the scan exits 2.
+Trustabl loads rules **forward-compatibly**. If the resolved pack targets a
+newer rule-schema version than your binary understands, the scan still runs: it
+evaluates every rule your build *can* understand and **skips** the rest, warning
+on stderr (and recording the skipped rule IDs on `ScanResult.RulesSkipped`):
 
-Two fixes:
+```
+warning: the rules target schema version 9 but this Trustabl build supports up to 8; 2 rule(s) newer than this build were skipped. Upgrade Trustabl to evaluate them.
+```
 
-- **Upgrade Trustabl** to a build that supports the newer schema (the usual
-  fix — the binary is simply behind the rules repo).
-- **Pin an older rules branch or tag** whose pack targets a schema your build
-  supports:
+The same per-rule skip happens for any *individual* rule that references a
+`scope`, an `applies_to` value, or a predicate your build does not understand —
+that rule is dropped while its siblings still run, so a newer rules release never
+forces a lockstep binary upgrade. Every skip is also surfaced **in the report
+itself** as a single `META-005` info finding ("N rules require a newer Trustabl
+engine"), so a degraded scan is never mistaken for a clean one. A *malformed*
+rule your build does understand (a missing field, a bad value) is **not**
+forward-skipped — it still hard-fails the load, so real authoring errors are
+never silently dropped.
+
+To evaluate the skipped rules, **upgrade Trustabl** to a build whose
+`SupportedSchemaVersion` (see `internal/rules/schema_version.go`) covers the
+pack. No action is needed if you're comfortable running the subset.
+
+The scan only **fails** (exit 2) when nothing usable remains:
+
+- **"all rules require a newer engine schema"** — *every* rule is too new for
+  your build, so there is nothing to run. Upgrade Trustabl, or pin an older
+  rules branch/tag your build fully understands (`--rules-ref` resolves branches
+  and tags only, not raw commit SHAs, so a compatible ref must already exist):
 
   ```bash
   trustabl scan ./repo --rules-ref <branch-or-tag>
   ```
-
-  `--rules-ref` resolves **branches and tags only** — not raw commit SHAs — so
-  a compatible ref must already exist in the rules repo. If every branch is
-  on the newer schema, tag a known-good older commit there first and pin that
-  tag:
-
-  ```bash
-  # in the rules repo, at the newest commit whose manifest.yaml schema_version
-  # is <= what your build supports (git log -p -- manifest.yaml shows each bump)
-  git tag schema-8 <sha> && git push origin schema-8
-  ```
-
-  `--no-rules-update` does **not** help here: it is cache-only, so if your
-  cache already holds the too-new pack the scan still fails.
+- **"no usable rules manifest"** — the pack's `manifest.yaml` is missing,
+  unparseable, or declares a non-positive version (a corrupt/truncated pack).
+  Run `trustabl rules pull` to refresh.
+- **"no usable rules found"** — nothing cached and nothing fetchable (offline
+  with a cold cache). Run `trustabl rules pull` while online.
 
 ## Where the code lives
 
