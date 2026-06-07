@@ -15,11 +15,17 @@ const (
 	ScopeSubagent Scope = "subagent"
 )
 
+// AllScopes is every rule scope this build recognizes, in a stable order. Single
+// source of truth: ValidScope checks against it and the capability descriptor
+// (trustabl capabilities) lists it. Mirrors AllLanguages / AllCategories.
+var AllScopes = []Scope{ScopeTool, ScopeAgent, ScopeRepo, ScopeSubagent}
+
 // ValidScope reports whether s is a known scope value.
 func ValidScope(s Scope) bool {
-	switch s {
-	case ScopeTool, ScopeAgent, ScopeRepo, ScopeSubagent:
-		return true
+	for _, k := range AllScopes {
+		if s == k {
+			return true
+		}
 	}
 	return false
 }
@@ -67,17 +73,26 @@ const (
 	CategoryAutoGen    DetectorCategory = "autogen"
 )
 
-// ValidCategory reports whether c is a category this build recognizes. New SDK
-// categories are added here as coverage lands. The rule loader skips packs with
-// an unrecognized category leniently at runtime (forward-compat: a newer rules
-// release must not block an older binary from scanning the SDKs it knows) and
-// rejects them in strict (authoring/CI) mode so a typo'd category is caught.
+// AllCategories is every detector category this build recognizes, in a stable
+// order. Single source of truth: ValidCategory checks against it, and the
+// capability descriptor (trustabl capabilities) lists it. New SDK categories are
+// added here as coverage lands.
+var AllCategories = []DetectorCategory{
+	CategoryClaudeSDK, CategoryOpenAISDK, CategoryOpenShell, CategoryGoogleADK,
+	CategoryMCP, CategoryLangChain, CategoryCrewAI, CategoryPydanticAI,
+	CategoryVercelAI, CategoryAutoGen,
+}
+
+// ValidCategory reports whether c is a category this build recognizes. The rule
+// loader skips packs with an unrecognized category leniently at runtime
+// (forward-compat: a newer rules release must not block an older binary from
+// scanning the SDKs it knows) and rejects them in strict (authoring/CI) mode so
+// a typo'd category is caught.
 func ValidCategory(c DetectorCategory) bool {
-	switch c {
-	case CategoryClaudeSDK, CategoryOpenAISDK, CategoryOpenShell, CategoryGoogleADK,
-		CategoryMCP, CategoryLangChain, CategoryCrewAI, CategoryPydanticAI,
-		CategoryVercelAI, CategoryAutoGen:
-		return true
+	for _, k := range AllCategories {
+		if c == k {
+			return true
+		}
 	}
 	return false
 }
