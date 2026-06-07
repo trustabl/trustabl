@@ -95,7 +95,12 @@ has tree-sitter-php discovery for `#[McpTool]`-attributed methods (official
 mcp/sdk + community php-mcp/server), emitted as
 `ToolDef{Kind: mcp_tool, Language: php}` and audited by the `language: php`
 rules; the smacker grammar parses single-line `#[...]` as a comment, so the
-attribute is read from comment text (multi-line attributes are a gap).
+attribute is read from comment text (multi-line attributes are a gap). Rust has
+tree-sitter-rust discovery for the official rmcp crate's `#[tool]`-attributed
+methods, emitted as `ToolDef{Kind: mcp_tool, Language: rust}` and audited by the
+`language: rust` rules; rmcp accepts a tool's description from either the
+`description = "..."` attribute argument or the method's `///` doc comment, and
+discovery honors both.
 
 The rule schema's `language:` field gates per-language rule sets. Existing
 rules declare `language: python` explicitly and the loader rejects any
@@ -652,6 +657,18 @@ For each language recon cleared, do the AST work and produce a `RepoInventory`:
   and the mcp/ pack's `language: php` rules (MCP-019/020) audit them. Multi-line
   `#[...]` attributes, `#[McpResource]` / `#[McpPrompt]`, and PHP body-fact
   predicates are v1 gaps.
+- **DiscoverRustMCPTools** (`rust_mcp.go`) — Rust MCP tools parsed with
+  tree-sitter-rust (a dedicated parse pass, `parseRustFiles`), gated to files that
+  `use` the rmcp crate. Recognizes the official rmcp SDK's `#[tool]`-attributed
+  methods: name = the `name = "..."` arg (or the method name), description = the
+  `description = "..."` arg **or** the method's `///` doc comment (rmcp derives it
+  from either), params from the signature (typed — Rust is statically typed).
+  Unlike PHP, tree-sitter-rust models `#[tool]` as a real `attribute_item`
+  preceding-sibling node, so no comment-text hack is needed. Emits
+  `ToolDef{Kind: mcp_tool, Language: rust}`, so deriveSDKsDetected stamps SDKMCP
+  and the mcp/ pack's `language: rust` rules (MCP-021/022) audit them. Raw-string
+  descriptions, `#[prompt]` / resource shapes, and Rust body-fact predicates are
+  v1 gaps.
 - **ResolveEdges** — links agent `tools=`, `handoffs=`, `input_guardrails=`
   references to discovered definitions in the same repo; cross-module resolution
   uses import statements; unresolvable references are flagged `External=true`.

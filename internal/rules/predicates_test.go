@@ -153,6 +153,26 @@ func parsePHPTool(t *testing.T, src string, kind models.ToolKind) (models.ToolDe
 	return tools[0], pf
 }
 
+func parseRustTool(t *testing.T, src string, kind models.ToolKind) (models.ToolDef, analysis.ParsedFile) {
+	t.Helper()
+	tree, err := astutil.NewRustParser().ParseCtx(context.Background(), nil, []byte(src))
+	if err != nil {
+		t.Fatalf("parse Rust: %v", err)
+	}
+	pf := analysis.ParsedFile{RelPath: "tools.rs", Tree: tree, Source: []byte(src)}
+	var tools []models.ToolDef
+	switch kind {
+	case models.KindMCPTool:
+		tools = analysis.DiscoverRustMCPTools([]analysis.ParsedFile{pf}, func(string) {})
+	default:
+		t.Fatalf("parseRustTool: unsupported kind %q", kind)
+	}
+	if len(tools) == 0 {
+		t.Fatal("parseRustTool: no tool discovered (check the use rmcp gate in the snippet)")
+	}
+	return tools[0], pf
+}
+
 // parseTSAgentInline parses a TS snippet and returns the first discovered
 // Claude agent. For use in package-level agent-rule case tables (no *testing.T
 // available), so it panics rather than failing a test.

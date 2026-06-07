@@ -201,10 +201,10 @@ func loadPolicies(fsys fs.FS, lenient bool) ([]PolicyFile, []string, error) {
 				switch rule.Language {
 				case models.LanguagePython, models.LanguageTypeScript,
 					models.LanguageJavaScript, models.LanguageGo, models.LanguageCSharp,
-					models.LanguagePHP:
+					models.LanguagePHP, models.LanguageRust:
 					// valid
 				default:
-					errs = append(errs, fmt.Errorf("%s: unknown language %q (allowed: python, typescript, javascript, go, csharp, php)", tag, rule.Language))
+					errs = append(errs, fmt.Errorf("%s: unknown language %q (allowed: python, typescript, javascript, go, csharp, php, rust)", tag, rule.Language))
 				}
 			}
 			if rule.Scope == "" {

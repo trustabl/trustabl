@@ -50,6 +50,9 @@ func languagesFromManifest(m models.ScanManifest) []models.Language {
 	if len(m.PHPFiles) > 0 {
 		langs = append(langs, models.LanguagePHP)
 	}
+	if len(m.RustFiles) > 0 {
+		langs = append(langs, models.LanguageRust)
+	}
 	return langs
 }
 
@@ -118,6 +121,12 @@ func detectSDKDeps(root string) []models.SDKDep {
 			Manifests: []string{"composer.json"}},
 		{Name: "mcp", Pattern: "php-mcp/server",
 			Manifests: []string{"composer.json"}},
+		// MCP Rust SDK: the official rmcp crate (modelcontextprotocol/rust-sdk),
+		// declared in Cargo.toml / Cargo.lock. Pattern is lowercase to match the
+		// lowercased manifest text. Drift signal only; pack loading is driven by
+		// SDKMCP from discovery (the #[tool] attribute walk).
+		{Name: "mcp", Pattern: "rmcp",
+			Manifests: []string{"Cargo.toml", "Cargo.lock"}},
 		// LangChain + LangGraph — one ecosystem, one SDK row (SDKLangChain). The
 		// "langchain" pattern matches the umbrella plus every langchain-* /
 		// @langchain/* distribution (langchain-core, langchain_community,
@@ -281,6 +290,8 @@ func Normalize(src *Source, onFile func(string)) (models.ScanManifest, error) {
 			manifest.CSharpFiles = append(manifest.CSharpFiles, rel)
 		case strings.HasSuffix(lower, ".php"):
 			manifest.PHPFiles = append(manifest.PHPFiles, rel)
+		case strings.HasSuffix(lower, ".rs"):
+			manifest.RustFiles = append(manifest.RustFiles, rel)
 		case strings.HasSuffix(lower, ".yaml"), strings.HasSuffix(lower, ".yml"):
 			manifest.YAMLFiles = append(manifest.YAMLFiles, rel)
 		case strings.HasSuffix(lower, ".json"):

@@ -1308,6 +1308,33 @@ def run_cmd(name: str) -> str:
 		src: "<?php\nuse PhpMcp\\Server\\Attributes\\McpTool;\nclass T {\n    #[McpTool(name: 'summarize_invoice', description: 'Summarize')]\n    public function summarizeInvoice(string $input): string { return $input; }\n}\n",
 	},
 	{
+		name: "MCP-021 fires on Rust tool with no description", ruleID: "MCP-021",
+		kind: models.KindMCPTool, lang: models.LanguageRust, wantFires: true,
+		src: "use rmcp::tool;\nimpl T {\n    #[tool]\n    fn fetch_weather(&self) -> String { String::new() }\n}\n",
+	},
+	{
+		name: "MCP-021 silent when description in attribute arg", ruleID: "MCP-021",
+		kind: models.KindMCPTool, lang: models.LanguageRust, wantFires: false,
+		src: "use rmcp::tool;\nimpl T {\n    #[tool(description = \"Fetch the weather\")]\n    fn fetch_weather(&self) -> String { String::new() }\n}\n",
+	},
+	{
+		// The Rust-specific wrinkle: rmcp accepts the /// doc comment as the
+		// description, so a documented-the-Rust-way tool must NOT fire MCP-021.
+		name: "MCP-021 silent when description in /// doc comment", ruleID: "MCP-021",
+		kind: models.KindMCPTool, lang: models.LanguageRust, wantFires: false,
+		src: "use rmcp::tool;\nimpl T {\n    /// Fetch the weather for a city.\n    #[tool]\n    fn fetch_weather(&self) -> String { String::new() }\n}\n",
+	},
+	{
+		name: "MCP-022 fires on ambiguous Rust tool name", ruleID: "MCP-022",
+		kind: models.KindMCPTool, lang: models.LanguageRust, wantFires: true,
+		src: "use rmcp::tool;\nimpl T {\n    #[tool(name = \"process\", description = \"Does a thing\")]\n    fn process(&self) -> String { String::new() }\n}\n",
+	},
+	{
+		name: "MCP-022 silent on descriptive name", ruleID: "MCP-022",
+		kind: models.KindMCPTool, lang: models.LanguageRust, wantFires: false,
+		src: "use rmcp::tool;\nimpl T {\n    #[tool(description = \"Summarize\")]\n    fn summarize_invoice(&self) -> String { String::new() }\n}\n",
+	},
+	{
 		name: "MCP-012 fires on TS tool shelling out", ruleID: "MCP-012",
 		kind: models.KindMCPTool, lang: models.LanguageTypeScript, wantFires: true,
 		src: "import { McpServer } from \"@modelcontextprotocol/sdk/server/mcp.js\";\n" +
@@ -3293,6 +3320,8 @@ func TestPolicyRules(t *testing.T) {
 				tool, pf = parseCSharpTool(t, tc.src, tc.kind)
 			case models.LanguagePHP:
 				tool, pf = parsePHPTool(t, tc.src, tc.kind)
+			case models.LanguageRust:
+				tool, pf = parseRustTool(t, tc.src, tc.kind)
 			default:
 				tool, pf = parsePy(t, tc.src, tc.kind)
 			}

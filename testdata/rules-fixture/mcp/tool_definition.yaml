@@ -256,3 +256,56 @@ rules:
     fix: >
       Rename the method (or set the `#[McpTool]` `name:` argument) to a
       verb-object form, e.g. `summarize_invoice`, `fetch_weather`.
+
+  - id: MCP-021
+    title: Rust MCP tool has no description
+    severity: low
+    confidence: 0.85
+    language: rust
+    applies_to:
+      - mcp_tool
+    scope: tool
+    match:
+      has_docstring: false
+    explanation: >
+      A Rust MCP server (the official rmcp crate) advertises each tool's
+      description to connecting clients as the text a model uses to decide
+      whether to call it. The rmcp `#[tool]` macro derives that description from
+      either a `description = "..."` attribute argument or the method's `///`
+      doc comment; when neither is present the tool ships with no routing signal,
+      causing wrong-tool or skipped calls across every client of the server.
+    fix: >
+      Add a `description = "..."` argument to the `#[tool(...)]` attribute, or a
+      `///` doc comment on the method, stating what the tool does and when a
+      model should call it.
+
+  - id: MCP-022
+    title: Ambiguous Rust MCP tool name
+    severity: low
+    confidence: 0.85
+    language: rust
+    applies_to:
+      - mcp_tool
+    scope: tool
+    match:
+      name_in:
+        - process
+        - handle
+        - run
+        - do
+        - execute
+        - perform
+        - work
+        - thing
+        - stuff
+    explanation: >
+      A Rust MCP tool's name is the `#[tool]` attribute's `name = "..."` argument,
+      or the method name when that argument is omitted. Names like `process`,
+      `handle`, or `run` give a connecting model no signal about intent. Because
+      an MCP server is consumed by clients the author does not control, an
+      ambiguous name degrades tool selection everywhere the server is mounted and
+      collides more easily with similarly-named tools from other servers in the
+      same session.
+    fix: >
+      Rename the method (or set the `#[tool]` `name = "..."` argument) to a
+      verb-object form, e.g. `summarize_invoice`, `fetch_weather`.

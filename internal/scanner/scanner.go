@@ -153,7 +153,7 @@ func Run(cfg Config) (models.ScanResult, error) {
 	// Step 2: inventory (per-language AST; Python only for now)
 	rep.StartPhase("inventory", "Inventory")
 	inventoryStop := log.Timer("inventory")
-	rep.SetTotal(len(profile.Manifest.PythonFiles) + len(profile.Manifest.TypeScriptFiles) + len(profile.Manifest.JavaScriptFiles) + len(profile.Manifest.GoFiles) + len(profile.Manifest.CSharpFiles) + len(profile.Manifest.PHPFiles))
+	rep.SetTotal(len(profile.Manifest.PythonFiles) + len(profile.Manifest.TypeScriptFiles) + len(profile.Manifest.JavaScriptFiles) + len(profile.Manifest.GoFiles) + len(profile.Manifest.CSharpFiles) + len(profile.Manifest.PHPFiles) + len(profile.Manifest.RustFiles))
 	tools, parsed, pySkipped, err := analysis.DiscoverTools(ctx, profile.Manifest, func(path string) {
 		rep.Advance(path)
 	})
@@ -284,6 +284,22 @@ func Run(cfg Config) (models.ScanResult, error) {
 	}()
 	tools = append(tools, analysis.DiscoverPHPMCPTools(phpFiles, nil)...)
 
+	// Rust block: parse .rs files and run Rust MCP discovery (official rmcp crate,
+	// modelcontextprotocol/rust-sdk). Import-gated inside discovery; Rust MCP tools
+	// carry Kind=mcp_tool / Language=rust, so deriveSDKsDetected stamps SDKMCP and
+	// the shared mcp/ pack's language:rust rules audit them.
+	rustFiles, rustSkipped := parseRustFiles(ctx, profile.Manifest.RustFiles, profile.Manifest.RepoRoot, func(path string) {
+		rep.Advance(path)
+	})
+	defer func() {
+		for _, pf := range rustFiles {
+			if pf.Tree != nil {
+				pf.Tree.Close()
+			}
+		}
+	}()
+	tools = append(tools, analysis.DiscoverRustMCPTools(rustFiles, nil)...)
+
 	// Canonicalize tool/agent order before anything reads them. Discovery appends
 	// in walk order (Python -> ADK -> TS), which is deterministic only by accident
 	// of single-threaded lexical traversal — the same assumption the rest of the
@@ -330,12 +346,13 @@ func Run(cfg Config) (models.ScanResult, error) {
 	// appends from the same base would alias the same backing array and could be
 	// mutated out from under each other. Allocate once, reuse for both
 	// ResolveEdges and registry.Run.
-	allParsed := make([]analysis.ParsedFile, 0, len(parsed)+len(tsFiles)+len(goFiles)+len(csFiles)+len(phpFiles))
+	allParsed := make([]analysis.ParsedFile, 0, len(parsed)+len(tsFiles)+len(goFiles)+len(csFiles)+len(phpFiles)+len(rustFiles))
 	allParsed = append(allParsed, parsed...)
 	allParsed = append(allParsed, tsFiles...)
 	allParsed = append(allParsed, goFiles...)
 	allParsed = append(allParsed, csFiles...)
 	allParsed = append(allParsed, phpFiles...)
+	allParsed = append(allParsed, rustFiles...)
 	analysis.ResolveEdges(&inventory, allParsed)
 	inventory.Subagents = analysis.DiscoverSubagents(profile.Manifest)
 	inventory.Skills = analysis.DiscoverSkills(profile.Manifest)
@@ -417,16 +434,16 @@ func Run(cfg Config) (models.ScanResult, error) {
 	// `parsed` holds the successfully parsed Python files; `tsFiles` the
 	// successfully parsed TypeScript AND JavaScript files (the JS family shares
 	// the tsx grammar); `goFiles` the parsed Go files; `csFiles` the parsed C#
-	// files; `phpFiles` the parsed PHP files. All inventoried source languages
-	// count as attempted.
-	filesParsed := len(parsed) + len(tsFiles) + len(goFiles) + len(csFiles) + len(phpFiles)
+	// files; `phpFiles` the parsed PHP files; `rustFiles` the parsed Rust files.
+	// All inventoried source languages count as attempted.
+	filesParsed := len(parsed) + len(tsFiles) + len(goFiles) + len(csFiles) + len(phpFiles) + len(rustFiles)
 	filesAttempted := len(profile.Manifest.PythonFiles) +
 		len(profile.Manifest.TypeScriptFiles) + len(profile.Manifest.JavaScriptFiles) +
 		len(profile.Manifest.GoFiles) + len(profile.Manifest.CSharpFiles) +
-		len(profile.Manifest.PHPFiles)
+		len(profile.Manifest.PHPFiles) + len(profile.Manifest.RustFiles)
 	// Name the skipped files (Python + TS/JS + Go + C# + PHP), not just count
 	// them, so the report can say which inputs went unanalyzed. Sorted+deduped.
-	skippedFiles := append(append(append(append(append([]string{}, pySkipped...), tsSkipped...), goSkipped...), csSkipped...), phpSkipped...)
+	skippedFiles := append(append(append(append(append(append([]string{}, pySkipped...), tsSkipped...), goSkipped...), csSkipped...), phpSkipped...), rustSkipped...)
 	skippedFiles = sortedUnique(skippedFiles)
 	coverage := models.Coverage{
 		FilesParsed:  filesParsed,
@@ -756,6 +773,32 @@ func parsePHPFiles(ctx context.Context, paths []string, root string, onFile func
 	return out, skipped
 }
 
+// parseRustFiles reads and parses each .rs path with the tree-sitter-rust
+// grammar. Unreadable/unparseable files are skipped (one bad file must not abort
+// the scan). Mirrors parsePHPFiles.
+func parseRustFiles(ctx context.Context, paths []string, root string, onFile func(string)) ([]analysis.ParsedFile, []string) {
+	var out []analysis.ParsedFile
+	var skipped []string
+	for _, rel := range paths {
+		if onFile != nil {
+			onFile(rel)
+		}
+		body, err := os.ReadFile(filepath.Join(root, rel))
+		if err != nil {
+			skipped = append(skipped, rel)
+			continue
+		}
+		parser := astutil.NewRustParser()
+		tree, err := astutil.ParseCtxTimeout(ctx, parser, body)
+		if err != nil {
+			skipped = append(skipped, rel)
+			continue
+		}
+		out = append(out, analysis.ParsedFile{RelPath: rel, Source: body, Tree: tree})
+	}
+	return out, skipped
+}
+
 // retagJavaScriptDefs corrects the Language of every discovered tool, agent, and
 // MCP server sourced from a JavaScript file to LanguageJavaScript. Discovery
 // runs JS through the shared TS-family passes and stamps LanguageTypeScript (the
@@ -809,6 +852,7 @@ func scanID(idLabel string, manifest models.ScanManifest, rulesVersion string, e
 		{"go", manifest.GoFiles},
 		{"csharp", manifest.CSharpFiles},
 		{"php", manifest.PHPFiles},
+		{"rust", manifest.RustFiles},
 		{"yaml", manifest.YAMLFiles},
 		{"json", manifest.JSONFiles},
 		{"md", manifest.MarkdownFiles},
