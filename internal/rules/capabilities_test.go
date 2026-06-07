@@ -28,8 +28,8 @@ func TestDescribe_MatchesEngineVocabulary(t *testing.T) {
 	if c.SchemaVersion != rules.SupportedSchemaVersion {
 		t.Errorf("SchemaVersion = %d, want %d", c.SchemaVersion, rules.SupportedSchemaVersion)
 	}
-	if !c.ForwardCompat {
-		t.Error("ForwardCompat = false; this build has LoadLenient and must report true")
+	if len(c.HardFailDimensions) != 0 {
+		t.Errorf("HardFailDimensions = %v; this build is fully forward-compatible and must report none", c.HardFailDimensions)
 	}
 
 	if len(c.Scopes) == 0 || len(c.Languages) == 0 || len(c.Categories) == 0 || len(c.Predicates) == 0 {

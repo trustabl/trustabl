@@ -18,13 +18,22 @@ import (
 // (forward-compatible), or hard-break that release — so a rules change can never
 // silently break a deployed binary.
 type Capabilities struct {
-	SchemaVersion int                 `json:"schema_version"`
-	ForwardCompat bool                `json:"forward_compat"`
-	Scopes        []string            `json:"scopes"`
-	Languages     []string            `json:"languages"`
-	Categories    []string            `json:"categories"`
-	AppliesTo     map[string][]string `json:"applies_to"`
-	Predicates    []string            `json:"predicates"`
+	SchemaVersion int      `json:"schema_version"`
+	Scopes        []string `json:"scopes"`
+	Languages     []string `json:"languages"`
+	Categories    []string `json:"categories"`
+	// HardFailDimensions names the vocabulary dimensions for which an
+	// out-of-vocabulary value causes this build to HARD-FAIL the whole rule load
+	// instead of skipping the offending rule. A fully forward-compatible build
+	// (LoadLenient skips unknown scope/applies_to/language/category/predicate)
+	// reports an empty list. The released v0.1.3 has a hand-authored descriptor
+	// listing ["language"] — it skips the other dimensions but crashes on an
+	// unknown language, which is exactly the incident this whole gate prevents.
+	// The CI gate fails a rules PR if any rule uses an out-of-vocab value in a
+	// hard-fail dimension of any supported release.
+	HardFailDimensions []string            `json:"hard_fail_dimensions"`
+	AppliesTo          map[string][]string `json:"applies_to"`
+	Predicates         []string            `json:"predicates"`
 }
 
 // Describe builds the capability descriptor for this build from the same
@@ -58,16 +67,17 @@ func Describe() Capabilities {
 
 	return Capabilities{
 		SchemaVersion: SupportedSchemaVersion,
-		// This build is forward-compatible: LoadLenient skips a rule whose scope,
-		// applies_to, language, or predicate it does not understand rather than
-		// hard-failing the pack. Releases predating that behavior (e.g. v0.1.3)
-		// have a hand-authored descriptor with forward_compat=false, which tells
-		// the CI gate that an out-of-vocabulary rule CRASHES them, not skips.
-		ForwardCompat: true,
 		Scopes:        scopes,
 		Languages:     langs,
 		Categories:    cats,
-		AppliesTo:     appliesTo,
-		Predicates:    preds,
+		// This build is fully forward-compatible: LoadLenient skips any rule whose
+		// scope, applies_to, language, category, or predicate it does not
+		// understand rather than hard-failing the pack. So no dimension hard-fails
+		// — empty list. (Authored as a non-nil empty slice so the JSON is [] not
+		// null.) Releases predating full forward-compat carry a hand-authored
+		// descriptor naming the dimensions they crash on, e.g. v0.1.3 → ["language"].
+		HardFailDimensions: []string{},
+		AppliesTo:          appliesTo,
+		Predicates:         preds,
 	}
 }
