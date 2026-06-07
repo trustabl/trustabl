@@ -140,6 +140,36 @@ func fallbackToCache(cfg Config, supported int) (Resolved, error) {
 	return usePack(cfg, sha, true, supported)
 }
 
+// Source abstracts where the engine obtains rule packs. gitSource (below) is the
+// clone-a-ref-into-cache implementation used today and for `--rules-repo` dev
+// overrides. The rule-distribution work adds a signed, versioned releaseSource
+// (staging / production channels) behind this same interface, so the engine's
+// scan path — which only ever sees a resolved fs.FS — does not change when the
+// backend does. See .superpowers/specs/2026-06-07-rule-distribution-design.md.
+type Source interface {
+	// Resolve returns a usable rule pack for a scan, falling back to cache on a
+	// remote-contact failure. supported is the engine's max rule-schema version.
+	Resolve(cfg Config, supported int) (Resolved, error)
+	// Pull always contacts the remote and never falls back to cache (the explicit
+	// `trustabl rules pull` path).
+	Pull(cfg Config, supported int) (Resolved, error)
+}
+
+// gitSource resolves rules by cloning a branch/tag of a git repository into the
+// local cache. It is the default Source.
+type gitSource struct{}
+
+// Default is the Source the package-level Resolve / Pull delegate to — the git
+// source today; a later phase swaps in the channel-based release source.
+var Default Source = gitSource{}
+
+// Resolve delegates to Default. Kept as a package-level function so existing
+// callers (scanner, `rules pull`) need no change as the backend evolves.
+func Resolve(cfg Config, supported int) (Resolved, error) { return Default.Resolve(cfg, supported) }
+
+// Pull delegates to Default.
+func Pull(cfg Config, supported int) (Resolved, error) { return Default.Pull(cfg, supported) }
+
 // Resolve obtains a rule pack for a scan. With NoUpdate it uses the cache
 // only. Otherwise it resolves the latest ref, clones it if new, and gates it.
 // It falls back to the cached pack on a remote-contact failure (the offline
@@ -147,7 +177,7 @@ func fallbackToCache(cfg Config, supported int) (Resolved, error) {
 // permission denied, a failed rename, or a corrupt clone (a fatalResolveError) —
 // is propagated, never masked by stale cached rules. It returns ErrNoRules only
 // when nothing is available at all.
-func Resolve(cfg Config, supported int) (Resolved, error) {
+func (gitSource) Resolve(cfg Config, supported int) (Resolved, error) {
 	cfg, err := withDefaults(cfg)
 	if err != nil {
 		return Resolved{}, err
@@ -200,7 +230,7 @@ func Resolve(cfg Config, supported int) (Resolved, error) {
 // Pull is the explicit `trustabl rules pull` path: it always contacts the
 // remote and returns an error if it cannot fetch — it does not fall back to
 // cache, because the user asked for a fetch.
-func Pull(cfg Config, supported int) (Resolved, error) {
+func (gitSource) Pull(cfg Config, supported int) (Resolved, error) {
 	cfg, err := withDefaults(cfg)
 	if err != nil {
 		return Resolved{}, err
