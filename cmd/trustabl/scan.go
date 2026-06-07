@@ -94,7 +94,7 @@ Exit codes:
 		},
 	}
 	cmd.Flags().StringVar(&f.detectors, "detectors", "",
-		"comma-separated detector categories: claude_sdk, openai_sdk, openshell, google_adk, mcp (default: all)")
+		"comma-separated detector categories to run (default: all): "+categoryList())
 	cmd.Flags().StringVar(&f.format, "format", "human",
 		"output format: human|json|sarif")
 	cmd.Flags().StringVarP(&f.output, "output", "o", "",
@@ -591,13 +591,21 @@ func parseCategories(s string) ([]models.DetectorCategory, error) {
 	var out []models.DetectorCategory
 	for _, raw := range strings.Split(s, ",") {
 		c := models.DetectorCategory(strings.TrimSpace(raw))
-		switch c {
-		case models.CategoryClaudeSDK, models.CategoryOpenAISDK,
-			models.CategoryOpenShell, models.CategoryGoogleADK, models.CategoryMCP:
-			out = append(out, c)
-		default:
-			return nil, fmt.Errorf("unknown detector category %q (allowed: claude_sdk, openai_sdk, openshell, google_adk, mcp)", c)
+		if !models.ValidCategory(c) {
+			return nil, fmt.Errorf("unknown detector category %q (allowed: %s)", c, categoryList())
 		}
+		out = append(out, c)
 	}
 	return out, nil
+}
+
+// categoryList renders the recognized detector categories as a comma-separated
+// string, sourced from models.AllCategories so the --detectors help text and the
+// validation error never drift from what the engine actually recognizes.
+func categoryList() string {
+	names := make([]string, len(models.AllCategories))
+	for i, c := range models.AllCategories {
+		names[i] = string(c)
+	}
+	return strings.Join(names, ", ")
 }
