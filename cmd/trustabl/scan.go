@@ -42,13 +42,59 @@ func newScanCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "scan <target>",
 		Short: "Scan a local repo or GitHub URL",
-		Args:  cobra.ExactArgs(1),
+		Long: `Scan a repository for agent reliability and safety weaknesses.
+
+<target> is either a local path (a directory or a single file) or a GitHub URL
+(https://github.com/owner/repo, optionally .../tree/<ref>). A remote target is
+cloned into a temporary directory for the scan and removed afterward.
+
+The scan discovers the tools, agents, subagents, and MCP servers in the repo,
+loads the rule packs for the SDKs it actually finds, and reports the findings.
+Detection rules are resolved from the trustabl-rules repository and cached
+locally; pass --no-rules-update to run fully offline from that cache, or
+--rules-ref to pin a branch or tag.
+
+The report is written to stdout in the chosen --format (human, json, or sarif).
+Use --output/-o to write it to a file instead, or --json-out / --sarif-out to
+persist those formats alongside the stdout report. All progress, diagnostics, and
+warnings go to stderr, so stdout stays byte-stable for machine consumers.
+
+Exit codes:
+  0  no findings of medium severity or higher
+  1  one or more findings >= medium (or >= low with --strict; info/META
+     signals never raise the exit code)
+  2  scanner / I/O error, or no usable rules`,
+		Example: `  # Human-readable scan of the current directory
+  trustabl scan .
+
+  # Scan a GitHub repo at a specific branch or tag
+  trustabl scan https://github.com/owner/repo/tree/main
+
+  # JSON to stdout, or to a file
+  trustabl scan . --format json
+  trustabl scan . --format json -o report.json
+
+  # SARIF for a GitHub code-scanning upload
+  trustabl scan . --format sarif -o trustabl.sarif
+
+  # Print the human panel but also save machine artifacts
+  trustabl scan . --json-out report.json --sarif-out trustabl.sarif
+
+  # Strict CI gate: any finding (low and above) fails the run
+  trustabl scan . --strict
+
+  # Limit to specific detector categories
+  trustabl scan . --detectors claude_sdk,mcp
+
+  # Offline: use the cached rules without fetching
+  trustabl scan . --no-rules-update`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runScan(args[0], f, logLevelFor(cmd))
 		},
 	}
 	cmd.Flags().StringVar(&f.detectors, "detectors", "",
-		"comma-separated detector categories: claude_sdk, openai_sdk, openshell, google_adk, mcp (default: all)")
+		"comma-separated detector categories to run (default: all): "+categoryList())
 	cmd.Flags().StringVar(&f.format, "format", "human",
 		"output format: human|json|sarif")
 	cmd.Flags().StringVarP(&f.output, "output", "o", "",
@@ -545,13 +591,21 @@ func parseCategories(s string) ([]models.DetectorCategory, error) {
 	var out []models.DetectorCategory
 	for _, raw := range strings.Split(s, ",") {
 		c := models.DetectorCategory(strings.TrimSpace(raw))
-		switch c {
-		case models.CategoryClaudeSDK, models.CategoryOpenAISDK,
-			models.CategoryOpenShell, models.CategoryGoogleADK, models.CategoryMCP:
-			out = append(out, c)
-		default:
-			return nil, fmt.Errorf("unknown detector category %q (allowed: claude_sdk, openai_sdk, openshell, google_adk, mcp)", c)
+		if !models.ValidCategory(c) {
+			return nil, fmt.Errorf("unknown detector category %q (allowed: %s)", c, categoryList())
 		}
+		out = append(out, c)
 	}
 	return out, nil
+}
+
+// categoryList renders the recognized detector categories as a comma-separated
+// string, sourced from models.AllCategories so the --detectors help text and the
+// validation error never drift from what the engine actually recognizes.
+func categoryList() string {
+	names := make([]string, len(models.AllCategories))
+	for i, c := range models.AllCategories {
+		names[i] = string(c)
+	}
+	return strings.Join(names, ", ")
 }

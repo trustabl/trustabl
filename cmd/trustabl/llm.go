@@ -17,6 +17,17 @@ func newLLMCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "llm",
 		Short: "Manage LLM provider configuration",
+		Long: `Manage the optional LLM provider configuration (provider, model, and API key)
+used for bring-your-own-key enrichment. Configuration is stored in your user
+config directory with 0600 permissions.
+
+NOTE: LLM enrichment is not wired into the scan yet. These commands only store
+the provider, model, and key for that future path — no scan makes an LLM call
+today, with or without a key configured.`,
+		Example: `  # One-time setup
+  trustabl llm provider set anthropic
+  trustabl llm key set
+  trustabl llm list`,
 	}
 	cmd.AddCommand(newLLMListCommand())
 	cmd.AddCommand(newLLMKeyCommand())
@@ -31,7 +42,10 @@ func newLLMListCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
 		Short: "Show current LLM configuration",
-		Args:  cobra.NoArgs,
+		Long: `Show the configured providers, their models, and masked API keys. The active
+provider is marked with an asterisk (*).`,
+		Example: "  trustabl llm list",
+		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runLLMList(cmd)
 		},
@@ -72,6 +86,11 @@ func newLLMKeyCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "key",
 		Short: "Manage the API key for the active provider",
+		Long: `Manage the API key for the active provider (set, get, delete). Keys are stored in
+your user config directory with 0600 permissions and are shown masked.`,
+		Example: `  trustabl llm key set
+  trustabl llm key get
+  trustabl llm key delete`,
 	}
 	cmd.AddCommand(newLLMKeySetCommand())
 	cmd.AddCommand(newLLMKeyGetCommand())
@@ -83,7 +102,15 @@ func newLLMKeySetCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "set [key]",
 		Short: "Store the API key for the active provider",
-		Args:  cobra.MaximumNArgs(1),
+		Long: `Store the API key for the active provider. Pass the key as an argument, or omit
+it to be prompted (the key is read from the terminal without echo). The key is
+validated against the active provider's expected format before it is saved.`,
+		Example: `  # Prompt for the key (not echoed)
+  trustabl llm key set
+
+  # Pass the key directly (note: it may be saved in shell history)
+  trustabl llm key set sk-ant-...`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runLLMKeySet(cmd, args)
 		},
@@ -123,9 +150,11 @@ func runLLMKeySet(cmd *cobra.Command, args []string) error {
 
 func newLLMKeyGetCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:   "get",
-		Short: "Show the stored API key (masked)",
-		Args:  cobra.NoArgs,
+		Use:     "get",
+		Short:   "Show the stored API key (masked)",
+		Long:    "Show the stored API key for the active provider, masked (only a few trailing\ncharacters are revealed).",
+		Example: "  trustabl llm key get",
+		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runLLMKeyGet(cmd)
 		},
@@ -148,9 +177,11 @@ func runLLMKeyGet(cmd *cobra.Command) error {
 
 func newLLMKeyDeleteCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:   "delete",
-		Short: "Delete the stored API key for the active provider",
-		Args:  cobra.NoArgs,
+		Use:     "delete",
+		Short:   "Delete the stored API key for the active provider",
+		Long:    "Delete the stored API key for the active provider. You are asked to confirm\nbefore the key is removed.",
+		Example: "  trustabl llm key delete",
+		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runLLMKeyDelete(cmd)
 		},
@@ -186,8 +217,10 @@ func runLLMKeyDelete(cmd *cobra.Command) error {
 
 func newLLMModelCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "model",
-		Short: "Manage the model for the active provider",
+		Use:     "model",
+		Short:   "Manage the model for the active provider",
+		Long:    "Manage the model used for the active provider.",
+		Example: "  trustabl llm model set claude-sonnet-4",
 	}
 	cmd.AddCommand(newLLMModelSetCommand())
 	return cmd
@@ -195,9 +228,11 @@ func newLLMModelCommand() *cobra.Command {
 
 func newLLMModelSetCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:   "set <model>",
-		Short: "Set the model for the active provider",
-		Args:  cobra.ExactArgs(1),
+		Use:     "set <model>",
+		Short:   "Set the model for the active provider",
+		Long:    "Set the model identifier for the active provider (e.g. a Claude or GPT model\nname). The value is stored as-is and is not validated against the provider.",
+		Example: "  trustabl llm model set claude-sonnet-4",
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runLLMModelSet(cmd, args[0])
 		},
@@ -223,6 +258,10 @@ func newLLMProviderCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "provider",
 		Short: "Manage LLM providers",
+		Long: `Manage which LLM provider is active and list the providers you have configured.
+Setting a provider that has no key yet prompts you to run "trustabl llm key set".`,
+		Example: `  trustabl llm provider list
+  trustabl llm provider set anthropic`,
 	}
 	cmd.AddCommand(newLLMProviderSetCommand())
 	cmd.AddCommand(newLLMProviderListCommand())
@@ -233,7 +272,11 @@ func newLLMProviderSetCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "set <provider>",
 		Short: "Set the active LLM provider",
-		Args:  cobra.ExactArgs(1),
+		Long: `Set the active LLM provider. The provider must be one Trustabl knows about; an
+unknown name is rejected with the list of known providers. If the chosen provider
+has no API key yet, you are reminded to run "trustabl llm key set".`,
+		Example: "  trustabl llm provider set anthropic",
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runLLMProviderSet(cmd, args[0])
 		},
@@ -264,9 +307,11 @@ func runLLMProviderSet(cmd *cobra.Command, provider string) error {
 
 func newLLMProviderListCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:   "list",
-		Short: "List configured LLM providers",
-		Args:  cobra.NoArgs,
+		Use:     "list",
+		Short:   "List configured LLM providers",
+		Long:    "List the providers you have configured. The active provider is marked with an\nasterisk (*).",
+		Example: "  trustabl llm provider list",
+		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runLLMProviderList(cmd)
 		},

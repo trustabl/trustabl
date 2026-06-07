@@ -4,6 +4,8 @@
 //
 //	trustabl scan <target> [flags]   primary command: scan a repo
 //	trustabl mcp [flags]             run a stdio MCP server exposing the scan
+//	trustabl rules pull [flags]      pre-fetch the detection rule packs
+//	trustabl llm ...                 manage optional LLM provider config (BYOK)
 //	trustabl version                 print version
 //
 // Exit codes:
@@ -48,8 +50,35 @@ func main() {
 	rootCmd := &cobra.Command{
 		Use:   "trustabl",
 		Short: "Static analyzer for agent reliability",
-		Long: "Trustabl scans agent SDK repos (Claude Agent SDK, OpenAI Agents SDK,\n" +
-			"MCP) for reliability and safety weaknesses and reports the findings.",
+		Long: `Trustabl is a static analyzer for AI-agent codebases.
+
+It scans repositories that use agent SDKs — Claude Agent SDK, OpenAI Agents SDK,
+Google ADK, LangChain, CrewAI, Pydantic AI, Vercel AI, and AutoGen — and Model
+Context Protocol (MCP) servers, then reports reliability and safety weaknesses in
+the tools, agents, and subagents it discovers. Python and TypeScript codebases
+are analyzed in depth; JavaScript and Go are recognized during recon but not yet
+AST-parsed.
+
+Detection rules are not built into this binary: they are resolved from the
+trustabl-rules repository at scan time and cached locally, with an offline
+fallback. Run "trustabl rules pull" to pre-fetch them.
+
+Exit codes: 0 = clean (no finding >= medium), 1 = findings >= medium (or >= low
+with --strict), 2 = scanner error or no usable rules.`,
+		Example: `  # Scan the current directory
+  trustabl scan .
+
+  # Scan a public GitHub repository
+  trustabl scan https://github.com/owner/repo
+
+  # Fail CI on any finding (low severity and above)
+  trustabl scan . --strict
+
+  # SARIF output for GitHub code scanning
+  trustabl scan . --format sarif -o trustabl.sarif
+
+  # Pre-download the rule packs for offline use
+  trustabl rules pull`,
 		SilenceUsage:  true,
 		SilenceErrors: true, // we handle error printing ourselves below
 	}
