@@ -418,3 +418,31 @@ func TestRender_AgentScopedFindingsAppearUnderAgentName(t *testing.T) {
 		t.Errorf("agent name missing as finding group header\n---\n%s", out)
 	}
 }
+
+// TestRender_RulesSkippedShownAsDegraded: a scan that dropped forward-incompatible
+// rules must say so as a first-class summary line, so a partial scan never reads
+// as a complete one. A clean scan must not show the line.
+func TestRender_RulesSkippedShownAsDegraded(t *testing.T) {
+	withSkips := (&review.Renderer{NoColor: true}).Render(models.ScanResult{
+		RulesSkipped: []string{"FOO-001", "BAR-002"},
+	})
+	if !strings.Contains(withSkips, "Rules skipped:") {
+		t.Errorf("summary missing the skipped-rules signal:\n%s", withSkips)
+	}
+	if !strings.Contains(withSkips, "degraded scan") {
+		t.Errorf("skipped-rules line should mark the scan degraded:\n%s", withSkips)
+	}
+
+	newer := (&review.Renderer{NoColor: true}).Render(models.ScanResult{
+		RulesSkipped:     []string{"FOO-001"},
+		RulesSchemaNewer: true,
+	})
+	if !strings.Contains(newer, "newer schema") {
+		t.Errorf("schema-newer skip reason missing:\n%s", newer)
+	}
+
+	clean := (&review.Renderer{NoColor: true}).Render(models.ScanResult{})
+	if strings.Contains(clean, "Rules skipped:") {
+		t.Errorf("a clean scan must not show a skipped-rules line:\n%s", clean)
+	}
+}

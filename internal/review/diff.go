@@ -116,6 +116,19 @@ func (r *Renderer) Render(result models.ScanResult) string {
 	}
 	fmt.Fprintf(&b, "  Agents found:       %d\n", len(result.Agents))
 	fmt.Fprintf(&b, "  Findings:           %d\n", len(result.Findings))
+	if n := len(result.RulesSkipped); n > 0 {
+		// A scan that skipped rules is DEGRADED, not clean — surface it as a
+		// first-class, attention-drawing summary line, not only a stderr warning
+		// and one INFO finding (META-005 still carries the per-rule detail). This
+		// is what keeps a partial scan from reading as a complete one.
+		reason := "they use a rule feature this build does not understand"
+		if result.RulesSchemaNewer {
+			reason = "the rule pack targets a newer schema than this build"
+		}
+		fmt.Fprintf(&b, "  %s %s\n",
+			styleMed.Render(fmt.Sprintf("Rules skipped:      %d", n)),
+			styleDim.Render("(degraded scan: "+reason+" — upgrade Trustabl to evaluate them)"))
+	}
 	sevTag := func(s models.Severity) string {
 		switch s {
 		case models.SeverityCritical:
