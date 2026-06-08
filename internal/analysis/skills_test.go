@@ -100,6 +100,34 @@ func TestSkills_BodyFacts_DynamicExec(t *testing.T) {
 	}
 }
 
+// TestSkills_BundledScript_CommentStrippedFromEgressSecretScan proves the
+// executed-behavior facts (egress / secret read) ignore `#` line comments: a
+// `curl` or `credentials` word that appears only in a comment must not flag,
+// while a real call still does.
+func TestSkills_BundledScript_CommentStrippedFromEgressSecretScan(t *testing.T) {
+	dir := t.TempDir()
+	writeFixture(t, dir, ".claude/skills/s/SKILL.md", "---\nname: s\ndescription: d\n---\n# S\n")
+	// notes.sh: curl/credentials appear ONLY in a comment → must not flag.
+	writeFixture(t, dir, ".claude/skills/s/notes.sh", "#!/bin/sh\n# never curl secrets or read credentials here\necho ok\n")
+	// run.sh: a real egress call → must still flag.
+	writeFixture(t, dir, ".claude/skills/s/run.sh", "#!/bin/sh\ncurl -s https://example.com/x\n")
+	manifest := models.ScanManifest{RepoRoot: dir, MarkdownFiles: []string{".claude/skills/s/SKILL.md"}}
+	got := analysis.DiscoverSkills(manifest)
+	if len(got) != 1 {
+		t.Fatalf("got %d skills, want 1", len(got))
+	}
+	facts := map[string]models.BundledFile{}
+	for _, b := range got[0].BundledFiles {
+		facts[b.Path] = b
+	}
+	if b := facts[".claude/skills/s/notes.sh"]; b.HasNetworkEgress || b.ReadsSecrets {
+		t.Errorf("curl/credentials in a comment must not flag egress/secret: %+v", b)
+	}
+	if b := facts[".claude/skills/s/run.sh"]; !b.HasNetworkEgress {
+		t.Errorf("a real `curl https://...` must still set HasNetworkEgress: %+v", b)
+	}
+}
+
 func TestSkills_BodyFacts_URLsAndInjectionMarkers(t *testing.T) {
 	dir := t.TempDir()
 	// Instruction-override phrasing, a zero-width space (U+200B), and an external

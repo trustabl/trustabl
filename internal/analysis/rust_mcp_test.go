@@ -94,3 +94,20 @@ impl Calculator {
 		t.Errorf("file without a `use rmcp` must gate out; got %d: %+v", len(tools), tools)
 	}
 }
+
+// TestDiscoverRustMCPTools_WarmcpNotGate guards the file gate: a `use
+// warmcp_utils::...` (which merely contains the substring "rmcp") is not the
+// rmcp crate and must not open the gate.
+func TestDiscoverRustMCPTools_WarmcpNotGate(t *testing.T) {
+	src := `use warmcp_utils::Helper;
+
+impl Calculator {
+    #[tool(description = "Add")]
+    fn add(&self) -> String { String::new() }
+}
+`
+	tools := analysis.DiscoverRustMCPTools([]analysis.ParsedFile{parseRustForTest(t, src)}, nil)
+	if len(tools) != 0 {
+		t.Errorf("a `use warmcp_utils` (not the rmcp crate) must gate out; got %d: %+v", len(tools), tools)
+	}
+}

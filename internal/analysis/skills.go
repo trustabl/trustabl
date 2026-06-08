@@ -197,6 +197,11 @@ func dedupeStrings(in []string) []string {
 const maxBundledScriptScanBytes = 1 << 20 // 1 MiB
 
 var (
+	// bundledCommentRe matches a shell/python `#` line comment (from the first
+	// `#` to end of line). The "script does X" facts (egress / secret read) are
+	// matched against comment-stripped content so a word like `curl` or
+	// `credentials` mentioned only in a comment is not read as a real call.
+	bundledCommentRe = regexp.MustCompile(`(?m)#.*$`)
 	// bundledEgressRe matches a network-egress invocation in a bundled script
 	// (curl / wget / nc / ...). Mirrors the dynamic-exec egress check.
 	bundledEgressRe = regexp.MustCompile(`(?i)\b(?:curl|wget|nc|ncat|telnet|scp|sftp|rsync)\b`)
@@ -255,10 +260,14 @@ func bundledFiles(repoRoot, skillPath string) []models.BundledFile {
 		// literal — both surfaces that scanning SKILL.md alone misses.
 		if bf.Kind != "binary" {
 			if content, rerr := readCapped(abs, maxBundledScriptScanBytes); rerr == nil {
+				// A committed secret literal counts even inside a comment, so scan raw.
 				bf.HasHardcodedSecret = bundledSecretLiteralRe.Match(content)
 				if bf.Kind == "script" {
-					bf.HasNetworkEgress = bundledEgressRe.Match(content)
-					bf.ReadsSecrets = bundledSecretRe.Match(content)
+					// Egress / secret-read describe executed behavior, so strip `#`
+					// line comments first: `# never curl secrets` is not a real call.
+					code := bundledCommentRe.ReplaceAll(content, nil)
+					bf.HasNetworkEgress = bundledEgressRe.Match(code)
+					bf.ReadsSecrets = bundledSecretRe.Match(code)
 				}
 			}
 		}
