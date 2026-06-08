@@ -184,3 +184,26 @@ rules:
       legitimately needs a secret, have the user provide it through an explicit,
       auditable runtime prompt — never read it from a bundled script that runs
       automatically when the skill is activated.
+
+  - id: CSKILL-030
+    title: Bundled skill file contains a hardcoded secret
+    severity: high
+    confidence: 0.85
+    applies_to:
+      - claude_skill
+    scope: skill
+    match:
+      skill_bundled_file_has_hardcoded_secret: true
+    explanation: >
+      A file bundled with this skill contains a hardcoded secret — a recognizable
+      credential format such as an AWS access key (AKIA…), a GitHub token
+      (ghp_… / github_pat_…), a Slack or Google API token, an OpenAI-style key, or
+      a private-key block. A committed credential ships to everyone who installs
+      or forks the skill, lives in the repository's history, and is trivially
+      harvested. This is distinct from a script that *reads* a secret at runtime
+      (CSKILL-011): here the secret is the file's own content.
+    fix: >
+      Remove the secret from the bundled file and rotate it immediately — assume
+      it is compromised the moment it is committed. Load credentials at runtime
+      from the environment or a secrets manager, never from a file checked into
+      the skill, and keep real secrets out of version control.

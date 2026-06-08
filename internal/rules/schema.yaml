@@ -352,6 +352,13 @@ rules:
 #       ~/.aws, ~/.ssh, id_rsa, *_key, ...). Credential theft hidden outside the
 #       SKILL.md body. Bool predicate.
 #
+#   skill_bundled_file_has_hardcoded_secret: true
+#       Fires when any non-binary bundled file contains a hardcoded secret
+#       literal — a distinctive provider token (AWS AKIA, GitHub ghp_/
+#       github_pat_, Slack xox, Google AIza, OpenAI sk-) or a private-key header.
+#       A credential committed INTO the skill, distinct from a script that reads
+#       one at runtime. High-specificity (low FP). Bool predicate.
+#
 #
 # ━━━ REPO-SCOPE PREDICATES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # (used only in scope: repo rules; match runs once per scan)

@@ -202,6 +202,19 @@ var (
 	bundledEgressRe = regexp.MustCompile(`(?i)\b(?:curl|wget|nc|ncat|telnet|scp|sftp|rsync)\b`)
 	// bundledSecretRe matches a credential/secret read in a bundled script.
 	bundledSecretRe = regexp.MustCompile(`(?i)gh\s+auth|printenv|\$(?:AWS|GH|GITHUB|OPENAI|ANTHROPIC|HF|NPM|SLACK|GOOGLE|GCP|AZURE)[A-Z0-9_]*|\bid_rsa\b|\bcredentials\b|\.aws/|\.ssh/|\.netrc\b|access[_-]?key|secret[_-]?key|api[_-]?key`)
+	// bundledSecretLiteralRe matches a hardcoded secret VALUE committed in a
+	// bundled file: distinctive provider token prefixes and private-key headers,
+	// chosen for near-zero false positives (format/context, not entropy). Unlike
+	// bundledSecretRe — which flags a script that READS a secret — this flags a
+	// credential checked into the skill itself.
+	bundledSecretLiteralRe = regexp.MustCompile(
+		`AKIA[0-9A-Z]{16}` + // AWS access key id
+			`|ghp_[0-9A-Za-z]{36}` + // GitHub personal access token (classic)
+			`|github_pat_[0-9A-Za-z_]{82}` + // GitHub fine-grained PAT
+			`|xox[baprs]-[0-9A-Za-z-]{10,72}` + // Slack token
+			`|sk-[A-Za-z0-9]{40,}` + // OpenAI-style secret key
+			`|AIza[0-9A-Za-z_-]{35}` + // Google API key
+			`|-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----`) // private-key block header
 )
 
 // readCapped reads up to maxBytes from path. A read error yields no content, so
@@ -237,12 +250,16 @@ func bundledFiles(repoRoot, skillPath string) []models.BundledFile {
 			return nil
 		}
 		bf := models.BundledFile{Path: filepath.ToSlash(rel), Kind: classifyBundledFile(d.Name())}
-		// Script-kind files are content-scanned for egress/secret facts: a skill
-		// can run them via Bash, so a payload hidden here evades body-only scans.
-		if bf.Kind == "script" {
+		// Content-scan every non-binary bundled file: a skill can run its scripts
+		// (egress / secret reads), and any text file can carry a committed secret
+		// literal — both surfaces that scanning SKILL.md alone misses.
+		if bf.Kind != "binary" {
 			if content, rerr := readCapped(abs, maxBundledScriptScanBytes); rerr == nil {
-				bf.HasNetworkEgress = bundledEgressRe.Match(content)
-				bf.ReadsSecrets = bundledSecretRe.Match(content)
+				bf.HasHardcodedSecret = bundledSecretLiteralRe.Match(content)
+				if bf.Kind == "script" {
+					bf.HasNetworkEgress = bundledEgressRe.Match(content)
+					bf.ReadsSecrets = bundledSecretRe.Match(content)
+				}
 			}
 		}
 		out = append(out, bf)

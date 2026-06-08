@@ -442,10 +442,11 @@ For each language recon cleared, do the AST work and produce a `RepoInventory`:
   commands, external URLs, prompt-injection markers — including hidden-Unicode:
   zero-width characters, the Tags block U+E0000–E007F, and bidi overrides) and a
   **bundled-file inventory** (script/markdown/binary/resource by extension).
-  Script-kind bundled files are additionally content-scanned (size-capped) for
-  network egress and credential reads, stamped onto the `BundledFile` — the
-  payload-in-aux-file surface that scanning `SKILL.md` alone misses. No
-  frontmatter or no `name` → skipped.
+  Non-binary bundled files are additionally content-scanned (size-capped),
+  stamped onto the `BundledFile`: scripts for network egress and credential
+  reads, and any file for a committed secret literal (an AWS/GitHub/Slack/Google
+  token or a private-key header) — the payload-in-aux-file surface that scanning
+  `SKILL.md` alone misses. No frontmatter or no `name` → skipped.
 - **DiscoverSlashCommands** (`slash_commands.go`) — emits one
   `SlashCommandDef` per `ComponentSlashCommand` component. Recon tags those
   at two path shapes: the canonical `.claude/commands/*.md` (any depth) AND

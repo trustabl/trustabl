@@ -211,13 +211,18 @@ type SkillDef struct {
 // HasNetworkEgress and ReadsSecrets are content facts set only for Kind
 // "script": discovery reads the script (size-capped) and records whether it
 // makes outbound network calls or reads credentials/secrets — the
-// payload-in-aux-file surface that scanning SKILL.md alone misses. The script
-// text itself is never stored; the inventory stays an index of facts, not source.
+// payload-in-aux-file surface that scanning SKILL.md alone misses.
+// HasHardcodedSecret is set for any non-binary bundled file whose content holds
+// a high-signal secret literal (an AWS/GitHub/Slack/Google token, an
+// OpenAI-style key, or a private-key header) — a credential committed into the
+// skill, distinct from a script that *reads* one at runtime. The file text
+// itself is never stored; the inventory stays an index of facts, not source.
 type BundledFile struct {
-	Path             string `json:"path"` // repo-relative, slash-separated
-	Kind             string `json:"kind"`
-	HasNetworkEgress bool   `json:"has_network_egress,omitempty"`
-	ReadsSecrets     bool   `json:"reads_secrets,omitempty"`
+	Path               string `json:"path"` // repo-relative, slash-separated
+	Kind               string `json:"kind"`
+	HasNetworkEgress   bool   `json:"has_network_egress,omitempty"`
+	ReadsSecrets       bool   `json:"reads_secrets,omitempty"`
+	HasHardcodedSecret bool   `json:"has_hardcoded_secret,omitempty"`
 }
 
 // SlashCommandDef is one parsed .claude/commands/*.md slash command. The command
