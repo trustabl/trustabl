@@ -349,3 +349,65 @@ rules:
 		})
 	}
 }
+
+// TestLoadLenient_SkipsUnknownLanguage is the forward-compat contract for a NEW
+// language, and the regression guard for the v0.1.3 break: when csharp/php/rust
+// rules were merged, an older binary whose loader did not know those languages
+// hard-failed the ENTIRE rule load right after inventory — because the language
+// check rejected unknown values on the lenient runtime path too, unlike scope /
+// applies_to / predicates. Now a rule whose `language:` this build cannot produce
+// is dropped whole (its ID returned in skipped) while its known-language sibling
+// loads. Strict Load still rejects it so an authoring typo is caught in CI.
+func TestLoadLenient_SkipsUnknownLanguage(t *testing.T) {
+	const pack = `
+policy:
+  id: len
+  name: Lenient
+  category: claude_sdk
+  description: t
+rules:
+  - id: LEN-200
+    title: Known language rule
+    scope: tool
+    severity: low
+    confidence: 0.8
+    language: go
+    applies_to: [claude_sdk_tool]
+    match:
+      has_docstring: true
+    explanation: x
+    fix: y
+  - id: LEN-201
+    title: Future language rule
+    scope: tool
+    severity: high
+    confidence: 0.9
+    language: ruby
+    applies_to: [claude_sdk_tool]
+    match:
+      has_docstring: true
+    explanation: x
+    fix: y
+`
+	fsys := makeFS(map[string]string{"len.yaml": pack})
+	policies, skipped, err := rules.LoadLenient(fsys)
+	if err != nil {
+		t.Fatalf("LoadLenient unexpected error: %v", err)
+	}
+	ids := ruleIDs(policies)
+	if !ids["LEN-200"] {
+		t.Error("LEN-200 (known language go) should have loaded")
+	}
+	if ids["LEN-201"] {
+		t.Error("LEN-201 (unknown language `ruby`) should have been skipped, not loaded")
+	}
+	if len(skipped) != 1 || skipped[0] != "LEN-201" {
+		t.Errorf("skipped = %v, want [LEN-201]", skipped)
+	}
+
+	if _, err := rules.Load(fsys); err == nil {
+		t.Error("strict Load must error on an unknown language")
+	} else if !strings.Contains(err.Error(), "language") {
+		t.Errorf("strict Load error should name the language problem, got: %v", err)
+	}
+}

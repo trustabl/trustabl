@@ -117,6 +117,30 @@ the pack is named by the actually-cloned HEAD commit, so an interrupted clone
 never leaves a partial pack and the recorded SHA always matches the content
 (see `internal/rulesource/git.go`).
 
+Resolution sits behind a `rulesource.Source` interface with two
+implementations. The default `gitSource` is the git path described above.
+`releaseSource` (opt-in via `--channel <name>`) resolves rules from a
+**signature-verified release channel**: it verifies a signed channel statement
+against an embedded Ed25519 trust keyring (`internal/rulesign`), fetches the
+bundle the statement commits to from GitHub Releases, re-derives the bundle's
+canonical digest and matches it to the statement, then installs it to a
+content-addressed cache. The signed cache has its own root —
+`Config.BundleCacheDir`, default `os.UserCacheDir()/trustabl/bundles/`, a
+**sibling** of the git rules cache (`…/trustabl/rules/`), never under it — with
+installed bundles at `bundles/<digest>/` and the per-channel anti-rollback state
+at `bundles/channels/<channel>.json`. Keeping it outside the rules cache means
+no rules-cache pruner (this build's or an older pre-v2 one's) can ever delete
+it. Verification is fail-closed —
+a bad signature, an untrusted/expired key, channel confusion, an expired or
+rolled-back statement, or a digest mismatch each refuse the scan (exit 2)
+rather than running unverified rules; only a remote-contact failure degrades to
+the last verified bundle (marked stale past its statement's expiry). The
+provenance of the rules (`models.RulesOrigin`: signed channel / unsigned
+custom / unsigned default) is surfaced as a report watermark and folded into
+`ScanID`. The default scan is unchanged — `gitSource` stays the default until
+the signed-production cutover. See `internal/rulesource/releasesource.go` and
+`internal/rulesign/`.
+
 Resolution order:
 
 1. Unless `--no-rules-update` is set, fetch the configured ref and clone it
@@ -1347,9 +1371,12 @@ never the absolute mount point, so the same repo checked out at different paths
 yields the same ID), every inventoried
 file list (Python, TypeScript, JavaScript, YAML, JSON, Markdown — each sorted
 independently and folded in with a label so OS-walk order never leaks and a
-TS-only or markdown-only repo gets an honest ID), and the resolved rules
-version, so identical inputs produce diff-comparable JSON across runs — and a
-different rule pack yields a distinct, honest ID.
+TS-only or markdown-only repo gets an honest ID), the resolved rules
+version, the engine's supported schema version, and the rules-origin tag
+(`signed:<channel>` / `unsigned:custom` / `unsigned:default`), so identical
+inputs produce diff-comparable JSON across runs — and a different rule pack, a
+different engine schema, or a different rules provenance each yields a distinct,
+honest ID.
 
 **Language-field discipline**: `ToolDef`, `AgentDef`, and `MCPServerDef`
 carry a `Language` field populated by every discovery path and consulted
@@ -1467,11 +1494,19 @@ internal/
 │   ├── evaluator.go             MatchExpr.Evaluate — recursive walker.
 │   └── rule_detector.go         RuleDetector adapter + LoadRegistry.
 │                                (No embed.go: rules are not embedded — see rulesource.)
-├── rulesource/                  External-rules resolution.
-│   ├── git.go                   resolveRef / cloneInto via go-git.
+├── rulesign/                    Trust core (verify-only — no signing in the binary).
+│   ├── digest.go                CanonicalDigest (reproducible sha256 over a normalized tar).
+│   ├── keyring.go               Embedded Ed25519 trust keyring; verify-by-key-ID + validity windows.
+│   ├── keyring.json             Embedded trust keyring (empty until signing keys are published).
+│   ├── statement.go             Signed channel statement: parse + VerifyStatement (sig/channel/freshness/anti-rollback/digest).
+│   └── channelstate.go          Per-channel anti-rollback floor + offline pointer in the cache dir.
+├── rulesource/                  External-rules resolution (Source interface: gitSource + releaseSource).
+│   ├── git.go                   resolveRef / cloneInto via go-git (gitSource).
+│   ├── releasesource.go         Signed-channel resolve: verify → fetch → digest-bind → install (releaseSource).
+│   ├── githubtransport.go       GitHub Releases transport (statement + bundle by digest).
 │   ├── cache.go                 Cache layout + current-pointer helpers.
 │   ├── manifest.go              manifest.yaml read + schema-compatibility gate.
-│   └── rulesource.go            Resolve / Pull; Config; Resolved; DefaultRepoURL.
+│   └── rulesource.go            Source interface; Resolve / Pull; SourceFor; Config; Resolved; DefaultRepoURL.
 ├── sarif/                       SARIF 2.1.0 output renderer (`--format sarif`).
 │   ├── types.go                 SARIF struct definitions.
 │   └── render.go                Render(ScanResult) + helpers (severity, locations, fingerprints).

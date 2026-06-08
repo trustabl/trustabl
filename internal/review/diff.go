@@ -39,6 +39,12 @@ func (r *Renderer) Render(result models.ScanResult) string {
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "%s\n", styleHeader.Render("Scan summary"))
+	// Watermark any scan that did not use blessed, signature-verified production
+	// rules (a pre-release channel or an unsigned custom source). Deterministic
+	// from the origin, so it does not affect byte-stability.
+	if wm := result.RulesOrigin.Watermark(); wm != "" {
+		fmt.Fprintf(&b, "  %s\n", styleMed.Render("⚠ "+wm))
+	}
 	fmt.Fprintf(&b, "  Repo:           %s\n", result.Repo)
 	fmt.Fprintf(&b, "  Languages:      %s\n", csv(result.Languages))
 	fmt.Fprintf(&b, "  SDKs:           %s\n", csv(result.SDKs))

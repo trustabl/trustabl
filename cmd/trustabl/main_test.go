@@ -132,6 +132,19 @@ func TestParseCategories(t *testing.T) {
 			want: []models.DetectorCategory{models.CategoryOpenShell},
 		},
 		{
+			// Regression: every shipped SDK category must be filterable, not just
+			// the original five — parseCategories used to reject langchain, crewai,
+			// pydantic_ai, vercel_ai, and autogen.
+			name: "langchain",
+			in:   "langchain",
+			want: []models.DetectorCategory{models.CategoryLangChain},
+		},
+		{
+			name: "autogen and vercel_ai combined",
+			in:   "autogen,vercel_ai",
+			want: []models.DetectorCategory{models.CategoryAutoGen, models.CategoryVercelAI},
+		},
+		{
 			// Regression: the combined form from README § Use.
 			name: "claude_sdk and openai_sdk combined",
 			in:   "claude_sdk,openai_sdk",
