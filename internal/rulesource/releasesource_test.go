@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"path/filepath"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -81,8 +82,17 @@ func newRS(ring *rulesign.Keyring, tr ChannelTransport, now func() time.Time) *r
 	return &releaseSource{keyring: ring, transport: tr, now: now}
 }
 
+// bundleRoot is the signed-distribution cache root a test uses — a sibling of
+// the git cache, both under the test's temp dir, mirroring production layout.
+func bundleRoot(cache string) string { return filepath.Join(cache, "bundles") }
+
 func prodCfg(cache string) Config {
-	return Config{Channel: "production", RepoURL: "https://example.com/rules", CacheDir: cache}
+	return Config{
+		Channel:        "production",
+		RepoURL:        "https://example.com/rules",
+		CacheDir:       filepath.Join(cache, "rules"),
+		BundleCacheDir: bundleRoot(cache),
+	}
 }
 
 // TestReleaseSource_HappyPath is the ENG-4 end-to-end: a signed statement +
@@ -116,7 +126,7 @@ func TestReleaseSource_HappyPath(t *testing.T) {
 	if _, err := fs.ReadFile(res.FS, "manifest.yaml"); err != nil {
 		t.Errorf("installed bundle FS missing manifest.yaml: %v", err)
 	}
-	if v, _ := rulesign.ReadLastSeenVersion(cache, "production"); v != 7 {
+	if v, _ := rulesign.ReadLastSeenVersion(bundleRoot(cache), "production"); v != 7 {
 		t.Errorf("anti-rollback floor = %d, want 7", v)
 	}
 }
@@ -176,7 +186,7 @@ func TestReleaseSource_RefusesTampering(t *testing.T) {
 		ring := mkRing(t, "k", pub)
 		cache := t.TempDir()
 		// Pre-seed a higher floor (we have already seen version 50).
-		if _, err := rulesign.RecordStatement(cache, &rulesign.Statement{Channel: "production", Version: 50, Digest: digest}); err != nil {
+		if _, err := rulesign.RecordStatement(bundleRoot(cache), &rulesign.Statement{Channel: "production", Version: 50, Digest: digest}); err != nil {
 			t.Fatalf("seed floor: %v", err)
 		}
 		raw := signStatement(t, priv, "k", "production", 40, digest, "2026-06-08T00:00:00Z", "2026-06-22T00:00:00Z")
@@ -302,6 +312,23 @@ func TestReleaseSource_SecondResolveSkipsRefetch(t *testing.T) {
 	second := newRS(ring, &fakeTransport{statement: raw, bundleErr: errors.New("must not refetch")}, inWindow)
 	if _, err := second.Resolve(prodCfg(cache), 9); err != nil {
 		t.Fatalf("second Resolve should reuse cached bundle, got %v", err)
+	}
+}
+
+// TestWithDefaults_BundleCacheIsSiblingOfRules locks the core invariant of the
+// signed-cache location: by default the bundle cache is a SIBLING of the git
+// rules cache (same parent, distinct leaf), never under it — so no rules-cache
+// pruner, this build's or a pre-v2 one's, can ever reach it.
+func TestWithDefaults_BundleCacheIsSiblingOfRules(t *testing.T) {
+	cfg, err := withDefaults(Config{})
+	if err != nil {
+		t.Fatalf("withDefaults: %v", err)
+	}
+	if filepath.Dir(cfg.CacheDir) != filepath.Dir(cfg.BundleCacheDir) {
+		t.Errorf("bundle cache is not a sibling of the rules cache: rules=%q bundles=%q", cfg.CacheDir, cfg.BundleCacheDir)
+	}
+	if filepath.Base(cfg.CacheDir) != "rules" || filepath.Base(cfg.BundleCacheDir) != "bundles" {
+		t.Errorf("unexpected cache leaves: rules=%q bundles=%q", filepath.Base(cfg.CacheDir), filepath.Base(cfg.BundleCacheDir))
 	}
 }
 

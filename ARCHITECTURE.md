@@ -124,7 +124,13 @@ implementations. The default `gitSource` is the git path described above.
 against an embedded Ed25519 trust keyring (`internal/rulesign`), fetches the
 bundle the statement commits to from GitHub Releases, re-derives the bundle's
 canonical digest and matches it to the statement, then installs it to a
-content-addressed cache (`bundles/<digest>/`). Verification is fail-closed —
+content-addressed cache. The signed cache has its own root —
+`Config.BundleCacheDir`, default `os.UserCacheDir()/trustabl/bundles/`, a
+**sibling** of the git rules cache (`…/trustabl/rules/`), never under it — with
+installed bundles at `bundles/<digest>/` and the per-channel anti-rollback state
+at `bundles/channels/<channel>.json`. Keeping it outside the rules cache means
+no rules-cache pruner (this build's or an older pre-v2 one's) can ever delete
+it. Verification is fail-closed —
 a bad signature, an untrusted/expired key, channel confusion, an expired or
 rolled-back statement, or a digest mismatch each refuse the scan (exit 2)
 rather than running unverified rules; only a remote-contact failure degrades to

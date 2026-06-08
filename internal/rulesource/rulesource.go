@@ -84,7 +84,14 @@ type Config struct {
 	RepoURL  string // rules repo; empty => DefaultRepoURL
 	Ref      string // branch/tag to resolve; empty => remote default branch
 	NoUpdate bool   // skip the network; use cache only
-	CacheDir string // cache root; empty => os.UserCacheDir()/trustabl/rules
+	CacheDir string // git-pack cache root; empty => os.UserCacheDir()/trustabl/rules
+
+	// BundleCacheDir is the cache root for the signed-distribution cache
+	// (releaseSource's installed bundles + per-channel anti-rollback state).
+	// Empty => os.UserCacheDir()/trustabl/bundles — a SIBLING of CacheDir, never
+	// under it, so no rules-cache pruner (this build's or an older one's that
+	// predates the signed path) can ever delete the signed cache.
+	BundleCacheDir string
 
 	// Channel selects the signed-distribution path: when non-empty, resolution
 	// goes through releaseSource — verify a signed channel statement, then fetch
@@ -165,12 +172,19 @@ func withDefaults(cfg Config) (Config, error) {
 	if cfg.RepoURL == "" {
 		cfg.RepoURL = DefaultRepoURL
 	}
-	if cfg.CacheDir == "" {
+	if cfg.CacheDir == "" || cfg.BundleCacheDir == "" {
 		base, err := os.UserCacheDir()
 		if err != nil {
 			return cfg, fmt.Errorf("locate user cache dir: %w", err)
 		}
-		cfg.CacheDir = filepath.Join(base, "trustabl", "rules")
+		if cfg.CacheDir == "" {
+			cfg.CacheDir = filepath.Join(base, "trustabl", "rules")
+		}
+		if cfg.BundleCacheDir == "" {
+			// A sibling of the rules cache, never under it, so no rules-cache
+			// pruner can reach it (see Config.BundleCacheDir).
+			cfg.BundleCacheDir = filepath.Join(base, "trustabl", "bundles")
+		}
 	}
 	return cfg, nil
 }

@@ -117,7 +117,7 @@ func (rs *releaseSource) resolveFromStatement(cfg Config, supported int, raw []b
 	if err != nil {
 		return Resolved{}, err
 	}
-	lastSeen, err := rulesign.ReadLastSeenVersion(cfg.CacheDir, cfg.Channel)
+	lastSeen, err := rulesign.ReadLastSeenVersion(cfg.BundleCacheDir, cfg.Channel)
 	if err != nil {
 		return Resolved{}, err
 	}
@@ -130,7 +130,7 @@ func (rs *releaseSource) resolveFromStatement(cfg Config, supported int, raw []b
 
 	// Content-addressed cache: a bundle dir is named by its own digest, so if it
 	// is already present its content already matched — no re-fetch, no re-verify.
-	if !bundleExists(cfg.CacheDir, stmt.Digest) {
+	if !bundleExists(cfg.BundleCacheDir, stmt.Digest) {
 		bundleFS, err := rs.transport.FetchBundle(cfg.RepoURL, stmt.Digest)
 		if err != nil {
 			return Resolved{}, fmt.Errorf("fetch bundle %s: %w", stmt.Digest, err)
@@ -142,13 +142,13 @@ func (rs *releaseSource) resolveFromStatement(cfg Config, supported int, raw []b
 		if got != stmt.Digest {
 			return Resolved{}, fmt.Errorf("%w: statement %s, downloaded %s", rulesign.ErrDigestMismatch, stmt.Digest, got)
 		}
-		if err := installBundle(cfg.CacheDir, stmt.Digest, bundleFS); err != nil {
+		if err := installBundle(cfg.BundleCacheDir, stmt.Digest, bundleFS); err != nil {
 			return Resolved{}, &fatalResolveError{err}
 		}
 	}
 	// Advance the anti-rollback floor only after a fully verified, installed
 	// bundle — so a failed install can never move the floor forward.
-	if _, err := rulesign.RecordStatement(cfg.CacheDir, stmt); err != nil {
+	if _, err := rulesign.RecordStatement(cfg.BundleCacheDir, stmt); err != nil {
 		return Resolved{}, &fatalResolveError{err}
 	}
 	return rs.usePackDigest(cfg, stmt.Digest, supported, false)
@@ -157,11 +157,11 @@ func (rs *releaseSource) resolveFromStatement(cfg Config, supported int, raw []b
 // fromCache serves the channel's last verified bundle when the network is
 // skipped or unreachable, flagging it Stale if its statement has since expired.
 func (rs *releaseSource) fromCache(cfg Config, supported int) (Resolved, error) {
-	digest, _, expires, found, err := rulesign.ChannelPointer(cfg.CacheDir, cfg.Channel)
+	digest, _, expires, found, err := rulesign.ChannelPointer(cfg.BundleCacheDir, cfg.Channel)
 	if err != nil {
 		return Resolved{}, err
 	}
-	if !found || !bundleExists(cfg.CacheDir, digest) {
+	if !found || !bundleExists(cfg.BundleCacheDir, digest) {
 		return Resolved{}, ErrNoRules
 	}
 	res, err := rs.usePackDigest(cfg, digest, supported, true)
@@ -179,7 +179,7 @@ func (rs *releaseSource) fromCache(cfg Config, supported int) (Resolved, error) 
 // usePackDigest builds a Resolved over the installed bundle for digest, applying
 // the same manifest schema gate as the git path.
 func (rs *releaseSource) usePackDigest(cfg Config, digest string, supported int, fromCache bool) (Resolved, error) {
-	fsys := os.DirFS(bundleDir(cfg.CacheDir, digest))
+	fsys := os.DirFS(bundleDir(cfg.BundleCacheDir, digest))
 	mi := readManifestInfo(fsys)
 	if !mi.valid {
 		return Resolved{}, ErrNoCompatibleRules
@@ -195,19 +195,22 @@ func (rs *releaseSource) usePackDigest(cfg Config, digest string, supported int,
 }
 
 // --- content-addressed bundle cache ------------------------------------------
+//
+// The signed cache root is Config.BundleCacheDir — a sibling of the git rules
+// cache, never under it — so no rules-cache pruner can reach it. Within it,
+// bundles live at <root>/<digest>/ and per-channel state at
+// <root>/channels/<channel>.json.
 
-// bundleDir is the cache directory for one bundle, named by its digest. Bundles
-// live under a `bundles/` subtree so they never collide with the git path's
-// SHA-named packs or its single `current` pointer.
-func bundleDir(cacheDir, digest string) string {
-	return filepath.Join(cacheDir, "bundles", digest)
+// bundleDir is the cache directory for one bundle, named by its digest.
+func bundleDir(bundleRoot, digest string) string {
+	return filepath.Join(bundleRoot, digest)
 }
 
 // bundleExists reports whether a *complete* bundle for digest is cached — the
 // directory exists and carries the completeness marker. A markerless directory
 // is a partial install and is treated as absent.
-func bundleExists(cacheDir, digest string) bool {
-	dir := bundleDir(cacheDir, digest)
+func bundleExists(bundleRoot, digest string) bool {
+	dir := bundleDir(bundleRoot, digest)
 	info, err := os.Stat(dir)
 	if err != nil || !info.IsDir() {
 		return false
@@ -219,12 +222,11 @@ func bundleExists(cacheDir, digest string) bool {
 // installBundle writes fsys into the content-addressed cache for digest. It
 // materializes into a temp dir, marks it complete, then atomically renames it
 // into place, so a concurrent reader never sees a half-written bundle.
-func installBundle(cacheDir, digest string, fsys fs.FS) error {
-	root := filepath.Join(cacheDir, "bundles")
-	if err := os.MkdirAll(root, 0o755); err != nil {
+func installBundle(bundleRoot, digest string, fsys fs.FS) error {
+	if err := os.MkdirAll(bundleRoot, 0o755); err != nil {
 		return err
 	}
-	tmp, err := os.MkdirTemp(root, ".tmp-bundle-*")
+	tmp, err := os.MkdirTemp(bundleRoot, ".tmp-bundle-*")
 	if err != nil {
 		return err
 	}
@@ -236,7 +238,7 @@ func installBundle(cacheDir, digest string, fsys fs.FS) error {
 	if err := markPackComplete(tmp); err != nil {
 		return err
 	}
-	dest := bundleDir(cacheDir, digest)
+	dest := bundleDir(bundleRoot, digest)
 	// A concurrent resolve may have installed the identical (digest-named)
 	// content first; that is success, not a conflict.
 	if _, err := os.Stat(dest); err == nil {
