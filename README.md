@@ -241,7 +241,10 @@ The rule schema's `language:` field gates per-language rule sets.
   detection (`trustabl scan`) makes no network call — there is no LLM involved in
   the scan itself. `trustabl enrich` reads the scan output and calls Anthropic with
   BYOK (key stored via `trustabl llm key set` at `~/.config/trustabl/keys.json`,
-  mode 0600). `internal/inference/router.go` remains a non-functional placeholder.
+  mode 0600). The Anthropic call carries a request timeout, and `--apply` rewrites
+  a file only when its current contents still match what the model reviewed
+  (writing a `.trustabl.bak` backup first) — a stale scan is skipped, never
+  mis-applied.
 - **Confidence scores are heuristic**, not LLM-judged, and not yet
   calibrated against a labelled real-agent corpus — treat findings as
   signal to investigate.
@@ -686,7 +689,6 @@ The scan only **fails** (exit 2) when nothing usable remains:
 | Rule engine        | `internal/rules/{schema,loader,evaluator,predicates,rule_detector}.go` |
 | Scoring engine     | `internal/analysis/scoring.go`           |
 | Report renderer    | `internal/review/diff.go` (human), `internal/sarif/render.go` (SARIF), JSON marshal in `cmd/trustabl` |
-| Inference router   | `internal/inference/router.go`           |
 | LLM config         | `internal/llm/` (key storage · masking · validation) |
 
 Rule packs live in the separate `trustabl-rules` git repository (grouped

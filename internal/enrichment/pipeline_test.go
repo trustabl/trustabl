@@ -240,6 +240,7 @@ func TestPipeline_Apply_WritesToDisk(t *testing.T) {
 				Fix:         "Add guardrails",
 				LineStart:   2,
 				LineEnd:     2,
+				Original:    "    agent = Agent()",
 				Replacement: "    agent = Agent(input_guardrails=[g])",
 			},
 		}},
@@ -472,7 +473,7 @@ func TestPipeline_DiffWithApply(t *testing.T) {
 		Diff:     true,
 		Apply:    true,
 		llm: &mockLLM{results: []enrichResult{
-			{Explanation: "missing guardrail", Fix: "add guardrail", LineStart: 2, LineEnd: 2, Replacement: "    agent = Agent(input_guardrails=[g])"},
+			{Explanation: "missing guardrail", Fix: "add guardrail", LineStart: 2, LineEnd: 2, Original: "    agent = Agent()", Replacement: "    agent = Agent(input_guardrails=[g])"},
 		}},
 	}
 
@@ -496,6 +497,55 @@ func TestPipeline_DiffWithApply(t *testing.T) {
 	// Diff must still be populated
 	if enriched.Findings[0].Diff == "" {
 		t.Error("Diff = empty, want non-empty when Diff=true and Apply=true")
+	}
+}
+
+// TestPipeline_Apply_SkipsOnContentAnchorMismatch is the keystone data-safety
+// test: when the file on disk no longer matches the `original` the model echoed
+// (e.g. it was edited since the scan), the patch must be skipped, the file left
+// byte-for-byte unchanged, and no backup written — never a wrong-line overwrite.
+func TestPipeline_Apply_SkipsOnContentAnchorMismatch(t *testing.T) {
+	dir := t.TempDir()
+	// Line 2 on disk differs from what the model echoes as `original` below.
+	onDisk := "def run():\n    agent = SomethingElse()\n    return agent\n"
+	writeTempFile(t, dir, "agent.py", onDisk)
+
+	result := &models.ScanResult{
+		Findings: []models.Finding{
+			{RuleID: "CSDK-010", FilePath: "agent.py", Line: 2, Title: "No guardrail"},
+		},
+	}
+	p := &Pipeline{
+		RepoRoot: dir,
+		Apply:    true,
+		llm: &mockLLM{results: []enrichResult{
+			{
+				Explanation: "Missing guardrail",
+				Fix:         "Add guardrails",
+				LineStart:   2,
+				LineEnd:     2,
+				Original:    "    agent = Agent()", // what the model saw — does NOT match the current file
+				Replacement: "    agent = Agent(input_guardrails=[g])",
+			},
+		}},
+	}
+
+	enriched, err := p.Run(context.Background(), result)
+	if err != nil {
+		t.Fatalf("Run() error: %v", err)
+	}
+	if enriched.Findings[0].Applied {
+		t.Error("Applied = true, want false when the file no longer matches the model's echoed original")
+	}
+	content, err := os.ReadFile(filepath.Join(dir, "agent.py"))
+	if err != nil {
+		t.Fatalf("read file: %v", err)
+	}
+	if string(content) != onDisk {
+		t.Errorf("file must be left byte-for-byte unchanged on anchor mismatch; got:\n%s", content)
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, "agent.py.trustabl.bak")); statErr == nil {
+		t.Error("no backup should be written when nothing is applied")
 	}
 }
 

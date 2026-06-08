@@ -202,14 +202,24 @@ func (p *Pipeline) enrichFile(ctx context.Context, client llmEnricher, filePath 
 		}
 
 		if p.Apply && r.LineStart > 0 && r.LineEnd >= r.LineStart && r.Replacement != "" && !r.FalsePositive {
-			patches = append(patches, indexedPatch{
-				idx: i,
-				patch: filePatch{
-					lineStart:   r.LineStart,
-					lineEnd:     r.LineEnd,
-					replacement: r.Replacement,
-				},
-			})
+			// Content anchor: only apply when the file STILL holds the exact lines
+			// the model echoed back. A mismatch means the line numbers no longer
+			// point at the reviewed code (stale scan, edited file, or a
+			// misaligned/hallucinated result), so writing there would clobber
+			// unrelated lines — skip it instead.
+			if patchAnchorMatches(lines, r.LineStart, r.LineEnd, r.Original) {
+				patches = append(patches, indexedPatch{
+					idx: i,
+					patch: filePatch{
+						lineStart:   r.LineStart,
+						lineEnd:     r.LineEnd,
+						replacement: r.Replacement,
+					},
+				})
+			} else {
+				log.Printf("warn: skipping --apply fix for %s lines %d-%d (%s): the file no longer matches what the model reviewed (changed since the scan?); left unchanged",
+					filePath, r.LineStart, r.LineEnd, findings[i].RuleID)
+			}
 		}
 	}
 
@@ -223,14 +233,18 @@ func (p *Pipeline) enrichFile(ctx context.Context, client llmEnricher, filePath 
 			log.Printf("warn: apply patches to %s: %v", filePath, applyErr)
 		} else {
 			dest := filepath.Join(p.RepoRoot, filePath)
-			tmp, tmpErr := writeTmp(dest, []byte(updated))
-			if tmpErr != nil {
+			// Write a recovery backup of the ORIGINAL before overwriting. If the
+			// backup cannot be written, skip the apply rather than leave the user
+			// with no way back from a bad LLM rewrite.
+			if bakErr := os.WriteFile(dest+".trustabl.bak", fileContent, 0o644); bakErr != nil {
+				log.Printf("warn: could not write backup %s.trustabl.bak (%v); skipping --apply to avoid an unrecoverable overwrite", dest, bakErr)
+			} else if tmp, tmpErr := writeTmp(dest, []byte(updated)); tmpErr != nil {
 				log.Printf("warn: write tmp for %s: %v", dest, tmpErr)
 			} else if renameErr := os.Rename(tmp, dest); renameErr != nil {
 				_ = os.Remove(tmp)
 				log.Printf("warn: rename %s: %v", dest, renameErr)
 			} else {
-				log.Printf("applied %d fix(es) to %s", len(patches), filePath)
+				log.Printf("applied %d fix(es) to %s (backup: %s.trustabl.bak)", len(patches), filePath, filePath)
 				for _, ip := range patches {
 					out[ip.idx].Applied = true
 				}
@@ -239,6 +253,21 @@ func (p *Pipeline) enrichFile(ctx context.Context, client llmEnricher, filePath 
 	}
 
 	return out
+}
+
+// patchAnchorMatches is the --apply content anchor: it reports whether the
+// current file's lines [lineStart,lineEnd] (1-based) exactly equal the `original`
+// the model echoed. A mismatch — or a missing echo — means the patch can no
+// longer be applied safely, so the caller must skip it rather than overwrite by
+// line number alone.
+func patchAnchorMatches(lines []string, lineStart, lineEnd int, original string) bool {
+	if original == "" {
+		return false // no verbatim echo → cannot verify → fail safe
+	}
+	if lineStart < 1 || lineEnd > len(lines) || lineStart > lineEnd {
+		return false
+	}
+	return strings.Join(lines[lineStart-1:lineEnd], "\n") == original
 }
 
 type filePatch struct {
