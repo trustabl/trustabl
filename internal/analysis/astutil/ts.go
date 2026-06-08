@@ -26,11 +26,20 @@ func NewTSXParser() *sitter.Parser {
 	return p
 }
 
-// ParserKindForExtension returns "typescript" for .ts/.mts/.cts, "tsx" for
-// .tsx, "" otherwise. Callers dispatch on the result to pick a parser.
+// ParserKindForExtension returns "typescript" for .ts/.mts/.cts, "tsx" for .tsx
+// and for every JavaScript extension (.js/.jsx/.mjs/.cjs), "" otherwise. Callers
+// dispatch on the result to pick a parser. JavaScript routes to the tsx grammar
+// deliberately: tsx is a superset that parses plain JS and tolerates JSX inside
+// a .js file, so one parser covers the whole JS family. Discovery stamps these
+// defs LanguageTypeScript; the scanner re-tags JS-sourced defs to
+// LanguageJavaScript after edge resolution (see scanner.retagJavaScriptDefs).
 func ParserKindForExtension(path string) string {
 	switch {
-	case strings.HasSuffix(path, ".tsx"):
+	case strings.HasSuffix(path, ".tsx"),
+		strings.HasSuffix(path, ".jsx"),
+		strings.HasSuffix(path, ".js"),
+		strings.HasSuffix(path, ".mjs"),
+		strings.HasSuffix(path, ".cjs"):
 		return "tsx"
 	case strings.HasSuffix(path, ".ts"),
 		strings.HasSuffix(path, ".mts"),
@@ -40,17 +49,35 @@ func ParserKindForExtension(path string) string {
 	return ""
 }
 
-// TSImportAliases walks a parsed TS file's top-level import_statement nodes
-// and returns a map: local-binding-name -> canonical-export-name, for every
-// import that targets `module`. Sentinel canonical values:
+// IsJavaScriptExtension reports whether path names a JavaScript source file
+// (.js/.jsx/.mjs/.cjs): the set recon classifies into ScanManifest.JavaScriptFiles
+// and the set ParserKindForExtension routes to the tsx grammar. The scanner uses
+// it to re-tag JS-sourced defs (discovery stamps the TS-family LanguageTypeScript)
+// to LanguageJavaScript after edge resolution. Case-sensitive, mirroring
+// ParserKindForExtension.
+func IsJavaScriptExtension(path string) bool {
+	return strings.HasSuffix(path, ".js") || strings.HasSuffix(path, ".jsx") ||
+		strings.HasSuffix(path, ".mjs") || strings.HasSuffix(path, ".cjs")
+}
+
+// TSImportAliases walks a parsed TS/JS file's ES import_statement nodes AND its
+// CommonJS require() variable bindings, returning a map: local-binding-name ->
+// canonical-export-name, for every import/require that targets `module`.
+// Sentinel canonical values:
 //
-//	"*"        — namespace import: `import * as ns from "module"`
-//	"default"  — default import:   `import x from "module"`
+//	"*"        — namespace:      `import * as ns from "module"` or `const ns = require("module")`
+//	"default"  — default import: `import x from "module"`
 //
-// Named imports map their local name to the original export name. A renamed
-// import (`import { tool as t }`) maps "t" -> "tool"; a plain named import
-// (`import { tool }`) maps "tool" -> "tool". Imports from any module other
-// than `module` are ignored.
+// Named bindings map their local name to the original export name, for both ES
+// imports and CommonJS require destructuring:
+//
+//	import { tool as t } from "module"      "t" -> "tool"
+//	import { tool } from "module"           "tool" -> "tool"
+//	const { tool: t } = require("module")   "t" -> "tool"
+//	const { tool } = require("module")      "tool" -> "tool"
+//	const x = require("module").tool        "x" -> "tool"
+//
+// Imports from any module other than `module` are ignored.
 func TSImportAliases(root *sitter.Node, src []byte, module string) map[string]string {
 	return TSImportAliasesMatch(root, src, func(mod string) bool { return mod == module })
 }
@@ -66,27 +93,33 @@ func TSImportAliasesMatch(root *sitter.Node, src []byte, match func(mod string) 
 		return out
 	}
 	Walk(root, func(n *sitter.Node) bool {
-		if n.Type() != "import_statement" {
-			return true
-		}
-		// source field is a string literal node like "@anthropic-ai/...".
-		source := n.ChildByFieldName("source")
-		if source == nil {
-			return true
-		}
-		raw := NodeText(source, src)
-		if len(raw) < 2 {
-			return true
-		}
-		// Strip surrounding quotes.
-		mod := raw[1 : len(raw)-1]
-		if !match(mod) {
-			return true
-		}
-		// Walk children for import_clause(s): named_imports / namespace_import / identifier
-		for i := 0; i < int(n.NamedChildCount()); i++ {
-			c := n.NamedChild(i)
-			collectImportSpec(c, src, out)
+		switch n.Type() {
+		case "import_statement":
+			// source field is a string literal node like "@anthropic-ai/...".
+			source := n.ChildByFieldName("source")
+			if source == nil {
+				return true
+			}
+			raw := NodeText(source, src)
+			if len(raw) < 2 {
+				return true
+			}
+			// Strip surrounding quotes.
+			mod := raw[1 : len(raw)-1]
+			if !match(mod) {
+				return true
+			}
+			// Walk children for import_clause(s): named_imports / namespace_import / identifier
+			for i := 0; i < int(n.NamedChildCount()); i++ {
+				c := n.NamedChild(i)
+				collectImportSpec(c, src, out)
+			}
+		case "variable_declarator":
+			// CommonJS require() bindings (const { tool } = require("mod"),
+			// const ns = require("mod"), const x = require("mod").tool) so
+			// JavaScript apps written against CommonJS instead of ES modules are
+			// gated in and have their SDK symbols resolved the same way.
+			collectRequireSpec(n, src, match, out)
 		}
 		return true
 	})
@@ -133,6 +166,105 @@ func collectImportSpec(n *sitter.Node, src []byte, out map[string]string) {
 			out[localName] = origName
 		}
 	}
+}
+
+// collectRequireSpec recognizes CommonJS require() bindings on a
+// variable_declarator and merges them into out using the SAME canonical values
+// as ES imports, so downstream resolution (TSCalleeText) is identical:
+//
+//	const ns = require("mod")            ns   -> "*"      (namespace)
+//	const x  = require("mod").tool       x    -> "tool"   (member)
+//	const { tool } = require("mod")      tool -> "tool"   (named)
+//	const { tool: t } = require("mod")   t    -> "tool"   (renamed)
+//
+// let/var declarators reach here too (they share the variable_declarator node).
+// Only require() calls whose module specifier passes match are kept.
+func collectRequireSpec(decl *sitter.Node, src []byte, match func(mod string) bool, out map[string]string) {
+	value := decl.ChildByFieldName("value")
+	if value == nil {
+		return
+	}
+	// Resolve the require("mod") call, optionally behind a single .member access.
+	var call *sitter.Node
+	var member string
+	switch value.Type() {
+	case "call_expression":
+		call = value
+	case "member_expression":
+		if obj := value.ChildByFieldName("object"); obj != nil && obj.Type() == "call_expression" {
+			call = obj
+			if prop := value.ChildByFieldName("property"); prop != nil {
+				member = NodeText(prop, src)
+			}
+		}
+	}
+	if call == nil {
+		return
+	}
+	mod, ok := requireModule(call, src)
+	if !ok || !match(mod) {
+		return
+	}
+	name := decl.ChildByFieldName("name")
+	if name == nil {
+		return
+	}
+	switch name.Type() {
+	case "identifier":
+		local := NodeText(name, src)
+		if member != "" {
+			out[local] = member // const x = require("mod").tool
+		} else {
+			out[local] = "*" // const ns = require("mod")
+		}
+	case "object_pattern":
+		// Destructuring binds the module's named exports; a .member before the
+		// destructure is not a meaningful shape, so only the plain-call form is
+		// handled.
+		if member != "" {
+			return
+		}
+		for i := 0; i < int(name.NamedChildCount()); i++ {
+			c := name.NamedChild(i)
+			switch c.Type() {
+			case "shorthand_property_identifier_pattern":
+				// const { tool } = require(...)
+				k := NodeText(c, src)
+				out[k] = k
+			case "pair_pattern":
+				// const { tool: t } = require(...)
+				keyNode := c.ChildByFieldName("key")
+				valNode := c.ChildByFieldName("value")
+				if keyNode == nil || valNode == nil || valNode.Type() != "identifier" {
+					continue
+				}
+				out[NodeText(valNode, src)] = NodeText(keyNode, src)
+			}
+		}
+	}
+}
+
+// requireModule returns the unquoted module specifier of a require("mod") call
+// expression, or ("", false) when call is not a require() of a string literal.
+func requireModule(call *sitter.Node, src []byte) (string, bool) {
+	fn := call.ChildByFieldName("function")
+	if fn == nil || fn.Type() != "identifier" || NodeText(fn, src) != "require" {
+		return "", false
+	}
+	args := call.ChildByFieldName("arguments")
+	if args == nil {
+		return "", false
+	}
+	for i := 0; i < int(args.NamedChildCount()); i++ {
+		if a := args.NamedChild(i); a.Type() == "string" {
+			raw := NodeText(a, src)
+			if len(raw) < 2 {
+				return "", false
+			}
+			return raw[1 : len(raw)-1], true
+		}
+	}
+	return "", false
 }
 
 // TSImportAliasesAny returns the union of TSImportAliases across modules.

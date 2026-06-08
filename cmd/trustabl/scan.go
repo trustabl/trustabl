@@ -18,6 +18,7 @@ import (
 	"github.com/trustabl/trustabl/internal/progress"
 	"github.com/trustabl/trustabl/internal/review"
 	"github.com/trustabl/trustabl/internal/rules"
+	"github.com/trustabl/trustabl/internal/rulesign"
 	"github.com/trustabl/trustabl/internal/rulesource"
 	"github.com/trustabl/trustabl/internal/sarif"
 	"github.com/trustabl/trustabl/internal/scanner"
@@ -31,6 +32,7 @@ type scanFlags struct {
 	noColor       bool
 	rulesRepo     string
 	rulesRef      string
+	channel       string
 	noRulesUpdate bool
 	noProgress    bool
 	jsonOut       string
@@ -107,6 +109,9 @@ Exit codes:
 		"rules repository URL (default: official trustabl-rules; or TRUSTABL_RULES_REPO)")
 	cmd.Flags().StringVar(&f.rulesRef, "rules-ref", "",
 		"rules branch or tag to use (default: the repo's default branch)")
+	cmd.Flags().StringVar(&f.channel, "channel", "",
+		"resolve rules from a signed release channel (e.g. production, staging) instead of git; "+
+			"opt-in and signature-verified — a pre-release channel is watermarked in the report")
 	cmd.Flags().BoolVar(&f.noRulesUpdate, "no-rules-update", false,
 		"do not fetch rules; use the local cache only")
 	cmd.Flags().BoolVar(&f.noProgress, "no-progress", false,
@@ -319,6 +324,7 @@ func resolveAndScan(cfg *scanner.Config, f scanFlags, rep progress.Reporter) (mo
 	cfg.RulesFromCache = res.FromCache
 	cfg.RulesSchemaVersion = res.SchemaVersion
 	cfg.RulesSchemaNewer = res.SchemaNewer
+	cfg.RulesOrigin = rulesOriginFromScan(f)
 	cfg.Progress = rep
 
 	result, err := scanner.Run(*cfg)
@@ -368,6 +374,23 @@ func finishScan(result models.ScanResult, jobErr error, f scanFlags, log *logx.L
 				"No usable rules: the resolved rule pack contains zero rules.")
 			fmt.Fprintln(os.Stderr,
 				`The rules repository may be empty or truncated. Run "trustabl rules pull" to refresh.`)
+			return exitCodeError{2}
+		}
+		if errors.Is(jobErr, rulesource.ErrNoTrustKeys) {
+			fmt.Fprintln(os.Stderr,
+				"This build of Trustabl embeds no rule-signing keys, so signed channels "+
+					"(--channel) cannot be verified yet.")
+			fmt.Fprintln(os.Stderr,
+				"Omit --channel to use the default rules source.")
+			return exitCodeError{2}
+		}
+		if isRuleSignFailure(jobErr) {
+			fmt.Fprintln(os.Stderr,
+				"Refusing to scan: the signed rules channel failed verification.")
+			fmt.Fprintf(os.Stderr, "  %v\n", jobErr)
+			fmt.Fprintln(os.Stderr,
+				"Trustabl will not run unofficial, tampered, stale, or rolled-back rules. "+
+					"Check the --channel value, or omit it to use the default rules source.")
 			return exitCodeError{2}
 		}
 		// A generic error was already surfaced to the user by the reporter's
@@ -583,8 +606,37 @@ func rulesConfigFromScan(f scanFlags) rulesource.Config {
 	return rulesource.Config{
 		RepoURL:  repo,
 		Ref:      f.rulesRef,
+		Channel:  f.channel,
 		NoUpdate: f.noRulesUpdate,
 	}
+}
+
+// rulesOriginFromScan classifies the provenance of the rules for this scan: a
+// signed channel when --channel is set, otherwise the unsigned git path —
+// marked Custom when the operator overrode the default rules repo.
+func rulesOriginFromScan(f scanFlags) models.RulesOrigin {
+	if f.channel != "" {
+		return models.RulesOrigin{Signed: true, Channel: f.channel}
+	}
+	custom := f.rulesRepo != "" || os.Getenv("TRUSTABL_RULES_REPO") != ""
+	return models.RulesOrigin{Custom: custom}
+}
+
+// isRuleSignFailure reports whether err is a signed-channel verification failure
+// — a bad signature, an untrusted/expired key, channel confusion, an expired or
+// rolled-back statement, a digest mismatch, or a malformed statement. These are
+// refusals, not transient errors: the engine must not fall back to running
+// unverified rules.
+func isRuleSignFailure(err error) bool {
+	return errors.Is(err, rulesign.ErrBadSignature) ||
+		errors.Is(err, rulesign.ErrUnknownKeyID) ||
+		errors.Is(err, rulesign.ErrKeyExpired) ||
+		errors.Is(err, rulesign.ErrKeyNotYetValid) ||
+		errors.Is(err, rulesign.ErrChannelMismatch) ||
+		errors.Is(err, rulesign.ErrStatementExpired) ||
+		errors.Is(err, rulesign.ErrVersionRegression) ||
+		errors.Is(err, rulesign.ErrDigestMismatch) ||
+		errors.Is(err, rulesign.ErrStatementMalformed)
 }
 
 func parseCategories(s string) ([]models.DetectorCategory, error) {

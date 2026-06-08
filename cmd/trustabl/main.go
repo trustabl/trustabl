@@ -96,6 +96,7 @@ with --strict), 2 = scanner error or no usable rules.`,
 	rootCmd.AddCommand(newMCPCommand())
 	rootCmd.AddCommand(newLLMCommand())
 	rootCmd.AddCommand(newEnrichCommand())
+	rootCmd.AddCommand(newCapabilitiesCommand())
 
 	if err := rootCmd.Execute(); err != nil {
 		var ec exitCodeError

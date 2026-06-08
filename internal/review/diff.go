@@ -39,6 +39,12 @@ func (r *Renderer) Render(result models.ScanResult) string {
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "%s\n", styleHeader.Render("Scan summary"))
+	// Watermark any scan that did not use blessed, signature-verified production
+	// rules (a pre-release channel or an unsigned custom source). Deterministic
+	// from the origin, so it does not affect byte-stability.
+	if wm := result.RulesOrigin.Watermark(); wm != "" {
+		fmt.Fprintf(&b, "  %s\n", styleMed.Render("⚠ "+wm))
+	}
 	fmt.Fprintf(&b, "  Repo:           %s\n", result.Repo)
 	fmt.Fprintf(&b, "  Languages:      %s\n", csv(result.Languages))
 	fmt.Fprintf(&b, "  SDKs:           %s\n", csv(result.SDKs))
@@ -116,6 +122,19 @@ func (r *Renderer) Render(result models.ScanResult) string {
 	}
 	fmt.Fprintf(&b, "  Agents found:       %d\n", len(result.Agents))
 	fmt.Fprintf(&b, "  Findings:           %d\n", len(result.Findings))
+	if n := len(result.RulesSkipped); n > 0 {
+		// A scan that skipped rules is DEGRADED, not clean — surface it as a
+		// first-class, attention-drawing summary line, not only a stderr warning
+		// and one INFO finding (META-005 still carries the per-rule detail). This
+		// is what keeps a partial scan from reading as a complete one.
+		reason := "they use a rule feature this build does not understand"
+		if result.RulesSchemaNewer {
+			reason = "the rule pack targets a newer schema than this build"
+		}
+		fmt.Fprintf(&b, "  %s %s\n",
+			styleMed.Render(fmt.Sprintf("Rules skipped:      %d", n)),
+			styleDim.Render("(degraded scan: "+reason+" — upgrade Trustabl to evaluate them)"))
+	}
 	sevTag := func(s models.Severity) string {
 		switch s {
 		case models.SeverityCritical:

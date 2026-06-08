@@ -45,6 +45,11 @@ type Config struct {
 	// ScanResult and used by the CLI's "rules newer than this build" warning.
 	RulesSchemaVersion int
 	RulesSchemaNewer   bool
+	// RulesOrigin records the provenance of the rules (signed channel, unsigned
+	// git, or custom override). It is surfaced on ScanResult as a report
+	// watermark and folded into ScanID so different-provenance scans of the same
+	// code get distinct IDs.
+	RulesOrigin models.RulesOrigin
 
 	// Progress receives real-time phase events. Nil means no progress output.
 	Progress progress.Reporter
@@ -153,7 +158,7 @@ func Run(cfg Config) (models.ScanResult, error) {
 	// Step 2: inventory (per-language AST; Python only for now)
 	rep.StartPhase("inventory", "Inventory")
 	inventoryStop := log.Timer("inventory")
-	rep.SetTotal(len(profile.Manifest.PythonFiles) + len(profile.Manifest.TypeScriptFiles))
+	rep.SetTotal(len(profile.Manifest.PythonFiles) + len(profile.Manifest.TypeScriptFiles) + len(profile.Manifest.JavaScriptFiles) + len(profile.Manifest.GoFiles) + len(profile.Manifest.CSharpFiles) + len(profile.Manifest.PHPFiles) + len(profile.Manifest.RustFiles))
 	tools, parsed, pySkipped, err := analysis.DiscoverTools(ctx, profile.Manifest, func(path string) {
 		rep.Advance(path)
 	})
@@ -174,9 +179,18 @@ func Run(cfg Config) (models.ScanResult, error) {
 	guardrails := analysis.DiscoverGuardrails(parsed)
 	sessions := analysis.DiscoverSessions(parsed)
 
-	// TS block: parse TypeScript files, then run TS-specific discovery
-	// (Claude SDK + OpenAI Agents + Google ADK).
-	tsFiles, tsSkipped := parseTSFiles(ctx, profile.Manifest.TypeScriptFiles, profile.Manifest.RepoRoot, func(path string) {
+	// TS block: parse TypeScript AND JavaScript files, then run TS-family
+	// discovery (Claude SDK + OpenAI Agents + Google ADK + LangChain + Vercel +
+	// MCP). JavaScript shares the tree-sitter grammar (the tsx parser parses
+	// plain JS) and every discovery/predicate path, so .js/.jsx/.mjs/.cjs flow
+	// through the same passes; discovery stamps them LanguageTypeScript and
+	// retagJavaScriptDefs (after ResolveEdges, below) corrects them to
+	// LanguageJavaScript for honest output. Both ES-module imports and CommonJS
+	// require() bindings are recognized (astutil.TSImportAliases handles both).
+	tsAndJSPaths := make([]string, 0, len(profile.Manifest.TypeScriptFiles)+len(profile.Manifest.JavaScriptFiles))
+	tsAndJSPaths = append(tsAndJSPaths, profile.Manifest.TypeScriptFiles...)
+	tsAndJSPaths = append(tsAndJSPaths, profile.Manifest.JavaScriptFiles...)
+	tsFiles, tsSkipped := parseTSFiles(ctx, tsAndJSPaths, profile.Manifest.RepoRoot, func(path string) {
 		rep.Advance(path)
 	})
 
@@ -224,6 +238,73 @@ func Run(cfg Config) (models.ScanResult, error) {
 	// loads automatically (same path as the Python MCP tools).
 	tools = append(tools, analysis.DiscoverTSMCPProper(tsFiles, nil)...)
 
+	// Go block: parse .go files and run Go MCP discovery (mark3labs/mcp-go +
+	// official modelcontextprotocol/go-sdk). Discovery is import-gated; Go MCP
+	// tools carry Kind=mcp_tool / Language=go, so deriveSDKsDetected stamps
+	// SDKMCP and the shared mcp/ pack's language:go rules audit them. Go has its
+	// own tree-sitter grammar, so it gets a dedicated parse pass (not the
+	// TS-family one).
+	goFiles, goSkipped := parseGoFiles(ctx, profile.Manifest.GoFiles, profile.Manifest.RepoRoot, func(path string) {
+		rep.Advance(path)
+	})
+	defer func() {
+		for _, pf := range goFiles {
+			if pf.Tree != nil {
+				pf.Tree.Close()
+			}
+		}
+	}()
+	tools = append(tools, analysis.DiscoverGoMCPTools(goFiles, nil)...)
+
+	// C# block: parse .cs files and run C# MCP discovery (the official
+	// ModelContextProtocol SDK). Import-gated inside discovery; C# MCP tools
+	// carry Kind=mcp_tool / Language=csharp, so deriveSDKsDetected stamps SDKMCP
+	// and the shared mcp/ pack's language:csharp rules audit them. C# has its own
+	// tree-sitter grammar, so it gets a dedicated parse pass.
+	csFiles, csSkipped := parseCSharpFiles(ctx, profile.Manifest.CSharpFiles, profile.Manifest.RepoRoot, func(path string) {
+		rep.Advance(path)
+	})
+	defer func() {
+		for _, pf := range csFiles {
+			if pf.Tree != nil {
+				pf.Tree.Close()
+			}
+		}
+	}()
+	tools = append(tools, analysis.DiscoverCSharpMCPTools(csFiles, nil)...)
+
+	// PHP block: parse .php files and run PHP MCP discovery (official mcp/sdk +
+	// community php-mcp/server). Import-gated inside discovery; PHP MCP tools
+	// carry Kind=mcp_tool / Language=php, so deriveSDKsDetected stamps SDKMCP and
+	// the shared mcp/ pack's language:php rules audit them.
+	phpFiles, phpSkipped := parsePHPFiles(ctx, profile.Manifest.PHPFiles, profile.Manifest.RepoRoot, func(path string) {
+		rep.Advance(path)
+	})
+	defer func() {
+		for _, pf := range phpFiles {
+			if pf.Tree != nil {
+				pf.Tree.Close()
+			}
+		}
+	}()
+	tools = append(tools, analysis.DiscoverPHPMCPTools(phpFiles, nil)...)
+
+	// Rust block: parse .rs files and run Rust MCP discovery (official rmcp crate,
+	// modelcontextprotocol/rust-sdk). Import-gated inside discovery; Rust MCP tools
+	// carry Kind=mcp_tool / Language=rust, so deriveSDKsDetected stamps SDKMCP and
+	// the shared mcp/ pack's language:rust rules audit them.
+	rustFiles, rustSkipped := parseRustFiles(ctx, profile.Manifest.RustFiles, profile.Manifest.RepoRoot, func(path string) {
+		rep.Advance(path)
+	})
+	defer func() {
+		for _, pf := range rustFiles {
+			if pf.Tree != nil {
+				pf.Tree.Close()
+			}
+		}
+	}()
+	tools = append(tools, analysis.DiscoverRustMCPTools(rustFiles, nil)...)
+
 	// Canonicalize tool/agent order before anything reads them. Discovery appends
 	// in walk order (Python -> ADK -> TS), which is deterministic only by accident
 	// of single-threaded lexical traversal — the same assumption the rest of the
@@ -264,14 +345,19 @@ func Run(cfg Config) (models.ScanResult, error) {
 		HasShellInvocations: deriveHasShellInvocations(tools),
 		UsesDefaultTracing:  computeUsesDefaultTracing(parsed),
 	}
-	// Combine the Python and TS parsed files into one explicitly-allocated slice.
-	// Using append(parsed, tsFiles...) inline would be unsafe if DiscoverTools ever
-	// returned a slice with spare capacity: two separate appends from the same base
-	// would alias the same backing array and could be mutated out from under each
-	// other. Allocate once, reuse for both ResolveEdges and registry.Run.
-	allParsed := make([]analysis.ParsedFile, 0, len(parsed)+len(tsFiles))
+	// Combine the Python, TS, and Go parsed files into one explicitly-allocated
+	// slice. Using append(parsed, tsFiles...) inline would be unsafe if
+	// DiscoverTools ever returned a slice with spare capacity: two separate
+	// appends from the same base would alias the same backing array and could be
+	// mutated out from under each other. Allocate once, reuse for both
+	// ResolveEdges and registry.Run.
+	allParsed := make([]analysis.ParsedFile, 0, len(parsed)+len(tsFiles)+len(goFiles)+len(csFiles)+len(phpFiles)+len(rustFiles))
 	allParsed = append(allParsed, parsed...)
 	allParsed = append(allParsed, tsFiles...)
+	allParsed = append(allParsed, goFiles...)
+	allParsed = append(allParsed, csFiles...)
+	allParsed = append(allParsed, phpFiles...)
+	allParsed = append(allParsed, rustFiles...)
 	analysis.ResolveEdges(&inventory, allParsed)
 	inventory.Subagents = analysis.DiscoverSubagents(profile.Manifest)
 	inventory.Skills = analysis.DiscoverSkills(profile.Manifest)
@@ -291,6 +377,15 @@ func Run(cfg Config) (models.ScanResult, error) {
 	if log.Enabled(logx.LevelDebug) {
 		logDiscoveredEntities(log, tools, agents)
 	}
+
+	// JavaScript files were parsed by the shared TS-family grammar and ran
+	// through discovery + ResolveEdges tagged LanguageTypeScript (so edge
+	// resolution, which special-cases TypeScript, treats them correctly). Re-tag
+	// the JS-sourced tools/agents/MCP servers to LanguageJavaScript now — after
+	// edges are resolved, before analysis — so the inventory honestly reports the
+	// source language while the analysis gate/predicates (TS/JS-family-aware via
+	// models.IsTSOrJS) still audit them with the TypeScript rule packs.
+	retagJavaScriptDefs(&inventory)
 
 	// Step 3: policy selection
 	if cfg.RulesFS == nil {
@@ -342,13 +437,18 @@ func Run(cfg Config) (models.ScanResult, error) {
 	// file must not abort the scan), but that skip has to be visible — a scan
 	// that silently dropped half the repo must not look like a clean result.
 	// `parsed` holds the successfully parsed Python files; `tsFiles` the
-	// successfully parsed TypeScript files. JavaScript files are inventoried but
-	// not yet AST-parsed, so they are not counted as attempted here.
-	filesParsed := len(parsed) + len(tsFiles)
-	filesAttempted := len(profile.Manifest.PythonFiles) + len(profile.Manifest.TypeScriptFiles)
-	// Name the skipped files (Python + TS), not just count them, so the report
-	// can say which inputs went unanalyzed. Sorted+deduped for determinism.
-	skippedFiles := append(append([]string{}, pySkipped...), tsSkipped...)
+	// successfully parsed TypeScript AND JavaScript files (the JS family shares
+	// the tsx grammar); `goFiles` the parsed Go files; `csFiles` the parsed C#
+	// files; `phpFiles` the parsed PHP files; `rustFiles` the parsed Rust files.
+	// All inventoried source languages count as attempted.
+	filesParsed := len(parsed) + len(tsFiles) + len(goFiles) + len(csFiles) + len(phpFiles) + len(rustFiles)
+	filesAttempted := len(profile.Manifest.PythonFiles) +
+		len(profile.Manifest.TypeScriptFiles) + len(profile.Manifest.JavaScriptFiles) +
+		len(profile.Manifest.GoFiles) + len(profile.Manifest.CSharpFiles) +
+		len(profile.Manifest.PHPFiles) + len(profile.Manifest.RustFiles)
+	// Name the skipped files (Python + TS/JS + Go + C# + PHP), not just count
+	// them, so the report can say which inputs went unanalyzed. Sorted+deduped.
+	skippedFiles := append(append(append(append(append(append([]string{}, pySkipped...), tsSkipped...), goSkipped...), csSkipped...), phpSkipped...), rustSkipped...)
 	skippedFiles = sortedUnique(skippedFiles)
 	coverage := models.Coverage{
 		FilesParsed:  filesParsed,
@@ -357,7 +457,7 @@ func Run(cfg Config) (models.ScanResult, error) {
 	}
 
 	return models.ScanResult{
-		ScanID:              scanID(idLabel, profile.Manifest, cfg.RulesVersion, rules.SupportedSchemaVersion),
+		ScanID:              scanID(idLabel, profile.Manifest, cfg.RulesVersion, rules.SupportedSchemaVersion, cfg.RulesOrigin.Tag()),
 		Repo:                repoLabel,
 		Languages:           profile.Languages,
 		SDKs:                inventory.SDKsDetected,
@@ -382,6 +482,7 @@ func Run(cfg Config) (models.ScanResult, error) {
 		RulesSchemaVersion:  cfg.RulesSchemaVersion,
 		RulesSchemaNewer:    cfg.RulesSchemaNewer,
 		RulesSkipped:        sortedUnique(rulesSkipped),
+		RulesOrigin:         cfg.RulesOrigin,
 		Coverage:            coverage,
 	}, nil
 }
@@ -596,6 +697,141 @@ func parseTSFiles(ctx context.Context, paths []string, root string, onFile func(
 	return out, skipped
 }
 
+// parseGoFiles reads and parses each .go path with the tree-sitter-go grammar.
+// Unreadable/unparseable files are skipped (one bad file must not abort the
+// scan). Mirrors parseTSFiles but uses a single grammar — Go has no per-file
+// dialect split. The optional onFile callback drives the progress bar.
+func parseGoFiles(ctx context.Context, paths []string, root string, onFile func(string)) ([]analysis.ParsedFile, []string) {
+	var out []analysis.ParsedFile
+	var skipped []string
+	for _, rel := range paths {
+		if onFile != nil {
+			onFile(rel)
+		}
+		body, err := os.ReadFile(filepath.Join(root, rel))
+		if err != nil {
+			skipped = append(skipped, rel)
+			continue
+		}
+		// Fresh parser per file: ParseCtxTimeout's cancelable context arms
+		// go-tree-sitter's per-parser cancellation flag, so a reused parser could
+		// carry a prior parse's timeout into the next file. Isolate per file.
+		parser := astutil.NewGoParser()
+		tree, err := astutil.ParseCtxTimeout(ctx, parser, body)
+		if err != nil {
+			skipped = append(skipped, rel)
+			continue
+		}
+		out = append(out, analysis.ParsedFile{RelPath: rel, Source: body, Tree: tree})
+	}
+	return out, skipped
+}
+
+// parseCSharpFiles reads and parses each .cs path with the tree-sitter-c-sharp
+// grammar. Unreadable/unparseable files are skipped (one bad file must not abort
+// the scan). Mirrors parseGoFiles.
+func parseCSharpFiles(ctx context.Context, paths []string, root string, onFile func(string)) ([]analysis.ParsedFile, []string) {
+	var out []analysis.ParsedFile
+	var skipped []string
+	for _, rel := range paths {
+		if onFile != nil {
+			onFile(rel)
+		}
+		body, err := os.ReadFile(filepath.Join(root, rel))
+		if err != nil {
+			skipped = append(skipped, rel)
+			continue
+		}
+		parser := astutil.NewCSharpParser()
+		tree, err := astutil.ParseCtxTimeout(ctx, parser, body)
+		if err != nil {
+			skipped = append(skipped, rel)
+			continue
+		}
+		out = append(out, analysis.ParsedFile{RelPath: rel, Source: body, Tree: tree})
+	}
+	return out, skipped
+}
+
+// parsePHPFiles reads and parses each .php path with the tree-sitter-php grammar.
+// Unreadable/unparseable files are skipped (one bad file must not abort the
+// scan). Mirrors parseCSharpFiles.
+func parsePHPFiles(ctx context.Context, paths []string, root string, onFile func(string)) ([]analysis.ParsedFile, []string) {
+	var out []analysis.ParsedFile
+	var skipped []string
+	for _, rel := range paths {
+		if onFile != nil {
+			onFile(rel)
+		}
+		body, err := os.ReadFile(filepath.Join(root, rel))
+		if err != nil {
+			skipped = append(skipped, rel)
+			continue
+		}
+		parser := astutil.NewPHPParser()
+		tree, err := astutil.ParseCtxTimeout(ctx, parser, body)
+		if err != nil {
+			skipped = append(skipped, rel)
+			continue
+		}
+		out = append(out, analysis.ParsedFile{RelPath: rel, Source: body, Tree: tree})
+	}
+	return out, skipped
+}
+
+// parseRustFiles reads and parses each .rs path with the tree-sitter-rust
+// grammar. Unreadable/unparseable files are skipped (one bad file must not abort
+// the scan). Mirrors parsePHPFiles.
+func parseRustFiles(ctx context.Context, paths []string, root string, onFile func(string)) ([]analysis.ParsedFile, []string) {
+	var out []analysis.ParsedFile
+	var skipped []string
+	for _, rel := range paths {
+		if onFile != nil {
+			onFile(rel)
+		}
+		body, err := os.ReadFile(filepath.Join(root, rel))
+		if err != nil {
+			skipped = append(skipped, rel)
+			continue
+		}
+		parser := astutil.NewRustParser()
+		tree, err := astutil.ParseCtxTimeout(ctx, parser, body)
+		if err != nil {
+			skipped = append(skipped, rel)
+			continue
+		}
+		out = append(out, analysis.ParsedFile{RelPath: rel, Source: body, Tree: tree})
+	}
+	return out, skipped
+}
+
+// retagJavaScriptDefs corrects the Language of every discovered tool, agent, and
+// MCP server sourced from a JavaScript file to LanguageJavaScript. Discovery
+// runs JS through the shared TS-family passes and stamps LanguageTypeScript (the
+// tsx grammar parses both, and ResolveEdges special-cases TypeScript), so this
+// runs AFTER edge resolution and BEFORE analysis: the inventory then honestly
+// names the source language, while the analysis gate and predicates (which treat
+// TS and JS as one family via models.IsTSOrJS) still audit JS with the
+// TypeScript rule packs. GuardrailDef and SessionUse carry no Language field, so
+// they need no re-tag.
+func retagJavaScriptDefs(inv *models.RepoInventory) {
+	for i := range inv.Tools {
+		if astutil.IsJavaScriptExtension(inv.Tools[i].FilePath) {
+			inv.Tools[i].Language = models.LanguageJavaScript
+		}
+	}
+	for i := range inv.Agents {
+		if astutil.IsJavaScriptExtension(inv.Agents[i].FilePath) {
+			inv.Agents[i].Language = models.LanguageJavaScript
+		}
+	}
+	for i := range inv.MCPServers {
+		if astutil.IsJavaScriptExtension(inv.MCPServers[i].FilePath) {
+			inv.MCPServers[i].Language = models.LanguageJavaScript
+		}
+	}
+}
+
 // scanID is derived from a stable identity label (RemoteURL for remote scans,
 // the target's basename for local scans — never the absolute mount point), the
 // sorted set of inventoried files, and the rules version, so the same inputs
@@ -603,8 +839,10 @@ func parseTSFiles(ctx context.Context, paths []string, root string, onFile func(
 // Including the rules version means a different rule pack yields a distinct,
 // honest ID; folding the engine's supported schema version likewise keeps the
 // ID honest when forward-compatible loading makes two builds skip different
-// rules from the same pack.
-func scanID(idLabel string, manifest models.ScanManifest, rulesVersion string, engineSchema int) string {
+// rules from the same pack. The rules-origin tag is folded too, so two scans of
+// the same code differ in ID when one used signed production rules and the other
+// an unsigned or pre-release source.
+func scanID(idLabel string, manifest models.ScanManifest, rulesVersion string, engineSchema int, originTag string) string {
 	h := sha256.New()
 	h.Write([]byte(idLabel))
 	// Fold every inventoried file list so the ID is honest about all scanned
@@ -619,6 +857,10 @@ func scanID(idLabel string, manifest models.ScanManifest, rulesVersion string, e
 		{"py", manifest.PythonFiles},
 		{"ts", manifest.TypeScriptFiles},
 		{"js", manifest.JavaScriptFiles},
+		{"go", manifest.GoFiles},
+		{"csharp", manifest.CSharpFiles},
+		{"php", manifest.PHPFiles},
+		{"rust", manifest.RustFiles},
 		{"yaml", manifest.YAMLFiles},
 		{"json", manifest.JSONFiles},
 		{"md", manifest.MarkdownFiles},
@@ -640,5 +882,9 @@ func scanID(idLabel string, manifest models.ScanManifest, rulesVersion string, e
 	// not just the pack SHA.
 	h.Write([]byte{0})
 	h.Write([]byte(fmt.Sprintf("%d", engineSchema)))
+	// Fold the rules-origin tag (signed:<channel> / unsigned:custom /
+	// unsigned:default) so provenance is part of the scan's identity.
+	h.Write([]byte{0})
+	h.Write([]byte(originTag))
 	return "scan_" + hex.EncodeToString(h.Sum(nil)[:8])
 }

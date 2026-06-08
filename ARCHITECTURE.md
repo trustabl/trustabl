@@ -77,15 +77,37 @@ agent rule), MCP (MCP-011/012/013/014 tool rules), LangChain
 (LC-010/011/012/013/014 tool rules, LC-111 agent rule), and the Vercel AI SDK
 (VAI-001..005 + VAI-011 tool rules, VAI-006/007/008 agent rules, VAI-012 repo rule). A TS
 repo for any of these no longer produces a blanket META-004; the full
-per-SDK/language matrix lives in COVERAGE.md. The scanner
-can also recognize JavaScript and Go *files* (they appear in
-`manifest.typescript_files` and friends) but has no AST parser for them.
+per-SDK/language matrix lives in COVERAGE.md. JavaScript
+(`.js`/`.jsx`/`.mjs`/`.cjs`) is AST-parsed through the same TypeScript-family
+pipeline: discovery stamps the shared `LanguageTypeScript`, then the scanner
+re-tags JS-sourced defs to `LanguageJavaScript` after edge resolution
+(`retagJavaScriptDefs`) so the inventory honestly names the source language
+while the `language: typescript` rule packs still audit it (both ES `import` and
+CommonJS `require()` bindings are recognized). Go has tree-sitter-go discovery
+for MCP tools (mark3labs/mcp-go + the official modelcontextprotocol/go-sdk),
+emitted as `ToolDef{Kind: mcp_tool, Language: go}` and audited by the
+`language: go` rules in the mcp/ pack; other Go SDKs are recognized as files but
+not yet AST-parsed. C# has tree-sitter-c-sharp discovery for the official
+ModelContextProtocol SDK's `[McpServerTool]` methods, emitted as
+`ToolDef{Kind: mcp_tool, Language: csharp}` and audited by the `language: csharp`
+rules; other .NET agent SDKs (Semantic Kernel, AutoGen) are not yet parsed. PHP
+has tree-sitter-php discovery for `#[McpTool]`-attributed methods (official
+mcp/sdk + community php-mcp/server), emitted as
+`ToolDef{Kind: mcp_tool, Language: php}` and audited by the `language: php`
+rules; the smacker grammar parses single-line `#[...]` as a comment, so the
+attribute is read from comment text (multi-line attributes are a gap). Rust has
+tree-sitter-rust discovery for the official rmcp crate's `#[tool]`-attributed
+methods, emitted as `ToolDef{Kind: mcp_tool, Language: rust}` and audited by the
+`language: rust` rules; rmcp accepts a tool's description from either the
+`description = "..."` attribute argument or the method's `///` doc comment, and
+discovery honors both.
 
 The rule schema's `language:` field gates per-language rule sets. Existing
 rules declare `language: python` explicitly and the loader rejects any
-unknown language value. New TS-language rules (when they ship) will declare
-`language: typescript` and run only against TS tools; Python rules remain
-inert against TS tools.
+unknown language value. TS-language rules declare `language: typescript`; the
+language gate treats TypeScript and JavaScript as one family
+(`models.IsTSOrJS`), so a `typescript` rule fires on `.js` too. Python rules
+remain inert against TS/JS tools.
 
 Adding a new tool-discovery language requires:
 
@@ -116,6 +138,30 @@ naming the active commit. The clone lands via a temp dir + atomic rename, and
 the pack is named by the actually-cloned HEAD commit, so an interrupted clone
 never leaves a partial pack and the recorded SHA always matches the content
 (see `internal/rulesource/git.go`).
+
+Resolution sits behind a `rulesource.Source` interface with two
+implementations. The default `gitSource` is the git path described above.
+`releaseSource` (opt-in via `--channel <name>`) resolves rules from a
+**signature-verified release channel**: it verifies a signed channel statement
+against an embedded Ed25519 trust keyring (`internal/rulesign`), fetches the
+bundle the statement commits to from GitHub Releases, re-derives the bundle's
+canonical digest and matches it to the statement, then installs it to a
+content-addressed cache. The signed cache has its own root —
+`Config.BundleCacheDir`, default `os.UserCacheDir()/trustabl/bundles/`, a
+**sibling** of the git rules cache (`…/trustabl/rules/`), never under it — with
+installed bundles at `bundles/<digest>/` and the per-channel anti-rollback state
+at `bundles/channels/<channel>.json`. Keeping it outside the rules cache means
+no rules-cache pruner (this build's or an older pre-v2 one's) can ever delete
+it. Verification is fail-closed —
+a bad signature, an untrusted/expired key, channel confusion, an expired or
+rolled-back statement, or a digest mismatch each refuse the scan (exit 2)
+rather than running unverified rules; only a remote-contact failure degrades to
+the last verified bundle (marked stale past its statement's expiry). The
+provenance of the rules (`models.RulesOrigin`: signed channel / unsigned
+custom / unsigned default) is surfaced as a report watermark and folded into
+`ScanID`. The default scan is unchanged — `gitSource` stays the default until
+the signed-production cutover. See `internal/rulesource/releasesource.go` and
+`internal/rulesign/`.
 
 Resolution order:
 
@@ -595,9 +641,58 @@ For each language recon cleared, do the AST work and produce a `RepoInventory`:
   `[...]` array like every other TS pass): bare identifier → `ToolRef`; inline
   `tool({...})` / spread / other → agent `Opaque`; `<provider>.tools.<name>()` →
   `HostedToolRef` (canonicalized in `ts_vercel_hosted_tools.go`). `.js` / `.mjs`
-  apps are inventoried but not AST-parsed; VAI-009/010 (name rules) are v1 gaps.
+  / `.cjs` apps are now AST-parsed via the shared TS-family pipeline (ES `import`
+  and CommonJS require() bindings); VAI-009/010 (name
+  rules) are v1 gaps.
   VAI-011 (HTTP-call-without-timeout) ships via the structural
   `has_http_call_without_timeout` predicate.
+- **DiscoverGoMCPTools** (`go_mcp.go`) — Go MCP tools parsed with tree-sitter-go
+  (a dedicated parse pass, `parseGoFiles`), import-gated to the mcp-go modules
+  (mark3labs/mcp-go + the official modelcontextprotocol/go-sdk). Two shapes:
+  mark3labs `mcp.NewTool("name", mcp.WithDescription(...), mcp.WithString(...))`
+  (name + description + typed params from the `WithX` builders) and the official
+  `mcp.AddTool(server, &mcp.Tool{Name, Description}, fn)` (name + description from
+  the composite literal). Emits `ToolDef{Kind: mcp_tool, Language: go}`, so
+  deriveSDKsDetected stamps SDKMCP and the mcp/ pack's `language: go` rules
+  (MCP-015/016) audit them. metoro-io/mcp-golang's reflection-based
+  `RegisterTool`, the official SDK's handler-struct param schema, and Go
+  body-fact predicates are v1 gaps.
+- **DiscoverCSharpMCPTools** (`csharp_mcp.go`) — C# MCP tools parsed with
+  tree-sitter-c-sharp (a dedicated parse pass, `parseCSharpFiles`), gated to
+  files that `using` a ModelContextProtocol namespace. Recognizes the official
+  SDK's `[McpServerTool]`-attributed methods: name = the method name, description
+  from a co-located `[Description("...")]` attribute, params from the method
+  signature (typed — C# is statically typed). Emits
+  `ToolDef{Kind: mcp_tool, Language: csharp}`, so deriveSDKsDetected stamps
+  SDKMCP and the mcp/ pack's `language: csharp` rules (MCP-017/018) audit them.
+  The `[McpServerTool(Name=...)]` override and the Semantic Kernel
+  `[KernelFunction]` / AutoGen `[Function]` shapes are v1 gaps.
+- **DiscoverPHPMCPTools** (`php_mcp.go`) — PHP MCP tools parsed with
+  tree-sitter-php (a dedicated parse pass, `parsePHPFiles`), gated to files whose
+  `use` statements reference an `Mcp` namespace (covers the official `Mcp\...`
+  and community `PhpMcp\...` roots). Recognizes `#[McpTool]`-attributed methods:
+  name from the attribute's `name:` argument (falling back to the method name),
+  description from its `description:` argument, params + typed-params from the
+  method signature (PHP type hints are optional, so `HasTypedParams` is real
+  signal). The smacker grammar does not model PHP 8 attributes — a single-line
+  `#[...]` is parsed as a `comment` node — so the attribute is read from the
+  comment text immediately preceding the method via regex. Emits
+  `ToolDef{Kind: mcp_tool, Language: php}`, so deriveSDKsDetected stamps SDKMCP
+  and the mcp/ pack's `language: php` rules (MCP-019/020) audit them. Multi-line
+  `#[...]` attributes, `#[McpResource]` / `#[McpPrompt]`, and PHP body-fact
+  predicates are v1 gaps.
+- **DiscoverRustMCPTools** (`rust_mcp.go`) — Rust MCP tools parsed with
+  tree-sitter-rust (a dedicated parse pass, `parseRustFiles`), gated to files that
+  `use` the rmcp crate. Recognizes the official rmcp SDK's `#[tool]`-attributed
+  methods: name = the `name = "..."` arg (or the method name), description = the
+  `description = "..."` arg **or** the method's `///` doc comment (rmcp derives it
+  from either), params from the signature (typed — Rust is statically typed).
+  Unlike PHP, tree-sitter-rust models `#[tool]` as a real `attribute_item`
+  preceding-sibling node, so no comment-text hack is needed. Emits
+  `ToolDef{Kind: mcp_tool, Language: rust}`, so deriveSDKsDetected stamps SDKMCP
+  and the mcp/ pack's `language: rust` rules (MCP-021/022) audit them. Raw-string
+  descriptions, `#[prompt]` / resource shapes, and Rust body-fact predicates are
+  v1 gaps.
 - **ResolveEdges** — links agent `tools=`, `handoffs=`, `input_guardrails=`
   references to discovered definitions in the same repo; cross-module resolution
   uses import statements; unresolvable references are flagged `External=true`.
@@ -1347,9 +1442,12 @@ never the absolute mount point, so the same repo checked out at different paths
 yields the same ID), every inventoried
 file list (Python, TypeScript, JavaScript, YAML, JSON, Markdown — each sorted
 independently and folded in with a label so OS-walk order never leaks and a
-TS-only or markdown-only repo gets an honest ID), and the resolved rules
-version, so identical inputs produce diff-comparable JSON across runs — and a
-different rule pack yields a distinct, honest ID.
+TS-only or markdown-only repo gets an honest ID), the resolved rules
+version, the engine's supported schema version, and the rules-origin tag
+(`signed:<channel>` / `unsigned:custom` / `unsigned:default`), so identical
+inputs produce diff-comparable JSON across runs — and a different rule pack, a
+different engine schema, or a different rules provenance each yields a distinct,
+honest ID.
 
 **Language-field discipline**: `ToolDef`, `AgentDef`, and `MCPServerDef`
 carry a `Language` field populated by every discovery path and consulted
@@ -1467,11 +1565,19 @@ internal/
 │   ├── evaluator.go             MatchExpr.Evaluate — recursive walker.
 │   └── rule_detector.go         RuleDetector adapter + LoadRegistry.
 │                                (No embed.go: rules are not embedded — see rulesource.)
-├── rulesource/                  External-rules resolution.
-│   ├── git.go                   resolveRef / cloneInto via go-git.
+├── rulesign/                    Trust core (verify-only — no signing in the binary).
+│   ├── digest.go                CanonicalDigest (reproducible sha256 over a normalized tar).
+│   ├── keyring.go               Embedded Ed25519 trust keyring; verify-by-key-ID + validity windows.
+│   ├── keyring.json             Embedded trust keyring (empty until signing keys are published).
+│   ├── statement.go             Signed channel statement: parse + VerifyStatement (sig/channel/freshness/anti-rollback/digest).
+│   └── channelstate.go          Per-channel anti-rollback floor + offline pointer in the cache dir.
+├── rulesource/                  External-rules resolution (Source interface: gitSource + releaseSource).
+│   ├── git.go                   resolveRef / cloneInto via go-git (gitSource).
+│   ├── releasesource.go         Signed-channel resolve: verify → fetch → digest-bind → install (releaseSource).
+│   ├── githubtransport.go       GitHub Releases transport (statement + bundle by digest).
 │   ├── cache.go                 Cache layout + current-pointer helpers.
 │   ├── manifest.go              manifest.yaml read + schema-compatibility gate.
-│   └── rulesource.go            Resolve / Pull; Config; Resolved; DefaultRepoURL.
+│   └── rulesource.go            Source interface; Resolve / Pull; SourceFor; Config; Resolved; DefaultRepoURL.
 ├── sarif/                       SARIF 2.1.0 output renderer (`--format sarif`).
 │   ├── types.go                 SARIF struct definitions.
 │   └── render.go                Render(ScanResult) + helpers (severity, locations, fingerprints).

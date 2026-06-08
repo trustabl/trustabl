@@ -102,3 +102,210 @@ rules:
     fix: >
       Provide a concise `description` string in the registration config stating
       what the tool does and when a model should call it.
+
+  - id: MCP-015
+    title: Go MCP tool has no description
+    severity: low
+    confidence: 0.85
+    language: go
+    applies_to:
+      - mcp_tool
+    scope: tool
+    match:
+      has_docstring: false
+    explanation: >
+      An MCP server authored in Go advertises each tool's description to
+      connecting clients as the text a model uses to decide whether to call it. A
+      `mcp.NewTool("name", ...)` with no `mcp.WithDescription(...)` option (or an
+      `mcp.Tool{...}` whose `Description` is empty) gives every connecting model
+      nothing to route on, causing wrong-tool or skipped calls across all clients
+      of the server.
+    fix: >
+      Add `mcp.WithDescription("...")` to the `mcp.NewTool(...)` call (mark3labs/
+      mcp-go), or set the `Description` field on the `mcp.Tool` value (the
+      official go-sdk), stating what the tool does and when a model should call
+      it.
+
+  - id: MCP-016
+    title: Ambiguous Go MCP tool name
+    severity: low
+    confidence: 0.85
+    language: go
+    applies_to:
+      - mcp_tool
+    scope: tool
+    match:
+      name_in:
+        - process
+        - handle
+        - run
+        - do
+        - execute
+        - perform
+        - work
+        - thing
+        - stuff
+    explanation: >
+      A Go MCP tool's name is the first argument to `mcp.NewTool(...)` (or the
+      `Name` field of an `mcp.Tool`). Names like `process`, `handle`, or `run`
+      give a connecting model no signal about intent. Because an MCP server is
+      consumed by clients the author does not control, an ambiguous name degrades
+      tool selection everywhere the server is mounted and collides more easily
+      with similarly-named tools from other servers in the same session.
+    fix: >
+      Rename to a verb-object form, e.g. `summarize_invoice`, `fetch_weather`.
+
+  - id: MCP-017
+    title: C# MCP tool has no description
+    severity: low
+    confidence: 0.85
+    language: csharp
+    applies_to:
+      - mcp_tool
+    scope: tool
+    match:
+      has_docstring: false
+    explanation: >
+      A C# MCP server advertises each tool's description to connecting clients as
+      the text a model uses to decide whether to call it. An `[McpServerTool]`
+      method with no co-located `[Description("...")]` attribute advertises no
+      routing signal, causing wrong-tool or skipped calls across every client of
+      the server.
+    fix: >
+      Add a `[Description("...")]` attribute (System.ComponentModel) to the
+      `[McpServerTool]` method, stating what the tool does and when a model
+      should call it.
+
+  - id: MCP-018
+    title: Ambiguous C# MCP tool name
+    severity: low
+    confidence: 0.85
+    language: csharp
+    applies_to:
+      - mcp_tool
+    scope: tool
+    match:
+      name_in:
+        - process
+        - handle
+        - run
+        - do
+        - execute
+        - perform
+        - work
+        - thing
+        - stuff
+    explanation: >
+      A C# MCP tool's name defaults to the `[McpServerTool]` method name. Names
+      like `Process`, `Handle`, or `Run` give a connecting model no signal about
+      intent. Because an MCP server is consumed by clients the author does not
+      control, an ambiguous name degrades tool selection everywhere the server is
+      mounted and collides more easily with similarly-named tools from other
+      servers in the same session.
+    fix: >
+      Rename the method (or set `[McpServerTool(Name = "...")]`) to a verb-object
+      form, e.g. `SummarizeInvoice`, `FetchWeather`.
+
+  - id: MCP-019
+    title: PHP MCP tool has no description
+    severity: low
+    confidence: 0.85
+    language: php
+    applies_to:
+      - mcp_tool
+    scope: tool
+    match:
+      has_docstring: false
+    explanation: >
+      A PHP MCP server advertises each tool's description to connecting clients
+      as the text a model uses to decide whether to call it. A `#[McpTool]`
+      attribute with no `description:` argument advertises no routing signal,
+      causing wrong-tool or skipped calls across every client of the server.
+    fix: >
+      Add a `description:` argument to the `#[McpTool]` attribute, e.g.
+      `#[McpTool(description: '...')]`, stating what the tool does and when a
+      model should call it.
+
+  - id: MCP-020
+    title: Ambiguous PHP MCP tool name
+    severity: low
+    confidence: 0.85
+    language: php
+    applies_to:
+      - mcp_tool
+    scope: tool
+    match:
+      name_in:
+        - process
+        - handle
+        - run
+        - do
+        - execute
+        - perform
+        - work
+        - thing
+        - stuff
+    explanation: >
+      A PHP MCP tool's name is the `#[McpTool]` attribute's `name:` argument, or
+      the method name when that argument is omitted. Names like `process`,
+      `handle`, or `run` give a connecting model no signal about intent. Because
+      an MCP server is consumed by clients the author does not control, an
+      ambiguous name degrades tool selection everywhere the server is mounted and
+      collides more easily with similarly-named tools from other servers in the
+      same session.
+    fix: >
+      Rename the method (or set the `#[McpTool]` `name:` argument) to a
+      verb-object form, e.g. `summarize_invoice`, `fetch_weather`.
+
+  - id: MCP-021
+    title: Rust MCP tool has no description
+    severity: low
+    confidence: 0.85
+    language: rust
+    applies_to:
+      - mcp_tool
+    scope: tool
+    match:
+      has_docstring: false
+    explanation: >
+      A Rust MCP server (the official rmcp crate) advertises each tool's
+      description to connecting clients as the text a model uses to decide
+      whether to call it. The rmcp `#[tool]` macro derives that description from
+      either a `description = "..."` attribute argument or the method's `///`
+      doc comment; when neither is present the tool ships with no routing signal,
+      causing wrong-tool or skipped calls across every client of the server.
+    fix: >
+      Add a `description = "..."` argument to the `#[tool(...)]` attribute, or a
+      `///` doc comment on the method, stating what the tool does and when a
+      model should call it.
+
+  - id: MCP-022
+    title: Ambiguous Rust MCP tool name
+    severity: low
+    confidence: 0.85
+    language: rust
+    applies_to:
+      - mcp_tool
+    scope: tool
+    match:
+      name_in:
+        - process
+        - handle
+        - run
+        - do
+        - execute
+        - perform
+        - work
+        - thing
+        - stuff
+    explanation: >
+      A Rust MCP tool's name is the `#[tool]` attribute's `name = "..."` argument,
+      or the method name when that argument is omitted. Names like `process`,
+      `handle`, or `run` give a connecting model no signal about intent. Because
+      an MCP server is consumed by clients the author does not control, an
+      ambiguous name degrades tool selection everywhere the server is mounted and
+      collides more easily with similarly-named tools from other servers in the
+      same session.
+    fix: >
+      Rename the method (or set the `#[tool]` `name = "..."` argument) to a
+      verb-object form, e.g. `summarize_invoice`, `fetch_weather`.
