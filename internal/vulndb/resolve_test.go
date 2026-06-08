@@ -3,9 +3,13 @@ package vulndb
 import (
 	"archive/zip"
 	"bytes"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestLoadRecordsFromZip(t *testing.T) {
@@ -123,5 +127,91 @@ func TestResolve_OnProgressReportsEachEcosystem(t *testing.T) {
 	}
 	if !last.FromCache || last.Records != 1 || last.OSVEcosystem != "PyPI" || last.Index != 1 || last.Total != 1 {
 		t.Errorf("unexpected finish event: %+v", last)
+	}
+}
+
+func TestCacheStale(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "x.zip")
+	if !cacheStale(p, time.Hour) {
+		t.Error("a missing file must be stale (fetch)")
+	}
+	if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if cacheStale(p, time.Hour) {
+		t.Error("a just-written file must be fresh (no fetch)")
+	}
+	old := time.Now().Add(-2 * time.Hour)
+	_ = os.Chtimes(p, old, old)
+	if !cacheStale(p, time.Hour) {
+		t.Error("a 2h-old file must be stale vs a 1h maxAge")
+	}
+}
+
+// TestResolve_CacheFirst is the regression guard for the re-download bug: a fresh
+// cache must be reused without re-fetching; only a missing/stale cache (or
+// ForceRefresh) hits the network. A counting fake OSV server makes the fetch
+// count observable.
+func TestResolve_CacheFirst(t *testing.T) {
+	var z bytes.Buffer
+	zw := zip.NewWriter(&z)
+	w, _ := zw.Create("GHSA-srv.json")
+	_, _ = w.Write([]byte(`{"id":"GHSA-srv","affected":[{"package":{"ecosystem":"PyPI","name":"requests"}}]}`))
+	_ = zw.Close()
+	zipBytes := z.Bytes()
+
+	var hits int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		atomic.AddInt32(&hits, 1)
+		_, _ = w.Write(zipBytes)
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	cfg := ResolveConfig{Ecosystems: []string{"pypi"}, CacheDir: dir, BaseURL: srv.URL}
+
+	// 1) cold cache → one fetch, cached.
+	if _, err := Resolve(cfg); err != nil {
+		t.Fatal(err)
+	}
+	if got := atomic.LoadInt32(&hits); got != 1 {
+		t.Fatalf("cold cache: want 1 fetch, got %d", got)
+	}
+	// 2) fresh cache → reused, NO new fetch (the bug this guards).
+	if _, err := Resolve(cfg); err != nil {
+		t.Fatal(err)
+	}
+	if got := atomic.LoadInt32(&hits); got != 1 {
+		t.Fatalf("fresh cache: want the cache reused (still 1 fetch), got %d", got)
+	}
+	// 3) stale cache → re-fetch.
+	old := time.Now().Add(-48 * time.Hour)
+	if err := os.Chtimes(filepath.Join(dir, "PyPI.zip"), old, old); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Resolve(cfg); err != nil {
+		t.Fatal(err)
+	}
+	if got := atomic.LoadInt32(&hits); got != 2 {
+		t.Fatalf("stale cache: want a re-fetch (2 total), got %d", got)
+	}
+	// 4) ForceRefresh → fetch even though the cache is now fresh.
+	cfg.ForceRefresh = true
+	if _, err := Resolve(cfg); err != nil {
+		t.Fatal(err)
+	}
+	if got := atomic.LoadInt32(&hits); got != 3 {
+		t.Fatalf("ForceRefresh: want a forced fetch (3 total), got %d", got)
+	}
+	// 5) NoUpdate → never fetch, even when stale.
+	old2 := time.Now().Add(-72 * time.Hour)
+	_ = os.Chtimes(filepath.Join(dir, "PyPI.zip"), old2, old2)
+	cfg.ForceRefresh, cfg.NoUpdate = false, true
+	if _, err := Resolve(cfg); err != nil {
+		t.Fatal(err)
+	}
+	if got := atomic.LoadInt32(&hits); got != 3 {
+		t.Fatalf("NoUpdate: want no fetch (still 3), got %d", got)
 	}
 }

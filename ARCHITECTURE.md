@@ -470,8 +470,11 @@ For each language recon cleared, do the AST work and produce a `RepoInventory`:
 - **Vulnerability matching** ([`internal/vulndb`](internal/vulndb), opt-in via
   `--vuln-scan`) — the CVE layer on top of the BOM (TR-271). After analysis the
   scanner resolves a **pinned** OSV snapshot — each ecosystem's published OSV
-  export fetched from osv.dev, cached under the user cache dir with an offline
-  fallback (`trustabl vulndb pull` pre-warms it) — and matches every
+  export fetched from osv.dev and cached under the user cache dir, **cache-first**:
+  a cached export younger than `DefaultMaxAge` (24h) is reused without
+  re-downloading (so repeated scans don't re-pull tens of MB), a missing or stale
+  one is fetched, `trustabl vulndb pull` forces a refresh, and `--no-rules-update`
+  pins to the cache at any age (offline) — and matches every
   concretely-pinned `DepRef` against it: per-ecosystem version semantics (PEP 440
   for pypi, semver for the rest), the OSV introduced/fixed/last_affected range
   algorithm, and a CVSS 3.x base-score → severity bucketing. Each hit becomes a
