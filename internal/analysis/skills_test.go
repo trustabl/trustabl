@@ -169,6 +169,35 @@ func TestSkills_BundledFileInventory(t *testing.T) {
 	}
 }
 
+func TestSkills_BundledFileSecretScan(t *testing.T) {
+	dir := t.TempDir()
+	writeFixture(t, dir, "s/SKILL.md", "---\nname: s\n---\nbody\n")
+	// A committed credential — AKIAIOSFODNN7EXAMPLE is the public AWS-docs example
+	// access key id (synthetic). Created in a temp dir, never committed to the repo.
+	writeFixture(t, dir, "s/config/app.env", "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\n")
+	writeFixture(t, dir, "s/readme.txt", "no secrets in here\n")
+	manifest := models.ScanManifest{RepoRoot: dir, MarkdownFiles: []string{"s/SKILL.md"}}
+	got := analysis.DiscoverSkills(manifest)
+	if len(got) != 1 {
+		t.Fatalf("got %d skills, want 1", len(got))
+	}
+	var secretFile, cleanFile *models.BundledFile
+	for i := range got[0].BundledFiles {
+		switch got[0].BundledFiles[i].Path {
+		case "s/config/app.env":
+			secretFile = &got[0].BundledFiles[i]
+		case "s/readme.txt":
+			cleanFile = &got[0].BundledFiles[i]
+		}
+	}
+	if secretFile == nil || !secretFile.HasHardcodedSecret {
+		t.Errorf("config/app.env: want HasHardcodedSecret=true, got %+v", secretFile)
+	}
+	if cleanFile == nil || cleanFile.HasHardcodedSecret {
+		t.Errorf("readme.txt: want HasHardcodedSecret=false, got %+v", cleanFile)
+	}
+}
+
 func TestSkills_FrontmatterFields(t *testing.T) {
 	dir := t.TempDir()
 	writeFixture(t, dir, "f/SKILL.md",

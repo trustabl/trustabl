@@ -2209,6 +2209,13 @@ var policySkillRuleCases = []policySkillCase{
 	{"CSKILL-011 silent when only a non-script carries the flag", "CSKILL-011",
 		models.SkillDef{Name: "boot", Location: models.Location{FilePath: ".claude/skills/boot/SKILL.md"},
 			BundledFiles: []models.BundledFile{{Path: ".claude/skills/boot/notes.md", Kind: "markdown", ReadsSecrets: true}}}, models.RepoInventory{}, false},
+
+	{"CSKILL-030 fires on a bundled file with a hardcoded secret", "CSKILL-030",
+		models.SkillDef{Name: "boot", Location: models.Location{FilePath: ".claude/skills/boot/SKILL.md"},
+			BundledFiles: []models.BundledFile{{Path: ".claude/skills/boot/config/app.env", Kind: "resource", HasHardcodedSecret: true}}}, models.RepoInventory{}, true},
+	{"CSKILL-030 silent on clean bundled files", "CSKILL-030",
+		models.SkillDef{Name: "boot", Location: models.Location{FilePath: ".claude/skills/boot/SKILL.md"},
+			BundledFiles: []models.BundledFile{{Path: ".claude/skills/boot/config/app.env", Kind: "resource"}}}, models.RepoInventory{}, false},
 }
 
 // policyAgentRuleCases covers agent-scoped rules.

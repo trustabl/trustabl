@@ -913,6 +913,18 @@ func PredSkillBundledScriptReadsSecrets(s models.SkillDef) bool {
 	return false
 }
 
+// PredSkillBundledFileHasHardcodedSecret reports whether any non-binary bundled
+// file contains a hardcoded secret literal — a credential committed into the
+// skill, distinct from a script that reads one at runtime.
+func PredSkillBundledFileHasHardcodedSecret(s models.SkillDef) bool {
+	for _, b := range s.BundledFiles {
+		if b.HasHardcodedSecret {
+			return true
+		}
+	}
+	return false
+}
+
 // ─── repo predicates ──────────────────────────────────────────────────────────
 
 func PredRepoHasSDKInCode(sdks []string, inv models.RepoInventory) bool {
