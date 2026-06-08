@@ -1472,7 +1472,7 @@ Discipline rules:
   is legacy/uninitialized and the human renderer collapses such records to
   `file:N` form. Rule detectors that emit a `Finding` MUST propagate the
   entity's `Line` to `Finding.Line` so jump-to-source works from a finding —
-  this is currently done for all four scopes (tool, agent, subagent, repo).
+  this is currently done for all five scopes (tool, agent, subagent, skill, repo).
 - **No source-text storage.** The inventory is a structured *index of
   locations*; consumers fetch source by reading the file at
   `(FilePath, Line, EndLine)`. `RawSource` is deliberately **not** included
