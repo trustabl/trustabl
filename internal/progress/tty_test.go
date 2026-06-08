@@ -139,6 +139,27 @@ func TestModelSetProgressShowsFractionBar(t *testing.T) {
 	}
 }
 
+// SetDetail after SetProgress must drop the bar back to a spinner+status line —
+// this is what lets the vuln-scan resolve phase switch from a download bar to a
+// no-bar cache-load status without leaving a frozen bar behind.
+func TestModelSetDetailClearsFractionBar(t *testing.T) {
+	m := newModel()
+	m2, _ := m.Update(startPhaseMsg{key: "vuln-resolve", label: "Resolving"})
+	m3, _ := m2.(model).Update(setProgressMsg{fraction: 0.5, detail: "downloading npm — 45 MB / 197 MB"})
+	if s := m3.(model).current(); !s.hasFraction {
+		t.Fatal("precondition: SetProgress should set hasFraction")
+	}
+	m4, _ := m3.(model).Update(setDetailMsg{detail: "loaded PyPI (cached, 2/2)"})
+	mm := m4.(model)
+	if s := mm.current(); s.hasFraction {
+		t.Error("SetDetail must clear the fraction bar (hasFraction=false)")
+	}
+	v := mm.View()
+	if !strings.Contains(v, "loaded PyPI (cached, 2/2)") {
+		t.Errorf("view should show the cache status, got %q", v)
+	}
+}
+
 // completedLine renders a finished stage: a check mark, the stage
 // label, and its summary — but suppresses the summary when it's already in the
 // label (the clone label carries the URL, so it must not be doubled).

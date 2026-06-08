@@ -127,8 +127,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case setDetailMsg:
+		// SetDetail means "spinner + status line, no bar" — so it also clears a
+		// prior determinate fraction bar (e.g. switching from a download to a fast
+		// cache load), per its documented semantics.
 		if s := m.current(); s != nil {
-			s.detail = msg.detail
+			s.detail, s.hasFraction = msg.detail, false
 		}
 		return m, nil
 	case setProgressMsg:
