@@ -335,10 +335,12 @@ and reports each affected package as a finding carrying the advisory ID
 so a vulnerable dependency fails the scan through the normal severity gate and
 exit codes and lands in the JSON / SARIF output alongside the rule findings, on
 `ScanResult.vulnerabilities`. Unlike the rest of a scan it is **opt-in and
-online**: the OSV snapshot is fetched from osv.dev on first use and cached under
-your user cache directory (offline fallback thereafter). Run `trustabl vulndb
-pull` to pre-download the database so a later `--vuln-scan` runs fully offline
-(e.g. in CI or an air-gapped build). Only concretely-pinned versions are matched
+online**: the OSV snapshot is fetched from osv.dev on first use, cached under
+your user cache directory, and then **cache-first** — a later `--vuln-scan`
+reuses the cached database (no re-download) until it is older than 24h, so
+repeated scans are fast and offline-capable. `trustabl vulndb pull` refreshes the
+cache on demand; `--no-rules-update` pins to the cache at any age (fully offline).
+Only concretely-pinned versions are matched
 — a declared range (`^1.0`, `>=2`) can't be resolved to one version without a
 lockfile, so it is left unmatched rather than guessed. The snapshot version is
 folded into the `ScanID` only when `--vuln-scan` is on, so the result is honest

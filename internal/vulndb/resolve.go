@@ -22,6 +22,13 @@ import (
 // the OSV API, so determinism and the no-network contract hold.
 const osvExportBaseURL = "https://osv-vulnerabilities.storage.googleapis.com"
 
+// DefaultMaxAge is how long a cached OSV export is reused before --vuln-scan
+// re-fetches it. A day keeps repeated scans fast (a Python repo's PyPI export is
+// ~23 MB; npm's is far larger) while staying reasonably fresh. `vulndb pull`
+// (ForceRefresh) refreshes on demand; --no-rules-update (NoUpdate) pins to the
+// cache at any age.
+const DefaultMaxAge = 24 * time.Hour
+
 // ResolveConfig drives snapshot resolution.
 type ResolveConfig struct {
 	// Ecosystems is the set of trustabl ecosystem ids present in the BOM (pypi,
@@ -29,7 +36,16 @@ type ResolveConfig struct {
 	// Python-only repo never downloads npm's (huge) database.
 	Ecosystems []string
 	CacheDir   string // empty => os.UserCacheDir()/trustabl/vulndb
-	NoUpdate   bool   // offline: use the cache only, never fetch
+	NoUpdate   bool   // offline: use the cache only, never fetch (at any age)
+	// ForceRefresh fetches every ecosystem even if a fresh cache exists — used by
+	// `vulndb pull` to refresh the pinned snapshot on demand.
+	ForceRefresh bool
+	// MaxAge reuses a cached ecosystem export younger than this without
+	// re-fetching; an older or missing one is fetched (unless NoUpdate). Zero
+	// selects DefaultMaxAge. This is what makes repeated --vuln-scan runs reuse
+	// the cached download instead of pulling tens of MB every time.
+	MaxAge     time.Duration
+	BaseURL    string // OSV export base; empty => osvExportBaseURL (overridable for a mirror or tests)
 	HTTPClient *http.Client
 	// OnProgress, if set, receives per-ecosystem resolution events for a UI
 	// (progress bar / status line). It is advisory only — it never affects the
@@ -58,11 +74,13 @@ type Resolved struct {
 	FromCache bool   // true if every ecosystem came from cache (no successful fetch)
 }
 
-// Resolve loads the OSV snapshot for the BOM's ecosystems: it fetches each
-// ecosystem's all.zip (unless NoUpdate), caches it, and falls back to the cache
-// when the network is unavailable. The returned Version is a stable hash of the
-// exact bytes used, so a scan is honest about which snapshot produced its
-// findings.
+// Resolve loads the OSV snapshot for the BOM's ecosystems. It is CACHE-FIRST:
+// for each ecosystem it reuses the cached all.zip when present and younger than
+// MaxAge, fetching only a missing or stale one (so repeated --vuln-scan runs
+// don't re-download tens of MB each time). NoUpdate pins to the cache at any age;
+// ForceRefresh always fetches. A fetch failure falls back to whatever is cached.
+// The returned Version is a stable hash of the exact bytes used, so a scan is
+// honest about which snapshot produced its findings.
 func Resolve(cfg ResolveConfig) (*Resolved, error) {
 	cacheDir := cfg.CacheDir
 	if cacheDir == "" {
@@ -75,6 +93,14 @@ func Resolve(cfg ResolveConfig) (*Resolved, error) {
 	client := cfg.HTTPClient
 	if client == nil {
 		client = &http.Client{Timeout: 180 * time.Second}
+	}
+	baseURL := cfg.BaseURL
+	if baseURL == "" {
+		baseURL = osvExportBaseURL
+	}
+	maxAge := cfg.MaxAge
+	if maxAge <= 0 {
+		maxAge = DefaultMaxAge
 	}
 
 	ecos := uniqueOSVEcosystems(cfg.Ecosystems)
@@ -97,9 +123,11 @@ func Resolve(cfg ResolveConfig) (*Resolved, error) {
 		dest := filepath.Join(cacheDir, sanitizeEco(osvEco)+".zip")
 		var data []byte
 		thisFromCache := true
-		if !cfg.NoUpdate {
+		// Cache-first: fetch only when online AND (forced, or the cache is missing
+		// or stale). A fresh cache is reused without touching the network.
+		if !cfg.NoUpdate && (cfg.ForceRefresh || cacheStale(dest, maxAge)) {
 			onBytes := func(n int64) { report(ResolveProgress{BytesRead: n}) }
-			if fetched, ferr := fetchExport(client, osvEco, onBytes); ferr == nil {
+			if fetched, ferr := fetchExport(client, baseURL, osvEco, onBytes); ferr == nil {
 				thisFromCache = false
 				_ = atomicWrite(dest, fetched) // cache best-effort; use the bytes regardless
 				data = fetched
@@ -135,10 +163,22 @@ func Resolve(cfg ResolveConfig) (*Resolved, error) {
 	}, nil
 }
 
+// cacheStale reports whether the cached export at path is missing or older than
+// maxAge and so should be re-fetched. This is a cache-freshness decision based on
+// file mtime only — it never affects the resolved snapshot's Version (the content
+// hash of the bytes used) or the report, so determinism holds.
+func cacheStale(path string, maxAge time.Duration) bool {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return true // missing or unreadable → fetch
+	}
+	return time.Since(fi.ModTime()) > maxAge
+}
+
 // fetchExport downloads {base}/{osvEcosystem}/all.zip, streaming byte progress
 // to onBytes (which may be nil) so a UI can show download status.
-func fetchExport(client *http.Client, osvEco string, onBytes func(int64)) ([]byte, error) {
-	url := fmt.Sprintf("%s/%s/all.zip", osvExportBaseURL, osvEco)
+func fetchExport(client *http.Client, base, osvEco string, onBytes func(int64)) ([]byte, error) {
+	url := fmt.Sprintf("%s/%s/all.zip", base, osvEco)
 	resp, err := client.Get(url)
 	if err != nil {
 		return nil, err

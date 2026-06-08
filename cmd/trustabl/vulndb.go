@@ -41,8 +41,9 @@ pulled from osv.dev — this can be a sizable download.`,
 			log.Verbosef("vulndb pull: fetching OSV databases for all supported ecosystems")
 			defer log.Timer("vulndb pull")()
 			res, err := vulndb.Resolve(vulndb.ResolveConfig{
-				Ecosystems: vulndb.AllEcosystems(),
-				NoUpdate:   noUpdate,
+				Ecosystems:   vulndb.AllEcosystems(),
+				NoUpdate:     noUpdate,
+				ForceRefresh: !noUpdate, // pull refreshes the cached snapshot on demand
 			})
 			if err != nil {
 				return fmt.Errorf("vulndb pull: %w", err)
