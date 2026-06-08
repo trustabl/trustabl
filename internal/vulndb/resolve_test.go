@@ -3,6 +3,8 @@ package vulndb
 import (
 	"archive/zip"
 	"bytes"
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -44,5 +46,82 @@ func TestResolve_OfflineNoCacheIsEmpty(t *testing.T) {
 	}
 	if !r.FromCache {
 		t.Error("offline resolve should report FromCache=true")
+	}
+}
+
+// TestReadAllProgress_ReportsCumulativeBytes proves the download status hook
+// reports a monotonic byte count ending at the exact total, and returns the full
+// data unchanged (so the snapshot hash is unaffected).
+func TestReadAllProgress_ReportsCumulativeBytes(t *testing.T) {
+	data := bytes.Repeat([]byte("x"), 3<<20) // 3 MiB → reports near 1/2/3 MiB
+	var reports []int64
+	out, err := readAllProgress(bytes.NewReader(data), func(n int64) { reports = append(reports, n) })
+	if err != nil {
+		t.Fatalf("readAllProgress: %v", err)
+	}
+	if len(out) != len(data) {
+		t.Fatalf("returned %d bytes, want %d", len(out), len(data))
+	}
+	if len(reports) == 0 {
+		t.Fatal("expected at least one progress report")
+	}
+	for i := 1; i < len(reports); i++ {
+		if reports[i] < reports[i-1] {
+			t.Errorf("reports not monotonic: %v", reports)
+		}
+	}
+	if last := reports[len(reports)-1]; last != int64(len(data)) {
+		t.Errorf("final report %d != total %d", last, len(data))
+	}
+}
+
+// TestReadAllProgress_NilCallback proves a nil hook is safe (the vulndb-pull /
+// no-UI path).
+func TestReadAllProgress_NilCallback(t *testing.T) {
+	out, err := readAllProgress(bytes.NewReader([]byte("hello")), nil)
+	if err != nil || string(out) != "hello" {
+		t.Fatalf("readAllProgress(nil) = %q, %v", out, err)
+	}
+}
+
+// TestResolve_OnProgressReportsEachEcosystem proves Resolve fires the UI hook
+// with a start event and a finished event (carrying the cache source + record
+// count) for each ecosystem it resolves.
+func TestResolve_OnProgressReportsEachEcosystem(t *testing.T) {
+	dir := t.TempDir()
+	// Stage a cached PyPI snapshot so the offline path loads a real record.
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	w, _ := zw.Create("PYSEC-1.json")
+	_, _ = w.Write([]byte(`{"id":"PYSEC-1","affected":[{"package":{"ecosystem":"PyPI","name":"requests"}}]}`))
+	_ = zw.Close()
+	if err := os.WriteFile(filepath.Join(dir, "PyPI.zip"), buf.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var starts, finishes int
+	var last ResolveProgress
+	if _, err := Resolve(ResolveConfig{
+		Ecosystems: []string{"pypi"},
+		CacheDir:   dir,
+		NoUpdate:   true, // offline: load from the staged cache, no fetch
+		OnProgress: func(p ResolveProgress) {
+			switch {
+			case p.Finished:
+				finishes++
+				last = p
+			case p.BytesRead == 0:
+				starts++
+			}
+		},
+	}); err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+
+	if starts != 1 || finishes != 1 {
+		t.Fatalf("want 1 start + 1 finish event, got %d/%d", starts, finishes)
+	}
+	if !last.FromCache || last.Records != 1 || last.OSVEcosystem != "PyPI" || last.Index != 1 || last.Total != 1 {
+		t.Errorf("unexpected finish event: %+v", last)
 	}
 }
