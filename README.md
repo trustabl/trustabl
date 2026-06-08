@@ -451,6 +451,20 @@ trustabl scan ./repo --detectors google_adk
 trustabl scan ./repo --detectors claude_sdk,openai_sdk,google_adk
 # --detectors openshell is accepted but selects zero rules (pack is closed-source now)
 
+# Agent Skill security (SKILL.md) — flags unrestricted allowed-tools (a bare
+# `Bash` grant), pre-model dynamic-context exec, bundled-script network egress /
+# secret reads, committed secrets, hidden-Unicode prompt injection, and a
+# description that claims read-only while granting side-effecting tools (the
+# CSKILL-* rules). Skills are discovered and scanned automatically.
+trustabl scan ./repo                              # scans skills alongside tools/agents/MCP
+trustabl scan ./repo --detectors claude_skill     # only the Agent Skill (CSKILL-*) rules
+trustabl scan ./path/to/my-skill                  # point straight at one skill's directory
+
+# Skill dependency BOM (supply chain): export the deps a skill bundles in its
+# requirements.txt / package.json as a CycloneDX SBOM, to hand to OSV-Scanner or
+# Dependabot for CVE matching. Pure inventory — the scan itself does no CVE lookup.
+trustabl scan ./repo --bom-out skills-sbom.json
+
 # JSON output for CI piping
 trustabl scan ./repo --format json
 
@@ -474,9 +488,10 @@ trustabl rules pull
 # for the trustabl-rules repo — strict-loads every pack, fails on the first error)
 trustabl rules validate ./trustabl-rules
 
-# Use a custom rules repo or a specific ref (env: TRUSTABL_RULES_REPO)
+# Use a custom rules repo, or pin a specific released ruleset (env: TRUSTABL_RULES_REPO).
+# Default pulls the latest reviewed rules from trustabl-rules main; pin a tag for stability.
 trustabl scan ./repo --rules-repo https://github.com/org/my-rules
-trustabl scan ./repo --rules-ref v1.2.0
+trustabl scan ./repo --rules-ref v0.1.0
 
 # Air-gapped / offline: skip the network fetch, use the cached rules only
 trustabl scan ./repo --no-rules-update
