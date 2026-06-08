@@ -174,8 +174,11 @@ func (r *Registry) Run(profile models.RepoProfile, inv models.RepoInventory, par
 		if out[i].FilePath != out[j].FilePath {
 			return out[i].FilePath < out[j].FilePath
 		}
-		if out[i].Line != out[j].Line {
-			return out[i].Line < out[j].Line
+		if out[i].StartLine != out[j].StartLine {
+			return out[i].StartLine < out[j].StartLine
+		}
+		if out[i].EndLine != out[j].EndLine {
+			return out[i].EndLine < out[j].EndLine
 		}
 		if out[i].ToolName != out[j].ToolName {
 			return out[i].ToolName < out[j].ToolName
@@ -186,8 +189,8 @@ func (r *Registry) Run(profile models.RepoProfile, inv models.RepoInventory, par
 	for i, f := range out {
 		if i > 0 {
 			p := out[i-1]
-			if f.RuleID == p.RuleID && f.FilePath == p.FilePath && f.Line == p.Line &&
-				f.ToolName == p.ToolName && f.Title == p.Title {
+			if f.RuleID == p.RuleID && f.FilePath == p.FilePath && f.StartLine == p.StartLine &&
+				f.EndLine == p.EndLine && f.ToolName == p.ToolName && f.Title == p.Title {
 				continue
 			}
 		}

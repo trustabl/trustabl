@@ -34,7 +34,7 @@ func fixtureResult() models.ScanResult {
 			{
 				RuleID: "OAI-005", Category: models.CategoryOpenAISDK,
 				Severity: models.SeverityHigh,
-				ToolName: "fetch_url", FilePath: "agents/web.py", Line: 42,
+				ToolName: "fetch_url", FilePath: "agents/web.py", StartLine: 42, EndLine: 42,
 				Title:        "Network call has no timeout",
 				Explanation:  "An HTTP call without timeout can hang the agent run.",
 				SuggestedFix: "Pass timeout=5 to the request.",

@@ -172,8 +172,12 @@ func resultFromFinding(f models.Finding, ruleIndex *int, useBase bool) Result {
 			al.URIBaseID = "REPO_ROOT"
 		}
 		phys := &PhysicalLocation{ArtifactLocation: al}
-		if f.Line > 0 {
-			phys.Region = &Region{StartLine: f.Line}
+		if f.StartLine > 0 {
+			r := &Region{StartLine: f.StartLine}
+			if f.EndLine > f.StartLine {
+				r.EndLine = f.EndLine // omit for single-line: startLine alone says it
+			}
+			phys.Region = r
 		}
 		loc := Location{PhysicalLocation: phys}
 		if f.ToolName != "" {
@@ -258,7 +262,10 @@ func sortFindings(fs []models.Finding) {
 		if fs[i].FilePath != fs[j].FilePath {
 			return fs[i].FilePath < fs[j].FilePath
 		}
-		return fs[i].Line < fs[j].Line
+		if fs[i].StartLine != fs[j].StartLine {
+			return fs[i].StartLine < fs[j].StartLine
+		}
+		return fs[i].EndLine < fs[j].EndLine
 	})
 }
 

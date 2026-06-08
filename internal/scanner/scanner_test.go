@@ -178,7 +178,9 @@ func TestScan_PopulatesDependencyBOM(t *testing.T) {
 	}
 	mustWrite("skills/demo/SKILL.md", "---\nname: demo\ndescription: A demo skill\n---\n# Demo\n")
 	mustWrite("skills/demo/requirements.txt", "requests==2.31.0\n# comment\n-e .\n")
-	mustWrite("skills/demo/package.json", `{"dependencies":{"lodash":"^4.17.21"}}`)
+	// Multi-line so the asserted line numbers prove lineOf locates the actual
+	// declaration line (lodash is on line 3), not just a non-zero placeholder.
+	mustWrite("skills/demo/package.json", "{\n  \"dependencies\": {\n    \"lodash\": \"^4.17.21\"\n  }\n}\n")
 
 	res, err := scanner.Run(scanner.Config{Target: dir, RulesFS: rulesFixture(t)})
 	if err != nil {
@@ -191,11 +193,13 @@ func TestScan_PopulatesDependencyBOM(t *testing.T) {
 	// npm sorts before pypi; DepRef is comparable, so == is exact.
 	if got, want := res.Dependencies[0], (models.DepRef{
 		Name: "lodash", Version: "^4.17.21", Ecosystem: "npm", Source: "skills/demo/package.json",
+		StartLine: 3, EndLine: 3, // "lodash" is on line 3 of the multi-line package.json
 	}); got != want {
 		t.Errorf("dep[0] = %+v, want %+v", got, want)
 	}
 	if got, want := res.Dependencies[1], (models.DepRef{
 		Name: "requests", Version: "2.31.0", Ecosystem: "pypi", Source: "skills/demo/requirements.txt",
+		StartLine: 1, EndLine: 1, // "requests" is on line 1 of requirements.txt
 	}); got != want {
 		t.Errorf("dep[1] = %+v, want %+v", got, want)
 	}

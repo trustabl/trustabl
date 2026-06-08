@@ -100,8 +100,11 @@ func logFindingsDetail(log *logx.Logger, findings []models.Finding) {
 			break
 		}
 		loc := f.FilePath
-		if f.Line > 0 {
-			loc = fmt.Sprintf("%s:%d", f.FilePath, f.Line)
+		if f.StartLine > 0 {
+			loc = fmt.Sprintf("%s:%d", f.FilePath, f.StartLine)
+			if f.EndLine > f.StartLine {
+				loc += fmt.Sprintf("-%d", f.EndLine)
+			}
 		}
 		log.Debugf("analysis: %s [%s] %s — %s", f.RuleID, f.Severity, loc, f.Title)
 	}

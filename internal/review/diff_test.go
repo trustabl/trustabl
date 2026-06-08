@@ -405,7 +405,8 @@ func TestRender_AgentScopedFindingsAppearUnderAgentName(t *testing.T) {
 				SuggestedFix: "...",
 				Confidence:   1.0,
 				FilePath:     "ccsdk/ai-client.ts",
-				Line:         86,
+				StartLine:    86,
+				EndLine:      86,
 			},
 		},
 	}

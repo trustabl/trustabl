@@ -51,7 +51,7 @@ func TestPipeline_BasicEnrichment(t *testing.T) {
 		Repo:         "myrepo",
 		RulesVersion: "abc123",
 		Findings: []models.Finding{
-			{RuleID: "CSDK-010", FilePath: "agent.py", Line: 2, Severity: "high", Title: "No guardrail"},
+			{RuleID: "CSDK-010", FilePath: "agent.py", StartLine: 2, EndLine: 2, Severity: "high", Title: "No guardrail"},
 		},
 	}
 
@@ -90,8 +90,8 @@ func TestPipeline_OnlyEnriched_FiltersUnenriched(t *testing.T) {
 
 	result := &models.ScanResult{
 		Findings: []models.Finding{
-			{RuleID: "CSDK-010", FilePath: "agent.py", Line: 2, Title: "A"},
-			{RuleID: "CSDK-011", FilePath: "no_file.py", Line: 1, Title: "B"}, // file missing → not enriched
+			{RuleID: "CSDK-010", FilePath: "agent.py", StartLine: 2, EndLine: 2, Title: "A"},
+			{RuleID: "CSDK-011", FilePath: "no_file.py", StartLine: 1, EndLine: 1, Title: "B"}, // file missing → not enriched
 		},
 	}
 
@@ -118,8 +118,8 @@ func TestPipeline_RuleFilter(t *testing.T) {
 
 	result := &models.ScanResult{
 		Findings: []models.Finding{
-			{RuleID: "CSDK-010", FilePath: "agent.py", Line: 2, Title: "A"},
-			{RuleID: "CSDK-011", FilePath: "agent.py", Line: 2, Title: "B"},
+			{RuleID: "CSDK-010", FilePath: "agent.py", StartLine: 2, EndLine: 2, Title: "A"},
+			{RuleID: "CSDK-011", FilePath: "agent.py", StartLine: 2, EndLine: 2, Title: "B"},
 		},
 	}
 
@@ -158,8 +158,8 @@ func TestPipeline_FindingsGroupedByFile(t *testing.T) {
 
 	result := &models.ScanResult{
 		Findings: []models.Finding{
-			{RuleID: "R1", FilePath: "a.py", Line: 2, Title: "F1"},
-			{RuleID: "R2", FilePath: "a.py", Line: 3, Title: "F2"},
+			{RuleID: "R1", FilePath: "a.py", StartLine: 2, EndLine: 2, Title: "F1"},
+			{RuleID: "R2", FilePath: "a.py", StartLine: 3, EndLine: 3, Title: "F2"},
 		},
 	}
 
@@ -227,7 +227,7 @@ func TestPipeline_Apply_WritesToDisk(t *testing.T) {
 
 	result := &models.ScanResult{
 		Findings: []models.Finding{
-			{RuleID: "CSDK-010", FilePath: "agent.py", Line: 2, Title: "No guardrail"},
+			{RuleID: "CSDK-010", FilePath: "agent.py", StartLine: 2, EndLine: 2, Title: "No guardrail"},
 		},
 	}
 
@@ -276,7 +276,7 @@ func TestPipeline_Apply_SkipsFalsePositive(t *testing.T) {
 
 	result := &models.ScanResult{
 		Findings: []models.Finding{
-			{RuleID: "CSDK-010", FilePath: "agent.py", Line: 2, Title: "No guardrail"},
+			{RuleID: "CSDK-010", FilePath: "agent.py", StartLine: 2, EndLine: 2, Title: "No guardrail"},
 		},
 	}
 
@@ -406,7 +406,7 @@ func TestPipeline_DiffPopulated(t *testing.T) {
 
 	result := &models.ScanResult{
 		Findings: []models.Finding{
-			{RuleID: "CSDK-010", FilePath: "agent.py", Line: 2, Title: "No guardrail"},
+			{RuleID: "CSDK-010", FilePath: "agent.py", StartLine: 2, EndLine: 2, Title: "No guardrail"},
 		},
 	}
 
@@ -437,7 +437,7 @@ func TestPipeline_DiffFalse_NoDiffField(t *testing.T) {
 
 	result := &models.ScanResult{
 		Findings: []models.Finding{
-			{RuleID: "CSDK-010", FilePath: "agent.py", Line: 2, Title: "No guardrail"},
+			{RuleID: "CSDK-010", FilePath: "agent.py", StartLine: 2, EndLine: 2, Title: "No guardrail"},
 		},
 	}
 
@@ -464,7 +464,7 @@ func TestPipeline_DiffWithApply(t *testing.T) {
 
 	result := &models.ScanResult{
 		Findings: []models.Finding{
-			{RuleID: "CSDK-010", FilePath: "agent.py", Line: 2, Title: "No guardrail"},
+			{RuleID: "CSDK-010", FilePath: "agent.py", StartLine: 2, EndLine: 2, Title: "No guardrail"},
 		},
 	}
 
@@ -512,7 +512,7 @@ func TestPipeline_Apply_SkipsOnContentAnchorMismatch(t *testing.T) {
 
 	result := &models.ScanResult{
 		Findings: []models.Finding{
-			{RuleID: "CSDK-010", FilePath: "agent.py", Line: 2, Title: "No guardrail"},
+			{RuleID: "CSDK-010", FilePath: "agent.py", StartLine: 2, EndLine: 2, Title: "No guardrail"},
 		},
 	}
 	p := &Pipeline{
@@ -558,12 +558,12 @@ func TestPipeline_MultiFile_BatchedByFile(t *testing.T) {
 
 	result := &models.ScanResult{
 		Findings: []models.Finding{
-			{RuleID: "R1", FilePath: "a.py", Line: 2, Title: "F1"},
-			{RuleID: "R2", FilePath: "b.py", Line: 2, Title: "F2"},
-			{RuleID: "R3", FilePath: "c.py", Line: 2, Title: "F3"},
-			{RuleID: "R4", FilePath: "d.py", Line: 2, Title: "F4"},
+			{RuleID: "R1", FilePath: "a.py", StartLine: 2, EndLine: 2, Title: "F1"},
+			{RuleID: "R2", FilePath: "b.py", StartLine: 2, EndLine: 2, Title: "F2"},
+			{RuleID: "R3", FilePath: "c.py", StartLine: 2, EndLine: 2, Title: "F3"},
+			{RuleID: "R4", FilePath: "d.py", StartLine: 2, EndLine: 2, Title: "F4"},
 			// Two findings in a.py — should still be one LLM call for a.py
-			{RuleID: "R5", FilePath: "a.py", Line: 1, Title: "F5"},
+			{RuleID: "R5", FilePath: "a.py", StartLine: 1, EndLine: 1, Title: "F5"},
 		},
 	}
 

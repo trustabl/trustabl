@@ -117,7 +117,7 @@ func parsePyRequirements(abs, source string) []models.DepRef {
 			out = append(out, *d)
 		}
 	}
-	return out
+	return withLines(out, content)
 }
 
 // parsePyproject extracts pip deps from a pyproject.toml — both the PEP 621
@@ -172,7 +172,7 @@ func parsePyproject(abs, source string) []models.DepRef {
 	for _, g := range doc.Tool.Poetry.Group {
 		addPoetry(g.Dependencies)
 	}
-	return out
+	return withLines(out, content)
 }
 
 // parsePipfile extracts pip deps from a Pipfile ([packages] / [dev-packages]).
@@ -200,7 +200,7 @@ func parsePipfile(abs, source string) []models.DepRef {
 	}
 	add(doc.Packages)
 	add(doc.DevPackages)
-	return out
+	return withLines(out, content)
 }
 
 // parseNpmPackageJSON extracts npm deps (runtime + dev) from a package.json.
@@ -247,7 +247,7 @@ func parseJSONDepMaps(abs, source, ecosystem string, keys []string, skip func(st
 			out = append(out, models.DepRef{Name: name, Version: strings.TrimSpace(ver), Ecosystem: ecosystem, Source: source})
 		}
 	}
-	return out
+	return withLines(out, content)
 }
 
 // goRequireRe captures a go.mod require entry: module path (1) + version (2).
@@ -285,7 +285,7 @@ func parseGoMod(abs, source string) []models.DepRef {
 			}
 		}
 	}
-	return out
+	return withLines(out, content)
 }
 
 // parseCargoToml extracts Rust deps from a Cargo.toml ([dependencies],
@@ -313,7 +313,7 @@ func parseCargoToml(abs, source string) []models.DepRef {
 	add(doc.Dependencies)
 	add(doc.DevDependencies)
 	add(doc.BuildDependencies)
-	return out
+	return withLines(out, content)
 }
 
 // parseCsproj extracts NuGet deps from a .csproj <PackageReference> elements
@@ -351,7 +351,7 @@ func parseCsproj(abs, source string) []models.DepRef {
 		}
 		out = append(out, models.DepRef{Name: pr.Include, Version: strings.TrimSpace(v), Ecosystem: "nuget", Source: source})
 	}
-	return out
+	return withLines(out, content)
 }
 
 // tomlVersion extracts a version constraint from a TOML dependency value that is
@@ -367,6 +367,67 @@ func tomlVersion(v any) string {
 		}
 	}
 	return ""
+}
+
+// depNameChar reports whether b can appear inside a dependency-name token. Used
+// by lineOf to require a whole-token match so "requests" is not located inside
+// "requests-oauthlib".
+func depNameChar(b byte) bool {
+	switch {
+	case b >= 'A' && b <= 'Z', b >= 'a' && b <= 'z', b >= '0' && b <= '9':
+		return true
+	}
+	switch b {
+	case '.', '_', '-', '/', '@', '+':
+		return true
+	}
+	return false
+}
+
+// lineOf returns the 1-indexed line of the first whole-token occurrence of name
+// in content, or 0 if absent. Whole-token = not flanked by name characters, so a
+// declaration line is matched rather than a substring of a longer dependency
+// name. This recovers the line for manifests parsed by a TOML / JSON / XML
+// library that exposes no source positions, and works equally for the line-based
+// formats (requirements.txt, go.mod).
+func lineOf(content []byte, name string) int {
+	if name == "" {
+		return 0
+	}
+	for i, line := range strings.Split(string(content), "\n") {
+		from := 0
+		for {
+			j := strings.Index(line[from:], name)
+			if j < 0 {
+				break
+			}
+			j += from
+			beforeOK := j == 0 || !depNameChar(line[j-1])
+			after := j + len(name)
+			afterOK := after >= len(line) || !depNameChar(line[after])
+			if beforeOK && afterOK {
+				return i + 1
+			}
+			from = j + 1
+		}
+	}
+	return 0
+}
+
+// withLines stamps each dep's 1-indexed declaration line by locating its name in
+// the manifest content. A declaration occupies a single line, so EndLine ==
+// StartLine. A name that cannot be located falls back to line 1 so a dependency
+// is never reported at line 0.
+func withLines(deps []models.DepRef, content []byte) []models.DepRef {
+	for i := range deps {
+		ln := lineOf(content, deps[i].Name)
+		if ln == 0 {
+			ln = 1
+		}
+		deps[i].StartLine = ln
+		deps[i].EndLine = ln
+	}
+	return deps
 }
 
 // dedupeDeps returns a deterministically ordered, de-duplicated copy: sorted by

@@ -102,12 +102,12 @@ func TestRuleFromFinding(t *testing.T) {
 
 func TestResultFromFinding_LocatedToolFinding(t *testing.T) {
 	f := models.Finding{
-		RuleID:       "OAI-005",
-		Category:     models.CategoryOpenAISDK,
-		Severity:     models.SeverityHigh,
-		ToolName:     "fetch_url",
-		FilePath:     "agents/web.py",
-		Line:         42,
+		RuleID:    "OAI-005",
+		Category:  models.CategoryOpenAISDK,
+		Severity:  models.SeverityHigh,
+		ToolName:  "fetch_url",
+		FilePath:  "agents/web.py",
+		StartLine: 42, EndLine: 42,
 		Title:        "Network call has no timeout",
 		Explanation:  "An HTTP call without timeout can hang.",
 		SuggestedFix: "Pass timeout=5 to the request.",
@@ -245,7 +245,7 @@ func TestRender_ShapesACompleteDocument(t *testing.T) {
 			{
 				RuleID: "OAI-005", Category: models.CategoryOpenAISDK,
 				Severity: models.SeverityHigh,
-				ToolName: "fetch_url", FilePath: "agents/web.py", Line: 42,
+				ToolName: "fetch_url", FilePath: "agents/web.py", StartLine: 42, EndLine: 42,
 				Title:        "Network call has no timeout",
 				Explanation:  "An HTTP call without timeout can hang.",
 				SuggestedFix: "Pass timeout=5.",
@@ -374,8 +374,8 @@ func TestRender_RuleCatalogSortedAndIndexed(t *testing.T) {
 	sr := models.ScanResult{
 		Manifest: models.ScanManifest{RepoRoot: "."},
 		Findings: []models.Finding{
-			{RuleID: "OAI-005", FilePath: "a.py", Line: 1, Severity: models.SeverityHigh, Title: "B"},
-			{RuleID: "CSDK-001", FilePath: "a.py", Line: 1, Severity: models.SeverityLow, Title: "A"},
+			{RuleID: "OAI-005", FilePath: "a.py", StartLine: 1, EndLine: 1, Severity: models.SeverityHigh, Title: "B"},
+			{RuleID: "CSDK-001", FilePath: "a.py", StartLine: 1, EndLine: 1, Severity: models.SeverityLow, Title: "A"},
 		},
 	}
 	var log Log
