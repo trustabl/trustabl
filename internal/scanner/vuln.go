@@ -18,10 +18,11 @@ import (
 //
 // rep drives two live phases, owned here so the work and the UI stay together:
 //
-//  1. "Resolving vulnerability database" — the OSV download, with a determinate
-//     bar that climbs smoothly by bytes: each ecosystem owns 1/N of the bar, and
-//     within a download the bar advances by Content-Length, so a one-ecosystem
-//     pull fills 0→100% as it downloads instead of jumping on completion.
+//  1. "Resolving vulnerability database" — the OSV pull. A determinate bar is
+//     shown ONLY while actually downloading, where it climbs by bytes
+//     (Content-Length) so a big pull fills 0→100%. A cache load is instant and
+//     has no bytes, so it shows a spinner + status line instead of a meaningless
+//     step bar that would just jump 0→100% per database.
 //  2. "Scanning dependencies" — the local match, with a fresh bar that advances
 //     per package and a status line naming the package currently being scanned.
 //
@@ -39,20 +40,27 @@ func runVulnScan(deps []models.DepRef, noUpdate bool, cacheDir string, rep progr
 			}
 			idx := float64(p.Index - 1) // 0-based slot for this ecosystem
 			switch {
-			case p.Finished:
-				rep.SetProgress(float64(p.Index)/float64(total), finishedVulnDetail(p))
 			case p.BytesRead > 0 && p.BytesTotal > 0:
+				// Real download with a known size → determinate byte bar.
 				frac := float64(p.BytesRead) / float64(p.BytesTotal)
 				if frac > 1 {
 					frac = 1
 				}
 				rep.SetProgress((idx+frac)/float64(total),
 					fmt.Sprintf("downloading %s (%d/%d) — %s / %s", p.OSVEcosystem, p.Index, total, humanizeBytes(p.BytesRead), humanizeBytes(p.BytesTotal)))
-			case p.BytesRead > 0: // downloading, content length unknown
-				rep.SetProgress(idx/float64(total),
-					fmt.Sprintf("downloading %s (%d/%d) — %s", p.OSVEcosystem, p.Index, total, humanizeBytes(p.BytesRead)))
-			default: // ecosystem started
-				rep.SetProgress(idx/float64(total), "resolving "+p.OSVEcosystem+" database…")
+			case p.BytesRead > 0:
+				// Downloading, size unknown → spinner + running byte count.
+				rep.SetDetail(fmt.Sprintf("downloading %s (%d/%d) — %s", p.OSVEcosystem, p.Index, total, humanizeBytes(p.BytesRead)))
+			case p.Finished && p.FromCache:
+				// Cache load is instant → spinner + status, no jumpy step bar.
+				rep.SetDetail(fmt.Sprintf("loaded %s — %d advisories (cached, %d/%d)", p.OSVEcosystem, p.Records, p.Index, total))
+			case p.Finished:
+				// A downloaded ecosystem finished → leave its byte bar full.
+				rep.SetProgress(float64(p.Index)/float64(total), finishedVulnDetail(p))
+			default:
+				// Ecosystem started; not yet known whether it downloads or is
+				// cached → spinner only, no bar.
+				rep.SetDetail("resolving " + p.OSVEcosystem + " database…")
 			}
 		},
 	})
