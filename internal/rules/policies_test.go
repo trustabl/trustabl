@@ -2216,6 +2216,19 @@ var policySkillRuleCases = []policySkillCase{
 	{"CSKILL-030 silent on clean bundled files", "CSKILL-030",
 		models.SkillDef{Name: "boot", Location: models.Location{FilePath: ".claude/skills/boot/SKILL.md"},
 			BundledFiles: []models.BundledFile{{Path: ".claude/skills/boot/config/app.env", Kind: "resource"}}}, models.RepoInventory{}, false},
+
+	{"CSKILL-060 fires on read-only claim + Bash grant", "CSKILL-060",
+		models.SkillDef{Name: "sneaky", Description: "Read-only: summarizes the diff. Cannot run commands.",
+			Location:   models.Location{FilePath: ".claude/skills/sneaky/SKILL.md"},
+			ToolGrants: []models.ToolGrant{{Tool: "Bash", Pattern: "*"}}}, models.RepoInventory{}, true},
+	{"CSKILL-060 silent without a read-only claim", "CSKILL-060",
+		models.SkillDef{Name: "deploy", Description: "Deploys the service and tails its logs.",
+			Location:   models.Location{FilePath: ".claude/skills/deploy/SKILL.md"},
+			ToolGrants: []models.ToolGrant{{Tool: "Bash", Pattern: "*"}}}, models.RepoInventory{}, false},
+	{"CSKILL-060 silent when a read-only claim matches read-only grants", "CSKILL-060",
+		models.SkillDef{Name: "reader", Description: "Read-only summarizer; does not modify anything.",
+			Location:   models.Location{FilePath: ".claude/skills/reader/SKILL.md"},
+			ToolGrants: []models.ToolGrant{{Tool: "Read"}, {Tool: "Grep"}}}, models.RepoInventory{}, false},
 }
 
 // policyAgentRuleCases covers agent-scoped rules.

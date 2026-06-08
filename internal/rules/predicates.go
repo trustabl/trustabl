@@ -874,6 +874,10 @@ var (
 	skillExecEgressRe = regexp.MustCompile(`(?i)\b(?:curl|wget|nc|ncat|telnet|scp|sftp|rsync)\b`)
 	// skillExecSecretRe matches a shell command that reads credentials or secrets.
 	skillExecSecretRe = regexp.MustCompile(`(?i)gh\s+auth|printenv|\$(?:AWS|GH|GITHUB|OPENAI|ANTHROPIC|HF|NPM|SLACK|GOOGLE|GCP|AZURE)[A-Z0-9_]*|\bid_rsa\b|\bcredentials\b|\.aws/|\.ssh/|\.netrc\b|access[_-]?key|secret[_-]?key|api[_-]?key`)
+	// skillReadOnlyClaimRe matches a description that explicitly claims the skill
+	// is read-only / side-effect-free — the metadata signal CSKILL-060 checks
+	// against the skill's actual tool grants.
+	skillReadOnlyClaimRe = regexp.MustCompile(`(?i)\bread[- ]?only\b|does not (?:modify|write|change|run|execute|delete|touch)|cannot (?:run|execute|modify|write|change)|no side[- ]?effects?|only reads\b|never (?:modifies|writes|runs|executes)|safe to (?:run|use)|without (?:running|executing) (?:any )?commands`)
 )
 
 // PredSkillDynamicExecTouchesNetworkOrSecrets reports whether any dynamic-context
@@ -923,6 +927,22 @@ func PredSkillBundledFileHasHardcodedSecret(s models.SkillDef) bool {
 		}
 	}
 	return false
+}
+
+// sideEffectingSkillTools are the auto-approved tools that act with side effects
+// or exfiltrate; a read-only-sounding description that grants any of them
+// misrepresents the skill.
+var sideEffectingSkillTools = []string{"Bash", "Write", "Edit", "WebFetch", "NotebookEdit"}
+
+// PredSkillDescriptionToolMismatch reports whether the skill's description
+// explicitly claims to be read-only / side-effect-free while it pre-approves a
+// side-effecting tool (or unrestricted shell) — the metadata then understates
+// the real capability, which is the signal a reviewer relies on.
+func PredSkillDescriptionToolMismatch(s models.SkillDef) bool {
+	if !skillReadOnlyClaimRe.MatchString(s.Description) {
+		return false
+	}
+	return PredSkillAllowsUnrestrictedShell(s) || PredSkillAllowsTool(s, sideEffectingSkillTools)
 }
 
 // ─── repo predicates ──────────────────────────────────────────────────────────
