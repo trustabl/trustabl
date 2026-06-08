@@ -1,6 +1,8 @@
 package scanner_test
 
 import (
+	"archive/zip"
+	"bytes"
 	"encoding/json"
 	"io/fs"
 	"os"
@@ -211,6 +213,54 @@ func TestScanRun_ThreadsRulesStale(t *testing.T) {
 	}
 	if !res.RulesStale {
 		t.Error("Config.RulesStale=true should surface as ScanResult.RulesStale=true")
+	}
+}
+
+// TestScan_VulnScan_OfflineFixture proves the --vuln-scan layer (TR-271) end to
+// end, deterministically: a pinned OSV snapshot is staged in the vulndb cache,
+// and a repo pinning a vulnerable version is matched against it — producing both
+// a structured ScanResult.Vulnerabilities entry and a CVE finding (so it hits
+// exit codes + SARIF). VulnNoUpdate keeps it offline so the test never touches
+// the network.
+func TestScan_VulnScan_OfflineFixture(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "requirements.txt"), []byte("requests==2.19.0\nflask==2.0.0\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Stage a PyPI OSV snapshot in the vulndb cache: requests is affected below 2.20.0.
+	cacheDir := t.TempDir()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	w, _ := zw.Create("PYSEC-2018-28.json")
+	_, _ = w.Write([]byte(`{"id":"PYSEC-2018-28","aliases":["CVE-2018-18074"],"summary":"requests leaks the Authorization header on redirect","severity":[{"type":"CVSS_V3","score":"CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:N/A:N"}],"affected":[{"package":{"ecosystem":"PyPI","name":"requests"},"ranges":[{"type":"ECOSYSTEM","events":[{"introduced":"0"},{"fixed":"2.20.0"}]}]}]}`))
+	_ = zw.Close()
+	if err := os.WriteFile(filepath.Join(cacheDir, "PyPI.zip"), buf.Bytes(), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := scanner.Run(scanner.Config{
+		Target: dir, RulesFS: rulesFixture(t),
+		VulnScan: true, VulnNoUpdate: true, VulnCacheDir: cacheDir,
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if len(res.Vulnerabilities) != 1 {
+		t.Fatalf("want 1 vulnerability (requests; flask is clean), got %d: %+v", len(res.Vulnerabilities), res.Vulnerabilities)
+	}
+	if v := res.Vulnerabilities[0]; v.Dep.Name != "requests" || v.ID != "PYSEC-2018-28" || v.FixedIn != "2.20.0" {
+		t.Errorf("vuln = %+v; want requests / PYSEC-2018-28 / fixed 2.20.0", v)
+	}
+	var sawFinding bool
+	for _, f := range res.Findings {
+		if f.RuleID == "CVE-2018-18074" {
+			sawFinding = true
+		}
+	}
+	if !sawFinding {
+		t.Error("the vulnerability should also surface as a finding with the CVE id (so it affects exit codes + SARIF)")
 	}
 }
 

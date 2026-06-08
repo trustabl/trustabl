@@ -18,7 +18,7 @@ var defaultOrigin = models.RulesOrigin{}.Tag()
 // across materially different scans of a non-Python repo.
 func TestScanID_FoldsAllFileLists(t *testing.T) {
 	base := models.ScanManifest{PythonFiles: []string{"main.py"}}
-	baseID := scanID("repo", base, "v1", 8, defaultOrigin)
+	baseID := scanID("repo", base, "v1", 8, defaultOrigin, "")
 
 	cases := []struct {
 		name   string
@@ -35,7 +35,7 @@ func TestScanID_FoldsAllFileLists(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			m := base
 			tc.mutate(&m)
-			if got := scanID("repo", m, "v1", 8, defaultOrigin); got == baseID {
+			if got := scanID("repo", m, "v1", 8, defaultOrigin, ""); got == baseID {
 				t.Errorf("ScanID unchanged when %s differs: both %q", tc.name, got)
 			}
 		})
@@ -53,7 +53,7 @@ func TestScanID_StableUnderReordering(t *testing.T) {
 		PythonFiles:     []string{"b.py", "a.py"},
 		TypeScriptFiles: []string{"y.ts", "x.ts"},
 	}
-	if scanID("repo", a, "v1", 8, defaultOrigin) != scanID("repo", b, "v1", 8, defaultOrigin) {
+	if scanID("repo", a, "v1", 8, defaultOrigin, "") != scanID("repo", b, "v1", 8, defaultOrigin, "") {
 		t.Error("ScanID changed under file reordering; must be order-independent")
 	}
 }
@@ -65,7 +65,7 @@ func TestScanID_StableUnderReordering(t *testing.T) {
 // schema → different ID.
 func TestScanID_FoldsEngineSchemaVersion(t *testing.T) {
 	m := models.ScanManifest{PythonFiles: []string{"main.py"}}
-	if scanID("repo", m, "v1", 8, defaultOrigin) == scanID("repo", m, "v1", 9, defaultOrigin) {
+	if scanID("repo", m, "v1", 8, defaultOrigin, "") == scanID("repo", m, "v1", 9, defaultOrigin, "") {
 		t.Error("ScanID unchanged when engine schema version differs")
 	}
 }
@@ -85,7 +85,7 @@ func TestScanID_FoldsRulesOrigin(t *testing.T) {
 
 	seen := map[string]string{}
 	for name, tag := range origins {
-		id := scanID("repo", m, "v1", 9, tag)
+		id := scanID("repo", m, "v1", 9, tag, "")
 		if other, dup := seen[id]; dup {
 			t.Errorf("ScanID collision across origins: %s and %s both %q", name, other, id)
 		}
@@ -94,7 +94,22 @@ func TestScanID_FoldsRulesOrigin(t *testing.T) {
 
 	// Determinism half: the same origin reproduces the same ID.
 	prod := origins["prod"]
-	if scanID("repo", m, "v1", 9, prod) != scanID("repo", m, "v1", 9, prod) {
+	if scanID("repo", m, "v1", 9, prod, "") != scanID("repo", m, "v1", 9, prod, "") {
 		t.Error("ScanID not reproducible for a fixed origin")
+	}
+}
+
+// TestScanID_FoldsVulnDBVersionOnlyWhenSet guards the --vuln-scan ScanID
+// contract: an empty vulnDBVersion (the default, non-vuln-scan path) must NOT
+// change the ID — so default scans stay byte-identical — while a set snapshot
+// version must, keeping the ID honest about which vuln data produced findings.
+func TestScanID_FoldsVulnDBVersionOnlyWhenSet(t *testing.T) {
+	m := models.ScanManifest{PythonFiles: []string{"main.py"}}
+	base := scanID("repo", m, "v1", 9, defaultOrigin, "")
+	if scanID("repo", m, "v1", 9, defaultOrigin, "") != base {
+		t.Error("empty vulnDBVersion must reproduce the same ID (default path unchanged)")
+	}
+	if scanID("repo", m, "v1", 9, defaultOrigin, "osv-abc123") == base {
+		t.Error("a set vulnDBVersion must change the ScanID")
 	}
 }

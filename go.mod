@@ -3,7 +3,9 @@ module github.com/trustabl/trustabl
 go 1.23.0
 
 require (
+	github.com/Masterminds/semver/v3 v3.5.0
 	github.com/anthropics/anthropic-sdk-go v1.45.0
+	github.com/aquasecurity/go-pep440-version v0.0.1
 	github.com/charmbracelet/bubbles v0.18.0
 	github.com/charmbracelet/bubbletea v0.25.0
 	github.com/charmbracelet/lipgloss v0.10.0
@@ -23,6 +25,7 @@ require (
 	dario.cat/mergo v1.0.0 // indirect
 	github.com/Microsoft/go-winio v0.6.1 // indirect
 	github.com/ProtonMail/go-crypto v1.0.0 // indirect
+	github.com/aquasecurity/go-version v0.0.1 // indirect
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/bahlo/generic-list-go v0.2.0 // indirect
 	github.com/buger/jsonparser v1.1.2 // indirect
@@ -62,5 +65,6 @@ require (
 	golang.org/x/sys v0.35.0 // indirect
 	golang.org/x/text v0.27.0 // indirect
 	golang.org/x/tools v0.34.0 // indirect
+	golang.org/x/xerrors v0.0.0-20231012003039-104605ab7028 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 )

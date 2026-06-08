@@ -39,6 +39,7 @@ type scanFlags struct {
 	jsonOut       string
 	sarifOut      string
 	bomOut        string
+	vulnScan      bool
 }
 
 func newScanCommand() *cobra.Command {
@@ -123,7 +124,9 @@ Exit codes:
 	cmd.Flags().StringVar(&f.sarifOut, "sarif-out", "",
 		"also write the SARIF report to this file (independent of --format)")
 	cmd.Flags().StringVar(&f.bomOut, "bom-out", "",
-		"also write a CycloneDX BOM of skill dependencies to this file")
+		"also write a CycloneDX BOM of the repo's declared dependencies to this file")
+	cmd.Flags().BoolVar(&f.vulnScan, "vuln-scan", false,
+		"match dependencies against a pinned OSV snapshot and report known CVEs (off by default; fetches the OSV database on first use, then caches it)")
 	return cmd
 }
 
@@ -343,6 +346,8 @@ func resolveAndScan(cfg *scanner.Config, f scanFlags, rep progress.Reporter) (mo
 	cfg.RulesSchemaVersion = res.SchemaVersion
 	cfg.RulesSchemaNewer = res.SchemaNewer
 	cfg.RulesOrigin = rulesOriginFromScan(f)
+	cfg.VulnScan = f.vulnScan
+	cfg.VulnNoUpdate = f.noRulesUpdate // --no-rules-update is the offline switch for both rules and the OSV DB
 	cfg.Progress = rep
 
 	result, err := scanner.Run(*cfg)

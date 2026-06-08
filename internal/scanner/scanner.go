@@ -55,6 +55,15 @@ type Config struct {
 	// code get distinct IDs.
 	RulesOrigin models.RulesOrigin
 
+	// VulnScan opts into the OSV vulnerability layer (TR-271): match the BOM
+	// against a pinned OSV snapshot and emit a finding per vulnerable dependency.
+	// Off by default — the default scan stays network-free and byte-stable.
+	// VulnNoUpdate forces the cached snapshot only (no fetch); VulnCacheDir
+	// overrides the cache location (empty => UserCacheDir/trustabl/vulndb).
+	VulnScan     bool
+	VulnNoUpdate bool
+	VulnCacheDir string
+
 	// Progress receives real-time phase events. Nil means no progress output.
 	Progress progress.Reporter
 
@@ -433,6 +442,25 @@ func Run(cfg Config) (models.ScanResult, error) {
 		logFindingsDetail(log, findings)
 	}
 
+	// Step 4b: dependency vulnerabilities (opt-in --vuln-scan). Matches the BOM
+	// against a pinned OSV snapshot and emits a finding per vulnerable dep, so it
+	// flows through scoring, exit codes, and SARIF. The default path skips this
+	// entirely — no network, ScanID unchanged.
+	var vulns []models.DepVuln
+	var vulnDBVersion string
+	if cfg.VulnScan {
+		rep.StartPhase("vuln-scan", "Vulnerability scan")
+		v, ver, verr := runVulnScan(inventory.Dependencies, cfg.VulnNoUpdate, cfg.VulnCacheDir)
+		if verr != nil {
+			log.Verbosef("vuln-scan: %v (continuing without vuln findings)", verr)
+		} else {
+			vulns, vulnDBVersion = v, ver
+			findings = append(findings, vulnFindings(vulns)...)
+		}
+		rep.EndPhase(fmt.Sprintf("%d vulnerable", len(vulns)))
+		log.Verbosef("vuln-scan: OSV snapshot %s · %d dependency vulnerabilities", vulnDBVersion, len(vulns))
+	}
+
 	// Step 5: scoring
 	surfaces, overall := analysis.Score(tools, inventory.Agents, inventory.Subagents, inventory.Skills, findings)
 	projected := analysis.Project(tools, inventory.Agents, inventory.Subagents, inventory.Skills, findings)
@@ -462,7 +490,7 @@ func Run(cfg Config) (models.ScanResult, error) {
 	}
 
 	return models.ScanResult{
-		ScanID:              scanID(idLabel, profile.Manifest, cfg.RulesVersion, rules.SupportedSchemaVersion, cfg.RulesOrigin.Tag()),
+		ScanID:              scanID(idLabel, profile.Manifest, cfg.RulesVersion, rules.SupportedSchemaVersion, cfg.RulesOrigin.Tag(), vulnDBVersion),
 		Repo:                repoLabel,
 		Languages:           profile.Languages,
 		SDKs:                inventory.SDKsDetected,
@@ -475,6 +503,7 @@ func Run(cfg Config) (models.ScanResult, error) {
 		Subagents:           inventory.Subagents,
 		Skills:              inventory.Skills,
 		Dependencies:        inventory.Dependencies,
+		Vulnerabilities:     vulns,
 		SlashCommands:       inventory.SlashCommands,
 		PluginManifests:     inventory.PluginManifests,
 		ClaudeSettings:      inventory.ClaudeSettings,
@@ -849,7 +878,7 @@ func retagJavaScriptDefs(inv *models.RepoInventory) {
 // rules from the same pack. The rules-origin tag is folded too, so two scans of
 // the same code differ in ID when one used signed production rules and the other
 // an unsigned or pre-release source.
-func scanID(idLabel string, manifest models.ScanManifest, rulesVersion string, engineSchema int, originTag string) string {
+func scanID(idLabel string, manifest models.ScanManifest, rulesVersion string, engineSchema int, originTag, vulnDBVersion string) string {
 	h := sha256.New()
 	h.Write([]byte(idLabel))
 	// Fold every inventoried file list so the ID is honest about all scanned
@@ -893,5 +922,12 @@ func scanID(idLabel string, manifest models.ScanManifest, rulesVersion string, e
 	// unsigned:default) so provenance is part of the scan's identity.
 	h.Write([]byte{0})
 	h.Write([]byte(originTag))
+	// Fold the OSV snapshot version ONLY under --vuln-scan: empty (the default
+	// path) writes nothing, so default ScanIDs are byte-identical to before. When
+	// set, the ID is honest about which vuln data produced the findings.
+	if vulnDBVersion != "" {
+		h.Write([]byte{0})
+		h.Write([]byte(vulnDBVersion))
+	}
 	return "scan_" + hex.EncodeToString(h.Sum(nil)[:8])
 }

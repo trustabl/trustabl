@@ -341,6 +341,21 @@ type DepRef struct {
 	Source    string `json:"source"`
 }
 
+// DepVuln is one known vulnerability matched against a declared dependency by the
+// opt-in --vuln-scan layer (TR-271): a BOM DepRef checked against a pinned OSV
+// snapshot. ID is the primary OSV identifier (GHSA-… / PYSEC-… / CVE-…), Aliases
+// the cross-references (the CVE), Severity is bucketed from the record's CVSS
+// score, and FixedIn the first patched version when known. Emitted both as
+// ScanResult.Vulnerabilities and as findings (so it affects exit codes + SARIF).
+type DepVuln struct {
+	Dep      DepRef   `json:"dep"`
+	ID       string   `json:"id"`
+	Aliases  []string `json:"aliases,omitempty"`
+	Summary  string   `json:"summary,omitempty"`
+	Severity Severity `json:"severity"`
+	FixedIn  string   `json:"fixed_in,omitempty"`
+}
+
 // RepoProfile is the output of the recon step.
 type RepoProfile struct {
 	Languages []Language   `json:"languages"`
@@ -453,7 +468,8 @@ type ScanResult struct {
 	MCPServers          []MCPServerDef     `json:"mcp_servers"`
 	Subagents           []SubagentDef      `json:"subagents"`
 	Skills              []SkillDef         `json:"skills"`
-	Dependencies        []DepRef           `json:"dependencies"` // repo-wide declared-dependency BOM (TR-278); not folded into ScanID
+	Dependencies        []DepRef           `json:"dependencies"`              // repo-wide declared-dependency BOM (TR-278); not folded into ScanID
+	Vulnerabilities     []DepVuln          `json:"vulnerabilities,omitempty"` // --vuln-scan OSV matches (TR-271); absent on the default path
 	SlashCommands       []SlashCommandDef  `json:"slash_commands"`
 	PluginManifests     []PluginManifest   `json:"plugin_manifests"`
 	ClaudeSettings      []ClaudeSettings   `json:"claude_settings"`

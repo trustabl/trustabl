@@ -459,10 +459,26 @@ For each language recon cleared, do the AST work and produce a `RepoInventory`:
   (cargo). This is the agent-path supply-chain **BOM** (TR-278; supersedes the
   skill-only TR-221): pure inventory, no network, no CVE matching — a
   deterministic hand-off to a real SCA tool (OSV-Scanner, Dependabot, syft) or to
-  the planned opt-in pinned-OSV `--vuln-scan` layer (TR-271). It is deliberately
-  **not** folded into `ScanID`. The optional `--bom-out` flag renders it as a
-  byte-stable CycloneDX 1.5 document via
+  Trustabl's own opt-in pinned-OSV `--vuln-scan` layer (TR-271, below). The BOM
+  itself is deliberately **not** folded into `ScanID`. The optional `--bom-out`
+  flag renders it as a byte-stable CycloneDX 1.5 document via
   [`internal/cyclonedx`](internal/cyclonedx/render.go).
+- **Vulnerability matching** ([`internal/vulndb`](internal/vulndb), opt-in via
+  `--vuln-scan`) — the CVE layer on top of the BOM (TR-271). After analysis the
+  scanner resolves a **pinned** OSV snapshot — each ecosystem's published OSV
+  export fetched from osv.dev, cached under the user cache dir with an offline
+  fallback (`trustabl vulndb pull` pre-warms it) — and matches every
+  concretely-pinned `DepRef` against it: per-ecosystem version semantics (PEP 440
+  for pypi, semver for the rest), the OSV introduced/fixed/last_affected range
+  algorithm, and a CVSS 3.x base-score → severity bucketing. Each hit becomes a
+  `models.DepVuln` on `ScanResult.Vulnerabilities` **and** a synthesized
+  `models.Finding` (the advisory ID as the rule id, the first fixed version in the
+  suggested-fix text) so vulnerabilities flow through the normal severity gate,
+  exit codes, and JSON / SARIF output. Matching is purely local against the cached
+  snapshot — the scan itself makes **no** OSV API call — so determinism holds; the
+  snapshot version is folded into `ScanID` **only** when `--vuln-scan` is on,
+  leaving default scans byte-identical. Coverage is honest about its bound: a
+  declared range (no lockfile to pin it) is skipped, not guessed.
 - **DiscoverSlashCommands** (`slash_commands.go`) — emits one
   `SlashCommandDef` per `ComponentSlashCommand` component. Recon tags those
   at two path shapes: the canonical `.claude/commands/*.md` (any depth) AND
