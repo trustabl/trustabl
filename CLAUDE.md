@@ -98,7 +98,8 @@ resolution path fetches the configured ref, caches the clone under
 the network is unreachable. Rule loading is **forward-compatible**: a pack
 whose `manifest.yaml` `schema_version` exceeds the engine's
 `rules.SupportedSchemaVersion` is loaded leniently rather than refused — a rule
-referencing a `scope`, an `applies_to` value, or a predicate this build lacks is
+referencing a `scope`, an `applies_to` value, a `language`, or a predicate this
+build lacks is
 skipped (recorded on `ScanResult.RulesSkipped`, warned on stderr, and summarized
 in a `META-005` info finding) and the scan runs the rest. A malformed *known*
 rule — empty/missing required field, out-of-range confidence, duplicate ID — is

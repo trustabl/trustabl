@@ -7,9 +7,9 @@ package rules
 // Forward-compatible loading (see rules.LoadLenient): the engine NO LONGER
 // rejects a pack just because its schema_version exceeds this constant. It
 // loads the pack leniently — a rule that references a scope, applies_to value,
-// or predicate this build lacks is skipped (surfaced as a stderr warning, the
-// META-005 info finding, and ScanResult.RulesSkipped), and the scan proceeds
-// with the rules it does understand. A pack is refused only when it has no usable manifest
+// language, or predicate this build lacks is skipped (surfaced as a stderr
+// warning, the META-005 info finding, and ScanResult.RulesSkipped), and the scan
+// proceeds with the rules it does understand. A pack is refused only when it has no usable manifest
 // (ErrNoCompatibleRules) or when NO rule is evaluable at all
 // (ErrAllRulesIncompatible). This decouples additive rule updates from binary
 // upgrades: shipping a new predicate no longer locks every older binary out of

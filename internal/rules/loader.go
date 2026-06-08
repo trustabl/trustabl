@@ -197,14 +197,14 @@ func loadPolicies(fsys fs.FS, lenient bool) ([]PolicyFile, []string, error) {
 					seenIDs[rule.ID] = name
 				}
 			}
-			if rule.Language != "" {
-				switch rule.Language {
-				case models.LanguagePython, models.LanguageTypeScript,
-					models.LanguageJavaScript, models.LanguageGo:
-					// valid
-				default:
-					errs = append(errs, fmt.Errorf("%s: unknown language %q (allowed: python, typescript, javascript, go)", tag, rule.Language))
-				}
+			// An explicit, unrecognized language is rejected in strict (authoring)
+			// mode so a typo is caught in CI. The lenient runtime path never reaches
+			// here for such a rule — decodePolicyFileLenient drops it as
+			// forward-incompatible (see ruleNeedsNewerEngine) — so a newer rules
+			// release does not break an older binary. Empty is fine (defaults to
+			// python). models.AllLanguages is the single source of truth.
+			if rule.Language != "" && !models.ValidLanguage(rule.Language) {
+				errs = append(errs, fmt.Errorf("%s: unknown language %q (allowed: %s)", tag, rule.Language, languageAllowList()))
 			}
 			if rule.Scope == "" {
 				errs = append(errs, fmt.Errorf("%s: scope is required (tool|agent|repo|subagent)", tag))
@@ -284,6 +284,17 @@ func loadPolicies(fsys fs.FS, lenient bool) ([]PolicyFile, []string, error) {
 		return nil, nil, errors.Join(errs...)
 	}
 	return policies, skipped, nil
+}
+
+// languageAllowList renders the recognized rule languages for the strict
+// validation error, sourced from models.AllLanguages so it never drifts from
+// what the loader actually accepts.
+func languageAllowList() string {
+	names := make([]string, len(models.AllLanguages))
+	for i, l := range models.AllLanguages {
+		names[i] = string(l)
+	}
+	return strings.Join(names, ", ")
 }
 
 // validRepoHasSDKInCode reports whether tok is a value RepoInventory.SDKsDetected
@@ -480,6 +491,16 @@ func ruleNeedsNewerEngine(ruleNode *yaml.Node, known map[string]bool) bool {
 				return true
 			}
 		}
+	}
+	// Unknown language: a source language (e.g. a future `ruby`) whose discovery
+	// this build lacks, so a rule targeting it can never match and was authored
+	// against a newer engine. Empty is NOT incompatible — it defaults to python (a
+	// known language), mirroring the empty-scope / empty-applies_to carve-out: an
+	// absent field is a default, only a present-but-unrecognized value is a
+	// newer-engine signal.
+	lang := models.Language(scalarValue(ruleNode, "language"))
+	if lang != "" && !models.ValidLanguage(lang) {
+		return true
 	}
 	// Unknown predicate key anywhere in the match tree: a predicate from a newer
 	// schema. A known predicate's nested struct keys are NOT match-level keys, so

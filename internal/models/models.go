@@ -127,6 +127,29 @@ const (
 	LanguageGo         Language = "go"
 )
 
+// AllLanguages is every source language this build recognizes, in a stable
+// order. It is the single source of truth for language membership: ValidLanguage
+// checks against it, the strict rule loader builds its allow-list error from it,
+// and the lenient (runtime) loader uses it to decide whether a rule targets a
+// language this build does not understand — a forward-incompatible rule it skips
+// rather than hard-failing. New languages are added here as discovery lands.
+var AllLanguages = []Language{
+	LanguagePython, LanguageTypeScript, LanguageJavaScript, LanguageGo,
+}
+
+// ValidLanguage reports whether l is a source language this build recognizes.
+// Empty is NOT valid here: the loader treats an empty rule language as the
+// python default separately, so this answers only "is this an explicit, known
+// language". Mirrors ValidScope / ValidCategory.
+func ValidLanguage(l Language) bool {
+	for _, k := range AllLanguages {
+		if l == k {
+			return true
+		}
+	}
+	return false
+}
+
 // ToolDef is one discovered surface that an agent can invoke at runtime.
 // Mirrors the Tool Discovery node in architecture §2.
 type ToolDef struct {
