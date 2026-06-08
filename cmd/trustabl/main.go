@@ -3,6 +3,7 @@
 // Subcommands:
 //
 //	trustabl scan <target> [flags]   primary command: scan a repo
+//	trustabl enrich [flags]          enrich a scan result with AI fixes
 //	trustabl mcp [flags]             run a stdio MCP server exposing the scan
 //	trustabl rules pull [flags]      pre-fetch the detection rule packs
 //	trustabl llm ...                 manage optional LLM provider config (BYOK)
@@ -94,6 +95,7 @@ with --strict), 2 = scanner error or no usable rules.`,
 	rootCmd.AddCommand(newRulesCommand())
 	rootCmd.AddCommand(newMCPCommand())
 	rootCmd.AddCommand(newLLMCommand())
+	rootCmd.AddCommand(newEnrichCommand())
 	rootCmd.AddCommand(newCapabilitiesCommand())
 
 	if err := rootCmd.Execute(); err != nil {

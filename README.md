@@ -226,12 +226,11 @@ The rule schema's `language:` field gates per-language rule sets.
 
 ### Scope boundaries
 
-- **LLM enrichment is not wired yet.** Rule-based detection is the whole
-  scan today and makes no network call at all — there is no LLM-backed
-  enrichment path, with or without a key. `trustabl llm key set` only stores
-  a provider key (`~/.config/trustabl/keys.json`, mode 0600) for that future
-  path; `internal/inference/router.go` is the BYOK interface it will call
-  once implemented (today it is a non-functional placeholder).
+- **LLM enrichment is a separate post-scan step (`trustabl enrich`).** Rule-based
+  detection (`trustabl scan`) makes no network call — there is no LLM involved in
+  the scan itself. `trustabl enrich` reads the scan output and calls Anthropic with
+  BYOK (key stored via `trustabl llm key set` at `~/.config/trustabl/keys.json`,
+  mode 0600). `internal/inference/router.go` remains a non-functional placeholder.
 - **Confidence scores are heuristic**, not LLM-judged, and not yet
   calibrated against a labelled real-agent corpus — treat findings as
   signal to investigate.
@@ -475,7 +474,7 @@ trustabl scan ./repo --debug --format json > out.json   # clean JSON on stdout, 
 # Desktop) can scan code an agent just wrote (see "Run as an MCP server" below)
 trustabl mcp
 
-# Configure LLM provider for enrichment (stores the key; the enrichment path is not yet wired)
+# Configure LLM provider, then enrich a scan result with AI explanations and fixes
 trustabl llm list                          # show configured providers with masked keys
 trustabl llm key set                       # prompt securely for an API key
 trustabl llm key set sk-ant-api03-...      # set key non-interactively
@@ -484,6 +483,15 @@ trustabl llm key delete                    # delete key with confirmation prompt
 trustabl llm model set claude-sonnet-4-6   # change model for active provider
 trustabl llm provider set openai           # switch active provider (auto-creates entry)
 trustabl llm provider list                 # list configured providers
+
+# Enrich a scan result (requires anthropic provider with a key set)
+trustabl scan ./myrepo --format json | trustabl enrich --repo ./myrepo        # pipe scan into enrich (stdout)
+trustabl enrich --input scan.json --repo ./myrepo --output enriched.json      # file in, file out
+trustabl enrich --input scan.json --repo ./myrepo --diff                      # preview proposed fixes as a unified diff (stderr)
+trustabl enrich --input scan.json --repo ./myrepo --diff --apply              # preview and apply fixes
+trustabl enrich --input scan.json --repo ./myrepo --apply                     # apply fixes without previewing
+trustabl enrich --input scan.json --repo ./myrepo --rule CSDK-010             # focus on one rule
+trustabl enrich --input scan.json --repo ./myrepo --only-enriched             # CI: only enriched findings
 ```
 
 Rules are cached under your OS cache dir (`os.UserCacheDir()`, e.g.
