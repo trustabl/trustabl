@@ -429,8 +429,8 @@ func Run(cfg Config) (models.ScanResult, error) {
 	}
 
 	// Step 5: scoring
-	surfaces, overall := analysis.Score(tools, inventory.Agents, inventory.Subagents, findings)
-	projected := analysis.Project(tools, inventory.Agents, inventory.Subagents, findings)
+	surfaces, overall := analysis.Score(tools, inventory.Agents, inventory.Subagents, inventory.Skills, findings)
+	projected := analysis.Project(tools, inventory.Agents, inventory.Subagents, inventory.Skills, findings)
 
 	// Coverage: how many AST-targeted source files we actually parsed vs. how
 	// many we attempted. Discovery skips files it cannot read or parse (one bad

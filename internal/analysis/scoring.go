@@ -45,9 +45,9 @@ type surfaceKey struct {
 // Overall is a badness-weighted mean across all surfaces (see blendK), so it
 // responds to both severity and breadth. An empty surface set scores 1.0.
 //
-// Takes the three discovered slices explicitly (not the whole RepoInventory) to
+// Takes the four discovered slices explicitly (not the whole RepoInventory) to
 // stay honest about exactly what scoring depends on.
-func Score(tools []models.ToolDef, agents []models.AgentDef, subagents []models.SubagentDef, findings []models.Finding) ([]models.SurfaceReadiness, float64) {
+func Score(tools []models.ToolDef, agents []models.AgentDef, subagents []models.SubagentDef, skills []models.SkillDef, findings []models.Finding) ([]models.SurfaceReadiness, float64) {
 	bySurface := map[surfaceKey]*models.SurfaceReadiness{}
 
 	seed := func(kind models.Scope, filePath, name string) {
@@ -65,11 +65,14 @@ func Score(tools []models.ToolDef, agents []models.AgentDef, subagents []models.
 	for _, s := range subagents {
 		seed(models.ScopeSubagent, s.FilePath, s.Name)
 	}
+	for _, s := range skills {
+		seed(models.ScopeSkill, s.FilePath, s.Name)
+	}
 
 	for _, f := range findings {
 		var k surfaceKey
 		switch f.Scope {
-		case models.ScopeTool, models.ScopeAgent, models.ScopeSubagent:
+		case models.ScopeTool, models.ScopeAgent, models.ScopeSubagent, models.ScopeSkill:
 			k = surfaceKey{f.Scope, f.FilePath, f.ToolName}
 		case models.ScopeRepo:
 			// All repo findings pool into one repo surface, created on demand.
@@ -157,7 +160,7 @@ func severityRank(s models.Severity) int {
 // an estimate, not a re-scan: it assumes resolved findings vanish cleanly and
 // introduce nothing new. Results are non-decreasing FixCritical → FixAll and
 // each is ≥ the unprojected overall.
-func Project(tools []models.ToolDef, agents []models.AgentDef, subagents []models.SubagentDef, findings []models.Finding) models.ProjectedScores {
+func Project(tools []models.ToolDef, agents []models.AgentDef, subagents []models.SubagentDef, skills []models.SkillDef, findings []models.Finding) models.ProjectedScores {
 	// overallResolvingFrom recomputes the overall keeping only findings strictly
 	// below minResolvedRank (i.e. resolving everything at or above that rank).
 	overallResolvingFrom := func(minResolvedRank int) float64 {
@@ -167,7 +170,7 @@ func Project(tools []models.ToolDef, agents []models.AgentDef, subagents []model
 				kept = append(kept, f)
 			}
 		}
-		_, overall := Score(tools, agents, subagents, kept)
+		_, overall := Score(tools, agents, subagents, skills, kept)
 		return overall
 	}
 	return models.ProjectedScores{
