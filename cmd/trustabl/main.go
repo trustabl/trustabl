@@ -93,6 +93,7 @@ with --strict), 2 = scanner error or no usable rules.`,
 	rootCmd.AddCommand(newScanCommand())
 	rootCmd.AddCommand(newVersionCommand())
 	rootCmd.AddCommand(newRulesCommand())
+	rootCmd.AddCommand(newVulnDBCommand())
 	rootCmd.AddCommand(newMCPCommand())
 	rootCmd.AddCommand(newLLMCommand())
 	rootCmd.AddCommand(newEnrichCommand())

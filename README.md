@@ -312,9 +312,24 @@ matching `--format` stdout output.
 dependencies the repo declares across every supported language — `requirements.txt`
 / `pyproject.toml` / `Pipfile` (pip), `package.json` (npm), `go.mod` (Go),
 `composer.json` (Composer), `*.csproj` (NuGet), `Cargo.toml` (Cargo). It is pure
-inventory of DECLARED direct deps: Trustabl hands off to a real SCA tool
-(OSV-Scanner, Dependabot, syft) for CVE matching — it makes no network call and
-asserts no vulnerability verdict.
+inventory of DECLARED direct deps and makes no network call.
+
+`--vuln-scan` turns that BOM into a vulnerability verdict: it matches the repo's
+concretely-pinned dependencies against a pinned [OSV](https://osv.dev) snapshot
+and reports each affected package as a finding carrying the advisory ID
+(CVE / GHSA / PYSEC / …), a CVSS-derived severity, and the first fixed version —
+so a vulnerable dependency fails the scan through the normal severity gate and
+exit codes and lands in the JSON / SARIF output alongside the rule findings, on
+`ScanResult.vulnerabilities`. Unlike the rest of a scan it is **opt-in and
+online**: the OSV snapshot is fetched from osv.dev on first use and cached under
+your user cache directory (offline fallback thereafter). Run `trustabl vulndb
+pull` to pre-download the database so a later `--vuln-scan` runs fully offline
+(e.g. in CI or an air-gapped build). Only concretely-pinned versions are matched
+— a declared range (`^1.0`, `>=2`) can't be resolved to one version without a
+lockfile, so it is left unmatched rather than guessed. The snapshot version is
+folded into the `ScanID` only when `--vuln-scan` is on, so the result is honest
+about which vulnerability data produced it while a default scan stays
+byte-identical to before.
 
 `--format json` and `--format sarif` are progress-silent and byte-stable
 across identical-input runs (pure functions of the `ScanResult`). The human
@@ -467,6 +482,11 @@ trustabl scan ./path/to/my-skill                  # point straight at one skill'
 # CycloneDX SBOM, to hand to OSV-Scanner / Dependabot / syft. Pure inventory —
 # the scan itself does no CVE lookup.
 trustabl scan ./repo --bom-out sbom.json
+
+# Vulnerability scan (opt-in, online): match the repo's pinned deps against the
+# OSV database and FAIL on known CVEs — advisory id, CVSS severity, fixed version.
+trustabl vulndb pull                              # pre-download OSV (optional; --vuln-scan auto-fetches)
+trustabl scan ./repo --vuln-scan                  # BOM inventory + CVE verdict in one pass
 
 # JSON output for CI piping
 trustabl scan ./repo --format json
