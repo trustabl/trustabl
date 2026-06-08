@@ -79,17 +79,3 @@ func canonicalVercelHostedClass(callee string) string {
 func IsVercelHostedTool(class string) bool {
 	return vercelHostedToolPrefixes[class]
 }
-
-// vercelDangerousHostedClasses is the subset of provider tools that give the
-// model shell, computer-control, or code-execution reach — the surface the
-// VAI-006 agent rule flags. Web-search / URL-context retrieval tools are
-// deliberately excluded (they are an SSRF-class concern, not RCE).
-var vercelDangerousHostedClasses = []string{
-	"anthropic.tools.bash",
-	"anthropic.tools.computer",
-	"anthropic.tools.codeExecution",
-	"openai.tools.localShell",
-	"openai.tools.computerUsePreview",
-	"openai.tools.codeInterpreter",
-	"google.tools.codeExecution",
-}

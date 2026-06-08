@@ -305,6 +305,18 @@ func Normalize(src *Source, onFile func(string)) (models.ScanManifest, error) {
 		return manifest, err
 	}
 
+	// Sort each manifest file list so the serialized report never depends on the
+	// filesystem walk order. WalkDir is lexical today, but the byte-stable-report
+	// contract must not silently rest on that — this is the one set of output
+	// slices not otherwise sorted before emit.
+	for _, fl := range []*[]string{
+		&manifest.PythonFiles, &manifest.TypeScriptFiles, &manifest.JavaScriptFiles,
+		&manifest.GoFiles, &manifest.CSharpFiles, &manifest.PHPFiles, &manifest.RustFiles,
+		&manifest.YAMLFiles, &manifest.JSONFiles, &manifest.MarkdownFiles,
+	} {
+		sort.Strings(*fl)
+	}
+
 	manifest.HasClaudeSDKDependency = detectClaudeSDKDependency(src.RootPath)
 	manifest.HasOpenShellArtifact = detectOpenShellArtifact(manifest.YAMLFiles, src.RootPath)
 	manifest.Components = discoverComponents(src.RootPath, manifest, onFile)
