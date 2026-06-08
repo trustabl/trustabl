@@ -462,7 +462,11 @@ For each language recon cleared, do the AST work and produce a `RepoInventory`:
   Trustabl's own opt-in pinned-OSV `--vuln-scan` layer (TR-271, below). The BOM
   itself is deliberately **not** folded into `ScanID`. The optional `--bom-out`
   flag renders it as a byte-stable CycloneDX 1.5 document via
-  [`internal/cyclonedx`](internal/cyclonedx/render.go).
+  [`internal/cyclonedx`](internal/cyclonedx/render.go); each component carries a
+  `bom-ref`, and when `--vuln-scan` also ran the matched advisories ride along as
+  a CycloneDX **VEX** `vulnerabilities[]` array (advisory id, OSV source,
+  severity rating, upgrade recommendation) linked to the affected component by
+  `affects[].ref` → `bom-ref`.
 - **Vulnerability matching** ([`internal/vulndb`](internal/vulndb), opt-in via
   `--vuln-scan`) — the CVE layer on top of the BOM (TR-271). After analysis the
   scanner resolves a **pinned** OSV snapshot — each ecosystem's published OSV

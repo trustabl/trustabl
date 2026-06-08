@@ -227,6 +227,13 @@ func inRange(ecosystem, version string, r Range) bool {
 
 func firstFixed(ecosystem string, aff Affected) string {
 	for _, r := range aff.Ranges {
+		// Skip GIT ranges: their "fixed" event is a commit SHA, not a release
+		// version, so it would produce nonsense advice ("upgrade to <40-hex>").
+		// recordAffects skips GIT ranges for the same reason; only a
+		// SEMVER/ECOSYSTEM range yields a usable fixed version.
+		if r.Type == "GIT" {
+			continue
+		}
 		for _, e := range r.Events {
 			if e.Fixed != "" {
 				return e.Fixed

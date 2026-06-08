@@ -606,7 +606,10 @@ func writeSideOutputs(result models.ScanResult, f scanFlags) error {
 		}
 	}
 	if f.bomOut != "" {
-		if err := os.WriteFile(f.bomOut, cyclonedx.Render(result.Dependencies, version), 0o644); err != nil {
+		// result.Vulnerabilities is populated only under --vuln-scan; otherwise nil,
+		// so the BOM stays a pure inventory. When present, they ride along as a
+		// CycloneDX VEX vulnerabilities[] array linked to the affected components.
+		if err := os.WriteFile(f.bomOut, cyclonedx.Render(result.Dependencies, result.Vulnerabilities, version), 0o644); err != nil {
 			return fmt.Errorf("write --bom-out: %w", err)
 		}
 	}

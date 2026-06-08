@@ -21,9 +21,9 @@ func sampleDeps() []models.DepRef {
 // order — the determinism contract.
 func TestRender_OrderIndependent(t *testing.T) {
 	deps := sampleDeps()
-	a := Render(deps, "1.2.3")
+	a := Render(deps, nil, "1.2.3")
 	shuffled := []models.DepRef{deps[2], deps[0], deps[1]}
-	b := Render(shuffled, "1.2.3")
+	b := Render(shuffled, nil, "1.2.3")
 	if !bytes.Equal(a, b) {
 		t.Fatalf("Render not order-independent:\n--- a ---\n%s\n--- b ---\n%s", a, b)
 	}
@@ -32,7 +32,7 @@ func TestRender_OrderIndependent(t *testing.T) {
 // TestRender_NoNondeterministicFields guards against a timestamp or random
 // serial number leaking into the byte-stable output.
 func TestRender_NoNondeterministicFields(t *testing.T) {
-	out := string(Render(sampleDeps(), "1.2.3"))
+	out := string(Render(sampleDeps(), nil, "1.2.3"))
 	for _, banned := range []string{"timestamp", "serialNumber"} {
 		if strings.Contains(out, banned) {
 			t.Errorf("BOM contains nondeterministic field %q:\n%s", banned, out)
@@ -41,7 +41,7 @@ func TestRender_NoNondeterministicFields(t *testing.T) {
 }
 
 func TestRender_Structure(t *testing.T) {
-	out := Render(sampleDeps(), "9.9.9")
+	out := Render(sampleDeps(), nil, "9.9.9")
 
 	var doc struct {
 		BOMFormat   string `json:"bomFormat"`
@@ -103,7 +103,7 @@ func TestRender_Structure(t *testing.T) {
 }
 
 func TestRender_EmptyIsEmptyArray(t *testing.T) {
-	out := string(Render(nil, "1.0.0"))
+	out := string(Render(nil, nil, "1.0.0"))
 	if !strings.Contains(out, `"components": []`) {
 		t.Errorf("empty BOM should render an empty components array, got:\n%s", out)
 	}
@@ -119,7 +119,7 @@ func TestRender_AllEcosystemPurls(t *testing.T) {
 		{Name: "serde", Version: "1.0.190", Ecosystem: "cargo", Source: "Cargo.toml"},
 		{Name: "monolog/monolog", Version: "^2.0", Ecosystem: "composer", Source: "composer.json"},
 	}
-	out := string(Render(deps, "1.0.0"))
+	out := string(Render(deps, nil, "1.0.0"))
 	for _, want := range []string{
 		`"purl": "pkg:golang/github.com/foo/bar@v1.2.3"`, // Go v-prefix kept
 		`"purl": "pkg:nuget/Newtonsoft.Json@13.0.1"`,
@@ -129,5 +129,95 @@ func TestRender_AllEcosystemPurls(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %s in:\n%s", want, out)
 		}
+	}
+}
+
+// TestRender_Vulnerabilities proves --vuln-scan matches are emitted as a
+// CycloneDX VEX vulnerabilities[] array: CVE-preferred id, OSV source, severity
+// rating, fix recommendation, and an affects[] ref that links to the affected
+// component's bom-ref.
+func TestRender_Vulnerabilities(t *testing.T) {
+	deps := []models.DepRef{
+		{Name: "requests", Version: "2.19.0", Ecosystem: "pypi", Source: "requirements.txt"},
+	}
+	vulns := []models.DepVuln{{
+		Dep:      deps[0],
+		ID:       "GHSA-x84v-xcm2-53pg",
+		Aliases:  []string{"CVE-2018-18074"},
+		Summary:  "Requests leaks Authorization on redirect",
+		Severity: models.SeverityHigh,
+		FixedIn:  "2.20.0",
+	}}
+	out := Render(deps, vulns, "1.0.0")
+
+	var doc struct {
+		Components []struct {
+			BOMRef string `json:"bom-ref"`
+			PURL   string `json:"purl"`
+		} `json:"components"`
+		Vulnerabilities []struct {
+			ID     string `json:"id"`
+			Source struct {
+				Name string `json:"name"`
+				URL  string `json:"url"`
+			} `json:"source"`
+			Ratings []struct {
+				Severity string `json:"severity"`
+				Method   string `json:"method"`
+			} `json:"ratings"`
+			Recommendation string `json:"recommendation"`
+			Affects        []struct {
+				Ref string `json:"ref"`
+			} `json:"affects"`
+		} `json:"vulnerabilities"`
+	}
+	if err := json.Unmarshal(out, &doc); err != nil {
+		t.Fatalf("invalid CycloneDX JSON: %v\n%s", err, out)
+	}
+	if len(doc.Components) != 1 || doc.Components[0].BOMRef == "" {
+		t.Fatalf("component/bom-ref missing: %+v", doc.Components)
+	}
+	if len(doc.Vulnerabilities) != 1 {
+		t.Fatalf("want 1 vulnerability, got %d:\n%s", len(doc.Vulnerabilities), out)
+	}
+	v := doc.Vulnerabilities[0]
+	if v.ID != "CVE-2018-18074" {
+		t.Errorf("id = %q, want CVE alias preferred", v.ID)
+	}
+	if v.Source.Name != "OSV" || !strings.Contains(v.Source.URL, "GHSA-x84v-xcm2-53pg") {
+		t.Errorf("source = %+v, want OSV + osv.dev URL keyed by OSV id", v.Source)
+	}
+	if len(v.Ratings) != 1 || v.Ratings[0].Severity != "high" {
+		t.Errorf("ratings = %+v, want one 'high' rating", v.Ratings)
+	}
+	if !strings.Contains(v.Recommendation, "2.20.0") {
+		t.Errorf("recommendation = %q, want the fixed version", v.Recommendation)
+	}
+	if len(v.Affects) != 1 || v.Affects[0].Ref != doc.Components[0].BOMRef {
+		t.Errorf("affects %+v must link the component bom-ref %q", v.Affects, doc.Components[0].BOMRef)
+	}
+}
+
+// TestRender_VulnsOrderIndependent extends the determinism contract to the
+// vulnerabilities[] array.
+func TestRender_VulnsOrderIndependent(t *testing.T) {
+	deps := sampleDeps()
+	vulns := []models.DepVuln{
+		{Dep: deps[0], ID: "GHSA-2", Severity: models.SeverityLow},
+		{Dep: deps[0], ID: "GHSA-1", Aliases: []string{"CVE-1"}, Severity: models.SeverityHigh, FixedIn: "9.0.0"},
+	}
+	a := Render(deps, vulns, "1")
+	b := Render(deps, []models.DepVuln{vulns[1], vulns[0]}, "1")
+	if !bytes.Equal(a, b) {
+		t.Fatalf("vulnerabilities render not order-independent:\n--- a ---\n%s\n--- b ---\n%s", a, b)
+	}
+}
+
+// TestRender_NoVulnsOmitsArray proves an inventory-only BOM (no --vuln-scan)
+// omits the vulnerabilities array entirely, so it stays unchanged.
+func TestRender_NoVulnsOmitsArray(t *testing.T) {
+	out := string(Render(sampleDeps(), nil, "1.0.0"))
+	if strings.Contains(out, "vulnerabilities") {
+		t.Errorf("inventory-only BOM must not contain a vulnerabilities array:\n%s", out)
 	}
 }
