@@ -81,7 +81,8 @@ rules:
 }
 
 // TestLoad_ScopeRequiredMessageListsSubagent guards the message fix (TR-154):
-// the required-scope error must list all four scopes, including subagent.
+// the required-scope error must list all five scopes, including subagent and
+// skill.
 func TestLoad_ScopeRequiredMessageListsSubagent(t *testing.T) {
 	const noScope = `
 policy:
@@ -106,6 +107,9 @@ rules:
 	}
 	if !strings.Contains(err.Error(), "subagent") {
 		t.Errorf("required-scope message must list subagent, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "skill") {
+		t.Errorf("required-scope message must list skill, got: %v", err)
 	}
 }
 
