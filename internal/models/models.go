@@ -463,6 +463,7 @@ type ScanResult struct {
 	RulesSource         string             `json:"rules_source"`                   // repo the rule pack came from
 	RulesVersion        string             `json:"rules_version"`                  // resolved rules commit SHA
 	RulesFromCache      bool               `json:"rules_from_cache"`               // true if rules came from cache (network skipped/unreachable)
+	RulesStale          bool               `json:"rules_stale,omitempty"`          // true if the cached signed bundle's channel statement has expired
 	RulesSchemaVersion  int                `json:"rules_schema_version,omitempty"` // pack manifest's declared schema_version
 	RulesSchemaNewer    bool               `json:"rules_schema_newer,omitempty"`   // pack targets a schema newer than this build supports
 	RulesSkipped        []string           `json:"rules_skipped,omitempty"`        // rule IDs dropped as forward-incompatible (sorted, deduped)

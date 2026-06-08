@@ -199,6 +199,21 @@ func TestScan_PopulatesSkillDependencyBOM(t *testing.T) {
 	}
 }
 
+// TestScanRun_ThreadsRulesStale proves the Batch-D wiring: Config.RulesStale
+// (set by the CLI from rulesource.Resolved.Stale) surfaces on
+// ScanResult.RulesStale, which the CLI turns into the louder "rules may be out
+// of date" warning.
+func TestScanRun_ThreadsRulesStale(t *testing.T) {
+	dir := t.TempDir()
+	res, err := scanner.Run(scanner.Config{Target: dir, RulesFS: rulesFixture(t), RulesStale: true})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !res.RulesStale {
+		t.Error("Config.RulesStale=true should surface as ScanResult.RulesStale=true")
+	}
+}
+
 // rulesFixture returns the Phase-1 interim rule packs for tests.
 func rulesFixture(t *testing.T) fs.FS {
 	t.Helper()

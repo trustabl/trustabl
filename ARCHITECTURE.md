@@ -156,7 +156,9 @@ it. Verification is fail-closed —
 a bad signature, an untrusted/expired key, channel confusion, an expired or
 rolled-back statement, or a digest mismatch each refuse the scan (exit 2)
 rather than running unverified rules; only a remote-contact failure degrades to
-the last verified bundle (marked stale past its statement's expiry). The
+the last verified bundle (marked stale past its statement's expiry — surfaced
+on `ScanResult.RulesStale` and as a louder "rules may be out of date" stderr
+warning). The
 provenance of the rules (`models.RulesOrigin`: signed channel / unsigned
 custom / unsigned default) is surfaced as a report watermark and folded into
 `ScanID`. The default scan is unchanged — `gitSource` stays the default until
