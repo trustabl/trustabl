@@ -86,6 +86,17 @@ type MatchExpr struct {
 	// Subagent-scope predicates
 	SubagentGrantsTool []string `yaml:"subagent_grants_tool,omitempty"`
 
+	// Skill-scope predicates
+	SkillAllowsUnrestrictedShell            *bool    `yaml:"skill_allows_unrestricted_shell,omitempty"`
+	SkillAllowsTool                         []string `yaml:"skill_allows_tool,omitempty"`
+	SkillModelInvocable                     *bool    `yaml:"skill_model_invocable,omitempty"`
+	SkillBodyHasDynamicExec                 *bool    `yaml:"skill_body_has_dynamic_exec,omitempty"`
+	SkillDynamicExecTouchesNetworkOrSecrets *bool    `yaml:"skill_dynamic_exec_touches_network_or_secrets,omitempty"`
+	SkillReferencesExternalURL              *bool    `yaml:"skill_references_external_url,omitempty"`
+	SkillBodyHasInjectionMarker             *bool    `yaml:"skill_body_has_injection_marker,omitempty"`
+	SkillBundledScriptNetworkEgress         *bool    `yaml:"skill_bundled_script_network_egress,omitempty"`
+	SkillBundledScriptReadsSecrets          *bool    `yaml:"skill_bundled_script_reads_secrets,omitempty"`
+
 	// Repo-scope predicates
 	RepoHasSDKInCode                  []string `yaml:"repo_has_sdk_in_code,omitempty"`
 	RepoComponentPresent              []string `yaml:"repo_component_present,omitempty"`

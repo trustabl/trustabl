@@ -21,6 +21,7 @@ These were authored in this repository as test fixtures.
 | `google-adk-demo/` | Hand-written Google ADK demo exercising `LlmAgent` / `SequentialAgent` / `ParallelAgent` / `LoopAgent` / `LanggraphAgent` shapes for the ADK-* rule tests |
 | `ts-claude-sdk-min/` | Minimal TypeScript Claude Agent SDK fixture exercising `tool()` / inline-`query()` agents / typed-const `AgentDefinition` / `createSdkMcpServer` for the TS discovery tests |
 | `langchain-demo/` | Hand-written LangChain / LangGraph demo exercising the `@tool` decorator, a `StructuredTool` shell-out, and `create_react_agent` wiring `PythonREPLTool` for the LC-* rule tests |
+| `skill-vuln-fixtures/` | Synthetic Claude Code Agent Skills (a deliberately-vulnerable `leak-helper` + a benign `safe-reader`) exercising enriched skill discovery and the CSKILL-* rule tests. No real payload; all hosts are `example.*` placeholders |
 
 ## Vendored from `openai/openai-agents-python` (MIT)
 

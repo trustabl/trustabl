@@ -75,17 +75,28 @@ type SubagentDetector interface {
 	Detect(models.SubagentDef, models.RepoInventory) []models.Finding
 }
 
+// SkillDetector fires against one SkillDef at a time. Skills are SKILL.md
+// frontmatter + body declarations — no function AST — so Detect takes no
+// ParsedFile (like SubagentDetector).
+type SkillDetector interface {
+	RuleID() string
+	Category() models.DetectorCategory
+	Applies(models.SkillDef) bool
+	Detect(models.SkillDef, models.RepoInventory) []models.Finding
+}
+
 // Registry is the set of detectors active for a scan.
 type Registry struct {
 	tool     []ToolDetector
 	agent    []AgentDetector
 	repo     []RepoDetector
 	subagent []SubagentDetector
+	skill    []SkillDetector
 }
 
 // New returns a Registry holding the given detectors.
-func New(tool []ToolDetector, agent []AgentDetector, repo []RepoDetector, subagent []SubagentDetector) *Registry {
-	return &Registry{tool: tool, agent: agent, repo: repo, subagent: subagent}
+func New(tool []ToolDetector, agent []AgentDetector, repo []RepoDetector, subagent []SubagentDetector, skill []SkillDetector) *Registry {
+	return &Registry{tool: tool, agent: agent, repo: repo, subagent: subagent, skill: skill}
 }
 
 // Run executes every applicable detector across tools, agents, and repo,
@@ -126,6 +137,17 @@ func (r *Registry) Run(profile models.RepoProfile, inv models.RepoInventory, par
 			onEntity("subagent: " + s.Name)
 		}
 		for _, d := range r.subagent {
+			if !d.Applies(s) {
+				continue
+			}
+			out = append(out, safeDetect(d.RuleID(), d.Category(), func() []models.Finding { return d.Detect(s, inv) })...)
+		}
+	}
+	for _, s := range inv.Skills {
+		if onEntity != nil {
+			onEntity("skill: " + s.Name)
+		}
+		for _, d := range r.skill {
 			if !d.Applies(s) {
 				continue
 			}
@@ -215,6 +237,14 @@ func (r *Registry) ApplicableCategories(profile models.RepoProfile, inv models.R
 			}
 		}
 	}
+	for _, d := range r.skill {
+		for _, s := range inv.Skills {
+			if d.Applies(s) {
+				out[d.Category()] = true
+				break
+			}
+		}
+	}
 	return out
 }
 
@@ -245,12 +275,17 @@ func (r *Registry) Subset(cats ...models.DetectorCategory) *Registry {
 			sub.subagent = append(sub.subagent, d)
 		}
 	}
+	for _, d := range r.skill {
+		if cset[d.Category()] {
+			sub.skill = append(sub.skill, d)
+		}
+	}
 	return &sub
 }
 
 // Count returns the total number of registered detectors.
 func (r *Registry) Count() int {
-	return len(r.tool) + len(r.agent) + len(r.repo) + len(r.subagent)
+	return len(r.tool) + len(r.agent) + len(r.repo) + len(r.subagent) + len(r.skill)
 }
 
 func parsedFor(filePath string, parsed []analysis.ParsedFile) analysis.ParsedFile {

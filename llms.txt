@@ -14,8 +14,8 @@ Key facts an LLM should know before reasoning about this project:
   Agents SDK (Python), Google ADK (Python), MCP (Python tool registrations),
   and an OpenShell shell-invocation risk surface. TypeScript discovery is wired
   for the Claude SDK; no TS-language rules ship yet.
-- **Detection model.** Every rule fires at exactly one of four scopes —
-  `tool`, `agent`, `subagent`, or `repo` — and receives a typed input.
+- **Detection model.** Every rule fires at exactly one of five scopes —
+  `tool`, `agent`, `subagent`, `skill`, or `repo` — and receives a typed input.
   Agent-scoped findings attribute to a specific agent, not the whole repo.
 - **Rules are not embedded in the binary.** They live in a separate git
   repository (`trustabl-rules`) and are resolved at scan time, cached locally

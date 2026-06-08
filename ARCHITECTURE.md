@@ -359,8 +359,8 @@ flowchart TD
     score --> result
 ```
 
-The four scopes a rule can fire at — `tool`, `agent`, `subagent`, `repo` — flow into
-`Registry.Run` from the same `RepoInventory`, but each detector consumes a
+The five scopes a rule can fire at — `tool`, `agent`, `subagent`, `skill`, `repo` —
+flow into `Registry.Run` from the same `RepoInventory`, but each detector consumes a
 different typed input:
 
 ```mermaid
@@ -371,12 +371,14 @@ flowchart LR
     inv -- "for each ToolDef" --> tool["ToolDetector<br/>Applies(ToolDef)<br/>Detect(ToolDef, ParsedFile, Inv)"]
     inv -- "for each AgentDef" --> agent["AgentDetector<br/>Applies(AgentDef)<br/>Detect(AgentDef, Inv)"]
     inv -- "for each SubagentDef" --> subagent["SubagentDetector<br/>Applies(SubagentDef)<br/>Detect(SubagentDef, Inv)"]
+    inv -- "for each SkillDef" --> skill["SkillDetector<br/>Applies(SkillDef)<br/>Detect(SkillDef, Inv)"]
     profile --> repo["RepoDetector<br/>Applies(Profile, Inv)<br/>Detect(Profile, Inv) (once)"]
     inv --> repo
 
     tool --> f[("Findings")]
     agent --> f
     subagent --> f
+    skill --> f
     repo --> f
 ```
 
@@ -434,9 +436,16 @@ For each language recon cleared, do the AST work and produce a `RepoInventory`:
 - **DiscoverSkills** (`skills.go`) — emits one `SkillDef` per `SKILL.md`
   (identified by basename at any depth: `.claude/skills/<name>/SKILL.md`,
   plugin `skills/`, nested monorepo skills). Captures `name`, `description`,
-  `allowed-tools` (space-separated or YAML-list, parsed into `ToolGrants`),
-  `argument-hint`, and `disable-model-invocation`. No frontmatter or no `name`
-  → skipped.
+  `allowed-tools` / `disallowed-tools` (parsed into `ToolGrants`),
+  `argument-hint`, `disable-model-invocation`, and the invocation/fork
+  frontmatter; plus **body facts** from the markdown (dynamic-context exec
+  commands, external URLs, prompt-injection markers — including hidden-Unicode:
+  zero-width characters, the Tags block U+E0000–E007F, and bidi overrides) and a
+  **bundled-file inventory** (script/markdown/binary/resource by extension).
+  Script-kind bundled files are additionally content-scanned (size-capped) for
+  network egress and credential reads, stamped onto the `BundledFile` — the
+  payload-in-aux-file surface that scanning `SKILL.md` alone misses. No
+  frontmatter or no `name` → skipped.
 - **DiscoverSlashCommands** (`slash_commands.go`) — emits one
   `SlashCommandDef` per `ComponentSlashCommand` component. Recon tags those
   at two path shapes: the canonical `.claude/commands/*.md` (any depth) AND
@@ -1470,7 +1479,7 @@ Discipline rules:
   is legacy/uninitialized and the human renderer collapses such records to
   `file:N` form. Rule detectors that emit a `Finding` MUST propagate the
   entity's `Line` to `Finding.Line` so jump-to-source works from a finding —
-  this is currently done for all four scopes (tool, agent, subagent, repo).
+  this is currently done for all five scopes (tool, agent, subagent, skill, repo).
 - **No source-text storage.** The inventory is a structured *index of
   locations*; consumers fetch source by reading the file at
   `(FilePath, Line, EndLine)`. `RawSource` is deliberately **not** included

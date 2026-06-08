@@ -61,6 +61,22 @@ func (d fakeSubagentDetector) Detect(s models.SubagentDef, _ models.RepoInventor
 	return []models.Finding{{RuleID: d.id, ToolName: s.Name}}
 }
 
+type fakeSkillDetector struct {
+	id    string
+	cat   models.DetectorCategory
+	fires bool
+}
+
+func (d fakeSkillDetector) RuleID() string                    { return d.id }
+func (d fakeSkillDetector) Category() models.DetectorCategory { return d.cat }
+func (d fakeSkillDetector) Applies(models.SkillDef) bool      { return true }
+func (d fakeSkillDetector) Detect(s models.SkillDef, _ models.RepoInventory) []models.Finding {
+	if !d.fires {
+		return nil
+	}
+	return []models.Finding{{RuleID: d.id, ToolName: s.Name}}
+}
+
 func newTestRegistry() *Registry {
 	return New(
 		[]ToolDetector{
@@ -74,6 +90,7 @@ func newTestRegistry() *Registry {
 			fakeRepo{id: "OAI-201", cat: models.CategoryOpenAISDK},
 		},
 		nil,
+		nil,
 	)
 }
 
@@ -81,7 +98,7 @@ func TestRegistryCount(t *testing.T) {
 	if got := newTestRegistry().Count(); got != 4 {
 		t.Fatalf("Count() = %d, want 4", got)
 	}
-	if got := New(nil, nil, nil, nil).Count(); got != 0 {
+	if got := New(nil, nil, nil, nil, nil).Count(); got != 0 {
 		t.Fatalf("empty Count() = %d, want 0", got)
 	}
 }
@@ -122,7 +139,7 @@ func TestRegistrySubset(t *testing.T) {
 func TestRegistry_RunsSubagentDetectors(t *testing.T) {
 	reg := New(nil, nil, nil, []SubagentDetector{
 		fakeSubagentDetector{id: "SUB-1", cat: "claude_sdk", fires: true},
-	})
+	}, nil)
 	inv := models.RepoInventory{
 		Subagents: []models.SubagentDef{{Name: "searcher", Location: models.Location{FilePath: ".claude/agents/searcher.md"}}},
 	}
@@ -139,6 +156,26 @@ func TestRegistry_RunsSubagentDetectors(t *testing.T) {
 	}
 }
 
+func TestRegistry_RunsSkillDetectors(t *testing.T) {
+	reg := New(nil, nil, nil, nil, []SkillDetector{
+		fakeSkillDetector{id: "CSKILL-1", cat: models.CategoryClaudeSkill, fires: true},
+	})
+	inv := models.RepoInventory{
+		Skills: []models.SkillDef{{Name: "leak-helper", Location: models.Location{FilePath: ".claude/skills/leak-helper/SKILL.md"}}},
+	}
+	findings := reg.Run(models.RepoProfile{}, inv, nil, nil)
+	if len(findings) != 1 || findings[0].RuleID != "CSKILL-1" {
+		t.Fatalf("expected one CSKILL-1 finding, got %+v", findings)
+	}
+	if reg.Count() != 1 {
+		t.Errorf("Count: got %d, want 1", reg.Count())
+	}
+	cats := reg.ApplicableCategories(models.RepoProfile{}, inv)
+	if !cats[models.CategoryClaudeSkill] {
+		t.Errorf("ApplicableCategories missing claude_skill: %+v", cats)
+	}
+}
+
 // TestApplicableCategories_ExcludesRepoDetectors locks the META-004 coverage
 // contract: a repo-scope detector that Applies() must NOT mark its category
 // "audited", because repo rules audit repo-wide config (e.g. .claude/settings.json
@@ -150,7 +187,7 @@ func TestApplicableCategories_ExcludesRepoDetectors(t *testing.T) {
 	reg := New(
 		nil, nil,
 		[]RepoDetector{fakeRepo{id: "OAI-201", cat: models.CategoryOpenAISDK}},
-		nil,
+		nil, nil,
 	)
 	// fakeRepo.Applies always returns true, yet no tool/agent/subagent matched.
 	got := reg.ApplicableCategories(models.RepoProfile{}, models.RepoInventory{})

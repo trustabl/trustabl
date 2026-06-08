@@ -26,9 +26,9 @@ and internal prefixes (e.g. the clone temp-dir `trustabl-clone-*`). When in
 doubt: if a human reads it as a sentence, it's "Trustabl"; if a machine
 parses it as a token, it's `trustabl`.
 
-## Detection model: four scopes
+## Detection model: five scopes
 
-Every rule is classified into exactly one of four scopes. The `scope:`
+Every rule is classified into exactly one of five scopes. The `scope:`
 field is REQUIRED on every rule — the loader rejects a rule with no
 `scope:` (there is no longer a default-to-`tool` fallback; that historical
 behavior was removed when the loader adopted strict decoding).
@@ -66,6 +66,19 @@ behavior was removed when the loader adopted strict decoding).
     and the detector does not gate on language.
   - **Examples**: subagent granted `Bash` despite a read-only description
     (CSDK-110), description-vs-tools mismatch, no `name`.
+
+- **`skill`** — fires per `SKILL.md` declaration.
+  - **Input**: a `SkillDef` parsed from `SKILL.md` frontmatter (`name`,
+    `description`, `allowed-tools[]` → `ToolGrants`,
+    `disable-model-invocation`) plus body facts (dynamic-context exec
+    commands, external URLs, prompt-injection markers) and a bundled-file
+    inventory. Matched at any path depth (monorepo-safe). Carries no
+    `Language` field — `SKILL.md` is markdown, so skill rules carry no
+    `language:` field either and the detector does not gate on language.
+  - **Examples**: skill auto-approves unrestricted `Bash` (CSKILL-001), a
+    dynamic-context command performs network egress or reads secrets
+    (CSKILL-003), model-invocable skill grants side-effecting tools
+    (CSKILL-050).
 
 - **`repo`** — fires once per scan against the whole repo.
   - **Input**: `RepoProfile` + `RepoInventory` (languages, declared SDK
@@ -177,7 +190,7 @@ Rules:
 ### Step 4 — Analysis
 
 Run the selected policy packs against the inventory. Detectors are
-scope-aware (see the four-scope model above) and receive typed inputs:
+scope-aware (see the five-scope model above) and receive typed inputs:
 
 - `tool`-scoped detectors receive a `ToolDef`.
 - `agent`-scoped detectors receive an `AgentDef` with its resolved
@@ -236,10 +249,12 @@ SDK-specific. A Claude-SDK rule and an OpenAI-Agents-SDK rule that detect
 the same conceptual problem (e.g. missing timeout) are TWO separate rules
 in different policy files, each with framing that matches the target SDK.
 
-This holds at all four scopes:
+This holds at all five scopes:
 - Tool scope: `applies_to: [claude_sdk_tool]` vs `[openai_tool]`.
 - Agent scope: `applies_to: [openai_agent]` vs `[claude_agent_definition]`.
 - Repo scope: rules are organized by the SDK they target.
+- Skill scope: `applies_to: [claude_skill]` — Claude-only, no cross-SDK
+  equivalent, and skills carry no `language:`.
 
 When a repo declares agents from multiple SDKs side by side, each agent
 is checked against the rules for the SDK that declared it. No

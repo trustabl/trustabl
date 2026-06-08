@@ -37,7 +37,7 @@ func TestScore_ExcludesMetaAndUnmatchedFindings(t *testing.T) {
 		{RuleID: "META-004", Severity: models.SeverityInfo, Confidence: 1.0}, // Scope == ""
 		{RuleID: "GHOST", Scope: models.ScopeTool, ToolName: "nope", FilePath: "z.py", Severity: models.SeverityHigh, Confidence: 1.0},
 	}
-	surfaces, overall := analysis.Score(tools, nil, nil, findings)
+	surfaces, overall := analysis.Score(tools, nil, nil, nil, findings)
 	if len(surfaces) != 1 {
 		t.Fatalf("got %d surfaces, want 1 (just the tool): %+v", len(surfaces), surfaces)
 	}
@@ -58,7 +58,7 @@ func TestScore_AgentFindingLowersOverall(t *testing.T) {
 	findings := []models.Finding{
 		{RuleID: "CSDK-201", Scope: models.ScopeAgent, ToolName: "Planner", FilePath: "p.py", Severity: models.SeverityCritical, Confidence: 1.0},
 	}
-	surfaces, overall := analysis.Score(nil, agents, nil, findings)
+	surfaces, overall := analysis.Score(nil, agents, nil, nil, findings)
 	if len(surfaces) != 1 || surfaces[0].Kind != models.ScopeAgent || surfaces[0].Name != "Planner" {
 		t.Fatalf("want one agent surface 'Planner', got %+v", surfaces)
 	}
@@ -84,12 +84,34 @@ func TestScore_SubagentFindingLowersOverall(t *testing.T) {
 	findings := []models.Finding{
 		{RuleID: "CSDK-110", Scope: models.ScopeSubagent, ToolName: "deployer", FilePath: ".claude/agents/deployer.md", Severity: models.SeverityHigh, Confidence: 1.0},
 	}
-	surfaces, overall := analysis.Score(nil, nil, subs, findings)
+	surfaces, overall := analysis.Score(nil, nil, subs, nil, findings)
 	if len(surfaces) != 1 || surfaces[0].Kind != models.ScopeSubagent {
 		t.Fatalf("want one subagent surface, got %+v", surfaces)
 	}
 	if overall >= 1.0 {
 		t.Errorf("overall: got %v, must be < 1.0", overall)
+	}
+}
+
+// TestScore_SkillFindingLowersOverall: skill findings create a skill surface and
+// lower the overall — a malicious SKILL.md must not score 100%. Regression for
+// skills being absent from the Score signature (findings fired but never scored).
+func TestScore_SkillFindingLowersOverall(t *testing.T) {
+	skills := []models.SkillDef{
+		{Name: "leak-helper", Location: models.Location{FilePath: ".claude/skills/leak-helper/SKILL.md"}},
+	}
+	findings := []models.Finding{
+		{RuleID: "CSKILL-001", Scope: models.ScopeSkill, ToolName: "leak-helper", FilePath: ".claude/skills/leak-helper/SKILL.md", Severity: models.SeverityCritical, Confidence: 1.0},
+	}
+	surfaces, overall := analysis.Score(nil, nil, nil, skills, findings)
+	if len(surfaces) != 1 || surfaces[0].Kind != models.ScopeSkill || surfaces[0].Name != "leak-helper" {
+		t.Fatalf("want one skill surface 'leak-helper', got %+v", surfaces)
+	}
+	if surfaces[0].FindingCount != 1 {
+		t.Errorf("skill FindingCount: got %d, want 1", surfaces[0].FindingCount)
+	}
+	if overall >= 1.0 {
+		t.Fatalf("overall: got %v, must be < 1.0 (skill has a critical finding)", overall)
 	}
 }
 
@@ -100,7 +122,7 @@ func TestScore_RepoFindingsPoolIntoOneSurface(t *testing.T) {
 		{RuleID: "OAI-201", Scope: models.ScopeRepo, Severity: models.SeverityMedium, Confidence: 1.0},
 		{RuleID: "REPO-002", Scope: models.ScopeRepo, Severity: models.SeverityLow, Confidence: 1.0},
 	}
-	surfaces, overall := analysis.Score(nil, nil, nil, findings)
+	surfaces, overall := analysis.Score(nil, nil, nil, nil, findings)
 	if len(surfaces) != 1 || surfaces[0].Kind != models.ScopeRepo {
 		t.Fatalf("want one repo surface, got %+v", surfaces)
 	}
@@ -118,7 +140,7 @@ func TestScore_RepoFindingsPoolIntoOneSurface(t *testing.T) {
 // TestScore_NoRepoSurfaceWithoutRepoFindings: a clean repo gets no repo row.
 func TestScore_NoRepoSurfaceWithoutRepoFindings(t *testing.T) {
 	tools := []models.ToolDef{tool("search", "a.py")}
-	surfaces, overall := analysis.Score(tools, nil, nil, nil)
+	surfaces, overall := analysis.Score(tools, nil, nil, nil, nil)
 	for _, s := range surfaces {
 		if s.Kind == models.ScopeRepo {
 			t.Errorf("unexpected repo surface on a repo with no repo findings: %+v", surfaces)
@@ -136,7 +158,7 @@ func TestScore_DistinguishesSameNamedToolsAcrossFiles(t *testing.T) {
 	findings := []models.Finding{
 		{RuleID: "CSDK-003", Scope: models.ScopeTool, ToolName: "search", FilePath: "a.py", Severity: models.SeverityHigh, Confidence: 1.0},
 	}
-	surfaces, _ := analysis.Score(tools, nil, nil, findings)
+	surfaces, _ := analysis.Score(tools, nil, nil, nil, findings)
 	if len(surfaces) != 2 {
 		t.Fatalf("got %d surfaces, want 2 (one per file): %+v", len(surfaces), surfaces)
 	}
@@ -165,13 +187,13 @@ func TestScore_CleanSurfacesDiluteBadOnes(t *testing.T) {
 	}
 	bad := models.Finding{RuleID: "CSDK-201", Scope: models.ScopeAgent, ToolName: "Planner", FilePath: "p.py", Severity: models.SeverityCritical, Confidence: 1.0}
 
-	_, alone := analysis.Score(nil, agents, nil, []models.Finding{bad})
+	_, alone := analysis.Score(nil, agents, nil, nil, []models.Finding{bad})
 
 	manyTools := make([]models.ToolDef, 10)
 	for i := range manyTools {
 		manyTools[i] = tool("t"+string(rune('0'+i)), "t.py")
 	}
-	_, surrounded := analysis.Score(manyTools, agents, nil, []models.Finding{bad})
+	_, surrounded := analysis.Score(manyTools, agents, nil, nil, []models.Finding{bad})
 
 	if !(surrounded > alone) {
 		t.Errorf("dilution: surrounded (%v) must read higher than alone (%v)", surrounded, alone)
@@ -186,7 +208,7 @@ func TestScore_OverallPulledTowardWeakSurface(t *testing.T) {
 	findings := []models.Finding{
 		{RuleID: "CSDK-003", Scope: models.ScopeTool, ToolName: "bad", FilePath: "b.py", Severity: models.SeverityCritical, Confidence: 1.0},
 	}
-	surfaces, overall := analysis.Score(tools, nil, nil, findings)
+	surfaces, overall := analysis.Score(tools, nil, nil, nil, findings)
 	mean := arithMean(surfaces)
 	var worst float64 = 1.0
 	for _, s := range surfaces {
@@ -210,7 +232,7 @@ func TestScore_OverallPulledTowardWeakSurface(t *testing.T) {
 
 // TestScore_EmptyReturnsOne: a genuinely empty repo (no surfaces) scores 1.0.
 func TestScore_EmptyReturnsOne(t *testing.T) {
-	surfaces, overall := analysis.Score(nil, nil, nil, nil)
+	surfaces, overall := analysis.Score(nil, nil, nil, nil, nil)
 	if len(surfaces) != 0 {
 		t.Fatalf("want 0 surfaces, got %+v", surfaces)
 	}
@@ -223,7 +245,7 @@ func TestScore_EmptyReturnsOne(t *testing.T) {
 // 1.0 at every tier.
 func TestProject_EmptyReturnsAllOne(t *testing.T) {
 	tools := []models.ToolDef{tool("search", "a.py")}
-	p := analysis.Project(tools, nil, nil, nil)
+	p := analysis.Project(tools, nil, nil, nil, nil)
 	for name, v := range map[string]float64{
 		"fix_critical": p.FixCritical, "fix_high": p.FixHigh, "fix_medium": p.FixMedium,
 		"fix_low": p.FixLow, "fix_all": p.FixAll,
@@ -244,8 +266,8 @@ func TestProject_MonotonicAndAboveOverall(t *testing.T) {
 		{RuleID: "X2", Scope: models.ScopeTool, ToolName: "b", FilePath: "b.py", Severity: models.SeverityHigh, Confidence: 1.0},
 		{RuleID: "X3", Scope: models.ScopeTool, ToolName: "c", FilePath: "c.py", Severity: models.SeverityLow, Confidence: 1.0},
 	}
-	_, overall := analysis.Score(tools, nil, nil, findings)
-	p := analysis.Project(tools, nil, nil, findings)
+	_, overall := analysis.Score(tools, nil, nil, nil, findings)
+	p := analysis.Project(tools, nil, nil, nil, findings)
 
 	if p.FixCritical < overall-eps {
 		t.Errorf("fix_critical (%v) must be >= overall (%v)", p.FixCritical, overall)
@@ -272,8 +294,8 @@ func TestProject_InfoResolvedOnlyAtFixAll(t *testing.T) {
 	findings := []models.Finding{
 		{RuleID: "I1", Scope: models.ScopeTool, ToolName: "a", FilePath: "a.py", Severity: models.SeverityInfo, Confidence: 1.0},
 	}
-	_, overall := analysis.Score(tools, nil, nil, findings)
-	p := analysis.Project(tools, nil, nil, findings)
+	_, overall := analysis.Score(tools, nil, nil, nil, findings)
+	p := analysis.Project(tools, nil, nil, nil, findings)
 	for name, v := range map[string]float64{
 		"fix_critical": p.FixCritical, "fix_high": p.FixHigh, "fix_medium": p.FixMedium, "fix_low": p.FixLow,
 	} {

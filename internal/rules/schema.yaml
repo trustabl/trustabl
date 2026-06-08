@@ -305,6 +305,54 @@ rules:
 #       that call system tools or manipulate files.
 #
 #
+# ━━━ SKILL-SCOPE PREDICATES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# (used only in scope: skill rules — Claude Code Agent Skills, SKILL.md)
+#
+#   skill_allows_unrestricted_shell: true
+#       Fires when allowed-tools pre-approves unrestricted shell — a bare `Bash`
+#       grant or a wildcard pattern (Bash(*) / Bash(:*)). allowed-tools is an
+#       auto-approval list, not a sandbox, so this auto-runs any shell command
+#       without prompting. Bool predicate; negate with `false`.
+#
+#   skill_allows_tool: [Bash, Write, WebFetch, ...]
+#       Fires when allowed-tools pre-approves any of the given Claude Code tool
+#       names (matches the parsed grant Tool, then the raw token).
+#
+#   skill_model_invocable: true
+#       Fires when the model can auto-invoke the skill (disable-model-invocation
+#       is not set). Pair with skill_allows_tool to flag a model-triggerable
+#       side-effecting skill. Bool predicate.
+#
+#   skill_body_has_dynamic_exec: true
+#       Fires when the SKILL.md body uses dynamic-context shell execution (the
+#       inline !`cmd` form or a ```! fenced block), which Claude Code runs during
+#       preprocessing — before the model sees the skill. Bool predicate.
+#
+#   skill_dynamic_exec_touches_network_or_secrets: true
+#       Fires when a dynamic-context command performs network egress (curl / wget
+#       / nc / ...) or reads credentials/secrets (gh auth, $AWS_*, ~/.aws,
+#       ~/.ssh, id_rsa, *_key, ...). The pre-model exfiltration primitive. Bool.
+#
+#   skill_references_external_url: true
+#       Fires when the SKILL.md body references an external http(s) URL — an
+#       indirect-injection vector and possible exfiltration endpoint. Bool.
+#
+#   skill_body_has_injection_marker: true
+#       Fires when the body carries a prompt-injection marker (instruction-
+#       override phrasing, zero-width characters, or a long base64 blob). Bool.
+#
+#   skill_bundled_script_network_egress: true
+#       Fires when a script bundled in the skill's directory makes outbound
+#       network calls (curl / wget / nc / ...). A skill can run its bundled
+#       scripts, so this is the payload-in-aux-file egress that scanning
+#       SKILL.md alone misses. Bool predicate.
+#
+#   skill_bundled_script_reads_secrets: true
+#       Fires when a bundled script reads credentials/secrets (gh auth, $AWS_*,
+#       ~/.aws, ~/.ssh, id_rsa, *_key, ...). Credential theft hidden outside the
+#       SKILL.md body. Bool predicate.
+#
+#
 # ━━━ REPO-SCOPE PREDICATES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # (used only in scope: repo rules; match runs once per scan)
 #

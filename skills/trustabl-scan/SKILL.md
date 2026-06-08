@@ -88,7 +88,7 @@ Each finding carries:
   not ground truth. Look at higher-confidence findings first.
 - **explanation** why the pattern is a problem.
 - **suggested_fix** the concrete remediation to apply.
-- **location** where it fired, attributed to one of four scopes:
+- **location** where it fired, attributed to one of five scopes:
   - **tool** a specific tool definition (file and line). Example: an HTTP call
     with no timeout, untyped parameters, a missing docstring.
   - **agent** a specific agent at its constructor call site, with its resolved
@@ -96,6 +96,9 @@ Each finding carries:
     but no input guardrails.
   - **subagent** a `.claude/agents/*.md` declaration. Example: a subagent
     granted `Bash` despite a read-only description.
+  - **skill** a `SKILL.md` declaration (a Claude Code skill). Example: a skill
+    that auto-approves unrestricted `Bash`, or runs a dynamic-context command
+    that reads secrets before the model sees it.
   - **repo** the whole repo, once per scan. Example: an SDK present with no
     custom trace processor configured.
 

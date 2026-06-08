@@ -19,10 +19,10 @@ the scan works*, then covers building and running it. For the full
 implementation reference see [ARCHITECTURE.md](ARCHITECTURE.md); for the
 at-a-glance SDK coverage matrix see [COVERAGE.md](COVERAGE.md).
 
-## What it analyzes — the four-scope model
+## What it analyzes — the five-scope model
 
 Trustabl does not treat a repository as one undifferentiated blob. Every
-rule is classified into exactly one of four scopes, and each scope receives
+rule is classified into exactly one of five scopes, and each scope receives
 a different typed input:
 
 - **`tool`** — fires once per tool definition. Input: a `ToolDef` (a
@@ -56,6 +56,17 @@ a different typed input:
   tool despite a read-only description (CSDK-110). Subagent presence alone
   contributes `claude_agent_sdk` to `SDKsDetected`, so the Claude pack
   loads and CSDK-110 fires on pure-markdown subagent collections.
+- **`skill`** — fires once per Claude Code skill (`SKILL.md`, any path
+  depth). Input: a `SkillDef` parsed from frontmatter — `name`,
+  `description`, `allowed-tools` → `ToolGrants[]`,
+  `disable-model-invocation` — plus body facts (dynamic-context exec
+  commands, external URLs, prompt-injection markers) and a bundled-file
+  inventory. Catches a skill that auto-approves unrestricted `Bash`
+  (CSKILL-001), runs a dynamic-context command that performs network egress
+  or reads secrets before the model sees it (CSKILL-003), or is
+  model-invocable while granting side-effecting tools (CSKILL-050). Skills
+  are markdown, so skill rules carry no `language:`; the `claude_skill`
+  pack loads whenever a `SKILL.md` is present.
 - **`repo`** — fires once per scan against the whole inventory. Catches
   project-wide gaps such as the OpenAI Agents SDK being present with no
   custom trace processor configured.
