@@ -78,6 +78,7 @@ type ArtifactLocation struct {
 
 type Region struct {
 	StartLine int `json:"startLine,omitempty"`
+	EndLine   int `json:"endLine,omitempty"`
 }
 
 type LogicalLocation struct {

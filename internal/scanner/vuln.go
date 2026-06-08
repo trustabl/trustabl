@@ -109,6 +109,8 @@ func vulnFindings(vulns []models.DepVuln) []models.Finding {
 			Severity:     v.Severity,
 			ToolName:     v.Dep.Name,
 			FilePath:     v.Dep.Source,
+			StartLine:    v.Dep.StartLine,
+			EndLine:      v.Dep.EndLine,
 			Title:        fmt.Sprintf("Vulnerable dependency: %s %s (%s)", v.Dep.Name, v.Dep.Version, id),
 			Explanation:  expl,
 			SuggestedFix: fix,

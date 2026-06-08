@@ -227,17 +227,22 @@ type AgentComponent struct {
 
 // Finding is one detector hit on one surface (tool, agent, subagent, or repo).
 type Finding struct {
-	RuleID       string           `json:"rule_id"`
-	Category     DetectorCategory `json:"category"`
-	Scope        Scope            `json:"scope"` // tool|agent|subagent|repo; empty for META findings
-	Severity     Severity         `json:"severity"`
-	ToolName     string           `json:"tool_name"`
-	FilePath     string           `json:"file_path"`
-	Line         int              `json:"line"`
-	Title        string           `json:"title"`
-	Explanation  string           `json:"explanation"` // "show your work" per doc §7
-	SuggestedFix string           `json:"suggested_fix"`
-	Confidence   float64          `json:"confidence"` // 0..1
+	RuleID   string           `json:"rule_id"`
+	Category DetectorCategory `json:"category"`
+	Scope    Scope            `json:"scope"` // tool|agent|subagent|repo; empty for META findings
+	Severity Severity         `json:"severity"`
+	ToolName string           `json:"tool_name"`
+	FilePath string           `json:"file_path"`
+	// StartLine/EndLine are the 1-indexed inclusive line range of the entity the
+	// finding fired on (a tool, agent, skill, subagent, or a declared dependency).
+	// A single-line entity sets EndLine == StartLine. Both are 0 for repo-scope
+	// findings that have no source location. Mirrors models.Location.
+	StartLine    int     `json:"start_line"`
+	EndLine      int     `json:"end_line"`
+	Title        string  `json:"title"`
+	Explanation  string  `json:"explanation"` // "show your work" per doc §7
+	SuggestedFix string  `json:"suggested_fix"`
+	Confidence   float64 `json:"confidence"` // 0..1
 }
 
 // SurfaceReadiness is the readiness score for one analyzable surface — a single
@@ -339,6 +344,11 @@ type DepRef struct {
 	Version   string `json:"version,omitempty"`
 	Ecosystem string `json:"ecosystem"`
 	Source    string `json:"source"`
+	// StartLine/EndLine are the 1-indexed line of the dependency's declaration in
+	// Source. A declaration is a single manifest line, so EndLine == StartLine.
+	// Mirrors models.Location so a dependency attributes like any other entity.
+	StartLine int `json:"start_line"`
+	EndLine   int `json:"end_line"`
 }
 
 // DepVuln is one known vulnerability matched against a declared dependency by the

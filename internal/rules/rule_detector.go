@@ -57,7 +57,7 @@ func (d toolRuleDetector) Detect(t models.ToolDef, pf analysis.ParsedFile, inv m
 	if !d.rule.Match.EvaluateTool(t, pf) {
 		return nil
 	}
-	return []models.Finding{findingFromRule(d.rule, models.ScopeTool, t.FilePath, t.Line, t.Name)}
+	return []models.Finding{findingFromRule(d.rule, models.ScopeTool, t.FilePath, t.Line, t.EndLine, t.Name)}
 }
 
 // agentRuleDetector adapts an agent-scoped RuleDef into an AgentDetector.
@@ -80,7 +80,7 @@ func (d agentRuleDetector) Detect(a models.AgentDef, inv models.RepoInventory) [
 	if !d.rule.Match.EvaluateAgent(a, inv) {
 		return nil
 	}
-	return []models.Finding{findingFromRule(d.rule, models.ScopeAgent, a.FilePath, a.Line, a.Name)}
+	return []models.Finding{findingFromRule(d.rule, models.ScopeAgent, a.FilePath, a.Line, a.EndLine, a.Name)}
 }
 
 // repoRuleDetector adapts a repo-scoped RuleDef into a RepoDetector.
@@ -140,7 +140,7 @@ func (d repoRuleDetector) Detect(p models.RepoProfile, inv models.RepoInventory)
 	if !d.rule.Match.EvaluateRepo(p, inv) {
 		return nil
 	}
-	return []models.Finding{findingFromRule(d.rule, models.ScopeRepo, "", 0, "")}
+	return []models.Finding{findingFromRule(d.rule, models.ScopeRepo, "", 0, 0, "")}
 }
 
 func agentKindMatches(kind string, a models.AgentDef) bool {
@@ -225,7 +225,7 @@ func (d subagentRuleDetector) Detect(s models.SubagentDef, inv models.RepoInvent
 	// (usually 1), EndLine = the closing "---". Attribute to the opening so
 	// the user lands at the start of the declaration when jumping from a
 	// finding.
-	return []models.Finding{findingFromRule(d.rule, models.ScopeSubagent, s.FilePath, s.Line, s.Name)}
+	return []models.Finding{findingFromRule(d.rule, models.ScopeSubagent, s.FilePath, s.Line, s.EndLine, s.Name)}
 }
 
 // skillRuleDetector adapts a skill-scoped RuleDef into a SkillDetector.
@@ -249,7 +249,7 @@ func (d skillRuleDetector) Detect(s models.SkillDef, inv models.RepoInventory) [
 	}
 	// SkillDef embeds Location: Line = the opening "---" of the frontmatter.
 	// Attribute to the opening so a finding jumps to the start of the skill.
-	return []models.Finding{findingFromRule(d.rule, models.ScopeSkill, s.FilePath, s.Line, s.Name)}
+	return []models.Finding{findingFromRule(d.rule, models.ScopeSkill, s.FilePath, s.Line, s.EndLine, s.Name)}
 }
 
 // NewToolRuleDetector wraps a RuleDef as a ToolDetector. Exported for test packages.
@@ -267,7 +267,7 @@ func NewSubagentRuleDetector(r RuleDef) detectors.SubagentDetector { return suba
 // NewSkillRuleDetector wraps a RuleDef as a SkillDetector. Exported for test packages.
 func NewSkillRuleDetector(r RuleDef) detectors.SkillDetector { return skillRuleDetector{r} }
 
-func findingFromRule(r RuleDef, scope models.Scope, filePath string, line int, toolName string) models.Finding {
+func findingFromRule(r RuleDef, scope models.Scope, filePath string, startLine, endLine int, toolName string) models.Finding {
 	return models.Finding{
 		RuleID:       r.ID,
 		Category:     r.Category,
@@ -275,7 +275,8 @@ func findingFromRule(r RuleDef, scope models.Scope, filePath string, line int, t
 		Severity:     r.Severity,
 		ToolName:     toolName,
 		FilePath:     filePath,
-		Line:         line,
+		StartLine:    startLine,
+		EndLine:      endLine,
 		Title:        r.Title,
 		Explanation:  r.Explanation,
 		SuggestedFix: r.Fix,

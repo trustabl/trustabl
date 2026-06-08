@@ -32,7 +32,7 @@ type Pipeline struct {
 }
 
 func (p *Pipeline) shouldEnrich(f models.Finding) bool {
-	if f.FilePath == "" || f.Line <= 0 {
+	if f.FilePath == "" || f.StartLine <= 0 {
 		return false
 	}
 	if len(p.RuleFilter) == 0 {
@@ -158,10 +158,10 @@ func (p *Pipeline) enrichFile(ctx context.Context, client llmEnricher, filePath 
 			title:       f.Title,
 			severity:    string(f.Severity),
 			ruleScope:   string(f.Scope),
-			line:        f.Line,
+			line:        f.StartLine,
 			explanation: f.Explanation,
 			fixTemplate: f.SuggestedFix,
-			codeBlock:   extractScope(string(fileContent), f.Line, 5),
+			codeBlock:   extractScope(string(fileContent), f.StartLine, 5),
 		}
 	}
 

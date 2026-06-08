@@ -99,11 +99,12 @@ func SelectAndEmitMETA(profile models.RepoProfile, inv models.RepoInventory) []m
 			continue
 		}
 		out = append(out, models.Finding{
-			RuleID:   "META-003",
-			Severity: models.SeverityInfo,
-			FilePath: a.FilePath,
-			Line:     a.Line,
-			Title:    "Agent configuration is opaque",
+			RuleID:    "META-003",
+			Severity:  models.SeverityInfo,
+			FilePath:  a.FilePath,
+			StartLine: a.Line,
+			EndLine:   a.EndLine,
+			Title:     "Agent configuration is opaque",
 			Explanation: "Agent configuration is opaque (kwargs come from a variable via **unpack, " +
 				"or tools= is a non-literal expression like a function call); rules cannot evaluate against this agent.",
 			SuggestedFix: "Inline the agent's kwargs at the constructor call site, or move the dynamic configuration into explicit code that Trustabl can analyze.",

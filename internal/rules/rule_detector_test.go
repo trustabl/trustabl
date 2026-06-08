@@ -126,7 +126,7 @@ func TestFindingFromRule_RecordsScope(t *testing.T) {
 		models.ScopeTool, models.ScopeAgent, models.ScopeRepo, models.ScopeSubagent,
 	}
 	for _, sc := range cases {
-		f := findingFromRule(RuleDef{ID: "X"}, sc, "f.py", 3, "thing")
+		f := findingFromRule(RuleDef{ID: "X"}, sc, "f.py", 3, 3, "thing")
 		if f.Scope != sc {
 			t.Errorf("got Finding.Scope=%q, want %q", f.Scope, sc)
 		}
@@ -210,7 +210,7 @@ func TestSubagentRuleDetector_PropagatesSubagentLine(t *testing.T) {
 	if len(findings) != 1 {
 		t.Fatalf("expected one finding, got %d", len(findings))
 	}
-	if findings[0].Line != 1 {
-		t.Errorf("finding Line = %d, want 1 (propagated from SubagentDef.Line)", findings[0].Line)
+	if findings[0].StartLine != 1 {
+		t.Errorf("finding StartLine = %d, want 1 (propagated from SubagentDef.Line)", findings[0].StartLine)
 	}
 }

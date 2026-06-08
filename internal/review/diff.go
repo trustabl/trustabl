@@ -266,9 +266,15 @@ func (r *Renderer) Render(result models.ScanResult) string {
 		}
 		fmt.Fprintf(&b, "\n  %s\n", styleHeader.Render(header))
 		for _, f := range fs {
-			fmt.Fprintf(&b, "    [%s] %s %s  (%s:%d)\n",
-				f.RuleID, sevTag(f.Severity), f.Title,
-				f.FilePath, f.Line)
+			loc := f.FilePath
+			if f.StartLine > 0 {
+				loc = fmt.Sprintf("%s:%d", f.FilePath, f.StartLine)
+				if f.EndLine > f.StartLine {
+					loc += fmt.Sprintf("-%d", f.EndLine) // single line shows just the line
+				}
+			}
+			fmt.Fprintf(&b, "    [%s] %s %s  (%s)\n",
+				f.RuleID, sevTag(f.Severity), f.Title, loc)
 			fmt.Fprintf(&b, "        %s\n", styleDim.Render(wrapAt(f.Explanation, 86)))
 			fmt.Fprintf(&b, "        %s %s\n", styleDim.Render("fix:"), f.SuggestedFix)
 		}
