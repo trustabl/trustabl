@@ -313,43 +313,54 @@ func validRepoHasSDKInCode(tok string) bool {
 	return false
 }
 
+// appliesToByScope is the single source of truth for which applies_to values are
+// valid at each scope. validAppliesToForScope checks against it, and the
+// capability descriptor (AppliesToByScope / trustabl capabilities) enumerates it.
+// Order is stable for deterministic descriptor output.
+var appliesToByScope = map[models.Scope][]string{
+	models.ScopeTool: {
+		"claude_sdk_tool", "openai_tool", "mcp_tool",
+		"shell_invocation", "unknown", "adk_function_tool",
+		"langchain_tool",
+		"crewai_tool", "pydantic_ai_tool", "vercel_ai_tool", "autogen_tool",
+	},
+	models.ScopeAgent: {
+		"openai_agent", "openai_sandbox_agent", "claude_agent_definition",
+		"claude_query_main",
+		"adk_llm_agent", "adk_sequential_agent", "adk_parallel_agent",
+		"adk_loop_agent", "adk_langgraph_agent",
+		"langchain_agent", "langchain_agent_executor", "langchain_state_graph",
+		"crewai_agent", "pydantic_ai_agent", "vercel_ai_agent",
+		"autogen_conversable_agent", "autogen_user_proxy_agent",
+		"autogen_assistant_agent", "autogen_group_chat_manager",
+		"autogen_code_executor_agent",
+	},
+	models.ScopeRepo: {
+		"claude_sdk", "openai_agents", "openshell", "mcp", "google_adk",
+		"langchain",
+		"crewai", "pydantic_ai", "vercel_ai", "autogen",
+	},
+	models.ScopeSubagent: {"claude_subagent"},
+}
+
 func validAppliesToForScope(scope models.Scope, kind string) bool {
-	switch scope {
-	case models.ScopeTool:
-		switch kind {
-		case "claude_sdk_tool", "openai_tool", "mcp_tool",
-			"shell_invocation", "unknown", "adk_function_tool",
-			"langchain_tool",
-			"crewai_tool", "pydantic_ai_tool", "vercel_ai_tool", "autogen_tool":
-			return true
-		}
-	case models.ScopeAgent:
-		switch kind {
-		case "openai_agent", "openai_sandbox_agent", "claude_agent_definition",
-			"claude_query_main",
-			"adk_llm_agent", "adk_sequential_agent", "adk_parallel_agent",
-			"adk_loop_agent", "adk_langgraph_agent",
-			"langchain_agent", "langchain_agent_executor", "langchain_state_graph",
-			"crewai_agent", "pydantic_ai_agent", "vercel_ai_agent",
-			"autogen_conversable_agent", "autogen_user_proxy_agent",
-			"autogen_assistant_agent", "autogen_group_chat_manager",
-			"autogen_code_executor_agent":
-			return true
-		}
-	case models.ScopeRepo:
-		switch kind {
-		case "claude_sdk", "openai_agents", "openshell", "mcp", "google_adk",
-			"langchain",
-			"crewai", "pydantic_ai", "vercel_ai", "autogen":
-			return true
-		}
-	case models.ScopeSubagent:
-		switch kind {
-		case "claude_subagent":
+	for _, k := range appliesToByScope[scope] {
+		if k == kind {
 			return true
 		}
 	}
 	return false
+}
+
+// AppliesToByScope returns a fresh copy of the valid applies_to values per scope
+// for the capability descriptor. Returns a copy so a caller cannot mutate the
+// source of truth.
+func AppliesToByScope() map[models.Scope][]string {
+	out := make(map[models.Scope][]string, len(appliesToByScope))
+	for s, kinds := range appliesToByScope {
+		out[s] = append([]string(nil), kinds...)
+	}
+	return out
 }
 
 // maxRuleFileBytes caps an individual rule YAML file. The rules pack is cloned
