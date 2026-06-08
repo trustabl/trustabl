@@ -345,6 +345,15 @@ folded into the `ScanID` only when `--vuln-scan` is on, so the result is honest
 about which vulnerability data produced it while a default scan stays
 byte-identical to before.
 
+Combining `--vuln-scan` with `--bom-out` upgrades the CycloneDX document from a
+plain inventory into a BOM **plus VEX**: the matched advisories are emitted as a
+CycloneDX 1.5 `vulnerabilities[]` array — each with the advisory ID, an OSV
+`source`, a severity `rating`, an upgrade `recommendation`, and an `affects[]`
+reference linking it to the affected component's `bom-ref` — so a single
+`trustabl scan ./repo --vuln-scan --bom-out bom.json` produces a standards-based
+artifact that any CycloneDX-aware tool can ingest. Without `--vuln-scan` the
+`vulnerabilities[]` array is omitted and the BOM stays pure inventory.
+
 `--format json` and `--format sarif` are progress-silent and byte-stable
 across identical-input runs (pure functions of the `ScanResult`). The human
 format is not byte-stable by design: its ANSI color is auto-detected from the
@@ -501,6 +510,7 @@ trustabl scan ./repo --bom-out sbom.json
 # OSV database and FAIL on known CVEs — advisory id, CVSS severity, fixed version.
 trustabl vulndb pull                              # pre-download OSV (optional; --vuln-scan auto-fetches)
 trustabl scan ./repo --vuln-scan                  # BOM inventory + CVE verdict in one pass
+trustabl scan ./repo --vuln-scan --bom-out bom.json  # CycloneDX BOM + VEX (vulnerabilities[]) in one file
 
 # JSON output for CI piping
 trustabl scan ./repo --format json

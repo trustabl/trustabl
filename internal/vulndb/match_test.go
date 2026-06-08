@@ -88,3 +88,30 @@ func TestMatch_RealRecords(t *testing.T) {
 		}
 	}
 }
+
+// TestMatch_GitRangeFixedSkipped proves firstFixed ignores a GIT range's commit
+// SHA and reports the SEMVER/ECOSYSTEM range's real version. Real OSV records
+// (e.g. PYSEC-2018-28 for requests) carry both, and "upgrade to <40-hex-sha>" is
+// nonsense advice in a finding or a CycloneDX recommendation.
+func TestMatch_GitRangeFixedSkipped(t *testing.T) {
+	rec := Record{
+		ID: "PYSEC-XXXX", Aliases: []string{"CVE-XXXX"},
+		Severity: []Severity{{Type: "CVSS_V3", Score: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"}},
+		Affected: []Affected{{
+			Package: AffectedPackage{Ecosystem: "PyPI", Name: "requests"},
+			Ranges: []Range{
+				// GIT range first (commit SHA) — must be skipped …
+				{Type: "GIT", Events: []Event{{Introduced: "0"}, {Fixed: "c45d7c49ea75133e52ab22a8e9e13173938e36ff"}}},
+				// … in favor of the ECOSYSTEM range's real version.
+				{Type: "ECOSYSTEM", Events: []Event{{Introduced: "0"}, {Fixed: "2.20.0"}}},
+			},
+		}},
+	}
+	got := Match([]models.DepRef{{Name: "requests", Version: "2.19.0", Ecosystem: "pypi", Source: "requirements.txt"}}, NewDB([]Record{rec}))
+	if len(got) != 1 {
+		t.Fatalf("want 1 vuln, got %d: %+v", len(got), got)
+	}
+	if got[0].FixedIn != "2.20.0" {
+		t.Errorf("FixedIn = %q, want 2.20.0 (the GIT commit SHA must be skipped)", got[0].FixedIn)
+	}
+}
