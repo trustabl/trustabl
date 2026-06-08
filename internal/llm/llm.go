@@ -103,6 +103,17 @@ func (c *Config) SetActive(provider string) {
 
 // Load reads configuration from disk. Returns defaults when the file does not exist.
 func Load() (*Config, error) {
+	// Check ANTHROPIC_API_KEY env var first — enables CI and first-run use without trustabl llm set.
+	// TRUSTABL_LLM_MODEL overrides the model (e.g. claude-sonnet-4-6 for higher quality).
+	if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" {
+		c := defaults()
+		c.SetKey(key)
+		if m := os.Getenv("TRUSTABL_LLM_MODEL"); m != "" {
+			c.SetModel(m)
+		}
+		return c, nil
+	}
+
 	path, err := configPath()
 	if err != nil {
 		return nil, err

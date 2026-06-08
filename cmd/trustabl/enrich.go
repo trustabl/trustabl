@@ -29,12 +29,16 @@ func newEnrichCommand() *cobra.Command {
 		Short: "Enrich a scan result with AI-generated explanations and code fixes",
 		Long: `Reads a ScanResult produced by "trustabl scan --format json" (from --input or
 stdin), extracts the enclosing code block around each flagged line, and sends it
-to Claude (via the key configured with "trustabl llm key set") to generate
-code-specific explanations and exact line replacements.
+to Claude to generate code-specific explanations and exact line replacements.
 
-Requires the active LLM provider to be "anthropic". Configure with:
-  trustabl llm key set        # store your Anthropic API key
-  trustabl llm model set ...  # optional: change model (default: claude-haiku-4-5)`,
+Requires the active LLM provider to be "anthropic". Configure the API key with
+one of:
+  export ANTHROPIC_API_KEY=<key>   # env var — preferred for CI and quick use
+  trustabl llm key set             # store key in ~/.config/trustabl/keys.json
+
+Optional model override:
+  export TRUSTABL_LLM_MODEL=claude-sonnet-4-6   # env var
+  trustabl llm model set claude-sonnet-4-6      # config file (default: claude-haiku-4-5)`,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runEnrich(cmd, f)

@@ -8,12 +8,15 @@ import (
 	"github.com/trustabl/trustabl/internal/llm"
 )
 
-// setConfigDir overrides the config directory for the duration of the test.
+// setConfigDir overrides the config directory for the duration of the test
+// and clears the env-var key path so tests are isolated from a caller's shell.
 func setConfigDir(t *testing.T, dir string) {
 	t.Helper()
 	old := llm.ConfigDir
 	llm.ConfigDir = dir
 	t.Cleanup(func() { llm.ConfigDir = old })
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	t.Setenv("TRUSTABL_LLM_MODEL", "")
 }
 
 func TestLoad_Defaults(t *testing.T) {
@@ -304,5 +307,65 @@ func TestKnownProviders_SortedAndComplete(t *testing.T) {
 		if got[i] != want[i] {
 			t.Errorf("KnownProviders()[%d] = %q, want %q", i, got[i], want[i])
 		}
+	}
+}
+
+func TestLoad_EnvVarKey(t *testing.T) {
+	setConfigDir(t, t.TempDir()) // no config file on disk
+
+	t.Setenv("ANTHROPIC_API_KEY", "sk-ant-api03-envtestkey1234567890ab")
+
+	cfg, err := llm.Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.Active != "anthropic" {
+		t.Errorf("Active = %q, want anthropic", cfg.Active)
+	}
+	p := cfg.ActiveProvider()
+	if p.Key != "sk-ant-api03-envtestkey1234567890ab" {
+		t.Errorf("Key = %q, want env var key", p.Key)
+	}
+	if p.Model != "claude-haiku-4-5" {
+		t.Errorf("Model = %q, want claude-haiku-4-5 (default)", p.Model)
+	}
+}
+
+func TestLoad_EnvVarKey_ModelOverride(t *testing.T) {
+	setConfigDir(t, t.TempDir())
+
+	t.Setenv("ANTHROPIC_API_KEY", "sk-ant-api03-envtestkey1234567890ab")
+	t.Setenv("TRUSTABL_LLM_MODEL", "claude-opus-4-7")
+
+	cfg, err := llm.Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	p := cfg.ActiveProvider()
+	if p.Model != "claude-opus-4-7" {
+		t.Errorf("Model = %q, want claude-opus-4-7 (TRUSTABL_LLM_MODEL override)", p.Model)
+	}
+}
+
+func TestLoad_EnvVarKey_TakesPriorityOverConfigFile(t *testing.T) {
+	dir := t.TempDir()
+	setConfigDir(t, dir)
+
+	// Save a config file with a different key.
+	cfg, _ := llm.Load()
+	cfg.SetKey("sk-ant-api03-filekeyxxxxxxxxxxx12")
+	if err := cfg.Save(); err != nil {
+		t.Fatalf("Save() error: %v", err)
+	}
+
+	t.Setenv("ANTHROPIC_API_KEY", "sk-ant-api03-envtestkey1234567890ab")
+
+	got, err := llm.Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	p := got.ActiveProvider()
+	if p.Key != "sk-ant-api03-envtestkey1234567890ab" {
+		t.Errorf("Key = %q, want env var key to take priority over config file", p.Key)
 	}
 }
