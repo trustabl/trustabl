@@ -31,6 +31,24 @@ type ResolveConfig struct {
 	CacheDir   string // empty => os.UserCacheDir()/trustabl/vulndb
 	NoUpdate   bool   // offline: use the cache only, never fetch
 	HTTPClient *http.Client
+	// OnProgress, if set, receives per-ecosystem resolution events for a UI
+	// (progress bar / status line). It is advisory only — it never affects the
+	// resolved snapshot or its Version, so determinism is preserved.
+	OnProgress func(ResolveProgress)
+}
+
+// ResolveProgress reports per-ecosystem resolution progress to the optional
+// ResolveConfig.OnProgress hook. It fires once when an ecosystem starts, again
+// for roughly every 1 MiB downloaded, and once when the ecosystem finishes
+// (loaded from the network or the cache, or skipped when neither is available).
+type ResolveProgress struct {
+	OSVEcosystem string // OSV export name being resolved, e.g. "PyPI", "npm"
+	Index        int    // 1-based position in the resolve order
+	Total        int    // total ecosystems being resolved
+	BytesRead    int64  // cumulative bytes downloaded so far (0 if cached / just started)
+	Finished     bool   // the ecosystem is done (data loaded or skipped)
+	FromCache    bool   // Finished: loaded from cache, no successful fetch
+	Records      int    // Finished: number of advisory records loaded
 }
 
 // Resolved is a loaded, indexed OSV snapshot plus its provenance.
@@ -67,34 +85,47 @@ func Resolve(cfg ResolveConfig) (*Resolved, error) {
 	fromCache := true
 	var records []Record
 	hasher := sha256.New()
-	for _, osvEco := range ecos {
+	for i, osvEco := range ecos {
+		report := func(p ResolveProgress) {
+			if cfg.OnProgress != nil {
+				p.OSVEcosystem, p.Index, p.Total = osvEco, i+1, len(ecos)
+				cfg.OnProgress(p)
+			}
+		}
+		report(ResolveProgress{}) // ecosystem started
+
 		dest := filepath.Join(cacheDir, sanitizeEco(osvEco)+".zip")
 		var data []byte
+		thisFromCache := true
 		if !cfg.NoUpdate {
-			if fetched, ferr := fetchExport(client, osvEco); ferr == nil {
-				if werr := atomicWrite(dest, fetched); werr == nil {
-					data, fromCache = fetched, false
-				} else {
-					data = fetched // use it even if we couldn't cache
-					fromCache = false
-				}
+			onBytes := func(n int64) { report(ResolveProgress{BytesRead: n}) }
+			if fetched, ferr := fetchExport(client, osvEco, onBytes); ferr == nil {
+				thisFromCache = false
+				_ = atomicWrite(dest, fetched) // cache best-effort; use the bytes regardless
+				data = fetched
 			}
 		}
 		if data == nil {
 			cached, cerr := os.ReadFile(dest)
 			if cerr != nil {
-				continue // no fetch and no cache for this ecosystem — skip it
+				report(ResolveProgress{Finished: true, FromCache: true}) // no fetch, no cache — skipped
+				continue
 			}
 			data = cached
 		}
 		recs, lerr := loadRecordsFromZip(data)
 		if lerr != nil {
+			report(ResolveProgress{Finished: true, FromCache: thisFromCache})
 			continue
+		}
+		if !thisFromCache {
+			fromCache = false
 		}
 		records = append(records, recs...)
 		hasher.Write([]byte(osvEco))
 		hasher.Write([]byte{0})
 		hasher.Write(data)
+		report(ResolveProgress{Finished: true, FromCache: thisFromCache, Records: len(recs)})
 	}
 
 	return &Resolved{
@@ -104,8 +135,9 @@ func Resolve(cfg ResolveConfig) (*Resolved, error) {
 	}, nil
 }
 
-// fetchExport downloads {base}/{osvEcosystem}/all.zip.
-func fetchExport(client *http.Client, osvEco string) ([]byte, error) {
+// fetchExport downloads {base}/{osvEcosystem}/all.zip, streaming byte progress
+// to onBytes (which may be nil) so a UI can show download status.
+func fetchExport(client *http.Client, osvEco string, onBytes func(int64)) ([]byte, error) {
 	url := fmt.Sprintf("%s/%s/all.zip", osvExportBaseURL, osvEco)
 	resp, err := client.Get(url)
 	if err != nil {
@@ -115,7 +147,39 @@ func fetchExport(client *http.Client, osvEco string) ([]byte, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("vulndb: GET %s: %s", url, resp.Status)
 	}
-	return io.ReadAll(resp.Body)
+	return readAllProgress(resp.Body, onBytes)
+}
+
+// readAllProgress reads r to completion, invoking onBytes with the cumulative
+// byte count at ~1 MiB granularity (and once more with the exact final total) so
+// a UI can show download progress without being flooded. onBytes may be nil. The
+// returned bytes are identical to io.ReadAll(r) — progress never alters the data,
+// so the snapshot hash (and thus ScanID) is unaffected.
+func readAllProgress(r io.Reader, onBytes func(int64)) ([]byte, error) {
+	var buf bytes.Buffer
+	chunk := make([]byte, 64*1024)
+	var total, reported int64
+	for {
+		n, rerr := r.Read(chunk)
+		if n > 0 {
+			buf.Write(chunk[:n])
+			total += int64(n)
+			if onBytes != nil && total-reported >= 1<<20 {
+				onBytes(total)
+				reported = total
+			}
+		}
+		if rerr == io.EOF {
+			break
+		}
+		if rerr != nil {
+			return nil, rerr
+		}
+	}
+	if onBytes != nil && total != reported {
+		onBytes(total)
+	}
+	return buf.Bytes(), nil
 }
 
 // loadRecordsFromZip parses every *.json entry of an OSV all.zip into a Record.

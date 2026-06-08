@@ -5,6 +5,7 @@ import (
 	"sort"
 
 	"github.com/trustabl/trustabl/internal/models"
+	"github.com/trustabl/trustabl/internal/progress"
 	"github.com/trustabl/trustabl/internal/vulndb"
 )
 
@@ -14,16 +15,58 @@ import (
 // into ScanID (keeping the ID honest about which vuln data produced the result).
 // The scan never queries the OSV API per dependency — matching is against the
 // cached snapshot only.
-func runVulnScan(deps []models.DepRef, noUpdate bool, cacheDir string) (vulns []models.DepVuln, version string, err error) {
+//
+// rep drives the live progress display: a step bar over the ecosystems being
+// pulled, with a status line showing the current download (and its byte count)
+// or the cache hit. Progress is stderr-only and never affects the result.
+func runVulnScan(deps []models.DepRef, noUpdate bool, cacheDir string, rep progress.Reporter) (vulns []models.DepVuln, version string, err error) {
+	sized := false
 	res, err := vulndb.Resolve(vulndb.ResolveConfig{
 		Ecosystems: depEcosystems(deps),
 		NoUpdate:   noUpdate,
 		CacheDir:   cacheDir,
+		OnProgress: func(p vulndb.ResolveProgress) {
+			if !sized {
+				rep.SetTotal(p.Total) // size the bar to the ecosystem count on the first event
+				sized = true
+			}
+			switch {
+			case p.Finished:
+				rep.Advance(finishedVulnDetail(p))
+			case p.BytesRead > 0:
+				rep.SetDetail(fmt.Sprintf("downloading %s database — %s", p.OSVEcosystem, humanizeBytes(p.BytesRead)))
+			default:
+				rep.SetDetail("resolving " + p.OSVEcosystem + " database…")
+			}
+		},
 	})
 	if err != nil {
 		return nil, "", err
 	}
+	rep.SetDetail(fmt.Sprintf("matching %d dependencies against the OSV snapshot", len(deps)))
 	return vulndb.Match(deps, res.DB), res.Version, nil
+}
+
+// finishedVulnDetail renders the persistent detail for a resolved ecosystem,
+// e.g. "PyPI — 4821 advisories (cached)".
+func finishedVulnDetail(p vulndb.ResolveProgress) string {
+	src := "fetched"
+	if p.FromCache {
+		src = "cached"
+	}
+	return fmt.Sprintf("%s — %d advisories (%s)", p.OSVEcosystem, p.Records, src)
+}
+
+// humanizeBytes formats a byte count for the download status line.
+func humanizeBytes(n int64) string {
+	switch {
+	case n >= 1<<20:
+		return fmt.Sprintf("%.1f MB", float64(n)/float64(1<<20))
+	case n >= 1<<10:
+		return fmt.Sprintf("%.0f KB", float64(n)/float64(1<<10))
+	default:
+		return fmt.Sprintf("%d B", n)
+	}
 }
 
 // depEcosystems returns the distinct ecosystems present in the BOM, so the vulndb

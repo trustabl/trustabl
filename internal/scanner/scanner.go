@@ -450,14 +450,15 @@ func Run(cfg Config) (models.ScanResult, error) {
 	var vulnDBVersion string
 	if cfg.VulnScan {
 		rep.StartPhase("vuln-scan", "Vulnerability scan")
-		v, ver, verr := runVulnScan(inventory.Dependencies, cfg.VulnNoUpdate, cfg.VulnCacheDir)
+		rep.SetDetail(fmt.Sprintf("%d dependencies in scope", len(inventory.Dependencies)))
+		v, ver, verr := runVulnScan(inventory.Dependencies, cfg.VulnNoUpdate, cfg.VulnCacheDir, rep)
 		if verr != nil {
 			log.Verbosef("vuln-scan: %v (continuing without vuln findings)", verr)
 		} else {
 			vulns, vulnDBVersion = v, ver
 			findings = append(findings, vulnFindings(vulns)...)
 		}
-		rep.EndPhase(fmt.Sprintf("%d vulnerable", len(vulns)))
+		rep.EndPhase(fmt.Sprintf("%d vulnerabilities across %d dependencies", len(vulns), len(inventory.Dependencies)))
 		log.Verbosef("vuln-scan: OSV snapshot %s · %d dependency vulnerabilities", vulnDBVersion, len(vulns))
 	}
 
