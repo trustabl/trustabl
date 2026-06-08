@@ -1244,6 +1244,96 @@ def run_cmd(name: str) -> str:
 			"const server = new McpServer({ name: \"s\", version: \"1.0.0\" });\n" +
 			"server.registerTool(\"search\", { description: \"Search the docs\", inputSchema: { q: z.string() } }, async ({ q }) => ({ content: [] }));\n",
 	},
+	// ── MCP Go rules (mark3labs/mcp-go + official go-sdk) ──
+	{
+		name: "MCP-015 fires on Go tool with no description", ruleID: "MCP-015",
+		kind: models.KindMCPTool, lang: models.LanguageGo, wantFires: true,
+		src: "package main\n\nimport \"github.com/mark3labs/mcp-go/mcp\"\n\nfunc run() {\n\t_ = mcp.NewTool(\"fetch_weather\")\n}\n",
+	},
+	{
+		name: "MCP-015 silent when description present", ruleID: "MCP-015",
+		kind: models.KindMCPTool, lang: models.LanguageGo, wantFires: false,
+		src: "package main\n\nimport \"github.com/mark3labs/mcp-go/mcp\"\n\nfunc run() {\n\t_ = mcp.NewTool(\"fetch_weather\", mcp.WithDescription(\"Fetch the weather\"))\n}\n",
+	},
+	{
+		name: "MCP-016 fires on ambiguous Go tool name", ruleID: "MCP-016",
+		kind: models.KindMCPTool, lang: models.LanguageGo, wantFires: true,
+		src: "package main\n\nimport \"github.com/mark3labs/mcp-go/mcp\"\n\nfunc run() {\n\t_ = mcp.NewTool(\"process\", mcp.WithDescription(\"Process things\"))\n}\n",
+	},
+	{
+		name: "MCP-016 silent on descriptive name", ruleID: "MCP-016",
+		kind: models.KindMCPTool, lang: models.LanguageGo, wantFires: false,
+		src: "package main\n\nimport \"github.com/mark3labs/mcp-go/mcp\"\n\nfunc run() {\n\t_ = mcp.NewTool(\"summarize_invoice\", mcp.WithDescription(\"Summarize\"))\n}\n",
+	},
+	// ── MCP C# rules (official ModelContextProtocol SDK) ──
+	{
+		name: "MCP-017 fires on C# tool with no description", ruleID: "MCP-017",
+		kind: models.KindMCPTool, lang: models.LanguageCSharp, wantFires: true,
+		src: "using ModelContextProtocol.Server;\n\npublic class T {\n    [McpServerTool]\n    public string FetchWeather(string city) { return city; }\n}\n",
+	},
+	{
+		name: "MCP-017 silent when description present", ruleID: "MCP-017",
+		kind: models.KindMCPTool, lang: models.LanguageCSharp, wantFires: false,
+		src: "using ModelContextProtocol.Server;\nusing System.ComponentModel;\n\npublic class T {\n    [McpServerTool, Description(\"Fetch the weather\")]\n    public string FetchWeather(string city) { return city; }\n}\n",
+	},
+	{
+		name: "MCP-018 fires on ambiguous C# tool name", ruleID: "MCP-018",
+		kind: models.KindMCPTool, lang: models.LanguageCSharp, wantFires: true,
+		src: "using ModelContextProtocol.Server;\nusing System.ComponentModel;\n\npublic class T {\n    [McpServerTool, Description(\"Does a thing\")]\n    public string Process(string input) { return input; }\n}\n",
+	},
+	{
+		name: "MCP-018 silent on descriptive name", ruleID: "MCP-018",
+		kind: models.KindMCPTool, lang: models.LanguageCSharp, wantFires: false,
+		src: "using ModelContextProtocol.Server;\nusing System.ComponentModel;\n\npublic class T {\n    [McpServerTool, Description(\"Summarize an invoice\")]\n    public string SummarizeInvoice(string input) { return input; }\n}\n",
+	},
+	// ── MCP PHP rules (official mcp/sdk + php-mcp/server) ──
+	{
+		name: "MCP-019 fires on PHP tool with no description", ruleID: "MCP-019",
+		kind: models.KindMCPTool, lang: models.LanguagePHP, wantFires: true,
+		src: "<?php\nuse PhpMcp\\Server\\Attributes\\McpTool;\nclass T {\n    #[McpTool(name: 'fetch_weather')]\n    public function fetchWeather(string $city): string { return $city; }\n}\n",
+	},
+	{
+		name: "MCP-019 silent when description present", ruleID: "MCP-019",
+		kind: models.KindMCPTool, lang: models.LanguagePHP, wantFires: false,
+		src: "<?php\nuse PhpMcp\\Server\\Attributes\\McpTool;\nclass T {\n    #[McpTool(name: 'fetch_weather', description: 'Fetch the weather')]\n    public function fetchWeather(string $city): string { return $city; }\n}\n",
+	},
+	{
+		name: "MCP-020 fires on ambiguous PHP tool name", ruleID: "MCP-020",
+		kind: models.KindMCPTool, lang: models.LanguagePHP, wantFires: true,
+		src: "<?php\nuse PhpMcp\\Server\\Attributes\\McpTool;\nclass T {\n    #[McpTool(name: 'process', description: 'Does a thing')]\n    public function process(string $input): string { return $input; }\n}\n",
+	},
+	{
+		name: "MCP-020 silent on descriptive name", ruleID: "MCP-020",
+		kind: models.KindMCPTool, lang: models.LanguagePHP, wantFires: false,
+		src: "<?php\nuse PhpMcp\\Server\\Attributes\\McpTool;\nclass T {\n    #[McpTool(name: 'summarize_invoice', description: 'Summarize')]\n    public function summarizeInvoice(string $input): string { return $input; }\n}\n",
+	},
+	{
+		name: "MCP-021 fires on Rust tool with no description", ruleID: "MCP-021",
+		kind: models.KindMCPTool, lang: models.LanguageRust, wantFires: true,
+		src: "use rmcp::tool;\nimpl T {\n    #[tool]\n    fn fetch_weather(&self) -> String { String::new() }\n}\n",
+	},
+	{
+		name: "MCP-021 silent when description in attribute arg", ruleID: "MCP-021",
+		kind: models.KindMCPTool, lang: models.LanguageRust, wantFires: false,
+		src: "use rmcp::tool;\nimpl T {\n    #[tool(description = \"Fetch the weather\")]\n    fn fetch_weather(&self) -> String { String::new() }\n}\n",
+	},
+	{
+		// The Rust-specific wrinkle: rmcp accepts the /// doc comment as the
+		// description, so a documented-the-Rust-way tool must NOT fire MCP-021.
+		name: "MCP-021 silent when description in /// doc comment", ruleID: "MCP-021",
+		kind: models.KindMCPTool, lang: models.LanguageRust, wantFires: false,
+		src: "use rmcp::tool;\nimpl T {\n    /// Fetch the weather for a city.\n    #[tool]\n    fn fetch_weather(&self) -> String { String::new() }\n}\n",
+	},
+	{
+		name: "MCP-022 fires on ambiguous Rust tool name", ruleID: "MCP-022",
+		kind: models.KindMCPTool, lang: models.LanguageRust, wantFires: true,
+		src: "use rmcp::tool;\nimpl T {\n    #[tool(name = \"process\", description = \"Does a thing\")]\n    fn process(&self) -> String { String::new() }\n}\n",
+	},
+	{
+		name: "MCP-022 silent on descriptive name", ruleID: "MCP-022",
+		kind: models.KindMCPTool, lang: models.LanguageRust, wantFires: false,
+		src: "use rmcp::tool;\nimpl T {\n    #[tool(description = \"Summarize\")]\n    fn summarize_invoice(&self) -> String { String::new() }\n}\n",
+	},
 	{
 		name: "MCP-012 fires on TS tool shelling out", ruleID: "MCP-012",
 		kind: models.KindMCPTool, lang: models.LanguageTypeScript, wantFires: true,
@@ -3221,9 +3311,18 @@ func TestPolicyRules(t *testing.T) {
 			d := loadToolRule(t, tc.ruleID)
 			var tool models.ToolDef
 			var pf analysis.ParsedFile
-			if tc.lang == models.LanguageTypeScript {
+			switch tc.lang {
+			case models.LanguageTypeScript:
 				tool, pf = parseTSTool(t, tc.src, tc.kind)
-			} else {
+			case models.LanguageGo:
+				tool, pf = parseGoTool(t, tc.src, tc.kind)
+			case models.LanguageCSharp:
+				tool, pf = parseCSharpTool(t, tc.src, tc.kind)
+			case models.LanguagePHP:
+				tool, pf = parsePHPTool(t, tc.src, tc.kind)
+			case models.LanguageRust:
+				tool, pf = parseRustTool(t, tc.src, tc.kind)
+			default:
 				tool, pf = parsePy(t, tc.src, tc.kind)
 			}
 			if tc.toolConfig != nil {

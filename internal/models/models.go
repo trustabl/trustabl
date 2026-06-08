@@ -131,6 +131,9 @@ const (
 	LanguageTypeScript Language = "typescript"
 	LanguageJavaScript Language = "javascript"
 	LanguageGo         Language = "go"
+	LanguageCSharp     Language = "csharp"
+	LanguagePHP        Language = "php"
+	LanguageRust       Language = "rust"
 )
 
 // IsTSOrJS reports whether l is in the TypeScript/JavaScript family. The two
@@ -152,6 +155,7 @@ func IsTSOrJS(l Language) bool {
 // rather than hard-failing. New languages are added here as discovery lands.
 var AllLanguages = []Language{
 	LanguagePython, LanguageTypeScript, LanguageJavaScript, LanguageGo,
+	LanguageCSharp, LanguagePHP, LanguageRust,
 }
 
 // ValidLanguage reports whether l is a source language this build recognizes.
@@ -267,6 +271,10 @@ type ScanManifest struct {
 	PythonFiles            []string         `json:"python_files"`
 	TypeScriptFiles        []string         `json:"typescript_files,omitempty"`
 	JavaScriptFiles        []string         `json:"javascript_files,omitempty"`
+	GoFiles                []string         `json:"go_files,omitempty"`
+	CSharpFiles            []string         `json:"csharp_files,omitempty"`
+	PHPFiles               []string         `json:"php_files,omitempty"`
+	RustFiles              []string         `json:"rust_files,omitempty"`
 	YAMLFiles              []string         `json:"yaml_files"`
 	JSONFiles              []string         `json:"json_files,omitempty"`
 	MarkdownFiles          []string         `json:"markdown_files,omitempty"`

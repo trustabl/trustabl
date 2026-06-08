@@ -41,6 +41,18 @@ func languagesFromManifest(m models.ScanManifest) []models.Language {
 	if len(m.JavaScriptFiles) > 0 {
 		langs = append(langs, models.LanguageJavaScript)
 	}
+	if len(m.GoFiles) > 0 {
+		langs = append(langs, models.LanguageGo)
+	}
+	if len(m.CSharpFiles) > 0 {
+		langs = append(langs, models.LanguageCSharp)
+	}
+	if len(m.PHPFiles) > 0 {
+		langs = append(langs, models.LanguagePHP)
+	}
+	if len(m.RustFiles) > 0 {
+		langs = append(langs, models.LanguageRust)
+	}
 	return langs
 }
 
@@ -81,6 +93,40 @@ func detectSDKDeps(root string) []models.SDKDep {
 		// discovery, not this needle.
 		{Name: "mcp", Pattern: "@modelcontextprotocol/sdk",
 			Manifests: []string{"package.json"}},
+		// MCP Go SDKs: the official go-sdk plus the most-adopted community SDKs
+		// (mark3labs/mcp-go, metoro-io/mcp-golang). go.mod only — these module
+		// paths are unambiguous. Drift signal only; pack loading is driven by
+		// SDKMCP from discovery (the import-gated Go MCP tool walk), not this scan.
+		{Name: "mcp", Pattern: "github.com/modelcontextprotocol/go-sdk",
+			Manifests: []string{"go.mod"}},
+		{Name: "mcp", Pattern: "github.com/mark3labs/mcp-go",
+			Manifests: []string{"go.mod"}},
+		{Name: "mcp", Pattern: "github.com/metoro-io/mcp-golang",
+			Manifests: []string{"go.mod"}},
+		// MCP C#/.NET SDK (the official ModelContextProtocol NuGet package +
+		// sub-packages). Scanned in Central Package Management's
+		// Directory.Packages.props and legacy packages.config (fixed-name root
+		// manifests). The common per-project *.csproj has a variable filename the
+		// fixed-name dep scan can't reach, so this needle is best-effort — drift
+		// signal only; pack loading is driven by SDKMCP from discovery (the
+		// [McpServerTool] attribute walk), not this scan. Pattern is lowercase to
+		// match the lowercased manifest text.
+		{Name: "mcp", Pattern: "modelcontextprotocol",
+			Manifests: []string{"Directory.Packages.props", "packages.config"}},
+		// MCP PHP SDKs: the official mcp/sdk and the community php-mcp/server,
+		// declared in composer.json `require`. Patterns are lowercase to match the
+		// lowercased manifest text. Drift signal only; pack loading is driven by
+		// SDKMCP from discovery (the #[McpTool] attribute walk).
+		{Name: "mcp", Pattern: "mcp/sdk",
+			Manifests: []string{"composer.json"}},
+		{Name: "mcp", Pattern: "php-mcp/server",
+			Manifests: []string{"composer.json"}},
+		// MCP Rust SDK: the official rmcp crate (modelcontextprotocol/rust-sdk),
+		// declared in Cargo.toml / Cargo.lock. Pattern is lowercase to match the
+		// lowercased manifest text. Drift signal only; pack loading is driven by
+		// SDKMCP from discovery (the #[tool] attribute walk).
+		{Name: "mcp", Pattern: "rmcp",
+			Manifests: []string{"Cargo.toml", "Cargo.lock"}},
 		// LangChain + LangGraph — one ecosystem, one SDK row (SDKLangChain). The
 		// "langchain" pattern matches the umbrella plus every langchain-* /
 		// @langchain/* distribution (langchain-core, langchain_community,
@@ -238,6 +284,14 @@ func Normalize(src *Source, onFile func(string)) (models.ScanManifest, error) {
 		case strings.HasSuffix(lower, ".js"), strings.HasSuffix(lower, ".jsx"),
 			strings.HasSuffix(lower, ".mjs"), strings.HasSuffix(lower, ".cjs"):
 			manifest.JavaScriptFiles = append(manifest.JavaScriptFiles, rel)
+		case strings.HasSuffix(lower, ".go"):
+			manifest.GoFiles = append(manifest.GoFiles, rel)
+		case strings.HasSuffix(lower, ".cs"):
+			manifest.CSharpFiles = append(manifest.CSharpFiles, rel)
+		case strings.HasSuffix(lower, ".php"):
+			manifest.PHPFiles = append(manifest.PHPFiles, rel)
+		case strings.HasSuffix(lower, ".rs"):
+			manifest.RustFiles = append(manifest.RustFiles, rel)
 		case strings.HasSuffix(lower, ".yaml"), strings.HasSuffix(lower, ".yml"):
 			manifest.YAMLFiles = append(manifest.YAMLFiles, rel)
 		case strings.HasSuffix(lower, ".json"):

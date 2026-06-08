@@ -87,6 +87,92 @@ func parseTSTool(t *testing.T, src string, kind models.ToolKind) (models.ToolDef
 	return tools[0], pf
 }
 
+// parseGoTool parses a Go snippet and returns the first discovered Go MCP tool,
+// mirroring parseTSTool for the language:go rule cases.
+func parseGoTool(t *testing.T, src string, kind models.ToolKind) (models.ToolDef, analysis.ParsedFile) {
+	t.Helper()
+	tree, err := astutil.NewGoParser().ParseCtx(context.Background(), nil, []byte(src))
+	if err != nil {
+		t.Fatalf("parse Go: %v", err)
+	}
+	pf := analysis.ParsedFile{RelPath: "main.go", Tree: tree, Source: []byte(src)}
+	var tools []models.ToolDef
+	switch kind {
+	case models.KindMCPTool:
+		tools = analysis.DiscoverGoMCPTools([]analysis.ParsedFile{pf}, func(string) {})
+	default:
+		t.Fatalf("parseGoTool: unsupported kind %q", kind)
+	}
+	if len(tools) == 0 {
+		t.Fatal("parseGoTool: no tool discovered (check the import gate in the snippet)")
+	}
+	return tools[0], pf
+}
+
+// parseCSharpTool parses a C# snippet and returns the first discovered C# MCP
+// tool, mirroring parseGoTool for the language:csharp rule cases.
+func parseCSharpTool(t *testing.T, src string, kind models.ToolKind) (models.ToolDef, analysis.ParsedFile) {
+	t.Helper()
+	tree, err := astutil.NewCSharpParser().ParseCtx(context.Background(), nil, []byte(src))
+	if err != nil {
+		t.Fatalf("parse C#: %v", err)
+	}
+	pf := analysis.ParsedFile{RelPath: "Tools.cs", Tree: tree, Source: []byte(src)}
+	var tools []models.ToolDef
+	switch kind {
+	case models.KindMCPTool:
+		tools = analysis.DiscoverCSharpMCPTools([]analysis.ParsedFile{pf}, func(string) {})
+	default:
+		t.Fatalf("parseCSharpTool: unsupported kind %q", kind)
+	}
+	if len(tools) == 0 {
+		t.Fatal("parseCSharpTool: no tool discovered (check the using gate in the snippet)")
+	}
+	return tools[0], pf
+}
+
+// parsePHPTool parses a PHP snippet and returns the first discovered PHP MCP
+// tool, mirroring parseCSharpTool for the language:php rule cases.
+func parsePHPTool(t *testing.T, src string, kind models.ToolKind) (models.ToolDef, analysis.ParsedFile) {
+	t.Helper()
+	tree, err := astutil.NewPHPParser().ParseCtx(context.Background(), nil, []byte(src))
+	if err != nil {
+		t.Fatalf("parse PHP: %v", err)
+	}
+	pf := analysis.ParsedFile{RelPath: "Tools.php", Tree: tree, Source: []byte(src)}
+	var tools []models.ToolDef
+	switch kind {
+	case models.KindMCPTool:
+		tools = analysis.DiscoverPHPMCPTools([]analysis.ParsedFile{pf}, func(string) {})
+	default:
+		t.Fatalf("parsePHPTool: unsupported kind %q", kind)
+	}
+	if len(tools) == 0 {
+		t.Fatal("parsePHPTool: no tool discovered (check the use gate in the snippet)")
+	}
+	return tools[0], pf
+}
+
+func parseRustTool(t *testing.T, src string, kind models.ToolKind) (models.ToolDef, analysis.ParsedFile) {
+	t.Helper()
+	tree, err := astutil.NewRustParser().ParseCtx(context.Background(), nil, []byte(src))
+	if err != nil {
+		t.Fatalf("parse Rust: %v", err)
+	}
+	pf := analysis.ParsedFile{RelPath: "tools.rs", Tree: tree, Source: []byte(src)}
+	var tools []models.ToolDef
+	switch kind {
+	case models.KindMCPTool:
+		tools = analysis.DiscoverRustMCPTools([]analysis.ParsedFile{pf}, func(string) {})
+	default:
+		t.Fatalf("parseRustTool: unsupported kind %q", kind)
+	}
+	if len(tools) == 0 {
+		t.Fatal("parseRustTool: no tool discovered (check the use rmcp gate in the snippet)")
+	}
+	return tools[0], pf
+}
+
 // parseTSAgentInline parses a TS snippet and returns the first discovered
 // Claude agent. For use in package-level agent-rule case tables (no *testing.T
 // available), so it panics rather than failing a test.
