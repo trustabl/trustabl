@@ -13,6 +13,7 @@ import (
 	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
 
+	"github.com/trustabl/trustabl/internal/cyclonedx"
 	"github.com/trustabl/trustabl/internal/logx"
 	"github.com/trustabl/trustabl/internal/models"
 	"github.com/trustabl/trustabl/internal/progress"
@@ -37,6 +38,7 @@ type scanFlags struct {
 	noProgress    bool
 	jsonOut       string
 	sarifOut      string
+	bomOut        string
 }
 
 func newScanCommand() *cobra.Command {
@@ -120,6 +122,8 @@ Exit codes:
 		"also write the JSON ScanResult to this file (independent of --format)")
 	cmd.Flags().StringVar(&f.sarifOut, "sarif-out", "",
 		"also write the SARIF report to this file (independent of --format)")
+	cmd.Flags().StringVar(&f.bomOut, "bom-out", "",
+		"also write a CycloneDX BOM of skill dependencies to this file")
 	return cmd
 }
 
@@ -131,8 +135,8 @@ func runScan(target string, f scanFlags, level logx.Level) error {
 	// gated like the report (see diagColor).
 	log := logx.New(os.Stderr, level, diagColor(f.noColor))
 	log.Verbosef("scan: target %s", target)
-	log.Debugf("scan: flags format=%s strict=%v no-color=%v no-progress=%v output=%q json-out=%q sarif-out=%q detectors=%q",
-		f.format, f.strict, f.noColor, f.noProgress, f.output, f.jsonOut, f.sarifOut, f.detectors)
+	log.Debugf("scan: flags format=%s strict=%v no-color=%v no-progress=%v output=%q json-out=%q sarif-out=%q bom-out=%q detectors=%q",
+		f.format, f.strict, f.noColor, f.noProgress, f.output, f.jsonOut, f.sarifOut, f.bomOut, f.detectors)
 
 	cfg := scanner.Config{Target: target, Log: log}
 	if f.detectors != "" {
@@ -217,6 +221,7 @@ func validateOutputFlags(f scanFlags) error {
 	out := filepath.Clean(f.output)
 	jsonOut := filepath.Clean(f.jsonOut)
 	sarifOut := filepath.Clean(f.sarifOut)
+	bomOut := filepath.Clean(f.bomOut)
 	if f.output != "" && f.jsonOut != "" && out == jsonOut {
 		return fmt.Errorf("--output and --json-out point at the same file (%s); use distinct paths", f.output)
 	}
@@ -225,6 +230,15 @@ func validateOutputFlags(f scanFlags) error {
 	}
 	if f.jsonOut != "" && f.sarifOut != "" && jsonOut == sarifOut {
 		return fmt.Errorf("--json-out and --sarif-out point at the same file (%s); use distinct paths", f.jsonOut)
+	}
+	if f.output != "" && f.bomOut != "" && out == bomOut {
+		return fmt.Errorf("--output and --bom-out point at the same file (%s); use distinct paths", f.output)
+	}
+	if f.jsonOut != "" && f.bomOut != "" && jsonOut == bomOut {
+		return fmt.Errorf("--json-out and --bom-out point at the same file (%s); use distinct paths", f.jsonOut)
+	}
+	if f.sarifOut != "" && f.bomOut != "" && sarifOut == bomOut {
+		return fmt.Errorf("--sarif-out and --bom-out point at the same file (%s); use distinct paths", f.sarifOut)
 	}
 	return nil
 }
@@ -558,8 +572,8 @@ func writeReport(report []byte, path string) error {
 	return nil
 }
 
-// writeSideOutputs honors --json-out / --sarif-out, writing each format to its
-// file when the flag is set. No-op when both are empty.
+// writeSideOutputs honors --json-out / --sarif-out / --bom-out, writing each to
+// its file when the flag is set. No-op when all are empty.
 func writeSideOutputs(result models.ScanResult, f scanFlags) error {
 	if f.jsonOut != "" {
 		b, err := jsonBytes(result)
@@ -573,6 +587,11 @@ func writeSideOutputs(result models.ScanResult, f scanFlags) error {
 	if f.sarifOut != "" {
 		if err := os.WriteFile(f.sarifOut, sarif.Render(result, version), 0o644); err != nil {
 			return fmt.Errorf("write --sarif-out: %w", err)
+		}
+	}
+	if f.bomOut != "" {
+		if err := os.WriteFile(f.bomOut, cyclonedx.Render(result.SkillDependencies, version), 0o644); err != nil {
+			return fmt.Errorf("write --bom-out: %w", err)
 		}
 	}
 	return nil

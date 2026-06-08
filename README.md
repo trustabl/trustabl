@@ -305,6 +305,12 @@ file independent of `--format` — one scan can print the human summary to stdou
 while persisting both machine artifacts. The file bytes are identical to the
 matching `--format` stdout output.
 
+`--bom-out <file>` additionally writes a byte-stable CycloneDX 1.5 BOM of the
+dependencies declared in bundled skill manifests (`requirements.txt`,
+`package.json`). It is pure inventory: Trustabl records what a skill ships and
+hands off to a real SCA tool (OSV-Scanner, Dependabot) for CVE matching — it
+makes no network call and asserts no vulnerability verdict.
+
 `--format json` and `--format sarif` are progress-silent and byte-stable
 across identical-input runs (pure functions of the `ScanResult`). The human
 format is not byte-stable by design: its ANSI color is auto-detected from the
