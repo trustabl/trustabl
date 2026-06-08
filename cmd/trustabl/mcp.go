@@ -113,6 +113,10 @@ func runMCP(ctx context.Context, f mcpFlags, level logx.Level) error {
 			Progress:       progress.NewNop(),
 			Log:            log,
 			Ctx:            ctx,
+			// Opt-in OSV vulnerability matching (mirrors the CLI's --vuln-scan);
+			// the OSV offline switch reuses --no-rules-update, as the CLI does.
+			VulnScan:     req.VulnScan,
+			VulnNoUpdate: f.noRulesUpdate,
 		}
 		return scanner.Run(cfg)
 	}

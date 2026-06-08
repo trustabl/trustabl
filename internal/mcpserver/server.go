@@ -16,10 +16,13 @@ const protocolVersion = "2024-11-05"
 
 // ScanRequest is the input schema for the `scan` tool. Path is required and
 // names a local directory or repository to scan; RulesRef optionally pins the
-// detection-rules branch or tag (mirrors the CLI's --rules-ref).
+// detection-rules branch or tag (mirrors the CLI's --rules-ref). VulnScan opts
+// the call into OSV dependency-vulnerability matching (mirrors --vuln-scan): off
+// by default, so a scan stays offline-capable and fast unless the client asks.
 type ScanRequest struct {
 	Path     string `json:"path"`
 	RulesRef string `json:"rules_ref,omitempty"`
+	VulnScan bool   `json:"vuln_scan,omitempty"`
 }
 
 // ScanFunc runs a scan for the `scan` tool and returns the deterministic
@@ -156,7 +159,7 @@ func (s *Server) toolsListResult() map[string]any {
 }
 
 // scanInputSchema is the JSON Schema for the `scan` tool input. path is
-// required; rules_ref is optional.
+// required; rules_ref and vuln_scan are optional.
 const scanInputSchema = `{
   "type": "object",
   "properties": {
@@ -167,6 +170,10 @@ const scanInputSchema = `{
     "rules_ref": {
       "type": "string",
       "description": "Optional detection-rules branch or tag to use (default: the rules repo's default branch)."
+    },
+    "vuln_scan": {
+      "type": "boolean",
+      "description": "Match declared dependencies against a pinned OSV snapshot and report known CVEs in 'vulnerabilities' and as findings (default false; fetches the OSV database on first use, then reuses the cache)."
     }
   },
   "required": ["path"],
