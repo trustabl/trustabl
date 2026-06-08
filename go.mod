@@ -12,6 +12,7 @@ require (
 	github.com/mattn/go-isatty v0.0.22
 	github.com/muesli/reflow v0.3.0
 	github.com/muesli/termenv v0.15.2
+	github.com/pelletier/go-toml/v2 v2.3.1
 	github.com/smacker/go-tree-sitter v0.0.0-20240422154435-0628b34cbf9c
 	github.com/spf13/cobra v1.8.0
 	golang.org/x/term v0.33.0

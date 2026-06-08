@@ -108,3 +108,26 @@ func TestRender_EmptyIsEmptyArray(t *testing.T) {
 		t.Errorf("empty BOM should render an empty components array, got:\n%s", out)
 	}
 }
+
+// TestRender_AllEcosystemPurls locks the purl mapping for the non-pypi/npm
+// ecosystems — including Go's v-prefixed module versions (which must stay in the
+// purl) and a composer slash-name with a range version (versionless purl).
+func TestRender_AllEcosystemPurls(t *testing.T) {
+	deps := []models.DepRef{
+		{Name: "github.com/foo/bar", Version: "v1.2.3", Ecosystem: "golang", Source: "go.mod"},
+		{Name: "Newtonsoft.Json", Version: "13.0.1", Ecosystem: "nuget", Source: "x.csproj"},
+		{Name: "serde", Version: "1.0.190", Ecosystem: "cargo", Source: "Cargo.toml"},
+		{Name: "monolog/monolog", Version: "^2.0", Ecosystem: "composer", Source: "composer.json"},
+	}
+	out := string(Render(deps, "1.0.0"))
+	for _, want := range []string{
+		`"purl": "pkg:golang/github.com/foo/bar@v1.2.3"`, // Go v-prefix kept
+		`"purl": "pkg:nuget/Newtonsoft.Json@13.0.1"`,
+		`"purl": "pkg:cargo/serde@1.0.190"`,
+		`"purl": "pkg:composer/monolog/monolog"`, // range → versionless purl
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %s in:\n%s", want, out)
+		}
+	}
+}

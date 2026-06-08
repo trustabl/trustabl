@@ -309,10 +309,12 @@ while persisting both machine artifacts. The file bytes are identical to the
 matching `--format` stdout output.
 
 `--bom-out <file>` additionally writes a byte-stable CycloneDX 1.5 BOM of the
-dependencies declared in bundled skill manifests (`requirements.txt`,
-`package.json`). It is pure inventory: Trustabl records what a skill ships and
-hands off to a real SCA tool (OSV-Scanner, Dependabot) for CVE matching — it
-makes no network call and asserts no vulnerability verdict.
+dependencies the repo declares across every supported language — `requirements.txt`
+/ `pyproject.toml` / `Pipfile` (pip), `package.json` (npm), `go.mod` (Go),
+`composer.json` (Composer), `*.csproj` (NuGet), `Cargo.toml` (Cargo). It is pure
+inventory of DECLARED direct deps: Trustabl hands off to a real SCA tool
+(OSV-Scanner, Dependabot, syft) for CVE matching — it makes no network call and
+asserts no vulnerability verdict.
 
 `--format json` and `--format sarif` are progress-silent and byte-stable
 across identical-input runs (pure functions of the `ScanResult`). The human
@@ -460,10 +462,11 @@ trustabl scan ./repo                              # scans skills alongside tools
 trustabl scan ./repo --detectors claude_skill     # only the Agent Skill (CSKILL-*) rules
 trustabl scan ./path/to/my-skill                  # point straight at one skill's directory
 
-# Skill dependency BOM (supply chain): export the deps a skill bundles in its
-# requirements.txt / package.json as a CycloneDX SBOM, to hand to OSV-Scanner or
-# Dependabot for CVE matching. Pure inventory — the scan itself does no CVE lookup.
-trustabl scan ./repo --bom-out skills-sbom.json
+# Dependency BOM (supply chain): export the repo's DECLARED deps across all
+# supported languages (pip / npm / Go / Composer / NuGet / Cargo manifests) as a
+# CycloneDX SBOM, to hand to OSV-Scanner / Dependabot / syft. Pure inventory —
+# the scan itself does no CVE lookup.
+trustabl scan ./repo --bom-out sbom.json
 
 # JSON output for CI piping
 trustabl scan ./repo --format json

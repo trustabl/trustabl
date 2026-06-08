@@ -50,11 +50,12 @@ type property struct {
 }
 
 // concreteVersionRe matches a declared version that is a single concrete release
-// (digit-led, no operators or spaces) — the only form that makes a meaningful
-// purl @version. Ranges ("^1.0.0", ">=1 <2") are left off the purl so every
-// emitted purl is structurally valid; the declared spec is still carried
-// verbatim in component.version.
-var concreteVersionRe = regexp.MustCompile(`^[0-9][A-Za-z0-9.+_-]*$`)
+// — digit-led, or Go's "v"-prefixed module form (v1.2.3, v0.0.0-<ts>-<sha>); no
+// operators or spaces. This is the only form that makes a meaningful purl
+// @version. Ranges ("^1.0.0", ">=1 <2") are left off the purl so every emitted
+// purl is structurally valid; the declared spec is still carried verbatim in
+// component.version.
+var concreteVersionRe = regexp.MustCompile(`^v?[0-9][A-Za-z0-9.+_-]*$`)
 
 // Render returns a CycloneDX 1.5 JSON BOM for deps. toolVersion is stamped as
 // the generating tool's version. The result is deterministic and byte-stable for

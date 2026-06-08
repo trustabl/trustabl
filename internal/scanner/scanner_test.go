@@ -159,10 +159,10 @@ rules:
 	}
 }
 
-// TestScan_PopulatesSkillDependencyBOM proves the Story-D wiring end to end: a
-// skill's bundled requirements.txt / package.json are parsed into
-// ScanResult.SkillDependencies, sorted and attributed by source.
-func TestScan_PopulatesSkillDependencyBOM(t *testing.T) {
+// TestScan_PopulatesDependencyBOM proves the repo-wide BOM wiring end to end:
+// declared manifests (here a skill's bundled requirements.txt / package.json)
+// are parsed into ScanResult.Dependencies, sorted and attributed by source.
+func TestScan_PopulatesDependencyBOM(t *testing.T) {
 	dir := t.TempDir()
 	mustWrite := func(rel, content string) {
 		t.Helper()
@@ -183,16 +183,16 @@ func TestScan_PopulatesSkillDependencyBOM(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 
-	if n := len(res.SkillDependencies); n != 2 {
-		t.Fatalf("want 2 skill dependencies, got %d: %+v", n, res.SkillDependencies)
+	if n := len(res.Dependencies); n != 2 {
+		t.Fatalf("want 2 skill dependencies, got %d: %+v", n, res.Dependencies)
 	}
 	// npm sorts before pypi; DepRef is comparable, so == is exact.
-	if got, want := res.SkillDependencies[0], (models.DepRef{
+	if got, want := res.Dependencies[0], (models.DepRef{
 		Name: "lodash", Version: "^4.17.21", Ecosystem: "npm", Source: "skills/demo/package.json",
 	}); got != want {
 		t.Errorf("dep[0] = %+v, want %+v", got, want)
 	}
-	if got, want := res.SkillDependencies[1], (models.DepRef{
+	if got, want := res.Dependencies[1], (models.DepRef{
 		Name: "requests", Version: "2.31.0", Ecosystem: "pypi", Source: "skills/demo/requirements.txt",
 	}); got != want {
 		t.Errorf("dep[1] = %+v, want %+v", got, want)
