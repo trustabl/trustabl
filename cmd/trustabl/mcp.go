@@ -42,6 +42,16 @@ func newMCPCommand() *cobra.Command {
 			"and returns the structured result as JSON.\n\n" +
 			"The MCP protocol uses stdout for its JSON-RPC stream, so this command\n" +
 			"writes nothing else to stdout; diagnostics go to stderr.",
+		Example: `  # Run the server (an MCP client normally launches this for you)
+  trustabl mcp
+
+  # Pin the rules ref the server resolves
+  trustabl mcp --rules-ref v1.2.0
+
+  # Example Claude Code / Cursor client config entry:
+  #   "mcpServers": {
+  #     "trustabl": { "command": "trustabl", "args": ["mcp"] }
+  #   }`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runMCP(cmd.Context(), f, logLevelFor(cmd))

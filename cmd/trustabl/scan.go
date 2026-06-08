@@ -18,6 +18,7 @@ import (
 	"github.com/trustabl/trustabl/internal/progress"
 	"github.com/trustabl/trustabl/internal/review"
 	"github.com/trustabl/trustabl/internal/rules"
+	"github.com/trustabl/trustabl/internal/rulesign"
 	"github.com/trustabl/trustabl/internal/rulesource"
 	"github.com/trustabl/trustabl/internal/sarif"
 	"github.com/trustabl/trustabl/internal/scanner"
@@ -31,6 +32,7 @@ type scanFlags struct {
 	noColor       bool
 	rulesRepo     string
 	rulesRef      string
+	channel       string
 	noRulesUpdate bool
 	noProgress    bool
 	jsonOut       string
@@ -42,13 +44,59 @@ func newScanCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "scan <target>",
 		Short: "Scan a local repo or GitHub URL",
-		Args:  cobra.ExactArgs(1),
+		Long: `Scan a repository for agent reliability and safety weaknesses.
+
+<target> is either a local path (a directory or a single file) or a GitHub URL
+(https://github.com/owner/repo, optionally .../tree/<ref>). A remote target is
+cloned into a temporary directory for the scan and removed afterward.
+
+The scan discovers the tools, agents, subagents, and MCP servers in the repo,
+loads the rule packs for the SDKs it actually finds, and reports the findings.
+Detection rules are resolved from the trustabl-rules repository and cached
+locally; pass --no-rules-update to run fully offline from that cache, or
+--rules-ref to pin a branch or tag.
+
+The report is written to stdout in the chosen --format (human, json, or sarif).
+Use --output/-o to write it to a file instead, or --json-out / --sarif-out to
+persist those formats alongside the stdout report. All progress, diagnostics, and
+warnings go to stderr, so stdout stays byte-stable for machine consumers.
+
+Exit codes:
+  0  no findings of medium severity or higher
+  1  one or more findings >= medium (or >= low with --strict; info/META
+     signals never raise the exit code)
+  2  scanner / I/O error, or no usable rules`,
+		Example: `  # Human-readable scan of the current directory
+  trustabl scan .
+
+  # Scan a GitHub repo at a specific branch or tag
+  trustabl scan https://github.com/owner/repo/tree/main
+
+  # JSON to stdout, or to a file
+  trustabl scan . --format json
+  trustabl scan . --format json -o report.json
+
+  # SARIF for a GitHub code-scanning upload
+  trustabl scan . --format sarif -o trustabl.sarif
+
+  # Print the human panel but also save machine artifacts
+  trustabl scan . --json-out report.json --sarif-out trustabl.sarif
+
+  # Strict CI gate: any finding (low and above) fails the run
+  trustabl scan . --strict
+
+  # Limit to specific detector categories
+  trustabl scan . --detectors claude_sdk,mcp
+
+  # Offline: use the cached rules without fetching
+  trustabl scan . --no-rules-update`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runScan(args[0], f, logLevelFor(cmd))
 		},
 	}
 	cmd.Flags().StringVar(&f.detectors, "detectors", "",
-		"comma-separated detector categories: claude_sdk, openai_sdk, openshell, google_adk, mcp (default: all)")
+		"comma-separated detector categories to run (default: all): "+categoryList())
 	cmd.Flags().StringVar(&f.format, "format", "human",
 		"output format: human|json|sarif")
 	cmd.Flags().StringVarP(&f.output, "output", "o", "",
@@ -61,6 +109,9 @@ func newScanCommand() *cobra.Command {
 		"rules repository URL (default: official trustabl-rules; or TRUSTABL_RULES_REPO)")
 	cmd.Flags().StringVar(&f.rulesRef, "rules-ref", "",
 		"rules branch or tag to use (default: the repo's default branch)")
+	cmd.Flags().StringVar(&f.channel, "channel", "",
+		"resolve rules from a signed release channel (e.g. production, staging) instead of git; "+
+			"opt-in and signature-verified — a pre-release channel is watermarked in the report")
 	cmd.Flags().BoolVar(&f.noRulesUpdate, "no-rules-update", false,
 		"do not fetch rules; use the local cache only")
 	cmd.Flags().BoolVar(&f.noProgress, "no-progress", false,
@@ -273,6 +324,7 @@ func resolveAndScan(cfg *scanner.Config, f scanFlags, rep progress.Reporter) (mo
 	cfg.RulesFromCache = res.FromCache
 	cfg.RulesSchemaVersion = res.SchemaVersion
 	cfg.RulesSchemaNewer = res.SchemaNewer
+	cfg.RulesOrigin = rulesOriginFromScan(f)
 	cfg.Progress = rep
 
 	result, err := scanner.Run(*cfg)
@@ -322,6 +374,23 @@ func finishScan(result models.ScanResult, jobErr error, f scanFlags, log *logx.L
 				"No usable rules: the resolved rule pack contains zero rules.")
 			fmt.Fprintln(os.Stderr,
 				`The rules repository may be empty or truncated. Run "trustabl rules pull" to refresh.`)
+			return exitCodeError{2}
+		}
+		if errors.Is(jobErr, rulesource.ErrNoTrustKeys) {
+			fmt.Fprintln(os.Stderr,
+				"This build of Trustabl embeds no rule-signing keys, so signed channels "+
+					"(--channel) cannot be verified yet.")
+			fmt.Fprintln(os.Stderr,
+				"Omit --channel to use the default rules source.")
+			return exitCodeError{2}
+		}
+		if isRuleSignFailure(jobErr) {
+			fmt.Fprintln(os.Stderr,
+				"Refusing to scan: the signed rules channel failed verification.")
+			fmt.Fprintf(os.Stderr, "  %v\n", jobErr)
+			fmt.Fprintln(os.Stderr,
+				"Trustabl will not run unofficial, tampered, stale, or rolled-back rules. "+
+					"Check the --channel value, or omit it to use the default rules source.")
 			return exitCodeError{2}
 		}
 		// A generic error was already surfaced to the user by the reporter's
@@ -537,21 +606,58 @@ func rulesConfigFromScan(f scanFlags) rulesource.Config {
 	return rulesource.Config{
 		RepoURL:  repo,
 		Ref:      f.rulesRef,
+		Channel:  f.channel,
 		NoUpdate: f.noRulesUpdate,
 	}
+}
+
+// rulesOriginFromScan classifies the provenance of the rules for this scan: a
+// signed channel when --channel is set, otherwise the unsigned git path —
+// marked Custom when the operator overrode the default rules repo.
+func rulesOriginFromScan(f scanFlags) models.RulesOrigin {
+	if f.channel != "" {
+		return models.RulesOrigin{Signed: true, Channel: f.channel}
+	}
+	custom := f.rulesRepo != "" || os.Getenv("TRUSTABL_RULES_REPO") != ""
+	return models.RulesOrigin{Custom: custom}
+}
+
+// isRuleSignFailure reports whether err is a signed-channel verification failure
+// — a bad signature, an untrusted/expired key, channel confusion, an expired or
+// rolled-back statement, a digest mismatch, or a malformed statement. These are
+// refusals, not transient errors: the engine must not fall back to running
+// unverified rules.
+func isRuleSignFailure(err error) bool {
+	return errors.Is(err, rulesign.ErrBadSignature) ||
+		errors.Is(err, rulesign.ErrUnknownKeyID) ||
+		errors.Is(err, rulesign.ErrKeyExpired) ||
+		errors.Is(err, rulesign.ErrKeyNotYetValid) ||
+		errors.Is(err, rulesign.ErrChannelMismatch) ||
+		errors.Is(err, rulesign.ErrStatementExpired) ||
+		errors.Is(err, rulesign.ErrVersionRegression) ||
+		errors.Is(err, rulesign.ErrDigestMismatch) ||
+		errors.Is(err, rulesign.ErrStatementMalformed)
 }
 
 func parseCategories(s string) ([]models.DetectorCategory, error) {
 	var out []models.DetectorCategory
 	for _, raw := range strings.Split(s, ",") {
 		c := models.DetectorCategory(strings.TrimSpace(raw))
-		switch c {
-		case models.CategoryClaudeSDK, models.CategoryOpenAISDK,
-			models.CategoryOpenShell, models.CategoryGoogleADK, models.CategoryMCP:
-			out = append(out, c)
-		default:
-			return nil, fmt.Errorf("unknown detector category %q (allowed: claude_sdk, openai_sdk, openshell, google_adk, mcp)", c)
+		if !models.ValidCategory(c) {
+			return nil, fmt.Errorf("unknown detector category %q (allowed: %s)", c, categoryList())
 		}
+		out = append(out, c)
 	}
 	return out, nil
+}
+
+// categoryList renders the recognized detector categories as a comma-separated
+// string, sourced from models.AllCategories so the --detectors help text and the
+// validation error never drift from what the engine actually recognizes.
+func categoryList() string {
+	names := make([]string, len(models.AllCategories))
+	for i, c := range models.AllCategories {
+		names[i] = string(c)
+	}
+	return strings.Join(names, ", ")
 }
