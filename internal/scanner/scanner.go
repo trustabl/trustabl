@@ -365,7 +365,7 @@ func Run(cfg Config) (models.ScanResult, error) {
 	analysis.ResolveEdges(&inventory, allParsed)
 	inventory.Subagents = analysis.DiscoverSubagents(profile.Manifest)
 	inventory.Skills = analysis.DiscoverSkills(profile.Manifest)
-	inventory.SkillDependencies = analysis.DiscoverSkillDependencies(inventory.Skills, profile.Manifest.RepoRoot)
+	inventory.Dependencies = analysis.DiscoverDependencies(profile.Manifest.RepoRoot)
 	inventory.SlashCommands = analysis.DiscoverSlashCommands(profile.Manifest)
 	inventory.PluginManifests = analysis.DiscoverPlugins(profile.Manifest)
 	inventory.ClaudeSettings = analysis.DiscoverClaudeSettings(profile.Manifest)
@@ -474,7 +474,7 @@ func Run(cfg Config) (models.ScanResult, error) {
 		MCPServers:          inventory.MCPServers,
 		Subagents:           inventory.Subagents,
 		Skills:              inventory.Skills,
-		SkillDependencies:   inventory.SkillDependencies,
+		Dependencies:        inventory.Dependencies,
 		SlashCommands:       inventory.SlashCommands,
 		PluginManifests:     inventory.PluginManifests,
 		ClaudeSettings:      inventory.ClaudeSettings,

@@ -322,9 +322,9 @@ flowchart TD
     end
 
     subgraph S2["Step 2 — Inventory (per-language AST)"]
-        disc["analysis.DiscoverTools<br/>DiscoverAgents<br/>DiscoverGuardrails<br/>DiscoverSessions<br/>DiscoverSubagents<br/>DiscoverSkills<br/>DiscoverSkillDependencies<br/>DiscoverSlashCommands<br/>DiscoverPlugins<br/>DiscoverClaudeSettings<br/>DiscoverADKAgents<br/>DiscoverADKTools"]
+        disc["analysis.DiscoverTools<br/>DiscoverAgents<br/>DiscoverGuardrails<br/>DiscoverSessions<br/>DiscoverSubagents<br/>DiscoverSkills<br/>DiscoverDependencies<br/>DiscoverSlashCommands<br/>DiscoverPlugins<br/>DiscoverClaudeSettings<br/>DiscoverADKAgents<br/>DiscoverADKTools"]
         edges["analysis.ResolveEdges"]
-        inv[["RepoInventory<br/>Tools · Agents · Guardrails · Sessions<br/>SDKsDetected · HasShellInvocations · UsesDefaultTracing<br/>SkillDependencies (BOM)"]]
+        inv[["RepoInventory<br/>Tools · Agents · Guardrails · Sessions<br/>SDKsDetected · HasShellInvocations · UsesDefaultTracing<br/>Dependencies (BOM)"]]
         disc --> edges --> inv
     end
 
@@ -449,18 +449,20 @@ For each language recon cleared, do the AST work and produce a `RepoInventory`:
   reads, and any file for a committed secret literal (an AWS/GitHub/Slack/Google
   token or a private-key header) — the payload-in-aux-file surface that scanning
   `SKILL.md` alone misses. No frontmatter or no `name` → skipped.
-- **DiscoverSkillDependencies** (`skill_deps.go`) — parses the dependency
-  manifests bundled inside each discovered skill (`requirements.txt` → pip,
-  `package.json` deps/devDeps → npm) into a flat, sorted, de-duplicated
-  `[]DepRef` on `RepoInventory.SkillDependencies`, mirrored to
-  `ScanResult.SkillDependencies`. This is the agent-path supply-chain **BOM**
-  (TR-221): pure inventory with no network and no CVE matching — a deterministic
-  hand-off to a real SCA tool (OSV-Scanner, Dependabot). It is deliberately
-  **not** folded into `ScanID` (an additive field must not perturb scan
-  identity). The optional `--bom-out` flag renders it as a byte-stable
-  CycloneDX 1.5 document via
-  [`internal/cyclonedx`](internal/cyclonedx/render.go). `pyproject.toml` is a
-  known v1 gap (the engine ships no TOML parser).
+- **DiscoverDependencies** (`deps.go`) — walks the repo (skipping vendored /
+  installed trees: `node_modules`, `vendor`, `.venv`, `target`, …) for the
+  primary dependency manifest of each supported language and parses the DECLARED
+  direct deps into a flat, sorted, de-duplicated `[]DepRef` on
+  `RepoInventory.Dependencies`, mirrored to `ScanResult.Dependencies`. Manifests:
+  `requirements.txt` / `pyproject.toml` / `Pipfile` (pypi), `package.json` (npm),
+  `go.mod` (golang), `composer.json` (composer), `*.csproj` (nuget), `Cargo.toml`
+  (cargo). This is the agent-path supply-chain **BOM** (TR-278; supersedes the
+  skill-only TR-221): pure inventory, no network, no CVE matching — a
+  deterministic hand-off to a real SCA tool (OSV-Scanner, Dependabot, syft) or to
+  the planned opt-in pinned-OSV `--vuln-scan` layer (TR-271). It is deliberately
+  **not** folded into `ScanID`. The optional `--bom-out` flag renders it as a
+  byte-stable CycloneDX 1.5 document via
+  [`internal/cyclonedx`](internal/cyclonedx/render.go).
 - **DiscoverSlashCommands** (`slash_commands.go`) — emits one
   `SlashCommandDef` per `ComponentSlashCommand` component. Recon tags those
   at two path shapes: the canonical `.claude/commands/*.md` (any depth) AND
