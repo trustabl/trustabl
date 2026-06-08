@@ -2043,8 +2043,7 @@ take it absent a concrete distribution requirement.
   fast/cheap defaults per known provider (`anthropic → claude-haiku-4-5`,
   `openai → gpt-4.1-nano`, `google → gemini-2.5-flash-lite`).
   `trustabl enrich` (§8.2) reads this config to call Claude with BYOK.
-  `internal/inference/router.go` remains a non-functional placeholder — the
-  scan pipeline makes no LLM call. Rule-based detection is therefore the
+  The scan pipeline itself makes no LLM call — rule-based detection is the
   entire scan, with or without a key configured.
 - **No corpus-eval benchmark.** Detection quality measured on a 20–40
   real-agent-repo corpus is the detection-quality target. The shipped
