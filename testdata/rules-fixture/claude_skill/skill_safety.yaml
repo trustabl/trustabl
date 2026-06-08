@@ -102,14 +102,16 @@ rules:
       skill_body_has_injection_marker: true
     explanation: >
       This skill's body carries a prompt-injection signal — instruction-override
-      phrasing ("ignore previous instructions"), zero-width characters used to
-      smuggle hidden text, or a long base64 blob that may conceal instructions.
-      Because the skill description and body enter Claude's context, an injected
-      instruction here can hijack the agent.
+      phrasing ("ignore previous instructions"), invisible Unicode used to smuggle
+      hidden text (zero-width characters, the Unicode Tags block U+E0000–E007F, or
+      bidirectional overrides), or a long base64 blob that may conceal
+      instructions. Because the skill description and body enter Claude's context,
+      an injected instruction here — including one a human reviewer cannot see —
+      can hijack the agent.
     fix: >
-      Remove the override phrasing, zero-width characters, or encoded blob. A
-      legitimate skill states its guidance in plain, visible text; it never needs
-      to override prior instructions or hide content from review.
+      Remove the override phrasing, the invisible/smuggling characters, or the
+      encoded blob. A legitimate skill states its guidance in plain, visible text;
+      it never needs to override prior instructions or hide content from review.
 
   - id: CSKILL-050
     title: Model-invocable skill grants side-effecting tools
@@ -137,3 +139,48 @@ rules:
       Add `disable-model-invocation: true` so only the user can invoke this skill,
       or narrow allowed-tools to read-only tools (Read, Grep, Glob). Reserve
       auto-invocation for skills that carry knowledge, not side effects.
+
+  - id: CSKILL-010
+    title: Bundled skill script performs network egress
+    severity: high
+    confidence: 0.7
+    applies_to:
+      - claude_skill
+    scope: skill
+    match:
+      skill_bundled_script_network_egress: true
+    explanation: >
+      A script bundled in this skill's directory makes outbound network calls
+      (curl / wget / nc / …). A skill can run its bundled scripts via Bash, and a
+      scanner that only reads SKILL.md never sees this — the payload hides in an
+      auxiliary or "test" file. On its own an egress call may load remote code
+      (curl piped into a shell); paired with credential access in the same script
+      it becomes data exfiltration that runs on your machine when the skill is
+      activated.
+    fix: >
+      Remove network calls from bundled scripts, or gate them behind an explicit,
+      reviewed, user-approved step. Treat every bundled script as code that runs
+      with your privileges: pin and review what it fetches, and never let it pipe
+      a remote response straight into a shell.
+
+  - id: CSKILL-011
+    title: Bundled skill script reads credentials or secrets
+    severity: critical
+    confidence: 0.8
+    applies_to:
+      - claude_skill
+    scope: skill
+    match:
+      skill_bundled_script_reads_secrets: true
+    explanation: >
+      A script bundled with this skill reads credentials or secrets (gh auth,
+      $AWS_*, ~/.aws, ~/.ssh, id_rsa, *_key, …). Because a skill can run its
+      bundled scripts, this is a credential-theft primitive hidden outside
+      SKILL.md — exactly the aux/test-file payload that body-only scanners miss.
+      Combined with a network call in the same script it is direct credential
+      exfiltration.
+    fix: >
+      Remove credential and secret access from bundled scripts. If the skill
+      legitimately needs a secret, have the user provide it through an explicit,
+      auditable runtime prompt — never read it from a bundled script that runs
+      automatically when the skill is activated.

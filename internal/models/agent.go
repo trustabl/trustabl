@@ -207,9 +207,17 @@ type SkillDef struct {
 // a skill runs via bash — the highest-risk bundled surface), "markdown"
 // (additional instructions/reference), "binary" (precompiled/opaque), or
 // "resource" (everything else: templates, data, assets).
+//
+// HasNetworkEgress and ReadsSecrets are content facts set only for Kind
+// "script": discovery reads the script (size-capped) and records whether it
+// makes outbound network calls or reads credentials/secrets — the
+// payload-in-aux-file surface that scanning SKILL.md alone misses. The script
+// text itself is never stored; the inventory stays an index of facts, not source.
 type BundledFile struct {
-	Path string `json:"path"` // repo-relative, slash-separated
-	Kind string `json:"kind"`
+	Path             string `json:"path"` // repo-relative, slash-separated
+	Kind             string `json:"kind"`
+	HasNetworkEgress bool   `json:"has_network_egress,omitempty"`
+	ReadsSecrets     bool   `json:"reads_secrets,omitempty"`
 }
 
 // SlashCommandDef is one parsed .claude/commands/*.md slash command. The command

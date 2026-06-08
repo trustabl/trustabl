@@ -1,6 +1,7 @@
 package analysis
 
 import (
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -102,6 +103,32 @@ var (
 // and the byte-order mark.
 const zeroWidthChars = "\u200b\u200c\u200d\ufeff"
 
+// hasUnicodeTagsBlock reports whether s contains a Unicode Tags-block code point
+// (U+E0000\u2013U+E007F). Each ASCII character has an invisible Tags equivalent, so
+// this block is the carrier for "ASCII smuggling": instructions rendered
+// invisibly to a human reviewer but read verbatim by the model.
+func hasUnicodeTagsBlock(s string) bool {
+	for _, r := range s {
+		if r >= 0xE0000 && r <= 0xE007F {
+			return true
+		}
+	}
+	return false
+}
+
+// hasBidiControl reports whether s contains a bidirectional-override control
+// (U+202A\u2013U+202E or U+2066\u2013U+2069). These reorder displayed text without
+// changing its logical order \u2014 the Trojan-Source technique for hiding the real
+// content of a line from review.
+func hasBidiControl(s string) bool {
+	for _, r := range s {
+		if (r >= 0x202A && r <= 0x202E) || (r >= 0x2066 && r <= 0x2069) {
+			return true
+		}
+	}
+	return false
+}
+
 // parseSkillBody extracts security-relevant facts from the markdown body of a
 // SKILL.md (everything below the frontmatter). Output is deterministic: commands
 // and URLs are returned in first-seen order with duplicates removed; markers are
@@ -135,6 +162,12 @@ func parseSkillBody(body string) (dynExec, urls, markers []string) {
 	if strings.ContainsAny(body, zeroWidthChars) {
 		markers = append(markers, "zero-width-characters")
 	}
+	if hasUnicodeTagsBlock(body) {
+		markers = append(markers, "unicode-tags-smuggling")
+	}
+	if hasBidiControl(body) {
+		markers = append(markers, "bidi-control-characters")
+	}
 	if skillBase64BlobRe.MatchString(body) {
 		markers = append(markers, "long-base64-blob")
 	}
@@ -158,6 +191,31 @@ func dedupeStrings(in []string) []string {
 	return out
 }
 
+// maxBundledScriptScanBytes caps how much of a bundled script is read for
+// content facts. Scripts are small; the cap bounds the read so a pathologically
+// large file cannot blow up discovery.
+const maxBundledScriptScanBytes = 1 << 20 // 1 MiB
+
+var (
+	// bundledEgressRe matches a network-egress invocation in a bundled script
+	// (curl / wget / nc / ...). Mirrors the dynamic-exec egress check.
+	bundledEgressRe = regexp.MustCompile(`(?i)\b(?:curl|wget|nc|ncat|telnet|scp|sftp|rsync)\b`)
+	// bundledSecretRe matches a credential/secret read in a bundled script.
+	bundledSecretRe = regexp.MustCompile(`(?i)gh\s+auth|printenv|\$(?:AWS|GH|GITHUB|OPENAI|ANTHROPIC|HF|NPM|SLACK|GOOGLE|GCP|AZURE)[A-Z0-9_]*|\bid_rsa\b|\bcredentials\b|\.aws/|\.ssh/|\.netrc\b|access[_-]?key|secret[_-]?key|api[_-]?key`)
+)
+
+// readCapped reads up to maxBytes from path. A read error yields no content, so
+// the file is simply left un-scanned (no fact stamped) rather than failing the
+// whole skill's discovery.
+func readCapped(path string, maxBytes int64) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return io.ReadAll(io.LimitReader(f, maxBytes))
+}
+
 // bundledFiles inventories the non-SKILL.md files shipped alongside a skill, by
 // walking the skill's own directory (filepath.Dir of the SKILL.md path) under
 // repoRoot. A skill whose SKILL.md sits at the repo root has no bounded skill
@@ -178,7 +236,16 @@ func bundledFiles(repoRoot, skillPath string) []models.BundledFile {
 		if rerr != nil {
 			return nil
 		}
-		out = append(out, models.BundledFile{Path: filepath.ToSlash(rel), Kind: classifyBundledFile(d.Name())})
+		bf := models.BundledFile{Path: filepath.ToSlash(rel), Kind: classifyBundledFile(d.Name())}
+		// Script-kind files are content-scanned for egress/secret facts: a skill
+		// can run them via Bash, so a payload hidden here evades body-only scans.
+		if bf.Kind == "script" {
+			if content, rerr := readCapped(abs, maxBundledScriptScanBytes); rerr == nil {
+				bf.HasNetworkEgress = bundledEgressRe.Match(content)
+				bf.ReadsSecrets = bundledSecretRe.Match(content)
+			}
+		}
+		out = append(out, bf)
 		return nil
 	})
 	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })

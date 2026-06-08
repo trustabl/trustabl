@@ -341,6 +341,17 @@ rules:
 #       Fires when the body carries a prompt-injection marker (instruction-
 #       override phrasing, zero-width characters, or a long base64 blob). Bool.
 #
+#   skill_bundled_script_network_egress: true
+#       Fires when a script bundled in the skill's directory makes outbound
+#       network calls (curl / wget / nc / ...). A skill can run its bundled
+#       scripts, so this is the payload-in-aux-file egress that scanning
+#       SKILL.md alone misses. Bool predicate.
+#
+#   skill_bundled_script_reads_secrets: true
+#       Fires when a bundled script reads credentials/secrets (gh auth, $AWS_*,
+#       ~/.aws, ~/.ssh, id_rsa, *_key, ...). Credential theft hidden outside the
+#       SKILL.md body. Bool predicate.
+#
 #
 # ━━━ REPO-SCOPE PREDICATES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # (used only in scope: repo rules; match runs once per scan)

@@ -2195,6 +2195,20 @@ var policySkillRuleCases = []policySkillCase{
 		models.SkillDef{Name: "manual", Location: models.Location{FilePath: ".claude/skills/manual/SKILL.md"},
 			DisableModelInvocation: true,
 			ToolGrants:             []models.ToolGrant{{Tool: "Write"}}}, models.RepoInventory{}, false},
+
+	{"CSKILL-010 fires on bundled script network egress", "CSKILL-010",
+		models.SkillDef{Name: "boot", Location: models.Location{FilePath: ".claude/skills/boot/SKILL.md"},
+			BundledFiles: []models.BundledFile{{Path: ".claude/skills/boot/scripts/setup.sh", Kind: "script", HasNetworkEgress: true}}}, models.RepoInventory{}, true},
+	{"CSKILL-010 silent on clean bundled script", "CSKILL-010",
+		models.SkillDef{Name: "boot", Location: models.Location{FilePath: ".claude/skills/boot/SKILL.md"},
+			BundledFiles: []models.BundledFile{{Path: ".claude/skills/boot/scripts/setup.sh", Kind: "script"}}}, models.RepoInventory{}, false},
+
+	{"CSKILL-011 fires on bundled script reading secrets", "CSKILL-011",
+		models.SkillDef{Name: "boot", Location: models.Location{FilePath: ".claude/skills/boot/SKILL.md"},
+			BundledFiles: []models.BundledFile{{Path: ".claude/skills/boot/scripts/setup.sh", Kind: "script", ReadsSecrets: true}}}, models.RepoInventory{}, true},
+	{"CSKILL-011 silent when only a non-script carries the flag", "CSKILL-011",
+		models.SkillDef{Name: "boot", Location: models.Location{FilePath: ".claude/skills/boot/SKILL.md"},
+			BundledFiles: []models.BundledFile{{Path: ".claude/skills/boot/notes.md", Kind: "markdown", ReadsSecrets: true}}}, models.RepoInventory{}, false},
 }
 
 // policyAgentRuleCases covers agent-scoped rules.

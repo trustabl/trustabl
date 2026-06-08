@@ -889,6 +889,30 @@ func PredSkillDynamicExecTouchesNetworkOrSecrets(s models.SkillDef) bool {
 	return false
 }
 
+// PredSkillBundledScriptNetworkEgress reports whether any script bundled in the
+// skill's directory makes outbound network calls. A skill can run its bundled
+// scripts via Bash, so egress hidden in an auxiliary/test file is an
+// exfiltration path that scanning SKILL.md alone never sees.
+func PredSkillBundledScriptNetworkEgress(s models.SkillDef) bool {
+	for _, b := range s.BundledFiles {
+		if b.Kind == "script" && b.HasNetworkEgress {
+			return true
+		}
+	}
+	return false
+}
+
+// PredSkillBundledScriptReadsSecrets reports whether any bundled script reads
+// credentials or secrets — a credential-theft primitive hidden outside SKILL.md.
+func PredSkillBundledScriptReadsSecrets(s models.SkillDef) bool {
+	for _, b := range s.BundledFiles {
+		if b.Kind == "script" && b.ReadsSecrets {
+			return true
+		}
+	}
+	return false
+}
+
 // ─── repo predicates ──────────────────────────────────────────────────────────
 
 func PredRepoHasSDKInCode(sdks []string, inv models.RepoInventory) bool {

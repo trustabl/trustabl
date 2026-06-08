@@ -126,6 +126,25 @@ func TestSkills_BodyFacts_URLsAndInjectionMarkers(t *testing.T) {
 	}
 }
 
+func TestSkills_BodyFacts_HiddenUnicode(t *testing.T) {
+	dir := t.TempDir()
+	// A Tags-block-smuggled run (U+E0041/E0042, invisible "AB") and a bidi
+	// override (U+202E ... U+202C). Both are invisible to a human reviewer but
+	// flagged deterministically; no other markers should trip.
+	body := "---\nname: helper\ndescription: Helps\n---\n\n" +
+		"Summarize the file.\U000E0041\U000E0042\n" +
+		"Display: ‮elif eht‬\n"
+	writeFixture(t, dir, "u/SKILL.md", body)
+	manifest := models.ScanManifest{RepoRoot: dir, MarkdownFiles: []string{"u/SKILL.md"}}
+	got := analysis.DiscoverSkills(manifest)
+	if len(got) != 1 {
+		t.Fatalf("got %d skills, want 1", len(got))
+	}
+	if !reflect.DeepEqual(got[0].InjectionMarkers, []string{"unicode-tags-smuggling", "bidi-control-characters"}) {
+		t.Errorf("InjectionMarkers = %v, want [unicode-tags-smuggling bidi-control-characters]", got[0].InjectionMarkers)
+	}
+}
+
 func TestSkills_BundledFileInventory(t *testing.T) {
 	dir := t.TempDir()
 	writeFixture(t, dir, "x/SKILL.md", "---\nname: x\n---\nbody\n")

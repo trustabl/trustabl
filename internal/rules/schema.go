@@ -94,6 +94,8 @@ type MatchExpr struct {
 	SkillDynamicExecTouchesNetworkOrSecrets *bool    `yaml:"skill_dynamic_exec_touches_network_or_secrets,omitempty"`
 	SkillReferencesExternalURL              *bool    `yaml:"skill_references_external_url,omitempty"`
 	SkillBodyHasInjectionMarker             *bool    `yaml:"skill_body_has_injection_marker,omitempty"`
+	SkillBundledScriptNetworkEgress         *bool    `yaml:"skill_bundled_script_network_egress,omitempty"`
+	SkillBundledScriptReadsSecrets          *bool    `yaml:"skill_bundled_script_reads_secrets,omitempty"`
 
 	// Repo-scope predicates
 	RepoHasSDKInCode                  []string `yaml:"repo_has_sdk_in_code,omitempty"`

@@ -199,6 +199,12 @@ func (e MatchExpr) EvaluateSkill(s models.SkillDef, inv models.RepoInventory) bo
 	if e.SkillBodyHasInjectionMarker != nil && PredSkillBodyHasInjectionMarker(s) != *e.SkillBodyHasInjectionMarker {
 		return false
 	}
+	if e.SkillBundledScriptNetworkEgress != nil && PredSkillBundledScriptNetworkEgress(s) != *e.SkillBundledScriptNetworkEgress {
+		return false
+	}
+	if e.SkillBundledScriptReadsSecrets != nil && PredSkillBundledScriptReadsSecrets(s) != *e.SkillBundledScriptReadsSecrets {
+		return false
+	}
 	return true
 }
 
@@ -343,6 +349,8 @@ var predicatesByScope = map[models.Scope]map[string]bool{
 		"skill_dynamic_exec_touches_network_or_secrets": true,
 		"skill_references_external_url":                 true,
 		"skill_body_has_injection_marker":               true,
+		"skill_bundled_script_network_egress":           true,
+		"skill_bundled_script_reads_secrets":            true,
 	},
 	models.ScopeRepo: {
 		"repo_has_sdk_in_code":   true,
@@ -405,6 +413,8 @@ func (e MatchExpr) setPredicateNames() []string {
 	add(e.SkillDynamicExecTouchesNetworkOrSecrets != nil, "skill_dynamic_exec_touches_network_or_secrets")
 	add(e.SkillReferencesExternalURL != nil, "skill_references_external_url")
 	add(e.SkillBodyHasInjectionMarker != nil, "skill_body_has_injection_marker")
+	add(e.SkillBundledScriptNetworkEgress != nil, "skill_bundled_script_network_egress")
+	add(e.SkillBundledScriptReadsSecrets != nil, "skill_bundled_script_reads_secrets")
 	// Repo scope
 	add(len(e.RepoHasSDKInCode) > 0, "repo_has_sdk_in_code")
 	add(len(e.RepoComponentPresent) > 0, "repo_component_present")
