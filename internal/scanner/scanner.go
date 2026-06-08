@@ -45,6 +45,11 @@ type Config struct {
 	// ScanResult and used by the CLI's "rules newer than this build" warning.
 	RulesSchemaVersion int
 	RulesSchemaNewer   bool
+	// RulesOrigin records the provenance of the rules (signed channel, unsigned
+	// git, or custom override). It is surfaced on ScanResult as a report
+	// watermark and folded into ScanID so different-provenance scans of the same
+	// code get distinct IDs.
+	RulesOrigin models.RulesOrigin
 
 	// Progress receives real-time phase events. Nil means no progress output.
 	Progress progress.Reporter
@@ -376,7 +381,7 @@ func Run(cfg Config) (models.ScanResult, error) {
 	}
 
 	return models.ScanResult{
-		ScanID:              scanID(idLabel, profile.Manifest, cfg.RulesVersion, rules.SupportedSchemaVersion),
+		ScanID:              scanID(idLabel, profile.Manifest, cfg.RulesVersion, rules.SupportedSchemaVersion, cfg.RulesOrigin.Tag()),
 		Repo:                repoLabel,
 		Languages:           profile.Languages,
 		SDKs:                inventory.SDKsDetected,
@@ -401,6 +406,7 @@ func Run(cfg Config) (models.ScanResult, error) {
 		RulesSchemaVersion:  cfg.RulesSchemaVersion,
 		RulesSchemaNewer:    cfg.RulesSchemaNewer,
 		RulesSkipped:        sortedUnique(rulesSkipped),
+		RulesOrigin:         cfg.RulesOrigin,
 		Coverage:            coverage,
 	}, nil
 }
@@ -649,8 +655,10 @@ func retagJavaScriptDefs(inv *models.RepoInventory) {
 // Including the rules version means a different rule pack yields a distinct,
 // honest ID; folding the engine's supported schema version likewise keeps the
 // ID honest when forward-compatible loading makes two builds skip different
-// rules from the same pack.
-func scanID(idLabel string, manifest models.ScanManifest, rulesVersion string, engineSchema int) string {
+// rules from the same pack. The rules-origin tag is folded too, so two scans of
+// the same code differ in ID when one used signed production rules and the other
+// an unsigned or pre-release source.
+func scanID(idLabel string, manifest models.ScanManifest, rulesVersion string, engineSchema int, originTag string) string {
 	h := sha256.New()
 	h.Write([]byte(idLabel))
 	// Fold every inventoried file list so the ID is honest about all scanned
@@ -686,5 +694,9 @@ func scanID(idLabel string, manifest models.ScanManifest, rulesVersion string, e
 	// not just the pack SHA.
 	h.Write([]byte{0})
 	h.Write([]byte(fmt.Sprintf("%d", engineSchema)))
+	// Fold the rules-origin tag (signed:<channel> / unsigned:custom /
+	// unsigned:default) so provenance is part of the scan's identity.
+	h.Write([]byte{0})
+	h.Write([]byte(originTag))
 	return "scan_" + hex.EncodeToString(h.Sum(nil)[:8])
 }

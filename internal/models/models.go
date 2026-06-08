@@ -67,17 +67,27 @@ const (
 	CategoryAutoGen    DetectorCategory = "autogen"
 )
 
-// ValidCategory reports whether c is a category this build recognizes. New SDK
-// categories are added here as coverage lands. The rule loader skips packs with
-// an unrecognized category leniently at runtime (forward-compat: a newer rules
-// release must not block an older binary from scanning the SDKs it knows) and
-// rejects them in strict (authoring/CI) mode so a typo'd category is caught.
+// AllCategories is every detector category this build recognizes, in a stable
+// display order. It is the single source of truth for category membership:
+// ValidCategory checks against it, and the CLI's --detectors flag derives its
+// help text and validation error from it (so neither drifts as coverage lands).
+// New SDK categories are added here as coverage lands.
+var AllCategories = []DetectorCategory{
+	CategoryClaudeSDK, CategoryOpenAISDK, CategoryOpenShell, CategoryGoogleADK,
+	CategoryMCP, CategoryLangChain, CategoryCrewAI, CategoryPydanticAI,
+	CategoryVercelAI, CategoryAutoGen,
+}
+
+// ValidCategory reports whether c is a category this build recognizes. The rule
+// loader skips packs with an unrecognized category leniently at runtime
+// (forward-compat: a newer rules release must not block an older binary from
+// scanning the SDKs it knows) and rejects them in strict (authoring/CI) mode so
+// a typo'd category is caught.
 func ValidCategory(c DetectorCategory) bool {
-	switch c {
-	case CategoryClaudeSDK, CategoryOpenAISDK, CategoryOpenShell, CategoryGoogleADK,
-		CategoryMCP, CategoryLangChain, CategoryCrewAI, CategoryPydanticAI,
-		CategoryVercelAI, CategoryAutoGen:
-		return true
+	for _, k := range AllCategories {
+		if c == k {
+			return true
+		}
 	}
 	return false
 }
@@ -126,6 +136,29 @@ const (
 // output after edge resolution (see scanner.retagJavaScriptDefs).
 func IsTSOrJS(l Language) bool {
 	return l == LanguageTypeScript || l == LanguageJavaScript
+}
+
+// AllLanguages is every source language this build recognizes, in a stable
+// order. It is the single source of truth for language membership: ValidLanguage
+// checks against it, the strict rule loader builds its allow-list error from it,
+// and the lenient (runtime) loader uses it to decide whether a rule targets a
+// language this build does not understand — a forward-incompatible rule it skips
+// rather than hard-failing. New languages are added here as discovery lands.
+var AllLanguages = []Language{
+	LanguagePython, LanguageTypeScript, LanguageJavaScript, LanguageGo,
+}
+
+// ValidLanguage reports whether l is a source language this build recognizes.
+// Empty is NOT valid here: the loader treats an empty rule language as the
+// python default separately, so this answers only "is this an explicit, known
+// language". Mirrors ValidScope / ValidCategory.
+func ValidLanguage(l Language) bool {
+	for _, k := range AllLanguages {
+		if l == k {
+			return true
+		}
+	}
+	return false
 }
 
 // ToolDef is one discovered surface that an agent can invoke at runtime.
@@ -313,6 +346,55 @@ type Coverage struct {
 	SkippedFiles []string `json:"skipped_files,omitempty"`
 }
 
+// RulesOrigin classifies where a scan's rules came from and how far they can be
+// trusted. It drives two things: a one-line report watermark for any scan that
+// did NOT use blessed, signature-verified production rules, and an origin tag
+// folded into ScanID so two scans of the same code with rules of different
+// provenance get distinct IDs.
+type RulesOrigin struct {
+	// Signed is true when the rules were resolved through a verified signed
+	// channel (releaseSource). Unsigned scans use the git path.
+	Signed bool `json:"signed"`
+	// Channel is the signed channel name ("production", "staging") when Signed.
+	Channel string `json:"channel,omitempty"`
+	// Custom is true when the operator overrode the default rules source
+	// (--rules-repo / TRUSTABL_RULES_REPO) on the unsigned git path.
+	Custom bool `json:"custom,omitempty"`
+}
+
+// Tag is the stable origin string folded into ScanID. It is always non-empty so
+// the ID is honest about provenance for every scan.
+func (o RulesOrigin) Tag() string {
+	if o.Signed {
+		ch := o.Channel
+		if ch == "" {
+			ch = "unknown"
+		}
+		return "signed:" + ch
+	}
+	if o.Custom {
+		return "unsigned:custom"
+	}
+	return "unsigned:default"
+}
+
+// Watermark returns the report banner for a scan that deviated from blessed
+// production rules, or "" for a clean, trusted scan. Signed production is clean;
+// a signed pre-release channel and any unsigned custom source are flagged. The
+// plain unsigned default is not flagged — pre-cutover it is the normal source;
+// after the signed-production cutover (ENG-6) the default becomes signed and the
+// git path is reached only via --rules-repo, which is Custom and so flagged.
+func (o RulesOrigin) Watermark() string {
+	switch {
+	case o.Signed && o.Channel != "" && o.Channel != "production":
+		return "Rules channel: " + o.Channel + " — pre-release rules, not blessed for production."
+	case !o.Signed && o.Custom:
+		return "UNSIGNED rules from a custom source — these rules were not signature-verified."
+	default:
+		return ""
+	}
+}
+
 // ScanResult is the top-level output. JSON-serializable for CI.
 type ScanResult struct {
 	ScanID              string             `json:"scan_id"`
@@ -340,5 +422,6 @@ type ScanResult struct {
 	RulesSchemaVersion  int                `json:"rules_schema_version,omitempty"` // pack manifest's declared schema_version
 	RulesSchemaNewer    bool               `json:"rules_schema_newer,omitempty"`   // pack targets a schema newer than this build supports
 	RulesSkipped        []string           `json:"rules_skipped,omitempty"`        // rule IDs dropped as forward-incompatible (sorted, deduped)
+	RulesOrigin         RulesOrigin        `json:"rules_origin"`                   // provenance of the rules (signed channel / unsigned / custom)
 	Coverage            Coverage           `json:"coverage"`                       // how many source files parsed vs. were skipped
 }
