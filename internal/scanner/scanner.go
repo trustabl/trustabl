@@ -45,6 +45,11 @@ type Config struct {
 	// ScanResult and used by the CLI's "rules newer than this build" warning.
 	RulesSchemaVersion int
 	RulesSchemaNewer   bool
+	// RulesOrigin records the provenance of the rules (signed channel, unsigned
+	// git, or custom override). It is surfaced on ScanResult as a report
+	// watermark and folded into ScanID so different-provenance scans of the same
+	// code get distinct IDs.
+	RulesOrigin models.RulesOrigin
 
 	// Progress receives real-time phase events. Nil means no progress output.
 	Progress progress.Reporter
@@ -153,7 +158,7 @@ func Run(cfg Config) (models.ScanResult, error) {
 	// Step 2: inventory (per-language AST; Python only for now)
 	rep.StartPhase("inventory", "Inventory")
 	inventoryStop := log.Timer("inventory")
-	rep.SetTotal(len(profile.Manifest.PythonFiles) + len(profile.Manifest.TypeScriptFiles))
+	rep.SetTotal(len(profile.Manifest.PythonFiles) + len(profile.Manifest.TypeScriptFiles) + len(profile.Manifest.JavaScriptFiles))
 	tools, parsed, pySkipped, err := analysis.DiscoverTools(ctx, profile.Manifest, func(path string) {
 		rep.Advance(path)
 	})
@@ -174,9 +179,18 @@ func Run(cfg Config) (models.ScanResult, error) {
 	guardrails := analysis.DiscoverGuardrails(parsed)
 	sessions := analysis.DiscoverSessions(parsed)
 
-	// TS block: parse TypeScript files, then run TS-specific discovery
-	// (Claude SDK + OpenAI Agents + Google ADK).
-	tsFiles, tsSkipped := parseTSFiles(ctx, profile.Manifest.TypeScriptFiles, profile.Manifest.RepoRoot, func(path string) {
+	// TS block: parse TypeScript AND JavaScript files, then run TS-family
+	// discovery (Claude SDK + OpenAI Agents + Google ADK + LangChain + Vercel +
+	// MCP). JavaScript shares the tree-sitter grammar (the tsx parser parses
+	// plain JS) and every discovery/predicate path, so .js/.jsx/.mjs/.cjs flow
+	// through the same passes; discovery stamps them LanguageTypeScript and
+	// retagJavaScriptDefs (after ResolveEdges, below) corrects them to
+	// LanguageJavaScript for honest output. Both ES-module imports and CommonJS
+	// require() bindings are recognized (astutil.TSImportAliases handles both).
+	tsAndJSPaths := make([]string, 0, len(profile.Manifest.TypeScriptFiles)+len(profile.Manifest.JavaScriptFiles))
+	tsAndJSPaths = append(tsAndJSPaths, profile.Manifest.TypeScriptFiles...)
+	tsAndJSPaths = append(tsAndJSPaths, profile.Manifest.JavaScriptFiles...)
+	tsFiles, tsSkipped := parseTSFiles(ctx, tsAndJSPaths, profile.Manifest.RepoRoot, func(path string) {
 		rep.Advance(path)
 	})
 
@@ -292,6 +306,15 @@ func Run(cfg Config) (models.ScanResult, error) {
 		logDiscoveredEntities(log, tools, agents)
 	}
 
+	// JavaScript files were parsed by the shared TS-family grammar and ran
+	// through discovery + ResolveEdges tagged LanguageTypeScript (so edge
+	// resolution, which special-cases TypeScript, treats them correctly). Re-tag
+	// the JS-sourced tools/agents/MCP servers to LanguageJavaScript now — after
+	// edges are resolved, before analysis — so the inventory honestly reports the
+	// source language while the analysis gate/predicates (TS/JS-family-aware via
+	// models.IsTSOrJS) still audit them with the TypeScript rule packs.
+	retagJavaScriptDefs(&inventory)
+
 	// Step 3: policy selection
 	if cfg.RulesFS == nil {
 		return models.ScanResult{}, fmt.Errorf("scan: no rules filesystem provided")
@@ -342,11 +365,12 @@ func Run(cfg Config) (models.ScanResult, error) {
 	// file must not abort the scan), but that skip has to be visible — a scan
 	// that silently dropped half the repo must not look like a clean result.
 	// `parsed` holds the successfully parsed Python files; `tsFiles` the
-	// successfully parsed TypeScript files. JavaScript files are inventoried but
-	// not yet AST-parsed, so they are not counted as attempted here.
+	// successfully parsed TypeScript AND JavaScript files (the JS family shares
+	// the tsx grammar). All three inventoried source languages count as attempted.
 	filesParsed := len(parsed) + len(tsFiles)
-	filesAttempted := len(profile.Manifest.PythonFiles) + len(profile.Manifest.TypeScriptFiles)
-	// Name the skipped files (Python + TS), not just count them, so the report
+	filesAttempted := len(profile.Manifest.PythonFiles) +
+		len(profile.Manifest.TypeScriptFiles) + len(profile.Manifest.JavaScriptFiles)
+	// Name the skipped files (Python + TS/JS), not just count them, so the report
 	// can say which inputs went unanalyzed. Sorted+deduped for determinism.
 	skippedFiles := append(append([]string{}, pySkipped...), tsSkipped...)
 	skippedFiles = sortedUnique(skippedFiles)
@@ -357,7 +381,7 @@ func Run(cfg Config) (models.ScanResult, error) {
 	}
 
 	return models.ScanResult{
-		ScanID:              scanID(idLabel, profile.Manifest, cfg.RulesVersion, rules.SupportedSchemaVersion),
+		ScanID:              scanID(idLabel, profile.Manifest, cfg.RulesVersion, rules.SupportedSchemaVersion, cfg.RulesOrigin.Tag()),
 		Repo:                repoLabel,
 		Languages:           profile.Languages,
 		SDKs:                inventory.SDKsDetected,
@@ -382,6 +406,7 @@ func Run(cfg Config) (models.ScanResult, error) {
 		RulesSchemaVersion:  cfg.RulesSchemaVersion,
 		RulesSchemaNewer:    cfg.RulesSchemaNewer,
 		RulesSkipped:        sortedUnique(rulesSkipped),
+		RulesOrigin:         cfg.RulesOrigin,
 		Coverage:            coverage,
 	}, nil
 }
@@ -596,6 +621,33 @@ func parseTSFiles(ctx context.Context, paths []string, root string, onFile func(
 	return out, skipped
 }
 
+// retagJavaScriptDefs corrects the Language of every discovered tool, agent, and
+// MCP server sourced from a JavaScript file to LanguageJavaScript. Discovery
+// runs JS through the shared TS-family passes and stamps LanguageTypeScript (the
+// tsx grammar parses both, and ResolveEdges special-cases TypeScript), so this
+// runs AFTER edge resolution and BEFORE analysis: the inventory then honestly
+// names the source language, while the analysis gate and predicates (which treat
+// TS and JS as one family via models.IsTSOrJS) still audit JS with the
+// TypeScript rule packs. GuardrailDef and SessionUse carry no Language field, so
+// they need no re-tag.
+func retagJavaScriptDefs(inv *models.RepoInventory) {
+	for i := range inv.Tools {
+		if astutil.IsJavaScriptExtension(inv.Tools[i].FilePath) {
+			inv.Tools[i].Language = models.LanguageJavaScript
+		}
+	}
+	for i := range inv.Agents {
+		if astutil.IsJavaScriptExtension(inv.Agents[i].FilePath) {
+			inv.Agents[i].Language = models.LanguageJavaScript
+		}
+	}
+	for i := range inv.MCPServers {
+		if astutil.IsJavaScriptExtension(inv.MCPServers[i].FilePath) {
+			inv.MCPServers[i].Language = models.LanguageJavaScript
+		}
+	}
+}
+
 // scanID is derived from a stable identity label (RemoteURL for remote scans,
 // the target's basename for local scans — never the absolute mount point), the
 // sorted set of inventoried files, and the rules version, so the same inputs
@@ -603,8 +655,10 @@ func parseTSFiles(ctx context.Context, paths []string, root string, onFile func(
 // Including the rules version means a different rule pack yields a distinct,
 // honest ID; folding the engine's supported schema version likewise keeps the
 // ID honest when forward-compatible loading makes two builds skip different
-// rules from the same pack.
-func scanID(idLabel string, manifest models.ScanManifest, rulesVersion string, engineSchema int) string {
+// rules from the same pack. The rules-origin tag is folded too, so two scans of
+// the same code differ in ID when one used signed production rules and the other
+// an unsigned or pre-release source.
+func scanID(idLabel string, manifest models.ScanManifest, rulesVersion string, engineSchema int, originTag string) string {
 	h := sha256.New()
 	h.Write([]byte(idLabel))
 	// Fold every inventoried file list so the ID is honest about all scanned
@@ -640,5 +694,9 @@ func scanID(idLabel string, manifest models.ScanManifest, rulesVersion string, e
 	// not just the pack SHA.
 	h.Write([]byte{0})
 	h.Write([]byte(fmt.Sprintf("%d", engineSchema)))
+	// Fold the rules-origin tag (signed:<channel> / unsigned:custom /
+	// unsigned:default) so provenance is part of the scan's identity.
+	h.Write([]byte{0})
+	h.Write([]byte(originTag))
 	return "scan_" + hex.EncodeToString(h.Sum(nil)[:8])
 }

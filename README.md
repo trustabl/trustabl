@@ -195,9 +195,10 @@ Tool/agent AST discovery is wired for:
   / `streamObject` agents and the class `ToolLoopAgent` /
   `Experimental_Agent`, with `tools` walked as an object/record, plus the
   `<provider>.tools.*()` hosted tools — gated on the bare `ai` import).
-  Handles `.ts` / `.tsx` / `.mts` / `.cts`
-  with both `tree-sitter-typescript` and `tree-sitter-tsx` grammars
-  (`.js` / `.mjs` are inventoried but not AST-parsed).
+  Handles `.ts` / `.tsx` / `.mts` / `.cts` plus JavaScript
+  `.js` / `.jsx` / `.mjs` / `.cjs` with the `tree-sitter-typescript` and
+  `tree-sitter-tsx` grammars (JavaScript routes to the tsx grammar — a JS
+  superset — and is audited by the same `language: typescript` rule packs).
   TypeScript rule packs ship for the Claude Agent SDK
   (CSDK-010/011/012/013/014/016 tool rules; CSDK-120/130/131 agent rules),
   OpenAI Agents SDK (OAI-016/017/019/022/024 tool rules; OAI-105 agent rule),
@@ -207,10 +208,14 @@ Tool/agent AST discovery is wired for:
   rules; VAI-012 repo rule). A TS repo for any of these no longer produces a
   blanket `META-004`; see `COVERAGE.md` for the full matrix.
 
-JavaScript and Go files are recognized by Recon (they appear in the
-file inventory and feed component discovery) but no AST parser for them
-is wired in, so no tools or agents are extracted from them. The rule
-schema's `language:` field is in place for when those parsers ship.
+JavaScript (`.js` / `.jsx` / `.mjs` / `.cjs`) is AST-parsed through the shared
+TypeScript-family pipeline: its tools and agents are discovered, tagged
+`javascript`, and audited by the `language: typescript` rule packs (both ES
+`import` and CommonJS `require()` bindings are recognized). Go files
+are still recognized by Recon (they appear in the file inventory and feed
+component discovery) but no AST parser for them is wired in, so no tools or
+agents are extracted from them. The rule schema's `language:` field gates
+per-language rule sets.
 
 ### Scope boundaries
 
@@ -335,7 +340,10 @@ Exit codes:
 - `1` — at least one finding ≥ medium severity, OR `--strict` with any
   finding present.
 - `2` — scanner / I/O error, OR no usable rules found and none fetchable
-  (run `trustabl rules pull`).
+  (run `trustabl rules pull`), OR a signed channel (`--channel`) that failed
+  verification (bad signature, untrusted/expired key, channel confusion, an
+  expired or rolled-back statement, or a digest mismatch) — Trustabl refuses to
+  run unverified rules.
 
 OpenShell surfaces are still discovered (shell-invocation functions,
 `openshell/*.yaml` policies) and reported on a `Risk surfaces: openshell`
@@ -436,6 +444,10 @@ trustabl scan ./repo --strict
 # Download / refresh the detection rule packs into the local cache
 trustabl rules pull
 
+# Validate a local rule-pack directory against this build's schema (CI gate
+# for the trustabl-rules repo — strict-loads every pack, fails on the first error)
+trustabl rules validate ./trustabl-rules
+
 # Use a custom rules repo or a specific ref (env: TRUSTABL_RULES_REPO)
 trustabl scan ./repo --rules-repo https://github.com/org/my-rules
 trustabl scan ./repo --rules-ref v1.2.0
@@ -473,6 +485,17 @@ on Linux). The first scan (or an explicit `trustabl rules pull`)
 populates it; each subsequent scan checks for an update first (unless
 `--no-rules-update`), falling back to the cached rules if the fetch
 fails.
+
+**Signed rules channels (opt-in).** `--channel <name>` resolves rules from a
+signature-verified release channel instead of cloning git: Trustabl verifies a
+signed channel statement against an embedded trust keyring, fetches the bundle
+it commits to, and refuses (exit `2`) on any verification failure rather than
+running unverified rules. The **default scan is unchanged** — it still uses the
+git source. A scan that did not use blessed production rules (a pre-release
+`--channel`, or a custom `--rules-repo` source) is watermarked in the report and
+in the JSON `rules_origin` field, and its provenance is folded into `ScanID`.
+Signed channels require a build with published signing keys; until then
+`--channel` refuses with a clear message.
 
 ### Continuous integration
 

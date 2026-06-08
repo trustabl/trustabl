@@ -73,10 +73,11 @@ const (
 	CategoryAutoGen    DetectorCategory = "autogen"
 )
 
-// AllCategories is every detector category this build recognizes, in a stable
-// order. Single source of truth: ValidCategory checks against it, and the
-// capability descriptor (trustabl capabilities) lists it. New SDK categories are
-// added here as coverage lands.
+// display order. It is the single source of truth for category membership:
+// ValidCategory checks against it, the CLI's --detectors flag derives its help
+// text and validation error from it, and the capability descriptor (trustabl
+// capabilities) lists it (so none drift as coverage lands). New SDK categories
+// are added here as coverage lands.
 var AllCategories = []DetectorCategory{
 	CategoryClaudeSDK, CategoryOpenAISDK, CategoryOpenShell, CategoryGoogleADK,
 	CategoryMCP, CategoryLangChain, CategoryCrewAI, CategoryPydanticAI,
@@ -131,6 +132,17 @@ const (
 	LanguageJavaScript Language = "javascript"
 	LanguageGo         Language = "go"
 )
+
+// IsTSOrJS reports whether l is in the TypeScript/JavaScript family. The two
+// share the tree-sitter grammar (the tsx parser parses plain JS), every
+// discovery pass, and the discovery-computed body facts — so JavaScript
+// tools/agents are audited by the same rule packs and predicates as TypeScript.
+// The rule language-gate and the TS-branch predicates treat the two
+// interchangeably; JS-sourced defs are re-tagged LanguageJavaScript for honest
+// output after edge resolution (see scanner.retagJavaScriptDefs).
+func IsTSOrJS(l Language) bool {
+	return l == LanguageTypeScript || l == LanguageJavaScript
+}
 
 // AllLanguages is every source language this build recognizes, in a stable
 // order. It is the single source of truth for language membership: ValidLanguage
@@ -340,6 +352,55 @@ type Coverage struct {
 	SkippedFiles []string `json:"skipped_files,omitempty"`
 }
 
+// RulesOrigin classifies where a scan's rules came from and how far they can be
+// trusted. It drives two things: a one-line report watermark for any scan that
+// did NOT use blessed, signature-verified production rules, and an origin tag
+// folded into ScanID so two scans of the same code with rules of different
+// provenance get distinct IDs.
+type RulesOrigin struct {
+	// Signed is true when the rules were resolved through a verified signed
+	// channel (releaseSource). Unsigned scans use the git path.
+	Signed bool `json:"signed"`
+	// Channel is the signed channel name ("production", "staging") when Signed.
+	Channel string `json:"channel,omitempty"`
+	// Custom is true when the operator overrode the default rules source
+	// (--rules-repo / TRUSTABL_RULES_REPO) on the unsigned git path.
+	Custom bool `json:"custom,omitempty"`
+}
+
+// Tag is the stable origin string folded into ScanID. It is always non-empty so
+// the ID is honest about provenance for every scan.
+func (o RulesOrigin) Tag() string {
+	if o.Signed {
+		ch := o.Channel
+		if ch == "" {
+			ch = "unknown"
+		}
+		return "signed:" + ch
+	}
+	if o.Custom {
+		return "unsigned:custom"
+	}
+	return "unsigned:default"
+}
+
+// Watermark returns the report banner for a scan that deviated from blessed
+// production rules, or "" for a clean, trusted scan. Signed production is clean;
+// a signed pre-release channel and any unsigned custom source are flagged. The
+// plain unsigned default is not flagged — pre-cutover it is the normal source;
+// after the signed-production cutover (ENG-6) the default becomes signed and the
+// git path is reached only via --rules-repo, which is Custom and so flagged.
+func (o RulesOrigin) Watermark() string {
+	switch {
+	case o.Signed && o.Channel != "" && o.Channel != "production":
+		return "Rules channel: " + o.Channel + " — pre-release rules, not blessed for production."
+	case !o.Signed && o.Custom:
+		return "UNSIGNED rules from a custom source — these rules were not signature-verified."
+	default:
+		return ""
+	}
+}
+
 // ScanResult is the top-level output. JSON-serializable for CI.
 type ScanResult struct {
 	ScanID              string             `json:"scan_id"`
@@ -367,5 +428,6 @@ type ScanResult struct {
 	RulesSchemaVersion  int                `json:"rules_schema_version,omitempty"` // pack manifest's declared schema_version
 	RulesSchemaNewer    bool               `json:"rules_schema_newer,omitempty"`   // pack targets a schema newer than this build supports
 	RulesSkipped        []string           `json:"rules_skipped,omitempty"`        // rule IDs dropped as forward-incompatible (sorted, deduped)
+	RulesOrigin         RulesOrigin        `json:"rules_origin"`                   // provenance of the rules (signed channel / unsigned / custom)
 	Coverage            Coverage           `json:"coverage"`                       // how many source files parsed vs. were skipped
 }
