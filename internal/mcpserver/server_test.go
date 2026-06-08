@@ -150,6 +150,49 @@ func TestScanTool_ReturnsFindings(t *testing.T) {
 	}
 }
 
+// TestScanTool_VulnScanArg proves the optional vuln_scan tool argument is parsed
+// from the call and threaded into the ScanRequest — the seam the production
+// handler reads to set Config.VulnScan. It also locks the input schema and the
+// ScanRequest struct in sync (the schema must advertise vuln_scan).
+func TestScanTool_VulnScanArg(t *testing.T) {
+	var got ScanRequest
+	srv := New(func(_ context.Context, req ScanRequest) (models.ScanResult, error) {
+		got = req
+		return models.ScanResult{ScanID: "x"}, nil
+	}, VersionInfo{Version: "test"})
+
+	call := mustJSON(t, map[string]any{
+		"jsonrpc": "2.0",
+		"id":      1,
+		"method":  "tools/call",
+		"params": map[string]any{
+			"name":      "scan",
+			"arguments": map[string]any{"path": "/repo", "vuln_scan": true},
+		},
+	})
+	resps := roundTrip(t, srv, call)
+	if len(resps) != 1 || resps[0].Error != nil {
+		t.Fatalf("unexpected response: %+v", resps)
+	}
+	if got.Path != "/repo" {
+		t.Errorf("path = %q, want /repo", got.Path)
+	}
+	if !got.VulnScan {
+		t.Errorf("vuln_scan arg was not threaded into ScanRequest: %+v", got)
+	}
+
+	// The schema must advertise vuln_scan, or a client never knows to send it.
+	var schema struct {
+		Properties map[string]json.RawMessage `json:"properties"`
+	}
+	if err := json.Unmarshal([]byte(scanInputSchema), &schema); err != nil {
+		t.Fatalf("scanInputSchema invalid: %v", err)
+	}
+	if _, ok := schema.Properties["vuln_scan"]; !ok {
+		t.Errorf("scanInputSchema does not advertise vuln_scan: %v", schema.Properties)
+	}
+}
+
 // TestScanTool_MissingPath returns an isError tool result, not a protocol
 // error: the model should see a usable message.
 func TestScanTool_MissingPath(t *testing.T) {

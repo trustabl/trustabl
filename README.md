@@ -633,9 +633,11 @@ stderr.
 
 It exposes two tools:
 
-- `scan` — input `{ "path": "<dir>", "rules_ref": "<branch-or-tag>"? }`. Scans
-  `path` and returns the full scan result (findings, scores, discovered
-  inventory) as JSON — the same shape as `--format json`.
+- `scan` — input `{ "path": "<dir>", "rules_ref": "<branch-or-tag>"?, "vuln_scan": true? }`.
+  Scans `path` and returns the full scan result (findings, scores, discovered
+  inventory) as JSON — the same shape as `--format json`. Set `vuln_scan: true`
+  to also match declared dependencies against a pinned OSV snapshot and report
+  known CVEs (mirrors `--vuln-scan`; off by default).
 - `version` — reports the build version, commit, and date.
 
 Register it with an MCP client by pointing the client at the binary with the
