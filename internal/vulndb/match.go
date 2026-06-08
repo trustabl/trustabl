@@ -124,10 +124,16 @@ func (db *DB) Len() int {
 }
 
 // Match returns the vulnerabilities affecting deps, sorted and de-duplicated.
-// Only concretely-pinned deps are considered (see package doc).
-func Match(deps []models.DepRef, db *DB) []models.DepVuln {
+// Only concretely-pinned deps are considered (see package doc). onDep, if set,
+// is called with each dependency as it is checked — for a per-package progress
+// display. It fires for every declared dep, including the ranges that are then
+// skipped, so a UI can show the scan working through the whole BOM.
+func Match(deps []models.DepRef, db *DB, onDep func(models.DepRef)) []models.DepVuln {
 	var out []models.DepVuln
 	for _, d := range deps {
+		if onDep != nil {
+			onDep(d)
+		}
 		if !isConcreteVersion(d.Version) {
 			continue
 		}

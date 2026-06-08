@@ -16,13 +16,18 @@ import (
 // The scan never queries the OSV API per dependency — matching is against the
 // cached snapshot only.
 //
-// rep drives the live progress display with a single determinate bar that climbs
-// smoothly across the whole resolve: each ecosystem contributes 1/N of the bar,
-// and within a download the bar advances by bytes (Content-Length), so a one-
-// ecosystem pull fills 0→100% as it downloads rather than jumping on completion.
-// The status line tracks the current step (resolving / downloading X / Y MB /
-// matching). Progress is stderr-only and never affects the result.
+// rep drives two live phases, owned here so the work and the UI stay together:
+//
+//  1. "Resolving vulnerability database" — the OSV download, with a determinate
+//     bar that climbs smoothly by bytes: each ecosystem owns 1/N of the bar, and
+//     within a download the bar advances by Content-Length, so a one-ecosystem
+//     pull fills 0→100% as it downloads instead of jumping on completion.
+//  2. "Scanning dependencies" — the local match, with a fresh bar that advances
+//     per package and a status line naming the package currently being scanned.
+//
+// Progress is stderr-only and never affects the result.
 func runVulnScan(deps []models.DepRef, noUpdate bool, cacheDir string, rep progress.Reporter) (vulns []models.DepVuln, version string, err error) {
+	rep.StartPhase("vuln-resolve", "Resolving vulnerability database")
 	res, err := vulndb.Resolve(vulndb.ResolveConfig{
 		Ecosystems: depEcosystems(deps),
 		NoUpdate:   noUpdate,
@@ -52,10 +57,30 @@ func runVulnScan(deps []models.DepRef, noUpdate bool, cacheDir string, rep progr
 		},
 	})
 	if err != nil {
+		rep.EndPhase("unavailable")
 		return nil, "", err
 	}
-	rep.SetProgress(1, fmt.Sprintf("matching %d dependencies against the OSV snapshot", len(deps)))
-	return vulndb.Match(deps, res.DB), res.Version, nil
+	rep.EndPhase(fmt.Sprintf("%d advisories", res.DB.Len()))
+
+	// Phase 2: scan each declared dependency against the snapshot. The bar
+	// advances per package and the detail names the one being scanned; updates are
+	// throttled to ~100 frames so a huge BOM doesn't flood the render channel.
+	rep.StartPhase("vuln-scan", "Scanning dependencies")
+	total := len(deps)
+	step := total / 100
+	if step < 1 {
+		step = 1
+	}
+	scanned := 0
+	vulns = vulndb.Match(deps, res.DB, func(d models.DepRef) {
+		scanned++
+		if scanned == total || scanned%step == 0 {
+			rep.SetProgress(float64(scanned)/float64(total),
+				fmt.Sprintf("scanning %s %s (%d/%d)", d.Name, d.Version, scanned, total))
+		}
+	})
+	rep.EndPhase(fmt.Sprintf("%d vulnerabilities across %d dependencies", len(vulns), total))
+	return vulns, res.Version, nil
 }
 
 // finishedVulnDetail renders the persistent detail for a resolved ecosystem,
