@@ -52,9 +52,12 @@ required") — this surfaces as a `scan: ...` error in the CLI.
 when omitted. For TypeScript / JavaScript / Go rules, set it explicitly:
 `language: typescript`. Python and TypeScript discovery are both plumbed in
 today (Claude SDK, OpenAI Agents, Google ADK, and MCP all have TS discovery
-and shipped TS rules); JavaScript and Go are recognized by recon but have no
-AST parser, so rules in those languages load but never fire until the
-matching parser ships.
+and shipped TS rules). JavaScript (`.js`/`.jsx`/`.mjs`/`.cjs`) now shares the
+TypeScript grammar and discovery (the tsx parser parses plain JS) and is
+audited by the `language: typescript` rule packs via the TS/JS family gate
+(`models.IsTSOrJS`) — so a `typescript` rule fires on `.js` too (and a
+`javascript` rule, were one shipped, fires on both). Go is still recognized by
+recon but has no AST parser, so `go` rules load but never fire until one ships.
 
 ## Per-scope `applies_to` values
 

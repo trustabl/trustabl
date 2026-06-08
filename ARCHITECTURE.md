@@ -77,15 +77,21 @@ agent rule), MCP (MCP-011/012/013/014 tool rules), LangChain
 (LC-010/011/012/013/014 tool rules, LC-111 agent rule), and the Vercel AI SDK
 (VAI-001..005 + VAI-011 tool rules, VAI-006/007/008 agent rules, VAI-012 repo rule). A TS
 repo for any of these no longer produces a blanket META-004; the full
-per-SDK/language matrix lives in COVERAGE.md. The scanner
-can also recognize JavaScript and Go *files* (they appear in
-`manifest.typescript_files` and friends) but has no AST parser for them.
+per-SDK/language matrix lives in COVERAGE.md. JavaScript
+(`.js`/`.jsx`/`.mjs`/`.cjs`) is AST-parsed through the same TypeScript-family
+pipeline: discovery stamps the shared `LanguageTypeScript`, then the scanner
+re-tags JS-sourced defs to `LanguageJavaScript` after edge resolution
+(`retagJavaScriptDefs`) so the inventory honestly names the source language
+while the `language: typescript` rule packs still audit it (both ES `import` and
+CommonJS `require()` bindings are recognized). The scanner can also recognize
+Go *files* (they appear in the file inventory) but has no AST parser for them.
 
 The rule schema's `language:` field gates per-language rule sets. Existing
 rules declare `language: python` explicitly and the loader rejects any
-unknown language value. New TS-language rules (when they ship) will declare
-`language: typescript` and run only against TS tools; Python rules remain
-inert against TS tools.
+unknown language value. TS-language rules declare `language: typescript`; the
+language gate treats TypeScript and JavaScript as one family
+(`models.IsTSOrJS`), so a `typescript` rule fires on `.js` too. Python rules
+remain inert against TS/JS tools.
 
 Adding a new tool-discovery language requires:
 
@@ -619,7 +625,9 @@ For each language recon cleared, do the AST work and produce a `RepoInventory`:
   `[...]` array like every other TS pass): bare identifier → `ToolRef`; inline
   `tool({...})` / spread / other → agent `Opaque`; `<provider>.tools.<name>()` →
   `HostedToolRef` (canonicalized in `ts_vercel_hosted_tools.go`). `.js` / `.mjs`
-  apps are inventoried but not AST-parsed; VAI-009/010 (name rules) are v1 gaps.
+  / `.cjs` apps are now AST-parsed via the shared TS-family pipeline (ES `import`
+  and CommonJS require() bindings); VAI-009/010 (name
+  rules) are v1 gaps.
   VAI-011 (HTTP-call-without-timeout) ships via the structural
   `has_http_call_without_timeout` predicate.
 - **ResolveEdges** — links agent `tools=`, `handoffs=`, `input_guardrails=`

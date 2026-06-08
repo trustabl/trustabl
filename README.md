@@ -195,9 +195,10 @@ Tool/agent AST discovery is wired for:
   / `streamObject` agents and the class `ToolLoopAgent` /
   `Experimental_Agent`, with `tools` walked as an object/record, plus the
   `<provider>.tools.*()` hosted tools — gated on the bare `ai` import).
-  Handles `.ts` / `.tsx` / `.mts` / `.cts`
-  with both `tree-sitter-typescript` and `tree-sitter-tsx` grammars
-  (`.js` / `.mjs` are inventoried but not AST-parsed).
+  Handles `.ts` / `.tsx` / `.mts` / `.cts` plus JavaScript
+  `.js` / `.jsx` / `.mjs` / `.cjs` with the `tree-sitter-typescript` and
+  `tree-sitter-tsx` grammars (JavaScript routes to the tsx grammar — a JS
+  superset — and is audited by the same `language: typescript` rule packs).
   TypeScript rule packs ship for the Claude Agent SDK
   (CSDK-010/011/012/013/014/016 tool rules; CSDK-120/130/131 agent rules),
   OpenAI Agents SDK (OAI-016/017/019/022/024 tool rules; OAI-105 agent rule),
@@ -207,10 +208,14 @@ Tool/agent AST discovery is wired for:
   rules; VAI-012 repo rule). A TS repo for any of these no longer produces a
   blanket `META-004`; see `COVERAGE.md` for the full matrix.
 
-JavaScript and Go files are recognized by Recon (they appear in the
-file inventory and feed component discovery) but no AST parser for them
-is wired in, so no tools or agents are extracted from them. The rule
-schema's `language:` field is in place for when those parsers ship.
+JavaScript (`.js` / `.jsx` / `.mjs` / `.cjs`) is AST-parsed through the shared
+TypeScript-family pipeline: its tools and agents are discovered, tagged
+`javascript`, and audited by the `language: typescript` rule packs (both ES
+`import` and CommonJS `require()` bindings are recognized). Go files
+are still recognized by Recon (they appear in the file inventory and feed
+component discovery) but no AST parser for them is wired in, so no tools or
+agents are extracted from them. The rule schema's `language:` field gates
+per-language rule sets.
 
 ### Scope boundaries
 
