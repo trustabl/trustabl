@@ -439,6 +439,10 @@ trustabl scan ./repo --strict
 # Download / refresh the detection rule packs into the local cache
 trustabl rules pull
 
+# Validate a local rule-pack directory against this build's schema (CI gate
+# for the trustabl-rules repo — strict-loads every pack, fails on the first error)
+trustabl rules validate ./trustabl-rules
+
 # Use a custom rules repo or a specific ref (env: TRUSTABL_RULES_REPO)
 trustabl scan ./repo --rules-repo https://github.com/org/my-rules
 trustabl scan ./repo --rules-ref v1.2.0
