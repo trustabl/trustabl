@@ -57,9 +57,13 @@ func TestResolve_OfflineNoCacheIsEmpty(t *testing.T) {
 // reports a monotonic byte count ending at the exact total, and returns the full
 // data unchanged (so the snapshot hash is unaffected).
 func TestReadAllProgress_ReportsCumulativeBytes(t *testing.T) {
-	data := bytes.Repeat([]byte("x"), 3<<20) // 3 MiB → reports near 1/2/3 MiB
+	data := bytes.Repeat([]byte("x"), 3<<20) // 3 MiB → reports at ~512 KiB steps
 	var reports []int64
-	out, err := readAllProgress(bytes.NewReader(data), func(n int64) { reports = append(reports, n) })
+	var sawTotal int64
+	out, err := readAllProgress(bytes.NewReader(data), int64(len(data)), func(read, total int64) {
+		reports = append(reports, read)
+		sawTotal = total
+	})
 	if err != nil {
 		t.Fatalf("readAllProgress: %v", err)
 	}
@@ -77,12 +81,15 @@ func TestReadAllProgress_ReportsCumulativeBytes(t *testing.T) {
 	if last := reports[len(reports)-1]; last != int64(len(data)) {
 		t.Errorf("final report %d != total %d", last, len(data))
 	}
+	if sawTotal != int64(len(data)) {
+		t.Errorf("content-length passed to hook = %d, want %d", sawTotal, len(data))
+	}
 }
 
 // TestReadAllProgress_NilCallback proves a nil hook is safe (the vulndb-pull /
 // no-UI path).
 func TestReadAllProgress_NilCallback(t *testing.T) {
-	out, err := readAllProgress(bytes.NewReader([]byte("hello")), nil)
+	out, err := readAllProgress(bytes.NewReader([]byte("hello")), 5, nil)
 	if err != nil || string(out) != "hello" {
 		t.Fatalf("readAllProgress(nil) = %q, %v", out, err)
 	}

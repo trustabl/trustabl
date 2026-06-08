@@ -14,13 +14,14 @@ const (
 // Reporter receives progress events. All wording (labels/summaries) is supplied
 // by the caller; implementations only render.
 type Reporter interface {
-	StartPhase(key, label string) // begin a phase
-	SetTotal(n int)               // optional: switch the phase to an n-step bar
-	Advance(detail string)        // tick the bar; detail = current file/entity
-	SetDetail(detail string)      // set the live detail line without a count/bar (spinner phases: clone sub-phase, network status)
-	ResetPhase()                  // clear the active phase's bar/count/detail back to a bare spinner (e.g. a clone falling back from a counted fetch to an uncounted one)
-	EndPhase(summary string)      // finish: emit a persistent "[key] summary"
-	Fatal(err error)              // a phase failed; tear the UI down cleanly
+	StartPhase(key, label string)                // begin a phase
+	SetTotal(n int)                              // optional: switch the phase to an n-step bar
+	Advance(detail string)                       // tick the bar; detail = current file/entity
+	SetDetail(detail string)                     // set the live detail line without a count/bar (spinner phases: clone sub-phase, network status)
+	SetProgress(fraction float64, detail string) // determinate bar at an explicit 0..1 fill (e.g. a byte-driven download), with a detail line and no N/M counter
+	ResetPhase()                                 // clear the active phase's bar/count/detail back to a bare spinner (e.g. a clone falling back from a counted fetch to an uncounted one)
+	EndPhase(summary string)                     // finish: emit a persistent "[key] summary"
+	Fatal(err error)                             // a phase failed; tear the UI down cleanly
 }
 
 // PickMode resolves the render mode from output settings. isTTY reflects whether
@@ -40,10 +41,11 @@ type nopReporter struct{}
 // NewNop returns a Reporter that does nothing.
 func NewNop() Reporter { return nopReporter{} }
 
-func (nopReporter) StartPhase(string, string) {}
-func (nopReporter) SetTotal(int)              {}
-func (nopReporter) Advance(string)            {}
-func (nopReporter) SetDetail(string)          {}
-func (nopReporter) ResetPhase()               {}
-func (nopReporter) EndPhase(string)           {}
-func (nopReporter) Fatal(error)               {}
+func (nopReporter) StartPhase(string, string)   {}
+func (nopReporter) SetTotal(int)                {}
+func (nopReporter) Advance(string)              {}
+func (nopReporter) SetDetail(string)            {}
+func (nopReporter) SetProgress(float64, string) {}
+func (nopReporter) ResetPhase()                 {}
+func (nopReporter) EndPhase(string)             {}
+func (nopReporter) Fatal(error)                 {}

@@ -106,6 +106,39 @@ func TestModelSetDetailShowsSpinnerLineNoBar(t *testing.T) {
 	}
 }
 
+// setProgressMsg drives a determinate fraction bar (byte-driven download): the
+// fill follows the explicit 0..1 fraction and the detail carries the human byte
+// counts, with no N/M step counter. This is what makes the vuln-scan download bar
+// climb smoothly instead of jumping per ecosystem.
+func TestModelSetProgressShowsFractionBar(t *testing.T) {
+	m := newModel()
+	m2, _ := m.Update(startPhaseMsg{key: "vuln-scan", label: "Vulnerability scan"})
+	m3, _ := m2.(model).Update(setProgressMsg{fraction: 0.5, detail: "downloading PyPI (1/1) — 12.0 MB / 23.0 MB"})
+	mm := m3.(model)
+	s := mm.current()
+	if s == nil || !s.hasFraction || s.fraction != 0.5 {
+		t.Fatalf("after setProgress: stage fraction state wrong: %+v", s)
+	}
+	v := mm.View()
+	if !strings.Contains(v, "Vulnerability scan") || !strings.Contains(v, "12.0 MB / 23.0 MB") {
+		t.Errorf("view should show label + byte detail, got %q", v)
+	}
+	if !strings.Contains(v, "━") && !strings.Contains(v, "─") {
+		t.Errorf("fraction phase must render a bar, got %q", v)
+	}
+	// A bare slash in the byte detail is fine; the point is no "<count>/<total>"
+	// STEP counter (which would imply discrete ecosystem steps, the old behavior).
+	if strings.Contains(v, " 1/1 ") || strings.Contains(v, " 0/1 ") {
+		t.Errorf("fraction bar must not render an N/M step counter, got %q", v)
+	}
+
+	// A fraction > 1 is clamped (a byte overrun must not overfill the bar).
+	m4, _ := mm.Update(setProgressMsg{fraction: 1.7, detail: "matching"})
+	if s := m4.(model).current(); s.fraction != 1 {
+		t.Errorf("fraction should clamp to 1, got %v", s.fraction)
+	}
+}
+
 // completedLine renders a finished stage: a check mark, the stage
 // label, and its summary — but suppresses the summary when it's already in the
 // label (the clone label carries the URL, so it must not be doubled).
