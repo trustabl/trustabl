@@ -61,7 +61,7 @@ func TestMatch_RealRecords(t *testing.T) {
 		{Name: "left-pad", Version: "1.0.0", Ecosystem: "npm", Source: "package.json"},         // withdrawn record → no match
 	}
 
-	got := Match(deps, db)
+	got := Match(deps, db, nil)
 	if len(got) != 4 {
 		t.Fatalf("want 4 vulns, got %d: %+v", len(got), got)
 	}
@@ -107,11 +107,34 @@ func TestMatch_GitRangeFixedSkipped(t *testing.T) {
 			},
 		}},
 	}
-	got := Match([]models.DepRef{{Name: "requests", Version: "2.19.0", Ecosystem: "pypi", Source: "requirements.txt"}}, NewDB([]Record{rec}))
+	got := Match([]models.DepRef{{Name: "requests", Version: "2.19.0", Ecosystem: "pypi", Source: "requirements.txt"}}, NewDB([]Record{rec}), nil)
 	if len(got) != 1 {
 		t.Fatalf("want 1 vuln, got %d: %+v", len(got), got)
 	}
 	if got[0].FixedIn != "2.20.0" {
 		t.Errorf("FixedIn = %q, want 2.20.0 (the GIT commit SHA must be skipped)", got[0].FixedIn)
+	}
+}
+
+// TestMatch_OnDepFiresPerDependency proves the per-package progress hook fires
+// once for every declared dep — concrete and skipped-range alike — in order.
+// This is what drives the "Scanning dependencies" bar and the package name shown.
+func TestMatch_OnDepFiresPerDependency(t *testing.T) {
+	db := NewDB(realisticRecords())
+	deps := []models.DepRef{
+		{Name: "lodash", Version: "4.17.4", Ecosystem: "npm"},
+		{Name: "ranged", Version: "^1.0.0", Ecosystem: "npm"}, // a range → skipped internally, still reported
+		{Name: "requests", Version: "2.19.0", Ecosystem: "pypi"},
+	}
+	var seen []string
+	Match(deps, db, func(d models.DepRef) { seen = append(seen, d.Name) })
+	want := []string{"lodash", "ranged", "requests"}
+	if len(seen) != len(want) {
+		t.Fatalf("onDep fired %d times, want %d (every dep): %v", len(seen), len(want), seen)
+	}
+	for i := range want {
+		if seen[i] != want[i] {
+			t.Errorf("onDep[%d] = %q, want %q (must fire for every dep, in order)", i, seen[i], want[i])
+		}
 	}
 }
