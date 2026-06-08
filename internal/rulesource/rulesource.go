@@ -30,6 +30,13 @@ var ErrNoRules = errors.New("no rules available: none cached and could not fetch
 // for an unreadable/corrupt manifest.
 var ErrNoCompatibleRules = errors.New("no usable rules manifest")
 
+// ErrNoTrustKeys means a signed channel was requested (--channel) but this
+// engine build embeds no rule-signing trust keys, so no statement can be
+// verified. Distinct from ErrNoRules so the CLI can advise dropping --channel
+// rather than refreshing the cache. Expected until signing keys are published
+// (RUL-2) and baked into a build.
+var ErrNoTrustKeys = errors.New("no rule-signing trust keys embedded in this build")
+
 // fatalResolveError wraps a failure that must NOT degrade to cached rules: a
 // local filesystem / install fault (disk full, permission denied, a failed
 // rename, or a corrupt freshly-cloned repo). These are operator-environment
@@ -78,14 +85,29 @@ type Config struct {
 	Ref      string // branch/tag to resolve; empty => remote default branch
 	NoUpdate bool   // skip the network; use cache only
 	CacheDir string // cache root; empty => os.UserCacheDir()/trustabl/rules
+
+	// Channel selects the signed-distribution path: when non-empty, resolution
+	// goes through releaseSource — verify a signed channel statement, then fetch
+	// the bundle it commits to by digest — instead of the default git clone. An
+	// empty Channel keeps the historical gitSource behavior, which stays the
+	// default until the signed-channel cutover (ENG-6). Wiring of the user-facing
+	// --channel flag (and its report watermark) lands with ENG-5; until then this
+	// is opt-in via Config only.
+	Channel string
 }
 
 // Resolved is the outcome of a successful resolution.
 type Resolved struct {
 	FS        fs.FS  // rooted at the chosen pack directory
-	SHA       string // resolved commit SHA — the rules "version"
+	SHA       string // resolved commit SHA, or signed-bundle digest — the rules "version"
 	RepoURL   string // repo the pack came from
 	FromCache bool   // true if the network was skipped/unreachable
+
+	// Stale is set by releaseSource when an offline fallback serves a cached
+	// bundle whose last-verified channel statement has already expired — the
+	// bundle is still authentic but the channel pointer may have moved on. Drives
+	// a louder "rules may be out of date" warning than FromCache alone (ENG-5).
+	Stale bool
 
 	// SchemaVersion is the pack manifest's declared schema_version. SchemaNewer
 	// is true when it exceeds the engine's supported version: the pack targets a
@@ -94,6 +116,48 @@ type Resolved struct {
 	// user-facing "rules newer than this build" warning, not a refusal.
 	SchemaVersion int
 	SchemaNewer   bool
+}
+
+// Source resolves rule packs for a scan. Two implementations exist: the default
+// gitSource (clone a ref of the rules repo) and releaseSource (verify a signed
+// channel statement and fetch the bundle it points to). SourceFor picks one from
+// a Config; callers normally use the package-level Resolve/Pull wrappers, which
+// route through SourceFor.
+type Source interface {
+	// Resolve obtains a pack for a scan, falling back to the cache on a
+	// remote-contact failure (the offline story) but never on a local fault.
+	Resolve(cfg Config, supported int) (Resolved, error)
+	// Pull is the explicit-fetch path (`trustabl rules pull`): it always contacts
+	// the remote and never falls back to the cache.
+	Pull(cfg Config, supported int) (Resolved, error)
+}
+
+// gitSource is the default Source: it clones a git ref of the rules repo into
+// the cache. This is the historical behavior and stays the default until the
+// signed-channel cutover (ENG-6).
+type gitSource struct{}
+
+// Default is the Source used when a Config selects no other (Channel empty).
+var Default Source = gitSource{}
+
+// SourceFor selects the Source a Config asks for. A non-empty Channel routes to
+// the signed releaseSource; otherwise the default gitSource is used.
+func SourceFor(cfg Config) Source {
+	if cfg.Channel != "" {
+		return newReleaseSource()
+	}
+	return Default
+}
+
+// Resolve resolves a rule pack using the Source selected by cfg. Behavior for a
+// git-backed Config is unchanged from when this was the only path.
+func Resolve(cfg Config, supported int) (Resolved, error) {
+	return SourceFor(cfg).Resolve(cfg, supported)
+}
+
+// Pull fetches a rule pack using the Source selected by cfg.
+func Pull(cfg Config, supported int) (Resolved, error) {
+	return SourceFor(cfg).Pull(cfg, supported)
 }
 
 // withDefaults returns cfg with empty fields filled in.
@@ -147,7 +211,7 @@ func fallbackToCache(cfg Config, supported int) (Resolved, error) {
 // permission denied, a failed rename, or a corrupt clone (a fatalResolveError) —
 // is propagated, never masked by stale cached rules. It returns ErrNoRules only
 // when nothing is available at all.
-func Resolve(cfg Config, supported int) (Resolved, error) {
+func (gitSource) Resolve(cfg Config, supported int) (Resolved, error) {
 	cfg, err := withDefaults(cfg)
 	if err != nil {
 		return Resolved{}, err
@@ -200,7 +264,7 @@ func Resolve(cfg Config, supported int) (Resolved, error) {
 // Pull is the explicit `trustabl rules pull` path: it always contacts the
 // remote and returns an error if it cannot fetch — it does not fall back to
 // cache, because the user asked for a fetch.
-func Pull(cfg Config, supported int) (Resolved, error) {
+func (gitSource) Pull(cfg Config, supported int) (Resolved, error) {
 	cfg, err := withDefaults(cfg)
 	if err != nil {
 		return Resolved{}, err
