@@ -55,13 +55,15 @@ type ResolveConfig struct {
 
 // ResolveProgress reports per-ecosystem resolution progress to the optional
 // ResolveConfig.OnProgress hook. It fires once when an ecosystem starts, again
-// for roughly every 1 MiB downloaded, and once when the ecosystem finishes
-// (loaded from the network or the cache, or skipped when neither is available).
+// for roughly every 512 KiB downloaded (with BytesRead/BytesTotal for a smooth
+// download fraction), and once when the ecosystem finishes (loaded from the
+// network or the cache, or skipped when neither is available).
 type ResolveProgress struct {
 	OSVEcosystem string // OSV export name being resolved, e.g. "PyPI", "npm"
 	Index        int    // 1-based position in the resolve order
 	Total        int    // total ecosystems being resolved
 	BytesRead    int64  // cumulative bytes downloaded so far (0 if cached / just started)
+	BytesTotal   int64  // total bytes to download (HTTP Content-Length; 0 if unknown), for a download progress fraction
 	Finished     bool   // the ecosystem is done (data loaded or skipped)
 	FromCache    bool   // Finished: loaded from cache, no successful fetch
 	Records      int    // Finished: number of advisory records loaded
@@ -126,7 +128,7 @@ func Resolve(cfg ResolveConfig) (*Resolved, error) {
 		// Cache-first: fetch only when online AND (forced, or the cache is missing
 		// or stale). A fresh cache is reused without touching the network.
 		if !cfg.NoUpdate && (cfg.ForceRefresh || cacheStale(dest, maxAge)) {
-			onBytes := func(n int64) { report(ResolveProgress{BytesRead: n}) }
+			onBytes := func(read, total int64) { report(ResolveProgress{BytesRead: read, BytesTotal: total}) }
 			if fetched, ferr := fetchExport(client, baseURL, osvEco, onBytes); ferr == nil {
 				thisFromCache = false
 				_ = atomicWrite(dest, fetched) // cache best-effort; use the bytes regardless
@@ -176,8 +178,10 @@ func cacheStale(path string, maxAge time.Duration) bool {
 }
 
 // fetchExport downloads {base}/{osvEcosystem}/all.zip, streaming byte progress
-// to onBytes (which may be nil) so a UI can show download status.
-func fetchExport(client *http.Client, base, osvEco string, onBytes func(int64)) ([]byte, error) {
+// to onBytes (which may be nil) so a UI can show download status. onBytes
+// receives (bytesRead, contentLength); contentLength is 0 when the server does
+// not advertise it.
+func fetchExport(client *http.Client, base, osvEco string, onBytes func(read, total int64)) ([]byte, error) {
 	url := fmt.Sprintf("%s/%s/all.zip", base, osvEco)
 	resp, err := client.Get(url)
 	if err != nil {
@@ -187,26 +191,27 @@ func fetchExport(client *http.Client, base, osvEco string, onBytes func(int64)) 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("vulndb: GET %s: %s", url, resp.Status)
 	}
-	return readAllProgress(resp.Body, onBytes)
+	return readAllProgress(resp.Body, resp.ContentLength, onBytes)
 }
 
-// readAllProgress reads r to completion, invoking onBytes with the cumulative
-// byte count at ~1 MiB granularity (and once more with the exact final total) so
-// a UI can show download progress without being flooded. onBytes may be nil. The
-// returned bytes are identical to io.ReadAll(r) — progress never alters the data,
-// so the snapshot hash (and thus ScanID) is unaffected.
-func readAllProgress(r io.Reader, onBytes func(int64)) ([]byte, error) {
+// readAllProgress reads r to completion, invoking onBytes(bytesRead, total) at
+// ~512 KiB granularity (and once more with the exact final count) so a UI can
+// show a smooth download bar without being flooded. total is the content length
+// (<=0 if unknown). onBytes may be nil. The returned bytes are identical to
+// io.ReadAll(r) — progress never alters the data, so the snapshot hash (and thus
+// ScanID) is unaffected.
+func readAllProgress(r io.Reader, total int64, onBytes func(read, total int64)) ([]byte, error) {
 	var buf bytes.Buffer
 	chunk := make([]byte, 64*1024)
-	var total, reported int64
+	var read, reported int64
 	for {
 		n, rerr := r.Read(chunk)
 		if n > 0 {
 			buf.Write(chunk[:n])
-			total += int64(n)
-			if onBytes != nil && total-reported >= 1<<20 {
-				onBytes(total)
-				reported = total
+			read += int64(n)
+			if onBytes != nil && read-reported >= 1<<19 {
+				onBytes(read, total)
+				reported = read
 			}
 		}
 		if rerr == io.EOF {
@@ -216,8 +221,8 @@ func readAllProgress(r io.Reader, onBytes func(int64)) ([]byte, error) {
 			return nil, rerr
 		}
 	}
-	if onBytes != nil && total != reported {
-		onBytes(total)
+	if onBytes != nil && read != reported {
+		onBytes(read, total)
 	}
 	return buf.Bytes(), nil
 }

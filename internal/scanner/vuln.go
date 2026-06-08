@@ -16,34 +16,45 @@ import (
 // The scan never queries the OSV API per dependency — matching is against the
 // cached snapshot only.
 //
-// rep drives the live progress display: a step bar over the ecosystems being
-// pulled, with a status line showing the current download (and its byte count)
-// or the cache hit. Progress is stderr-only and never affects the result.
+// rep drives the live progress display with a single determinate bar that climbs
+// smoothly across the whole resolve: each ecosystem contributes 1/N of the bar,
+// and within a download the bar advances by bytes (Content-Length), so a one-
+// ecosystem pull fills 0→100% as it downloads rather than jumping on completion.
+// The status line tracks the current step (resolving / downloading X / Y MB /
+// matching). Progress is stderr-only and never affects the result.
 func runVulnScan(deps []models.DepRef, noUpdate bool, cacheDir string, rep progress.Reporter) (vulns []models.DepVuln, version string, err error) {
-	sized := false
 	res, err := vulndb.Resolve(vulndb.ResolveConfig{
 		Ecosystems: depEcosystems(deps),
 		NoUpdate:   noUpdate,
 		CacheDir:   cacheDir,
 		OnProgress: func(p vulndb.ResolveProgress) {
-			if !sized {
-				rep.SetTotal(p.Total) // size the bar to the ecosystem count on the first event
-				sized = true
+			total := p.Total
+			if total < 1 {
+				total = 1
 			}
+			idx := float64(p.Index - 1) // 0-based slot for this ecosystem
 			switch {
 			case p.Finished:
-				rep.Advance(finishedVulnDetail(p))
-			case p.BytesRead > 0:
-				rep.SetDetail(fmt.Sprintf("downloading %s database — %s", p.OSVEcosystem, humanizeBytes(p.BytesRead)))
-			default:
-				rep.SetDetail("resolving " + p.OSVEcosystem + " database…")
+				rep.SetProgress(float64(p.Index)/float64(total), finishedVulnDetail(p))
+			case p.BytesRead > 0 && p.BytesTotal > 0:
+				frac := float64(p.BytesRead) / float64(p.BytesTotal)
+				if frac > 1 {
+					frac = 1
+				}
+				rep.SetProgress((idx+frac)/float64(total),
+					fmt.Sprintf("downloading %s (%d/%d) — %s / %s", p.OSVEcosystem, p.Index, total, humanizeBytes(p.BytesRead), humanizeBytes(p.BytesTotal)))
+			case p.BytesRead > 0: // downloading, content length unknown
+				rep.SetProgress(idx/float64(total),
+					fmt.Sprintf("downloading %s (%d/%d) — %s", p.OSVEcosystem, p.Index, total, humanizeBytes(p.BytesRead)))
+			default: // ecosystem started
+				rep.SetProgress(idx/float64(total), "resolving "+p.OSVEcosystem+" database…")
 			}
 		},
 	})
 	if err != nil {
 		return nil, "", err
 	}
-	rep.SetDetail(fmt.Sprintf("matching %d dependencies against the OSV snapshot", len(deps)))
+	rep.SetProgress(1, fmt.Sprintf("matching %d dependencies against the OSV snapshot", len(deps)))
 	return vulndb.Match(deps, res.DB), res.Version, nil
 }
 

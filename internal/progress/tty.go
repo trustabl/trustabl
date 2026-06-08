@@ -43,6 +43,10 @@ type startPhaseMsg struct{ key, label string }
 type setTotalMsg struct{ n int }
 type advanceMsg struct{ detail string }
 type setDetailMsg struct{ detail string }
+type setProgressMsg struct {
+	fraction float64
+	detail   string
+}
 type resetPhaseMsg struct{}
 type endPhaseMsg struct{ summary string }
 type doneMsg struct{}
@@ -60,6 +64,8 @@ type stage struct {
 	key, label   string
 	state        int
 	total, count int
+	fraction     float64 // determinate 0..1 fill when hasFraction (byte-driven download bar)
+	hasFraction  bool
 	detail       string
 	summary      string
 	err          error
@@ -110,12 +116,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case setTotalMsg:
 		if s := m.current(); s != nil {
-			s.total = msg.n
+			s.total, s.hasFraction = msg.n, false
 		}
 		return m, nil
 	case advanceMsg:
 		if s := m.current(); s != nil {
 			s.count++
+			s.hasFraction = false
 			s.detail = msg.detail
 		}
 		return m, nil
@@ -124,13 +131,26 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			s.detail = msg.detail
 		}
 		return m, nil
+	case setProgressMsg:
+		// Determinate fraction bar (byte-driven download): set an explicit 0..1
+		// fill so the bar climbs smoothly with the bytes, not in per-step jumps.
+		if s := m.current(); s != nil {
+			f := msg.fraction
+			if f < 0 {
+				f = 0
+			} else if f > 1 {
+				f = 1
+			}
+			s.fraction, s.hasFraction, s.detail = f, true, msg.detail
+		}
+		return m, nil
 	case resetPhaseMsg:
 		// Drop the active phase back to a bare spinner: a counted fetch that
 		// failed and is now retrying via an uncounted path must not leave a stale
 		// bar frozen mid-fill (the bar branch in renderStage outranks detail, so
 		// total/count have to be cleared, not just the detail overwritten).
 		if s := m.current(); s != nil {
-			s.total, s.count, s.detail = 0, 0, ""
+			s.total, s.count, s.detail, s.hasFraction = 0, 0, "", false
 		}
 		return m, nil
 	case endPhaseMsg:
@@ -213,6 +233,11 @@ func (m model) renderStage(s *stage, withSpinner bool) string {
 		lead = "•"
 	}
 	switch {
+	case s.hasFraction:
+		// Determinate fraction bar (byte-driven download): the bar fill follows the
+		// explicit fraction and the detail carries the human "14.2 MB / 23.1 MB" —
+		// no N/M counter, since the unit is bytes, not steps.
+		return fmt.Sprintf("%s %s %s  %s", lead, s.label, m.bar.ViewAs(s.fraction), s.detail)
 	case s.total > 0:
 		// Known total → an accurate bar (inventory/analysis, and the clone's
 		// receiving-objects phase). Clamp: a count that overshoots total (a bad
@@ -303,8 +328,11 @@ func (r *TTYReporter) StartPhase(key, label string) { r.send(startPhaseMsg{key, 
 func (r *TTYReporter) SetTotal(n int)               { r.send(setTotalMsg{n}) }
 func (r *TTYReporter) Advance(detail string)        { r.send(advanceMsg{detail}) }
 func (r *TTYReporter) SetDetail(detail string)      { r.send(setDetailMsg{detail}) }
-func (r *TTYReporter) ResetPhase()                  { r.send(resetPhaseMsg{}) }
-func (r *TTYReporter) EndPhase(summary string)      { r.send(endPhaseMsg{summary}) }
-func (r *TTYReporter) Fatal(err error)              { r.send(fatalMsg{err}) }
+func (r *TTYReporter) SetProgress(fraction float64, detail string) {
+	r.send(setProgressMsg{fraction, detail})
+}
+func (r *TTYReporter) ResetPhase()             { r.send(resetPhaseMsg{}) }
+func (r *TTYReporter) EndPhase(summary string) { r.send(endPhaseMsg{summary}) }
+func (r *TTYReporter) Fatal(err error)         { r.send(fatalMsg{err}) }
 
 var _ Reporter = (*TTYReporter)(nil)

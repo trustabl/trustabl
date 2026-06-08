@@ -332,13 +332,14 @@ func TestScanExamples_NoCrash(t *testing.T) {
 // which phases fired.
 type recordingReporter struct{ phases []string }
 
-func (r *recordingReporter) StartPhase(key, _ string) { r.phases = append(r.phases, key) }
-func (r *recordingReporter) SetTotal(int)             {}
-func (r *recordingReporter) Advance(string)           {}
-func (r *recordingReporter) SetDetail(string)         {}
-func (r *recordingReporter) ResetPhase()              {}
-func (r *recordingReporter) EndPhase(string)          {}
-func (r *recordingReporter) Fatal(error)              {}
+func (r *recordingReporter) StartPhase(key, _ string)    { r.phases = append(r.phases, key) }
+func (r *recordingReporter) SetTotal(int)                {}
+func (r *recordingReporter) Advance(string)              {}
+func (r *recordingReporter) SetDetail(string)            {}
+func (r *recordingReporter) SetProgress(float64, string) {}
+func (r *recordingReporter) ResetPhase()                 {}
+func (r *recordingReporter) EndPhase(string)             {}
+func (r *recordingReporter) Fatal(error)                 {}
 
 // A local target resolves instantly (no clone), so the scan must NOT emit a
 // "clone" phase — otherwise local scans would show a spurious "Cloning" line.
