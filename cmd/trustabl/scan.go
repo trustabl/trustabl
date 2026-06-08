@@ -330,12 +330,16 @@ func resolveAndScan(cfg *scanner.Config, f scanFlags, rep progress.Reporter) (mo
 	if res.SchemaNewer {
 		summary += " (newer schema)"
 	}
+	if res.Stale {
+		summary += " (stale)"
+	}
 	rep.EndPhase(summary)
 
 	cfg.RulesFS = res.FS
 	cfg.RulesSource = res.RepoURL
 	cfg.RulesVersion = res.SHA
 	cfg.RulesFromCache = res.FromCache
+	cfg.RulesStale = res.Stale
 	cfg.RulesSchemaVersion = res.SchemaVersion
 	cfg.RulesSchemaNewer = res.SchemaNewer
 	cfg.RulesOrigin = rulesOriginFromScan(f)
@@ -418,10 +422,17 @@ func finishScan(result models.ScanResult, jobErr error, f scanFlags, log *logx.L
 		return jobErr
 	}
 
-	// In silent mode (JSON or --no-progress) the "(cached, offline)" rules
-	// phase line is suppressed, so surface the cache-fallback as a stderr
-	// warning — stale rules should never be used without a human-visible signal.
-	if result.RulesFromCache && pickScanMode(f, log) == progress.ModeOff {
+	// In silent mode (JSON or --no-progress) the "(cached, offline)" rules phase
+	// line is suppressed, so surface a cache fallback as a stderr warning — stale
+	// rules should never be used without a human-visible signal. A stale bundle
+	// (its signed-channel statement has expired) gets a louder, distinct message
+	// and takes precedence over the plain cache-fallback warning.
+	switch {
+	case result.RulesStale && pickScanMode(f, log) == progress.ModeOff:
+		fmt.Fprintf(os.Stderr,
+			"warning: using cached rules %s whose signed channel statement has expired; the rules may be out of date. Run 'trustabl rules pull' when back online.\n",
+			result.RulesVersion)
+	case result.RulesFromCache && pickScanMode(f, log) == progress.ModeOff:
 		fmt.Fprintf(os.Stderr,
 			"warning: using cached rules %s; could not fetch or use newer rules\n",
 			result.RulesVersion)

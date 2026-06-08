@@ -40,6 +40,10 @@ type Config struct {
 	RulesSource    string
 	RulesVersion   string
 	RulesFromCache bool
+	// RulesStale is true when an offline fallback served a cached signed bundle
+	// whose channel statement has expired (rulesource.Resolved.Stale). Surfaced on
+	// ScanResult and used by the CLI's louder "rules may be out of date" warning.
+	RulesStale bool
 	// RulesSchemaVersion is the resolved pack manifest's schema_version, and
 	// RulesSchemaNewer is true when it exceeds this build's support. Surfaced on
 	// ScanResult and used by the CLI's "rules newer than this build" warning.
@@ -481,6 +485,7 @@ func Run(cfg Config) (models.ScanResult, error) {
 		RulesSource:         cfg.RulesSource,
 		RulesVersion:        cfg.RulesVersion,
 		RulesFromCache:      cfg.RulesFromCache,
+		RulesStale:          cfg.RulesStale,
 		RulesSchemaVersion:  cfg.RulesSchemaVersion,
 		RulesSchemaNewer:    cfg.RulesSchemaNewer,
 		RulesSkipped:        sortedUnique(rulesSkipped),
