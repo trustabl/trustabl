@@ -317,6 +317,29 @@ type SDKDep struct {
 	Confidence float64 `json:"confidence"`
 }
 
+// DepRef is one dependency declared in a manifest bundled inside an Agent Skill
+// — the agent-path supply-chain BOM (Story D / TR-221). It is pure inventory:
+// Trustabl records what a skill ships, then hands off to a real SCA tool
+// (OSV-Scanner, Dependabot) for CVE matching. No network, no vulnerability
+// verdict.
+//
+//   - Version is the declared spec verbatim — a pin ("1.2.3"), a range
+//     ("^1.0", ">=2,<3"), or empty when the manifest names a dep with no
+//     constraint. It is NOT a resolved/locked version.
+//   - Ecosystem is the package registry: "pypi" or "npm".
+//   - Source is the repo-relative path of the manifest the dep was read from,
+//     which attributes the dependency back to its owning skill.
+//
+// SkillDependencies is deliberately NOT folded into ScanID: it is an additive
+// inventory field, so emitting it must not perturb the byte-stable scan
+// identity of an otherwise-unchanged repo.
+type DepRef struct {
+	Name      string `json:"name"`
+	Version   string `json:"version,omitempty"`
+	Ecosystem string `json:"ecosystem"`
+	Source    string `json:"source"`
+}
+
 // RepoProfile is the output of the recon step.
 type RepoProfile struct {
 	Languages []Language   `json:"languages"`
@@ -335,6 +358,7 @@ type RepoInventory struct {
 	MCPServers         []MCPServerDef          `json:"mcp_servers"`
 	Subagents          []SubagentDef           `json:"subagents"`
 	Skills             []SkillDef              `json:"skills"`
+	SkillDependencies  []DepRef                `json:"skill_dependencies"`
 	SlashCommands      []SlashCommandDef       `json:"slash_commands"`
 	PluginManifests    []PluginManifest        `json:"plugin_manifests"`
 	ClaudeSettings     []ClaudeSettings        `json:"claude_settings"`
@@ -428,6 +452,7 @@ type ScanResult struct {
 	MCPServers          []MCPServerDef     `json:"mcp_servers"`
 	Subagents           []SubagentDef      `json:"subagents"`
 	Skills              []SkillDef         `json:"skills"`
+	SkillDependencies   []DepRef           `json:"skill_dependencies"` // BOM parsed from manifests bundled in skills (Story D); not folded into ScanID
 	SlashCommands       []SlashCommandDef  `json:"slash_commands"`
 	PluginManifests     []PluginManifest   `json:"plugin_manifests"`
 	ClaudeSettings      []ClaudeSettings   `json:"claude_settings"`

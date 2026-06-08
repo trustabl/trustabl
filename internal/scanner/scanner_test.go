@@ -159,6 +159,46 @@ rules:
 	}
 }
 
+// TestScan_PopulatesSkillDependencyBOM proves the Story-D wiring end to end: a
+// skill's bundled requirements.txt / package.json are parsed into
+// ScanResult.SkillDependencies, sorted and attributed by source.
+func TestScan_PopulatesSkillDependencyBOM(t *testing.T) {
+	dir := t.TempDir()
+	mustWrite := func(rel, content string) {
+		t.Helper()
+		full := filepath.Join(dir, rel)
+		if err := os.MkdirAll(filepath.Dir(full), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mustWrite("skills/demo/SKILL.md", "---\nname: demo\ndescription: A demo skill\n---\n# Demo\n")
+	mustWrite("skills/demo/requirements.txt", "requests==2.31.0\n# comment\n-e .\n")
+	mustWrite("skills/demo/package.json", `{"dependencies":{"lodash":"^4.17.21"}}`)
+
+	res, err := scanner.Run(scanner.Config{Target: dir, RulesFS: rulesFixture(t)})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+
+	if n := len(res.SkillDependencies); n != 2 {
+		t.Fatalf("want 2 skill dependencies, got %d: %+v", n, res.SkillDependencies)
+	}
+	// npm sorts before pypi; DepRef is comparable, so == is exact.
+	if got, want := res.SkillDependencies[0], (models.DepRef{
+		Name: "lodash", Version: "^4.17.21", Ecosystem: "npm", Source: "skills/demo/package.json",
+	}); got != want {
+		t.Errorf("dep[0] = %+v, want %+v", got, want)
+	}
+	if got, want := res.SkillDependencies[1], (models.DepRef{
+		Name: "requests", Version: "2.31.0", Ecosystem: "pypi", Source: "skills/demo/requirements.txt",
+	}); got != want {
+		t.Errorf("dep[1] = %+v, want %+v", got, want)
+	}
+}
+
 // rulesFixture returns the Phase-1 interim rule packs for tests.
 func rulesFixture(t *testing.T) fs.FS {
 	t.Helper()
