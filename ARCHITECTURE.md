@@ -1904,6 +1904,7 @@ trustabl enrich        [-i SCAN_JSON] [-r REPO_ROOT] [-o OUTPUT_FILE]
                        [--diff] [--apply] [--only-enriched] [--rule RULE_ID]
 trustabl mcp           [--rules-repo=URL] [--rules-ref=REF] [--no-rules-update]
 trustabl rules pull    [--rules-repo=URL] [--rules-ref=REF]
+trustabl capabilities
 trustabl version
 
 Global (persistent) flags, valid on every subcommand:
@@ -1917,7 +1918,10 @@ file instead of stdout (the report is rendered before the file is opened, so
 it is written even when findings raise a nonzero exit code, which is what lets
 a code-scanning workflow upload the SARIF on `if: always()`).
 `trustabl rules pull` downloads the rule packs into the cache without
-scanning. See §2 — Rule resolution.
+scanning. See §2 — Rule resolution. `trustabl capabilities` prints this
+build's rule-evaluation vocabulary (the scopes, predicates, and `applies_to`
+kinds it understands) as JSON — consumed by the rules-CI gate to detect a pack
+that targets a newer engine than this build supports.
 
 Exit codes:
 

@@ -72,7 +72,7 @@ rules:
                                             #   adk_function_tool — Google ADK FunctionTool-wrapped function
                                             #   shell_invocation  — bare functions calling subprocess.* / os.system
                                             #   unknown           — fallback; rarely useful
-                                            # (agent/subagent/repo scopes accept different kinds — see scope below.)
+                                            # (agent/subagent/skill/repo scopes accept different kinds — see scope below.)
                                             #
                                             # Be honest about scope: a rule's explanation/fix text
                                             # often references a specific SDK ("the Claude Agent SDK
@@ -81,7 +81,7 @@ rules:
                                             # for that kind. Cross-SDK rules belong in their own
                                             # SDK-specific policy file with their own framing.
 
-    scope: tool                             # REQUIRED. One of: tool | agent | repo | subagent.
+    scope: tool                             # REQUIRED. One of: tool | agent | subagent | skill | repo.
                                             #   tool  — fires per ToolDef. Input: a ToolDef + ParsedFile.
                                             #           applies_to accepts: claude_sdk_tool, openai_tool,
                                             #           mcp_tool, adk_function_tool, shell_invocation, unknown.
@@ -93,8 +93,13 @@ rules:
                                             #           adk_loop_agent, adk_langgraph_agent.
                                             #   subagent — fires per Claude Code subagent. applies_to accepts:
                                             #           claude_subagent.
+                                            #   skill — fires per Claude Code skill (SKILL.md). applies_to accepts:
+                                            #           claude_skill.
                                             #   repo  — fires once per scan. applies_to accepts:
-                                            #           claude_sdk, openai_agents, google_adk, openshell, mcp.
+                                            #           claude_sdk, openai_agents, google_adk, openshell, mcp,
+                                            #           langchain, crewai, pydantic_ai, vercel_ai, autogen.
+                                            # (Authoritative per-scope applies_to set: internal/rules/loader.go
+                                            #  appliesToByScope — the lists here are a human summary of it.)
 
     match:                                  # REQUIRED. Predicate expression. See the reference section
                                             # below the example for the full vocabulary.
