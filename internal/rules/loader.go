@@ -132,7 +132,7 @@ func loadPolicies(fsys fs.FS, lenient bool) ([]PolicyFile, []string, error) {
 				}
 				continue
 			}
-			errs = append(errs, fmt.Errorf("%s: unknown category %q (allowed: claude_sdk, openai_sdk, openshell, google_adk, mcp, langchain, crewai, pydantic_ai, vercel_ai, autogen)", name, pf.Policy.Category))
+			errs = append(errs, fmt.Errorf("%s: unknown category %q (allowed: claude_sdk, openai_sdk, openshell, google_adk, mcp, langchain, crewai, pydantic_ai, vercel_ai, autogen, claude_skill)", name, pf.Policy.Category))
 			continue
 		}
 
@@ -207,9 +207,9 @@ func loadPolicies(fsys fs.FS, lenient bool) ([]PolicyFile, []string, error) {
 				errs = append(errs, fmt.Errorf("%s: unknown language %q (allowed: %s)", tag, rule.Language, languageAllowList()))
 			}
 			if rule.Scope == "" {
-				errs = append(errs, fmt.Errorf("%s: scope is required (tool|agent|repo|subagent)", tag))
+				errs = append(errs, fmt.Errorf("%s: scope is required (tool|agent|repo|subagent|skill)", tag))
 			} else if !models.ValidScope(rule.Scope) {
-				errs = append(errs, fmt.Errorf("%s: unknown scope %q (allowed: tool, agent, repo, subagent)", tag, rule.Scope))
+				errs = append(errs, fmt.Errorf("%s: unknown scope %q (allowed: tool, agent, repo, subagent, skill)", tag, rule.Scope))
 			}
 			// Reject a match nested beyond the depth bound BEFORE any recursive
 			// walk (outOfScopePredicates / degenerateCombinators below, or the
@@ -341,6 +341,7 @@ var appliesToByScope = map[models.Scope][]string{
 		"crewai", "pydantic_ai", "vercel_ai", "autogen",
 	},
 	models.ScopeSubagent: {"claude_subagent"},
+	models.ScopeSkill:    {"claude_skill"},
 }
 
 func validAppliesToForScope(scope models.Scope, kind string) bool {

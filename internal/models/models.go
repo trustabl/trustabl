@@ -13,12 +13,13 @@ const (
 	ScopeAgent    Scope = "agent"
 	ScopeRepo     Scope = "repo"
 	ScopeSubagent Scope = "subagent"
+	ScopeSkill    Scope = "skill"
 )
 
 // AllScopes is every rule scope this build recognizes, in a stable order. Single
 // source of truth: ValidScope checks against it and the capability descriptor
 // (trustabl capabilities) lists it. Mirrors AllLanguages / AllCategories.
-var AllScopes = []Scope{ScopeTool, ScopeAgent, ScopeRepo, ScopeSubagent}
+var AllScopes = []Scope{ScopeTool, ScopeAgent, ScopeRepo, ScopeSubagent, ScopeSkill}
 
 // ValidScope reports whether s is a known scope value.
 func ValidScope(s Scope) bool {
@@ -71,6 +72,10 @@ const (
 	CategoryPydanticAI DetectorCategory = "pydantic_ai"
 	CategoryVercelAI   DetectorCategory = "vercel_ai"
 	CategoryAutoGen    DetectorCategory = "autogen"
+	// CategoryClaudeSkill covers Claude Code Agent Skills (SKILL.md). Skills are
+	// not an SDK import, so this category is loaded unconditionally (like
+	// openshell) rather than gated on SDKsDetected.
+	CategoryClaudeSkill DetectorCategory = "claude_skill"
 )
 
 // display order. It is the single source of truth for category membership:
@@ -81,7 +86,7 @@ const (
 var AllCategories = []DetectorCategory{
 	CategoryClaudeSDK, CategoryOpenAISDK, CategoryOpenShell, CategoryGoogleADK,
 	CategoryMCP, CategoryLangChain, CategoryCrewAI, CategoryPydanticAI,
-	CategoryVercelAI, CategoryAutoGen,
+	CategoryVercelAI, CategoryAutoGen, CategoryClaudeSkill,
 }
 
 // ValidCategory reports whether c is a category this build recognizes. The rule

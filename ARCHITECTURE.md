@@ -359,8 +359,8 @@ flowchart TD
     score --> result
 ```
 
-The four scopes a rule can fire at — `tool`, `agent`, `subagent`, `repo` — flow into
-`Registry.Run` from the same `RepoInventory`, but each detector consumes a
+The five scopes a rule can fire at — `tool`, `agent`, `subagent`, `skill`, `repo` —
+flow into `Registry.Run` from the same `RepoInventory`, but each detector consumes a
 different typed input:
 
 ```mermaid
@@ -371,12 +371,14 @@ flowchart LR
     inv -- "for each ToolDef" --> tool["ToolDetector<br/>Applies(ToolDef)<br/>Detect(ToolDef, ParsedFile, Inv)"]
     inv -- "for each AgentDef" --> agent["AgentDetector<br/>Applies(AgentDef)<br/>Detect(AgentDef, Inv)"]
     inv -- "for each SubagentDef" --> subagent["SubagentDetector<br/>Applies(SubagentDef)<br/>Detect(SubagentDef, Inv)"]
+    inv -- "for each SkillDef" --> skill["SkillDetector<br/>Applies(SkillDef)<br/>Detect(SkillDef, Inv)"]
     profile --> repo["RepoDetector<br/>Applies(Profile, Inv)<br/>Detect(Profile, Inv) (once)"]
     inv --> repo
 
     tool --> f[("Findings")]
     agent --> f
     subagent --> f
+    skill --> f
     repo --> f
 ```
 

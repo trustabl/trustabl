@@ -228,6 +228,30 @@ func (d subagentRuleDetector) Detect(s models.SubagentDef, inv models.RepoInvent
 	return []models.Finding{findingFromRule(d.rule, models.ScopeSubagent, s.FilePath, s.Line, s.Name)}
 }
 
+// skillRuleDetector adapts a skill-scoped RuleDef into a SkillDetector.
+type skillRuleDetector struct{ rule RuleDef }
+
+func (d skillRuleDetector) RuleID() string                    { return d.rule.ID }
+func (d skillRuleDetector) Category() models.DetectorCategory { return d.rule.Category }
+func (d skillRuleDetector) Applies(s models.SkillDef) bool {
+	// No language gate: SkillDef has no Language (SKILL.md frontmatter is not
+	// Python/TS). Skills are inherently Claude Code artifacts.
+	for _, k := range d.rule.AppliesTo {
+		if k == "claude_skill" {
+			return true
+		}
+	}
+	return false
+}
+func (d skillRuleDetector) Detect(s models.SkillDef, inv models.RepoInventory) []models.Finding {
+	if !d.rule.Match.EvaluateSkill(s, inv) {
+		return nil
+	}
+	// SkillDef embeds Location: Line = the opening "---" of the frontmatter.
+	// Attribute to the opening so a finding jumps to the start of the skill.
+	return []models.Finding{findingFromRule(d.rule, models.ScopeSkill, s.FilePath, s.Line, s.Name)}
+}
+
 // NewToolRuleDetector wraps a RuleDef as a ToolDetector. Exported for test packages.
 func NewToolRuleDetector(r RuleDef) detectors.ToolDetector { return toolRuleDetector{r} }
 
@@ -239,6 +263,9 @@ func NewRepoRuleDetector(r RuleDef) detectors.RepoDetector { return repoRuleDete
 
 // NewSubagentRuleDetector wraps a RuleDef as a SubagentDetector. Exported for test packages.
 func NewSubagentRuleDetector(r RuleDef) detectors.SubagentDetector { return subagentRuleDetector{r} }
+
+// NewSkillRuleDetector wraps a RuleDef as a SkillDetector. Exported for test packages.
+func NewSkillRuleDetector(r RuleDef) detectors.SkillDetector { return skillRuleDetector{r} }
 
 func findingFromRule(r RuleDef, scope models.Scope, filePath string, line int, toolName string) models.Finding {
 	return models.Finding{
@@ -262,6 +289,10 @@ func findingFromRule(r RuleDef, scope models.Scope, filePath string, line int, t
 func LoadFor(fsys fs.FS, sdks []models.SDK) (*detectors.Registry, []string, error) {
 	wanted := map[string]bool{
 		"openshell": true,
+		// Skills are a Claude Code artifact, not an SDK import, so the
+		// claude_skill pack loads unconditionally (like openshell). Its rules
+		// only fire when the repo actually declares skills.
+		"claude_skill": true,
 	}
 	for _, sdk := range sdks {
 		switch sdk {
@@ -314,6 +345,7 @@ func LoadFor(fsys fs.FS, sdks []models.SDK) (*detectors.Registry, []string, erro
 	var agent []detectors.AgentDetector
 	var repo []detectors.RepoDetector
 	var subagent []detectors.SubagentDetector
+	var skill []detectors.SkillDetector
 	for _, p := range all {
 		if !wanted[string(p.Policy.Category)] {
 			continue
@@ -328,10 +360,12 @@ func LoadFor(fsys fs.FS, sdks []models.SDK) (*detectors.Registry, []string, erro
 				repo = append(repo, repoRuleDetector{r})
 			case models.ScopeSubagent:
 				subagent = append(subagent, subagentRuleDetector{r})
+			case models.ScopeSkill:
+				skill = append(skill, skillRuleDetector{r})
 			}
 		}
 	}
-	return detectors.New(tool, agent, repo, subagent), skipped, nil
+	return detectors.New(tool, agent, repo, subagent, skill), skipped, nil
 }
 
 // LoadRegistry loads policies from fsys and returns a populated detector Registry.
@@ -344,6 +378,7 @@ func LoadRegistry(fsys fs.FS) (*detectors.Registry, error) {
 	var agent []detectors.AgentDetector
 	var repo []detectors.RepoDetector
 	var subagent []detectors.SubagentDetector
+	var skill []detectors.SkillDetector
 	for _, p := range policies {
 		for _, r := range p.Rules {
 			switch r.Scope {
@@ -355,8 +390,10 @@ func LoadRegistry(fsys fs.FS) (*detectors.Registry, error) {
 				repo = append(repo, repoRuleDetector{r})
 			case models.ScopeSubagent:
 				subagent = append(subagent, subagentRuleDetector{r})
+			case models.ScopeSkill:
+				skill = append(skill, skillRuleDetector{r})
 			}
 		}
 	}
-	return detectors.New(tool, agent, repo, subagent), nil
+	return detectors.New(tool, agent, repo, subagent, skill), nil
 }

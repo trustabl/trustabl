@@ -95,6 +95,24 @@ func loadSubagentRule(t *testing.T, ruleID string) detectors.SubagentDetector {
 	return nil
 }
 
+// loadSkillRule fetches a skill-scoped rule as a SkillDetector.
+func loadSkillRule(t *testing.T, ruleID string) detectors.SkillDetector {
+	t.Helper()
+	policies, err := rules.Load(fixtureFS(t))
+	if err != nil {
+		t.Fatalf("load policies: %v", err)
+	}
+	for _, p := range policies {
+		for _, r := range p.Rules {
+			if r.ID == ruleID && r.Scope == models.ScopeSkill {
+				return rules.NewSkillRuleDetector(r)
+			}
+		}
+	}
+	t.Fatalf("skill-scoped rule %s not found in shipped policies", ruleID)
+	return nil
+}
+
 // policyRuleCase is one fire-or-silent test against a shipped tool-scoped rule.
 type policyRuleCase struct {
 	name       string            // test subname
@@ -129,6 +147,15 @@ type policySubagentCase struct {
 	name      string
 	ruleID    string
 	subagent  models.SubagentDef
+	inv       models.RepoInventory
+	wantFires bool
+}
+
+// policySkillCase is one fire-or-silent test against a shipped skill-scoped rule.
+type policySkillCase struct {
+	name      string
+	ruleID    string
+	skill     models.SkillDef
 	inv       models.RepoInventory
 	wantFires bool
 }
@@ -2124,6 +2151,52 @@ var policySubagentRuleCases = []policySubagentCase{
 			Tools: []string{"Read", "Grep", "Glob"}}, models.RepoInventory{}, false},
 }
 
+// policySkillRuleCases covers skill-scoped rules (CSKILL-*).
+var policySkillRuleCases = []policySkillCase{
+	{"CSKILL-001 fires on Bash(*) grant", "CSKILL-001",
+		models.SkillDef{Name: "leak", Location: models.Location{FilePath: ".claude/skills/leak/SKILL.md"},
+			ToolGrants: []models.ToolGrant{{Tool: "Bash", Pattern: "*"}}}, models.RepoInventory{}, true},
+	{"CSKILL-001 silent on scoped Bash grant", "CSKILL-001",
+		models.SkillDef{Name: "safe", Location: models.Location{FilePath: ".claude/skills/safe/SKILL.md"},
+			ToolGrants: []models.ToolGrant{{Tool: "Bash", Pattern: "git status *"}}}, models.RepoInventory{}, false},
+
+	{"CSKILL-002 fires on dynamic-exec body", "CSKILL-002",
+		models.SkillDef{Name: "pr", Location: models.Location{FilePath: ".claude/skills/pr/SKILL.md"},
+			DynamicExecCommands: []string{"gh pr diff"}}, models.RepoInventory{}, true},
+	{"CSKILL-002 silent without dynamic-exec", "CSKILL-002",
+		models.SkillDef{Name: "plain", Location: models.Location{FilePath: ".claude/skills/plain/SKILL.md"}},
+		models.RepoInventory{}, false},
+
+	{"CSKILL-003 fires on credential read in dynamic-exec", "CSKILL-003",
+		models.SkillDef{Name: "leak", Location: models.Location{FilePath: ".claude/skills/leak/SKILL.md"},
+			DynamicExecCommands: []string{"gh auth token"}}, models.RepoInventory{}, true},
+	{"CSKILL-003 silent on benign dynamic-exec", "CSKILL-003",
+		models.SkillDef{Name: "ver", Location: models.Location{FilePath: ".claude/skills/ver/SKILL.md"},
+			DynamicExecCommands: []string{"node --version"}}, models.RepoInventory{}, false},
+
+	{"CSKILL-020 fires on external URL", "CSKILL-020",
+		models.SkillDef{Name: "fetch", Location: models.Location{FilePath: ".claude/skills/fetch/SKILL.md"},
+			ExternalURLs: []string{"https://evil.example/x"}}, models.RepoInventory{}, true},
+	{"CSKILL-020 silent without external URL", "CSKILL-020",
+		models.SkillDef{Name: "nourl", Location: models.Location{FilePath: ".claude/skills/nourl/SKILL.md"}},
+		models.RepoInventory{}, false},
+
+	{"CSKILL-040 fires on injection marker", "CSKILL-040",
+		models.SkillDef{Name: "inj", Location: models.Location{FilePath: ".claude/skills/inj/SKILL.md"},
+			InjectionMarkers: []string{"instruction-override-phrase"}}, models.RepoInventory{}, true},
+	{"CSKILL-040 silent without markers", "CSKILL-040",
+		models.SkillDef{Name: "clean", Location: models.Location{FilePath: ".claude/skills/clean/SKILL.md"}},
+		models.RepoInventory{}, false},
+
+	{"CSKILL-050 fires on model-invocable skill granting Write", "CSKILL-050",
+		models.SkillDef{Name: "auto", Location: models.Location{FilePath: ".claude/skills/auto/SKILL.md"},
+			ToolGrants: []models.ToolGrant{{Tool: "Write"}}}, models.RepoInventory{}, true},
+	{"CSKILL-050 silent when manual-only", "CSKILL-050",
+		models.SkillDef{Name: "manual", Location: models.Location{FilePath: ".claude/skills/manual/SKILL.md"},
+			DisableModelInvocation: true,
+			ToolGrants:             []models.ToolGrant{{Tool: "Write"}}}, models.RepoInventory{}, false},
+}
+
 // policyAgentRuleCases covers agent-scoped rules.
 var policyAgentRuleCases = []policyAgentCase{
 	// ─── LangChain agent rules (LC-*) ───────────────────────────────────────
@@ -3399,6 +3472,31 @@ func TestPolicySubagentRules(t *testing.T) {
 	}
 }
 
+func TestPolicySkillRules(t *testing.T) {
+	for _, tc := range policySkillRuleCases {
+		t.Run(tc.name, func(t *testing.T) {
+			d := loadSkillRule(t, tc.ruleID)
+			if !d.Applies(tc.skill) {
+				if tc.wantFires {
+					t.Fatalf("rule %s does not Apply to skill %s — applies_to mismatch?",
+						tc.ruleID, tc.skill.Name)
+				}
+				return
+			}
+			fired := false
+			for _, f := range d.Detect(tc.skill, tc.inv) {
+				if f.RuleID == tc.ruleID {
+					fired = true
+					break
+				}
+			}
+			if fired != tc.wantFires {
+				t.Errorf("rule %s: fired=%v, want %v", tc.ruleID, fired, tc.wantFires)
+			}
+		})
+	}
+}
+
 // TestPolicyRules_AllRulesCovered fails unless every shipped rule has BOTH a
 // fire case (wantFires=true) and a silent case (wantFires=false). One case
 // alone is not enough: a fire-only case passes a predicate that always returns
@@ -3429,6 +3527,9 @@ func TestPolicyRules_AllRulesCovered(t *testing.T) {
 		record(tc.ruleID, tc.wantFires)
 	}
 	for _, tc := range policySubagentRuleCases {
+		record(tc.ruleID, tc.wantFires)
+	}
+	for _, tc := range policySkillRuleCases {
 		record(tc.ruleID, tc.wantFires)
 	}
 	var missingAny, missingFire, missingSilent []string

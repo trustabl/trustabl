@@ -1,6 +1,7 @@
 package rules
 
 import (
+	"regexp"
 	"strings"
 
 	sitter "github.com/smacker/go-tree-sitter"
@@ -792,6 +793,96 @@ func PredSubagentGrantsTool(s models.SubagentDef, names []string) bool {
 	}
 	for _, granted := range s.Tools {
 		if want[granted] {
+			return true
+		}
+	}
+	return false
+}
+
+// ─── skill predicates ─────────────────────────────────────────────────────────
+
+// PredSkillModelInvocable reports whether the model can auto-invoke the skill
+// (disable-model-invocation is not set). A model-invocable skill can be
+// triggered without the user, so pairing it with broad tool grants lets the
+// model be steered into a side-effecting or exfiltrating action.
+func PredSkillModelInvocable(s models.SkillDef) bool {
+	return !s.DisableModelInvocation
+}
+
+// PredSkillBodyHasDynamicExec reports whether the skill body contains
+// dynamic-context shell execution. Claude Code runs these commands during
+// preprocessing, before the model sees the rendered skill, so model-level
+// prompt-injection defenses never get a chance to intervene.
+func PredSkillBodyHasDynamicExec(s models.SkillDef) bool {
+	return len(s.DynamicExecCommands) > 0
+}
+
+// PredSkillReferencesExternalURL reports whether the skill body references an
+// external http(s) URL — an indirect-prompt-injection vector (fetched content
+// can carry instructions) and a possible exfiltration endpoint.
+func PredSkillReferencesExternalURL(s models.SkillDef) bool {
+	return len(s.ExternalURLs) > 0
+}
+
+// PredSkillBodyHasInjectionMarker reports whether the skill body carries a
+// prompt-injection marker (instruction-override phrasing, zero-width characters,
+// or a long base64 blob).
+func PredSkillBodyHasInjectionMarker(s models.SkillDef) bool {
+	return len(s.InjectionMarkers) > 0
+}
+
+// PredSkillAllowsTool reports whether the skill pre-approves any of names via
+// allowed-tools. It matches the parsed grant's Tool first (so "Bash(git *)"
+// matches "Bash") then the raw allowed-tools tokens.
+func PredSkillAllowsTool(s models.SkillDef, names []string) bool {
+	want := make(map[string]bool, len(names))
+	for _, n := range names {
+		want[n] = true
+	}
+	for _, g := range s.ToolGrants {
+		if want[g.Tool] {
+			return true
+		}
+	}
+	for _, t := range s.AllowedTools {
+		if want[t] {
+			return true
+		}
+	}
+	return false
+}
+
+// PredSkillAllowsUnrestrictedShell reports whether the skill pre-approves
+// unrestricted shell via allowed-tools — a bare `Bash` grant or a wildcard
+// pattern (`Bash(*)` / `Bash(:*)`). allowed-tools is an auto-approval list, not a
+// sandbox, so this lets the skill run any shell command without prompting.
+func PredSkillAllowsUnrestrictedShell(s models.SkillDef) bool {
+	for _, g := range s.ToolGrants {
+		if g.Tool != "Bash" {
+			continue
+		}
+		switch strings.TrimSpace(g.Pattern) {
+		case "", "*", ":*":
+			return true
+		}
+	}
+	return false
+}
+
+var (
+	// skillExecEgressRe matches a shell command that performs network egress.
+	skillExecEgressRe = regexp.MustCompile(`(?i)\b(?:curl|wget|nc|ncat|telnet|scp|sftp|rsync)\b`)
+	// skillExecSecretRe matches a shell command that reads credentials or secrets.
+	skillExecSecretRe = regexp.MustCompile(`(?i)gh\s+auth|printenv|\$(?:AWS|GH|GITHUB|OPENAI|ANTHROPIC|HF|NPM|SLACK|GOOGLE|GCP|AZURE)[A-Z0-9_]*|\bid_rsa\b|\bcredentials\b|\.aws/|\.ssh/|\.netrc\b|access[_-]?key|secret[_-]?key|api[_-]?key`)
+)
+
+// PredSkillDynamicExecTouchesNetworkOrSecrets reports whether any dynamic-context
+// command performs network egress or reads credentials/secrets — the pre-model
+// exfiltration primitive (e.g. a !`gh auth token` paired with a !`curl` to an
+// external host, both run during skill load).
+func PredSkillDynamicExecTouchesNetworkOrSecrets(s models.SkillDef) bool {
+	for _, cmd := range s.DynamicExecCommands {
+		if skillExecEgressRe.MatchString(cmd) || skillExecSecretRe.MatchString(cmd) {
 			return true
 		}
 	}

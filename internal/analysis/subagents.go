@@ -169,17 +169,27 @@ type subagentFrontmatter struct {
 // (block, startLine, endLine, true) where startLine is the line of the
 // opening "---" marker (always 1) and endLine is the line of the closing
 // "---" marker. Returns (nil, 0, 0, false) if the file does not start with
-// "---".
+// "---". It is extractFrontmatterAndBody without the trailing body.
+func extractFrontmatter(raw []byte) (block []byte, startLine, endLine int, ok bool) {
+	block, _, startLine, endLine, ok = extractFrontmatterAndBody(raw)
+	return block, startLine, endLine, ok
+}
+
+// extractFrontmatterAndBody is extractFrontmatter plus body: the markdown
+// content after the closing "---" marker line. body is nil when the marker is
+// the file's last line. Skill discovery audits the body (dynamic-context shell
+// execution, external URLs, injection markers); callers that only need the
+// frontmatter use extractFrontmatter.
 //
 // Known v1 limitations: a line beginning with "---" inside the frontmatter
 // body (e.g. a YAML document separator in a block scalar) truncates the block
 // early; and on CRLF files a trailing "\r" is left on the last block line,
 // which yaml.v3 tolerates.
-func extractFrontmatter(raw []byte) (block []byte, startLine, endLine int, ok bool) {
+func extractFrontmatterAndBody(raw []byte) (block, body []byte, startLine, endLine int, ok bool) {
 	hasLF := bytes.HasPrefix(raw, []byte("---\n"))
 	hasCRLF := bytes.HasPrefix(raw, []byte("---\r\n"))
 	if !hasLF && !hasCRLF {
-		return nil, 0, 0, false
+		return nil, nil, 0, 0, false
 	}
 	headerLen := 4
 	if hasCRLF {
@@ -188,7 +198,7 @@ func extractFrontmatter(raw []byte) (block []byte, startLine, endLine int, ok bo
 	rest := raw[headerLen:]
 	end := bytes.Index(rest, []byte("\n---"))
 	if end < 0 {
-		return nil, 0, 0, false
+		return nil, nil, 0, 0, false
 	}
 	// The closing "\n---" begins at byte offset (headerLen + end) within raw.
 	// The newline at that index terminates the last frontmatter-body line;
@@ -197,7 +207,14 @@ func extractFrontmatter(raw []byte) (block []byte, startLine, endLine int, ok bo
 	// line number directly.
 	markerNewlineOffset := headerLen + end
 	endLine = bytes.Count(raw[:markerNewlineOffset+1], []byte{'\n'}) + 1
-	return rest[:end], 1, endLine, true
+	// body is everything after the closing "---" marker line: afterMarker starts
+	// at the "---"; the first newline after it ends the marker line and the body
+	// follows. No newline means the marker is the last line — no body.
+	afterMarker := raw[markerNewlineOffset+1:]
+	if nl := bytes.IndexByte(afterMarker, '\n'); nl >= 0 {
+		body = afterMarker[nl+1:]
+	}
+	return rest[:end], body, 1, endLine, true
 }
 
 // splitToolsTokens normalizes frontmatter list entries (scalar comma/space form

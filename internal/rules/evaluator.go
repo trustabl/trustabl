@@ -149,6 +149,59 @@ func (e MatchExpr) EvaluateSubagent(s models.SubagentDef, inv models.RepoInvento
 	return true
 }
 
+// EvaluateSkill walks a MatchExpr against a skill. Skill predicates are
+// dispatched here; predicates for other scopes return true vacuously (a skill
+// rule should only set skill predicates + combinators).
+func (e MatchExpr) EvaluateSkill(s models.SkillDef, inv models.RepoInventory) bool {
+	if len(e.All) > 0 {
+		for _, sub := range e.All {
+			if !sub.EvaluateSkill(s, inv) {
+				return false
+			}
+		}
+	}
+	if len(e.Any) > 0 {
+		matched := false
+		for _, sub := range e.Any {
+			if sub.EvaluateSkill(s, inv) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false
+		}
+	}
+	if e.Not != nil && e.Not.EvaluateSkill(s, inv) {
+		return false
+	}
+	if e.Always != nil && !*e.Always {
+		return false
+	}
+	if e.SkillAllowsUnrestrictedShell != nil && PredSkillAllowsUnrestrictedShell(s) != *e.SkillAllowsUnrestrictedShell {
+		return false
+	}
+	if len(e.SkillAllowsTool) > 0 && !PredSkillAllowsTool(s, e.SkillAllowsTool) {
+		return false
+	}
+	if e.SkillModelInvocable != nil && PredSkillModelInvocable(s) != *e.SkillModelInvocable {
+		return false
+	}
+	if e.SkillBodyHasDynamicExec != nil && PredSkillBodyHasDynamicExec(s) != *e.SkillBodyHasDynamicExec {
+		return false
+	}
+	if e.SkillDynamicExecTouchesNetworkOrSecrets != nil && PredSkillDynamicExecTouchesNetworkOrSecrets(s) != *e.SkillDynamicExecTouchesNetworkOrSecrets {
+		return false
+	}
+	if e.SkillReferencesExternalURL != nil && PredSkillReferencesExternalURL(s) != *e.SkillReferencesExternalURL {
+		return false
+	}
+	if e.SkillBodyHasInjectionMarker != nil && PredSkillBodyHasInjectionMarker(s) != *e.SkillBodyHasInjectionMarker {
+		return false
+	}
+	return true
+}
+
 // EvaluateTool walks a MatchExpr against a tool and returns whether it matches.
 //
 // Semantics:
@@ -282,6 +335,15 @@ var predicatesByScope = map[models.Scope]map[string]bool{
 	models.ScopeSubagent: {
 		"subagent_grants_tool": true,
 	},
+	models.ScopeSkill: {
+		"skill_allows_unrestricted_shell":               true,
+		"skill_allows_tool":                             true,
+		"skill_model_invocable":                         true,
+		"skill_body_has_dynamic_exec":                   true,
+		"skill_dynamic_exec_touches_network_or_secrets": true,
+		"skill_references_external_url":                 true,
+		"skill_body_has_injection_marker":               true,
+	},
 	models.ScopeRepo: {
 		"repo_has_sdk_in_code":   true,
 		"repo_component_present": true, "repo_uses_default_tracing": true,
@@ -335,6 +397,14 @@ func (e MatchExpr) setPredicateNames() []string {
 	add(e.AgentHostedToolKwargValue != nil, "agent_hosted_tool_kwarg_value")
 	// Subagent scope
 	add(len(e.SubagentGrantsTool) > 0, "subagent_grants_tool")
+	// Skill scope
+	add(e.SkillAllowsUnrestrictedShell != nil, "skill_allows_unrestricted_shell")
+	add(len(e.SkillAllowsTool) > 0, "skill_allows_tool")
+	add(e.SkillModelInvocable != nil, "skill_model_invocable")
+	add(e.SkillBodyHasDynamicExec != nil, "skill_body_has_dynamic_exec")
+	add(e.SkillDynamicExecTouchesNetworkOrSecrets != nil, "skill_dynamic_exec_touches_network_or_secrets")
+	add(e.SkillReferencesExternalURL != nil, "skill_references_external_url")
+	add(e.SkillBodyHasInjectionMarker != nil, "skill_body_has_injection_marker")
 	// Repo scope
 	add(len(e.RepoHasSDKInCode) > 0, "repo_has_sdk_in_code")
 	add(len(e.RepoComponentPresent) > 0, "repo_component_present")
