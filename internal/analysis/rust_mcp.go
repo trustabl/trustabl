@@ -174,7 +174,7 @@ func rustUsesMCP(root *sitter.Node, src []byte) bool {
 		if found {
 			return false
 		}
-		if n.Type() == "use_declaration" && strings.Contains(astutil.NodeText(n, src), "rmcp") {
+		if n.Type() == "use_declaration" && strings.Contains(astutil.NodeText(n, src), "rmcp::") {
 			found = true
 			return false
 		}

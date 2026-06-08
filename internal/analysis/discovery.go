@@ -214,7 +214,7 @@ func kindFromDecorators(decs []*sitter.Node, src []byte, toolImports map[string]
 			return models.KindClaudeSDKTool
 		case callee == "claude_tool" || last == "claude_tool",
 			callee == "agent.tool",
-			strings.Contains(callee, "claude_agent_sdk"):
+			strings.HasPrefix(callee, "claude_agent_sdk."):
 			return models.KindClaudeSDKTool
 		// MCP registrations.
 		case callee == "server.tool" || callee == "mcp.tool",

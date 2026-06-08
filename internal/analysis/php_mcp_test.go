@@ -78,3 +78,45 @@ class Tools {
 		t.Errorf("file without a `use ...Mcp...` must gate out; got %d: %+v", len(tools), tools)
 	}
 }
+
+// TestDiscoverPHPMCPTools_McpToolboxNotMatched guards against the substring
+// match: #[McpToolbox] / #[McpToolFactory] are different attributes and must not
+// be read as #[McpTool].
+func TestDiscoverPHPMCPTools_McpToolboxNotMatched(t *testing.T) {
+	src := `<?php
+use PhpMcp\Server\Attributes\McpTool;
+
+class Tools {
+    #[McpToolbox(name: 'notatool')]
+    public function box(): void {}
+
+    #[McpTool(name: 'real')]
+    public function real(int $a): int { return $a; }
+}
+`
+	tools := analysis.DiscoverPHPMCPTools([]analysis.ParsedFile{parsePHPForTest(t, src)}, nil)
+	if len(tools) != 1 {
+		t.Fatalf("only #[McpTool] should match, not #[McpToolbox]; got %d: %+v", len(tools), tools)
+	}
+	if tools[0].Name != "real" {
+		t.Errorf("name = %q, want real", tools[0].Name)
+	}
+}
+
+// TestDiscoverPHPMCPTools_McpenzieNamespaceNotGate guards the file gate: an
+// unrelated `use App\Mcpenzie\...` (which merely contains "Mcp") must not open
+// the MCP gate.
+func TestDiscoverPHPMCPTools_McpenzieNamespaceNotGate(t *testing.T) {
+	src := `<?php
+use App\Mcpenzie\Client;
+
+class Tools {
+    #[McpTool(name: 'add')]
+    public function add(int $a): int { return $a; }
+}
+`
+	tools := analysis.DiscoverPHPMCPTools([]analysis.ParsedFile{parsePHPForTest(t, src)}, nil)
+	if len(tools) != 0 {
+		t.Errorf("a non-MCP `use App\\Mcpenzie\\...` must not open the gate; got %d: %+v", len(tools), tools)
+	}
+}

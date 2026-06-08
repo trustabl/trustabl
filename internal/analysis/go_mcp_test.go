@@ -118,3 +118,28 @@ func run() {
 		t.Errorf("non-mcp-go import must gate out; got %d: %+v", len(tools), tools)
 	}
 }
+
+// TestDiscoverGoMCPTools_RejectsCustomToolAndEmptyName guards the official-SDK
+// extractor: only a real &mcp.Tool{Name: ...} is a tool. A custom struct whose
+// type merely ends in "Tool", and an mcp.Tool literal with no Name, must not
+// produce phantom ToolDefs.
+func TestDiscoverGoMCPTools_RejectsCustomToolAndEmptyName(t *testing.T) {
+	src := `package main
+
+import "github.com/modelcontextprotocol/go-sdk/mcp"
+
+func run() {
+	server := mcp.NewServer(&mcp.Implementation{Name: "g"}, nil)
+	mcp.AddTool(server, &mcp.Tool{Name: "real", Description: "d"}, nil)
+	mcp.AddTool(server, &MyCustomTool{Name: "phantom"}, nil)
+	mcp.AddTool(server, &mcp.Tool{Description: "no name"}, nil)
+}
+`
+	tools := analysis.DiscoverGoMCPTools([]analysis.ParsedFile{parseGoForTest(t, src)}, nil)
+	if len(tools) != 1 {
+		t.Fatalf("only the named &mcp.Tool should be discovered; got %d: %+v", len(tools), tools)
+	}
+	if tools[0].Name != "real" {
+		t.Errorf("name = %q, want real", tools[0].Name)
+	}
+}

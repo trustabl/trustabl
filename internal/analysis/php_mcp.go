@@ -18,6 +18,10 @@ import (
 var (
 	phpAttrNameRe = regexp.MustCompile(`\bname\s*:\s*['"]([^'"]*)['"]`)
 	phpAttrDescRe = regexp.MustCompile(`\bdescription\s*:\s*['"]([^'"]*)['"]`)
+	// phpMcpToolNameRe matches the McpTool attribute name as a whole word, so a
+	// different attribute such as #[McpToolbox] or #[McpToolFactory] is not
+	// mistaken for #[McpTool].
+	phpMcpToolNameRe = regexp.MustCompile(`\bMcpTool\b`)
 )
 
 // DiscoverPHPMCPTools walks each parsed PHP file and emits a ToolDef per
@@ -106,7 +110,7 @@ func discoverPHPMCPToolsInFile(pf ParsedFile) []models.ToolDef {
 func phpMcpToolAttrComment(method *sitter.Node, src []byte) (string, bool) {
 	for cur := method.PrevNamedSibling(); cur != nil && cur.Type() == "comment"; cur = cur.PrevNamedSibling() {
 		text := strings.TrimSpace(astutil.NodeText(cur, src))
-		if strings.HasPrefix(text, "#[") && strings.Contains(text, "McpTool") {
+		if strings.HasPrefix(text, "#[") && phpMcpToolNameRe.MatchString(text) {
 			return text, true
 		}
 	}
@@ -121,7 +125,7 @@ func phpUsesMCP(root *sitter.Node, src []byte) bool {
 		if found {
 			return false
 		}
-		if n.Type() == "namespace_use_declaration" && strings.Contains(astutil.NodeText(n, src), "Mcp") {
+		if n.Type() == "namespace_use_declaration" && strings.Contains(astutil.NodeText(n, src), "Mcp\\") {
 			found = true
 			return false
 		}

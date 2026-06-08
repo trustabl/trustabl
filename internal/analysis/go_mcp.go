@@ -166,7 +166,11 @@ func goToolStructFields(lit *sitter.Node, src []byte) (name, desc string, ok boo
 		return "", "", false
 	}
 	typeText := astutil.NodeText(typeNode, src)
-	if !strings.HasSuffix(typeText, "Tool") {
+	// Match the official SDK's tool type exactly (mcp.Tool, or bare Tool under a
+	// dot-import / in-package use) rather than any struct whose name ends in
+	// "Tool", so a custom argument like &MyCustomTool{...} passed to mcp.AddTool
+	// is not mistaken for a tool definition.
+	if typeText != "mcp.Tool" && typeText != "Tool" {
 		return "", "", false
 	}
 	body := lit.ChildByFieldName("body")
@@ -197,7 +201,10 @@ func goToolStructFields(lit *sitter.Node, src []byte) (name, desc string, ok boo
 			}
 		}
 	}
-	return name, desc, name != "" || desc != ""
+	// A tool must have a Name; a literal carrying only a Description is not a
+	// usable tool definition (and an empty-name ToolDef would be a phantom that
+	// could fire a "missing name" rule).
+	return name, desc, name != ""
 }
 
 // goUnwrapLiteralElement returns the inner expression of a literal_element
