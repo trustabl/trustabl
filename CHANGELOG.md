@@ -6,7 +6,33 @@ to follow Semantic Versioning once it reaches 1.0.
 
 ## [Unreleased]
 
+### Changed
+
+- **`ScanID` now folds the rules origin.** A provenance tag
+  (`signed:<channel>` / `unsigned:custom` / `unsigned:default`) is folded into
+  `ScanID` so two scans of the same code with rules of different provenance get
+  distinct IDs. **This is a one-time change to every `ScanID`**: an otherwise
+  unchanged scan produces a new ID after upgrading to this release. Provenance
+  is now part of a scan's identity by design; baselines pinned to old IDs must
+  be re-captured once.
+
 ### Added
+
+- **Signed rules distribution — trust core (opt-in).** New `internal/rulesign`
+  package: a reproducible bundle digest (sha256 over a normalized tar), an
+  embedded Ed25519 trust keyring (verify-by-key-ID with validity windows,
+  fail-closed), and signed channel statements that bind a channel to one bundle
+  by digest with freshness and anti-rollback checks. A new `releaseSource`
+  (behind the new `rulesource.Source` interface) resolves rules from a signed
+  release channel — verify the statement, fetch the bundle by digest, re-derive
+  and match the digest, install to a content-addressed cache — with an offline
+  fallback that serves (and watermarks as stale) the last verified bundle.
+  Reachable via the new opt-in **`--channel <name>`** flag; the **default scan
+  is unchanged** (still the git source). Until signing keys are published a
+  `--channel` scan refuses with exit `2` rather than running unverified rules.
+  A scan that did not use blessed production rules — a pre-release channel or an
+  unsigned `--rules-repo` source — is now **watermarked** in the human report
+  and in the JSON `rules_origin` field.
 
 - **`--verbose` / `--debug` diagnostics.** New global (persistent) flags on the
   root command, valid on every subcommand and placeable before or after it

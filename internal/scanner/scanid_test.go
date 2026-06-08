@@ -6,6 +6,10 @@ import (
 	"github.com/trustabl/trustabl/internal/models"
 )
 
+// defaultOrigin is the unsigned-default origin tag; the file-list/schema tests
+// hold it constant so they isolate the input under test.
+var defaultOrigin = models.RulesOrigin{}.Tag()
+
 // TestScanID_FoldsAllFileLists guards the §7 honesty half of the determinism
 // contract: "different inputs → different ScanID". The ID must change when ANY
 // inventoried source/config file list changes, not just PythonFiles — the
@@ -14,7 +18,7 @@ import (
 // across materially different scans of a non-Python repo.
 func TestScanID_FoldsAllFileLists(t *testing.T) {
 	base := models.ScanManifest{PythonFiles: []string{"main.py"}}
-	baseID := scanID("repo", base, "v1", 8)
+	baseID := scanID("repo", base, "v1", 8, defaultOrigin)
 
 	cases := []struct {
 		name   string
@@ -31,7 +35,7 @@ func TestScanID_FoldsAllFileLists(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			m := base
 			tc.mutate(&m)
-			if got := scanID("repo", m, "v1", 8); got == baseID {
+			if got := scanID("repo", m, "v1", 8, defaultOrigin); got == baseID {
 				t.Errorf("ScanID unchanged when %s differs: both %q", tc.name, got)
 			}
 		})
@@ -49,7 +53,7 @@ func TestScanID_StableUnderReordering(t *testing.T) {
 		PythonFiles:     []string{"b.py", "a.py"},
 		TypeScriptFiles: []string{"y.ts", "x.ts"},
 	}
-	if scanID("repo", a, "v1", 8) != scanID("repo", b, "v1", 8) {
+	if scanID("repo", a, "v1", 8, defaultOrigin) != scanID("repo", b, "v1", 8, defaultOrigin) {
 		t.Error("ScanID changed under file reordering; must be order-independent")
 	}
 }
@@ -61,7 +65,36 @@ func TestScanID_StableUnderReordering(t *testing.T) {
 // schema → different ID.
 func TestScanID_FoldsEngineSchemaVersion(t *testing.T) {
 	m := models.ScanManifest{PythonFiles: []string{"main.py"}}
-	if scanID("repo", m, "v1", 8) == scanID("repo", m, "v1", 9) {
+	if scanID("repo", m, "v1", 8, defaultOrigin) == scanID("repo", m, "v1", 9, defaultOrigin) {
 		t.Error("ScanID unchanged when engine schema version differs")
+	}
+}
+
+// TestScanID_FoldsRulesOrigin guards the ENG-5 honesty addition: a scan of the
+// same code with rules of different provenance (signed production, a pre-release
+// channel, an unsigned custom source, the unsigned default) must get a distinct
+// ScanID, while the same origin reproduces the same ID.
+func TestScanID_FoldsRulesOrigin(t *testing.T) {
+	m := models.ScanManifest{PythonFiles: []string{"main.py"}}
+	origins := map[string]string{
+		"prod":    models.RulesOrigin{Signed: true, Channel: "production"}.Tag(),
+		"staging": models.RulesOrigin{Signed: true, Channel: "staging"}.Tag(),
+		"custom":  models.RulesOrigin{Custom: true}.Tag(),
+		"default": models.RulesOrigin{}.Tag(),
+	}
+
+	seen := map[string]string{}
+	for name, tag := range origins {
+		id := scanID("repo", m, "v1", 9, tag)
+		if other, dup := seen[id]; dup {
+			t.Errorf("ScanID collision across origins: %s and %s both %q", name, other, id)
+		}
+		seen[id] = name
+	}
+
+	// Determinism half: the same origin reproduces the same ID.
+	prod := origins["prod"]
+	if scanID("repo", m, "v1", 9, prod) != scanID("repo", m, "v1", 9, prod) {
+		t.Error("ScanID not reproducible for a fixed origin")
 	}
 }
