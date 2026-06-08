@@ -207,3 +207,24 @@ rules:
       it is compromised the moment it is committed. Load credentials at runtime
       from the environment or a secrets manager, never from a file checked into
       the skill, and keep real secrets out of version control.
+
+  - id: CSKILL-060
+    title: Skill description claims read-only but grants side-effecting tools
+    severity: medium
+    confidence: 0.5
+    applies_to:
+      - claude_skill
+    scope: skill
+    match:
+      skill_description_tool_mismatch: true
+    explanation: >
+      This skill's description claims it is read-only or side-effect-free, yet its
+      allowed-tools pre-approve a side-effecting or exfiltration-capable tool
+      (Bash / Write / Edit / WebFetch / NotebookEdit, or unrestricted shell). The
+      description is the signal a user relies on when deciding to install or trust
+      a skill, so a description that understates the real capability is a
+      metadata-vs-behavior mismatch an attacker can hide behind.
+    fix: >
+      Make the description match the grants: either narrow allowed-tools to the
+      read-only set the description promises (Read, Grep, Glob), or correct the
+      description to disclose the side-effecting tools the skill actually uses.

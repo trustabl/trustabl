@@ -359,6 +359,12 @@ rules:
 #       A credential committed INTO the skill, distinct from a script that reads
 #       one at runtime. High-specificity (low FP). Bool predicate.
 #
+#   skill_description_tool_mismatch: true
+#       Fires when the description explicitly claims to be read-only /
+#       side-effect-free yet allowed-tools pre-approve a side-effecting tool
+#       (Bash / Write / Edit / WebFetch / NotebookEdit, or unrestricted shell) —
+#       a metadata-vs-capability mismatch. Heuristic, low confidence. Bool.
+#
 #
 # ━━━ REPO-SCOPE PREDICATES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # (used only in scope: repo rules; match runs once per scan)

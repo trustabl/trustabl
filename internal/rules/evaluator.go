@@ -208,6 +208,9 @@ func (e MatchExpr) EvaluateSkill(s models.SkillDef, inv models.RepoInventory) bo
 	if e.SkillBundledFileHasHardcodedSecret != nil && PredSkillBundledFileHasHardcodedSecret(s) != *e.SkillBundledFileHasHardcodedSecret {
 		return false
 	}
+	if e.SkillDescriptionToolMismatch != nil && PredSkillDescriptionToolMismatch(s) != *e.SkillDescriptionToolMismatch {
+		return false
+	}
 	return true
 }
 
@@ -355,6 +358,7 @@ var predicatesByScope = map[models.Scope]map[string]bool{
 		"skill_bundled_script_network_egress":           true,
 		"skill_bundled_script_reads_secrets":            true,
 		"skill_bundled_file_has_hardcoded_secret":       true,
+		"skill_description_tool_mismatch":               true,
 	},
 	models.ScopeRepo: {
 		"repo_has_sdk_in_code":   true,
@@ -419,6 +423,7 @@ func (e MatchExpr) setPredicateNames() []string {
 	add(e.SkillBodyHasInjectionMarker != nil, "skill_body_has_injection_marker")
 	add(e.SkillBundledScriptNetworkEgress != nil, "skill_bundled_script_network_egress")
 	add(e.SkillBundledScriptReadsSecrets != nil, "skill_bundled_script_reads_secrets")
+	add(e.SkillDescriptionToolMismatch != nil, "skill_description_tool_mismatch")
 	add(e.SkillBundledFileHasHardcodedSecret != nil, "skill_bundled_file_has_hardcoded_secret")
 	// Repo scope
 	add(len(e.RepoHasSDKInCode) > 0, "repo_has_sdk_in_code")
