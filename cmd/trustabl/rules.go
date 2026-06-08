@@ -78,6 +78,44 @@ TRUSTABL_RULES_REPO environment variable.`,
 	pull.Flags().StringVar(&ref, "rules-ref", "",
 		"rules branch or tag to pull (default: the repo's default branch)")
 
-	rulesCmd.AddCommand(pull)
+	validate := &cobra.Command{
+		Use:   "validate [dir]",
+		Short: "Validate a local rule-pack directory against this build's schema",
+		Long: `Strict-load every rule pack under [dir] (default ".") and fail on the first
+schema, parse, duplicate-ID, missing-field, out-of-range-confidence, or
+unknown-predicate error. Unlike a scan it fetches nothing — it validates the
+rules already on disk against this Trustabl build's rule schema.
+
+This is the CI gate for the trustabl-rules repository: build the engine at a
+known ref and run "trustabl rules validate ." against a checkout of the rules.
+Strict loading means a rule that targets a newer schema than this build (a new
+predicate not yet in the engine) fails here, which enforces the right ordering —
+the engine ships the predicate before the rules repo ships rules that use it.`,
+		Example: `  # Validate the rule packs in the current directory
+  trustabl rules validate
+
+  # Validate a checkout elsewhere
+  trustabl rules validate ./trustabl-rules`,
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			dir := "."
+			if len(args) == 1 {
+				dir = args[0]
+			}
+			policies, err := rules.Load(os.DirFS(dir))
+			if err != nil {
+				return fmt.Errorf("rules validate %s: %w", dir, err)
+			}
+			nRules := 0
+			for _, p := range policies {
+				nRules += len(p.Rules)
+			}
+			fmt.Fprintf(cmd.OutOrStdout(), "OK: %d rule pack(s), %d rule(s) valid under rule schema version %d\n",
+				len(policies), nRules, rules.SupportedSchemaVersion)
+			return nil
+		},
+	}
+
+	rulesCmd.AddCommand(pull, validate)
 	return rulesCmd
 }
