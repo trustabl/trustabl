@@ -46,9 +46,15 @@ If the input cannot be parsed or contains zero findings, report clearly and stop
 - Fix (primary): `result.fixes[0].description.text` — present on most results
 - Fix (fallback): `runs[0].tool.driver.rules[]` — match on `id == ruleId`, read `help.text`; use when `fixes` array is absent
 
+**JSON extraction path:**
+- Findings: `findings[]`
+- File + line range: `file_path` + `start_line` … `end_line` (1-indexed, inclusive; a single-line finding sets `end_line == start_line`; both are `0` for repo-level findings with no location). Note: Trustabl 0.1.4 renamed the former flat `line` field to `start_line` / `end_line` — read those, not `line`.
+- Explanation: `explanation` · Fix: `suggested_fix`
+- Also present per finding: `rule_id`, `scope`, `severity`, `confidence`. Dependency CVE findings (when the scan ran with `--vuln-scan` / `vuln_scan`) appear in the same `findings` array — the advisory id (CVE / GHSA / PYSEC) is the `rule_id`, and `start_line` points at the dependency's line in its manifest. The structured `vulnerabilities[]` array carries the same matches with `fixed_in` versions.
+
 ## Workflow
 
-1. **Parse** — detect the format and normalize every finding into: `file`, `line`, `rule_id`, `scope`, `severity`, `confidence`, `explanation`, `suggested_fix`.
+1. **Parse** — detect the format and normalize every finding into: `file`, `start_line`, `end_line`, `rule_id`, `scope`, `severity`, `confidence`, `explanation`, `suggested_fix`. (For SARIF, `end_line` may be absent for a single-line region — fall back to `start_line`.)
 
 2. **Summarize** — render a Markdown table before touching any file:
 
@@ -74,7 +80,7 @@ INPUTS
 You will receive:
 1. The current content of a source file
 2. A list of findings for that file, each with:
-   - line: flagged line number
+   - start_line / end_line: the flagged line range (1-indexed, inclusive; equal for a single-line finding)
    - rule_id: Trustabl rule that fired
    - scope: tool | agent | subagent | repo
    - severity: info | low | medium | high | critical
@@ -106,7 +112,7 @@ SCOPE GUIDE
 
 RULES
 - The scan's `explanation` and `suggested_fix` fields are the authoritative spec. Do not invent a different solution.
-- line_start and line_end MUST include the flagged line. Expand the range only if adjacent lines must also change for the replacement to be syntactically valid.
+- line_start and line_end MUST include the flagged range (start_line..end_line). Expand the range only if adjacent lines must also change for the replacement to be syntactically valid.
 - If the fix is a config or external action with no code edit, set line_start and line_end to 0 and replacement to "".
 - Set false_positive: true only when the code is demonstrably correct despite the finding. Populate reason with the specific evidence.
 - Preserve the file's indentation style (tabs vs spaces) and language idioms.
