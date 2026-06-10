@@ -2127,7 +2127,7 @@ Exit codes for generate: `0` generated + readiness gate passed; `1` generated
 but `deployment_readiness` at or below `--fail-on`; `2` operational error.
 `--enrich` is accepted but not wired (it errors rather than silently no-op).
 
-**OpenShell export (`--openshell-policy <file>`, experimental).**
+**OpenShell export (`--openshell-policy <file>`).**
 `openshell.go` builds a self-contained sandbox policy from the selected
 agent's tool graph: fixed hardening defaults (read-only `/usr,/lib,/etc`,
 writable `/sandbox,/tmp` ∪ the graph tools' captured absolute
@@ -2141,8 +2141,13 @@ generate-time hard errors (absolute paths, no `..`, no overly-broad writable
 roots, ≤4096 chars/path, ≤256 paths, non-root user/group, first-label-only
 wildcards, no loopback/link-local/private endpoint). Emission reuses the
 manifest's yaml.v3 node infrastructure; a golden policy pins the bytes. The
-flag ships labeled experimental until a live-sandbox end-to-end run (a human
-gate) confirms `policy set` acceptance and observed enforcement.
+export was verified end-to-end against OpenShell 0.0.36 (2026-06-10): a
+generated policy is accepted by both `openshell sandbox create --policy` and
+`openshell policy set --wait`, and the live sandbox enforces network egress
+(listed host connects, unlisted host blocked at the egress tunnel), filesystem
+write boundaries (in-`read_write` write succeeds, read-only path denied), and
+the non-root `sandbox` process identity exactly as written — transcript in
+[`.superpowers/verification/`](.superpowers/verification/).
 
 ### 8.3 Enrich subcommand ([cmd/trustabl/enrich.go](cmd/trustabl/enrich.go) + [internal/enrichment/](internal/enrichment/))
 

@@ -99,8 +99,8 @@ Exit codes:
 	cmd.Flags().StringVar(&f.out, "out", "",
 		"output file (default: ./<agent-id>.agf.yaml)")
 	cmd.Flags().StringVar(&f.openshellPolicy, "openshell-policy", "",
-		"(experimental) also emit an OpenShell sandbox policy derived from the same scan to this file; "+
-			"pending end-to-end verification against a live sandbox")
+		"also emit an NVIDIA OpenShell sandbox policy derived from the same scan to this file "+
+			"(verified end-to-end against OpenShell 0.0.36: policy accepted, enforcement observed)")
 	cmd.Flags().BoolVar(&f.owasp, "owasp", true,
 		"annotate findings with OWASP ASI/AST IDs from the pinned engine map")
 	cmd.Flags().BoolVar(&f.timestamp, "timestamp", false,
@@ -206,7 +206,7 @@ func runGenerateAgentYAML(target string, f generateFlags, level logx.Level) erro
 		if err := os.WriteFile(f.openshellPolicy, policyOut, 0o644); err != nil {
 			return fmt.Errorf("writing OpenShell policy to %s: %w", f.openshellPolicy, err)
 		}
-		fmt.Fprintf(os.Stderr, "wrote %s (experimental — verify against a live OpenShell sandbox before relying on it)\n",
+		fmt.Fprintf(os.Stderr, "wrote %s — review the trustabl: markers (interpreter path, endpoint methods) before applying\n",
 			f.openshellPolicy)
 	}
 

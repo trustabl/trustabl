@@ -634,7 +634,7 @@ honest coverage data (detected SDKs, unaudited SDKs, dependency BOM summary).
   releases on the absolute number yet.
 - `--vuln-scan` additionally carries known-CVE matches in
   `x-trustabl.vulnerabilities`.
-- **`--openshell-policy <file>` (experimental)** also emits an NVIDIA
+- **`--openshell-policy <file>`** also emits an NVIDIA
   OpenShell sandbox policy derived from the same scan: hardened static
   defaults (`include_workdir`, read-only system roots, non-root
   `sandbox`/`sandbox` process), `read_write` extended with the tool bodies'
@@ -645,8 +645,13 @@ honest coverage data (detected SDKs, unaudited SDKs, dependency BOM summary).
   surface as review comments. The emitted file is validated against
   OpenShell's documented constraints before writing, and is primarily a
   **creation-time** policy: `filesystem_policy` and `process` lock at sandbox
-  creation; only `network_policies` hot-reload. The flag stays experimental
-  until verified end-to-end against a live OpenShell sandbox.
+  creation; only `network_policies` hot-reload. Verified end-to-end against
+  OpenShell 0.0.36 — a generated policy is accepted by both
+  `openshell sandbox create --policy` and `openshell policy set`, and enforces
+  network egress, filesystem write boundaries, and the non-root process
+  identity as written (transcript in
+  `.superpowers/verification/`). Always review the `trustabl:` markers (the
+  interpreter path and per-endpoint access method) before applying.
 
 ### Continuous integration
 
