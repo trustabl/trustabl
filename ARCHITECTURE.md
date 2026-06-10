@@ -2028,7 +2028,24 @@ determinism contract holds across this frontend too.
 `trustabl generate agent-yaml [PATH]` is a third frontend over the same
 scanner core: it reuses the scan command's rules-resolution + scan path
 (`resolveAndScan`) verbatim, then hands the completed `ScanResult` to
-`internal/acac` — Agent Configuration as Code.
+`internal/acac`.
+
+The command emits up to **two artifacts of two distinct classes**, from one
+scan. The `.agf.yaml` manifest is an **Agent Configuration as Code (ACaC)**
+artifact — it *defines* the agent (identity, declared tools, permissions,
+skills), travels with the agent across conforming runtimes, and is
+model/runtime-interpreted (a behavioral guarantee; its `reliability_score` is
+informational, its diffs are engineering review). The optional
+`--openshell-policy` output is an **Agent Infrastructure as Code (AIaC)**
+artifact — it *constrains the host*, stays with the OpenShell gateway, and is
+enforced mechanically by seccomp/Landlock/an L7 egress proxy (a structural
+guarantee; its diffs are platform/security review). The package keeps the
+historical name `internal/acac` for its primary (manifest) output; it does not
+conflate the classes — it never claims the manifest enforces anything, and it
+treats the policy mechanically (validate + live-verify). The `x-trustabl`
+extension is, strictly, neither configuration nor infrastructure: it is an
+*assessment* of the configuration (an agent-quality-engineering layer) carried
+inside the manifest.
 
 ```mermaid
 sequenceDiagram

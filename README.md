@@ -611,6 +611,19 @@ scores, the findings attributed to that agent's graph (annotated with OWASP
 ASI/AST IDs from a pinned engine map), the skill/hosted-tool inventory, and
 honest coverage data (detected SDKs, unaudited SDKs, dependency BOM summary).
 
+> **Two artifact classes, two review owners.** The `.agf.yaml` manifest is an
+> **Agent Configuration as Code (ACaC)** artifact: it *defines* the agent,
+> travels with it across conforming runtimes, and is interpreted by the
+> model/runtime — a behavioral guarantee, so its `reliability_score` is
+> informational and its diffs belong in **engineering** review. The optional
+> `--openshell-policy` output (below) is an **Agent Infrastructure as Code
+> (AIaC)** artifact: it constrains the host, stays with the OpenShell gateway,
+> and is enforced mechanically — a structural guarantee, so its diffs belong in
+> **platform/security** review. Trustabl derives both from one scan but never
+> conflates them: it does not claim the manifest enforces anything. The
+> `x-trustabl` block is, strictly, neither — it is an *assessment* of the
+> configuration, carried inside the manifest for convenience.
+
 - **One manifest, one agent.** A single-agent repo selects automatically; a
   multi-agent repo requires `--agent <name>` (without it, exit `2` listing the
   candidates). Subagents and skills are never manifest roots — they ride along
@@ -635,7 +648,9 @@ honest coverage data (detected SDKs, unaudited SDKs, dependency BOM summary).
 - `--vuln-scan` additionally carries known-CVE matches in
   `x-trustabl.vulnerabilities`.
 - **`--openshell-policy <file>`** also emits an NVIDIA
-  OpenShell sandbox policy derived from the same scan: hardened static
+  OpenShell sandbox policy derived from the same scan — an **AIaC** artifact
+  (it constrains the host and is mechanically enforced; route its diffs to
+  platform/security review): hardened static
   defaults (`include_workdir`, read-only system roots, non-root
   `sandbox`/`sandbox` process), `read_write` extended with the tool bodies'
   captured absolute write-path literals, and one `network_policies` entry per

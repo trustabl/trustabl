@@ -1,12 +1,29 @@
-// Package acac implements Agent Configuration as Code: it turns a completed
-// ScanResult into a portable Agent Format manifest (.agf.yaml) carrying a
-// Trustabl reliability/readiness extension (x-trustabl), per the ACaC v0.2
-// spec. The package is a pure transform — it never re-parses source and never
-// re-runs discovery; everything it emits is read off the typed ScanResult.
+// Package acac turns a completed ScanResult into two declarative artifacts,
+// from the same read-only scan. They belong to two distinct artifact classes
+// — a distinction this package is careful to honor:
 //
-// The flow is: SelectAgent (one manifest describes one agent system) →
-// Build (ScanResult → Manifest tree) → Emit (Manifest → deterministic YAML
-// with scaffold-marker comments).
+//   - The Agent Format manifest (.agf.yaml), carrying the Trustabl
+//     reliability/readiness extension (x-trustabl). This is the Agent
+//     CONFIGURATION artifact (ACaC): it defines the agent's identity,
+//     declared tools, permissions, and skills, it travels with the agent
+//     across conforming runtimes, and it is model/runtime-interpreted —
+//     a behavioral, not enforced, guarantee. This is the package's primary
+//     output and the reason for its name.
+//   - The optional OpenShell sandbox policy (openshell.go). This is an
+//     agent INFRASTRUCTURE artifact (AIaC): it constrains the host, stays
+//     with the OpenShell gateway rather than the agent, and is enforced
+//     mechanically by seccomp/Landlock/an L7 egress proxy — a structural
+//     guarantee verified live (see .superpowers/verification/).
+//
+// The two outputs have different review owners (the manifest → engineering;
+// the policy → platform/security), which the docs make explicit. The package
+// is a pure transform — it never re-parses source and never re-runs
+// discovery; everything it emits is read off the typed ScanResult.
+//
+// The manifest flow is: SelectAgent (one manifest describes one agent system)
+// → Build (ScanResult → Manifest tree) → Emit (Manifest → deterministic YAML
+// with scaffold-marker comments). The policy flow mirrors it:
+// BuildOpenShellPolicy → ValidateOpenShellPolicy → EmitOpenShellPolicy.
 package acac
 
 // SpecVersion is the x-trustabl extension spec version this package

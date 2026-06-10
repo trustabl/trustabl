@@ -18,6 +18,19 @@ to follow Semantic Versioning once it reaches 1.0.
 
 ### Changed
 
+- **Terminology: the two generated artifacts are named by class.** The
+  `.agf.yaml` manifest is the **Agent Configuration as Code (ACaC)** artifact
+  (defines the agent, travels with it, model-interpreted, behavioral
+  guarantee → engineering review); the `--openshell-policy` output is an
+  **Agent Infrastructure as Code (AIaC)** artifact (constrains the host, stays
+  with the gateway, mechanically enforced, structural guarantee →
+  platform/security review). Docs (README, ARCHITECTURE, package doc) now make
+  this split explicit so a generated policy is not mistaken for configuration
+  or vice versa; the `x-trustabl` block is framed as an *assessment* of the
+  configuration, neither class. No behavior change — the `internal/acac`
+  package and the `generate agent-yaml` / `--openshell-policy` names are
+  unchanged.
+
 - **ACaC readiness gate: unauditable repos can no longer gate `ready`.**
   `deployment_readiness: ready` now additionally requires at least one audited
   surface in the selected agent's graph and an empty `coverage.unaudited`
