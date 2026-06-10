@@ -362,15 +362,20 @@ trustabl mcp
 trustabl llm list                             # configured providers, keys masked
 trustabl llm key set                          # prompt securely for an API key
 trustabl llm key set sk-ant-api03-...         # set the key non-interactively
+trustabl llm key get                          # show the masked key for the active provider
+trustabl llm key delete                       # delete the key (with confirmation)
 trustabl llm model set claude-sonnet-4-6      # change the model for the active provider
 trustabl llm provider set openai              # switch active provider (auto-creates it)
+trustabl llm provider list                    # list configured providers
 
 # Enrich a scan result with AI explanations and in-place fixes (anthropic + key)
 trustabl scan ./repo --format json | trustabl enrich --repo ./repo      # pipe in, stdout
 trustabl enrich --input scan.json --repo ./repo --output enriched.json  # file in, file out
 trustabl enrich --input scan.json --repo ./repo --diff                  # preview fixes (stderr)
 trustabl enrich --input scan.json --repo ./repo --diff --apply          # preview, then apply
+trustabl enrich --input scan.json --repo ./repo --apply                 # apply without previewing
 trustabl enrich --input scan.json --repo ./repo --rule CSDK-010         # focus on one rule
+trustabl enrich --input scan.json --repo ./repo --only-enriched         # CI: drop unenriched findings
 ```
 
 Rules are cached under your OS cache dir (`os.UserCacheDir()`, e.g.
