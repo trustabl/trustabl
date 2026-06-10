@@ -358,9 +358,19 @@ trustabl vulndb pull                          # pre-download the OSV snapshot
 # Run as a stdio MCP server so an MCP client (Claude Code, Cursor, …) can scan
 trustabl mcp
 
-# Configure a BYOK LLM provider, then enrich a scan with AI explanations + fixes
-trustabl llm key set                          # store an API key (manage via `llm --help`)
-trustabl scan ./repo --format json | trustabl enrich --repo ./repo --apply
+# Configure a BYOK LLM provider (key stored at ~/.config/trustabl/keys.json, 0600)
+trustabl llm list                             # configured providers, keys masked
+trustabl llm key set                          # prompt securely for an API key
+trustabl llm key set sk-ant-api03-...         # set the key non-interactively
+trustabl llm model set claude-sonnet-4-6      # change the model for the active provider
+trustabl llm provider set openai              # switch active provider (auto-creates it)
+
+# Enrich a scan result with AI explanations and in-place fixes (anthropic + key)
+trustabl scan ./repo --format json | trustabl enrich --repo ./repo      # pipe in, stdout
+trustabl enrich --input scan.json --repo ./repo --output enriched.json  # file in, file out
+trustabl enrich --input scan.json --repo ./repo --diff                  # preview fixes (stderr)
+trustabl enrich --input scan.json --repo ./repo --diff --apply          # preview, then apply
+trustabl enrich --input scan.json --repo ./repo --rule CSDK-010         # focus on one rule
 ```
 
 Rules are cached under your OS cache dir (`os.UserCacheDir()`, e.g.
