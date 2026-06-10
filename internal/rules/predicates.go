@@ -49,10 +49,17 @@ func PredHasShellCall(t models.ToolDef, pf analysis.ParsedFile) bool {
 	if models.IsTSOrJS(t.Language) {
 		return t.Facts["shells_out"] == "true"
 	}
+	if pf.Tree == nil {
+		return false
+	}
 	root := analysis.FindFunctionNode(t, pf)
 	if root == nil {
 		return false
 	}
+	// Resolve subprocess/os import aliases from the whole file so a one-line
+	// `import subprocess as sp; sp.run(...)` (or `from subprocess import run`)
+	// cannot evade the literal-prefix match.
+	aliases := analysis.CollectShellModuleAliases(pf.Tree.RootNode(), pf.Source)
 	found := false
 	astutil.Walk(root, func(n *sitter.Node) bool {
 		if found {
@@ -65,9 +72,7 @@ func PredHasShellCall(t models.ToolDef, pf analysis.ParsedFile) bool {
 		if fn == nil {
 			return true
 		}
-		c := astutil.NodeText(fn, pf.Source)
-		if strings.HasPrefix(c, "subprocess.") || c == "os.system" || c == "os.popen" ||
-			strings.HasPrefix(c, "os.spawn") {
+		if analysis.IsShellCallee(aliases.Canonical(astutil.NodeText(fn, pf.Source))) {
 			found = true
 			return false
 		}

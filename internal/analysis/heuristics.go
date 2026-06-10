@@ -208,6 +208,116 @@ func IsHTTPCallNode(call *sitter.Node, src []byte, aliases map[string]string) (s
 	return "", false
 }
 
+// ShellModuleAliases canonicalizes aliased references to the shell-capable
+// Python modules (subprocess, os) back to their real dotted callee, so an
+// import alias cannot silently evade shell-call detection. Built from a
+// parsed file's imports:
+//
+//	import subprocess as sp          -> module["sp"]  = "subprocess"
+//	import os as o                   -> module["o"]   = "os"
+//	from subprocess import run       -> symbol["run"] = "subprocess.run"
+//	from subprocess import run as r  -> symbol["r"]   = "subprocess.run"
+//
+// Only subprocess/os are tracked (the modules IsShellCallee cares about), so
+// the maps stay tiny. Plain `import subprocess` needs no entry — its calls
+// already read `subprocess.run` literally.
+type ShellModuleAliases struct {
+	module map[string]string // local module alias -> "subprocess" | "os"
+	symbol map[string]string // local symbol name  -> e.g. "subprocess.run"
+}
+
+var shellAliasModules = map[string]bool{"subprocess": true, "os": true}
+
+// CollectShellModuleAliases scans a parsed Python file (whole tree, so both
+// module-level and function-local imports are seen) for subprocess/os import
+// aliases. Parsing is text-based over the import statement nodes — robust to
+// tree-sitter field-name drift, and only the two relevant modules are kept.
+func CollectShellModuleAliases(root *sitter.Node, src []byte) ShellModuleAliases {
+	a := ShellModuleAliases{module: map[string]string{}, symbol: map[string]string{}}
+	if root == nil {
+		return a
+	}
+	norm := func(s string) string {
+		s = strings.NewReplacer("(", " ", ")", " ", "\n", " ", "\t", " ", "\\", " ").Replace(s)
+		return strings.Join(strings.Fields(s), " ")
+	}
+	astutil.Walk(root, func(n *sitter.Node) bool {
+		switch n.Type() {
+		case "import_statement":
+			// import a [as x], b [as y]
+			rest := strings.TrimSpace(strings.TrimPrefix(norm(astutil.NodeText(n, src)), "import "))
+			for _, part := range strings.Split(rest, ",") {
+				part = strings.TrimSpace(part)
+				if mod, alias, ok := splitAs(part); ok {
+					if shellAliasModules[mod] {
+						a.module[alias] = mod
+					}
+				}
+			}
+		case "import_from_statement":
+			// from MODULE import a [as x], b [as y]
+			t := norm(astutil.NodeText(n, src))
+			t = strings.TrimSpace(strings.TrimPrefix(t, "from "))
+			i := strings.Index(t, " import ")
+			if i < 0 {
+				return true
+			}
+			mod := strings.TrimSpace(t[:i])
+			if !shellAliasModules[mod] {
+				return true
+			}
+			for _, part := range strings.Split(t[i+len(" import "):], ",") {
+				part = strings.TrimSpace(part)
+				if part == "" || part == "*" {
+					continue
+				}
+				if orig, alias, ok := splitAs(part); ok {
+					a.symbol[alias] = mod + "." + orig
+				} else {
+					a.symbol[part] = mod + "." + part
+				}
+			}
+		}
+		return true
+	})
+	return a
+}
+
+// splitAs parses an "X as Y" import clause, returning ("X","Y",true), or the
+// bare name with ok=false when there is no alias.
+func splitAs(part string) (name, alias string, ok bool) {
+	fields := strings.Fields(part)
+	if len(fields) == 3 && fields[1] == "as" {
+		return fields[0], fields[2], true
+	}
+	return part, "", false
+}
+
+// Canonical rewrites a callee ("sp.run", "run", "subprocess.run") to its real
+// dotted form using the collected aliases. Unmapped callees pass through
+// unchanged, so a literal `subprocess.run` still works with empty aliases.
+func (a ShellModuleAliases) Canonical(callee string) string {
+	if dot := strings.IndexByte(callee, '.'); dot >= 0 {
+		if real, ok := a.module[callee[:dot]]; ok {
+			return real + callee[dot:]
+		}
+		return callee
+	}
+	if real, ok := a.symbol[callee]; ok {
+		return real
+	}
+	return callee
+}
+
+// IsShellCallee reports whether a (canonicalized) callee names an OS shell
+// primitive: subprocess.*, os.system, os.popen, or os.spawn*. Shared by the
+// discovery shells_out fact and the has_shell_call rule predicate so they
+// match identically.
+func IsShellCallee(c string) bool {
+	return strings.HasPrefix(c, "subprocess.") || c == "os.system" || c == "os.popen" ||
+		strings.HasPrefix(c, "os.spawn")
+}
+
 // IsPathishParam returns true if a parameter name is clearly path-like.
 // Uses word-boundary logic to avoid matching names like "editor_id" or
 // "directory_service_url" that merely contain the substring.

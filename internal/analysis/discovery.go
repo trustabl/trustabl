@@ -380,7 +380,11 @@ func buildTool(fn *sitter.Node, pf ParsedFile, kind models.ToolKind) models.Tool
 	// agent_uses_tool_kind:[shell_invocation] only catches BARE shell functions
 	// (KindShellInvocation), missing the common @function_tool-wraps-subprocess
 	// shape the agent shell-tool rules (OAI-101/104) promise to flag.
-	if pythonBodyShellsOut(fn, pf.Source) {
+	var shellAliases ShellModuleAliases
+	if pf.Tree != nil {
+		shellAliases = CollectShellModuleAliases(pf.Tree.RootNode(), pf.Source)
+	}
+	if pythonBodyShellsOut(fn, pf.Source, shellAliases) {
 		facts["shells_out"] = "true"
 	}
 
@@ -410,10 +414,11 @@ func buildTool(fn *sitter.Node, pf ParsedFile, kind models.ToolKind) models.Tool
 }
 
 // pythonBodyShellsOut reports whether the function body invokes an OS shell
-// primitive (subprocess.*, os.system, os.popen, os.spawn*). Mirrors the callee
-// set in rules.PredHasShellCall; kept here (not imported) because rules imports
-// analysis, not the reverse.
-func pythonBodyShellsOut(fn *sitter.Node, src []byte) bool {
+// primitive (subprocess.*, os.system, os.popen, os.spawn*). Shares the callee
+// test (IsShellCallee) and import-alias resolution (aliases.Canonical) with
+// rules.PredHasShellCall so a tool's shells_out fact and the has_shell_call
+// predicate agree even when the shell module is imported under an alias.
+func pythonBodyShellsOut(fn *sitter.Node, src []byte, aliases ShellModuleAliases) bool {
 	found := false
 	astutil.Walk(fn, func(n *sitter.Node) bool {
 		if found {
@@ -426,9 +431,7 @@ func pythonBodyShellsOut(fn *sitter.Node, src []byte) bool {
 		if callee == nil {
 			return true
 		}
-		c := astutil.NodeText(callee, src)
-		if strings.HasPrefix(c, "subprocess.") || c == "os.system" || c == "os.popen" ||
-			strings.HasPrefix(c, "os.spawn") {
+		if IsShellCallee(aliases.Canonical(astutil.NodeText(callee, src))) {
 			found = true
 			return false
 		}

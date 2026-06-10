@@ -101,7 +101,7 @@ func buildPydanticAITool(n *sitter.Node, pf ParsedFile, funcs map[string]*sitter
 	if fnDef != nil {
 		hasTyped = astutil.FunctionHasTypedParams(fnDef, pf.Source)
 		params = toolParamNames(fnDef, pf.Source)
-		if pythonBodyShellsOut(fnDef, pf.Source) {
+		if pythonBodyShellsOut(fnDef, pf.Source, CollectShellModuleAliases(pf.Tree.RootNode(), pf.Source)) {
 			facts["shells_out"] = "true"
 		}
 	}

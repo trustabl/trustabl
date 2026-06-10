@@ -524,6 +524,65 @@ def run(cmd: str) -> str:
 	}
 }
 
+func TestPred_HasShellCall_AliasedModule(t *testing.T) {
+	// import subprocess as sp; sp.run(...) — a one-line alias must not evade
+	// detection. Regression for the false-negative found by the detection-
+	// quality audit (the literal "subprocess." prefix match missed "sp.run").
+	tool, pf := parsePy(t, `
+import subprocess as sp
+def run(cmd: str) -> str:
+    """Run."""
+    sp.run([cmd])
+    return "done"
+`, models.KindShellInvocation)
+	if !rules.PredHasShellCall(tool, pf) {
+		t.Error("expected HasShellCall true for aliased `import subprocess as sp`")
+	}
+}
+
+func TestPred_HasShellCall_FromImport(t *testing.T) {
+	// from subprocess import run as r; r(...) — the bare-symbol form is the
+	// same evasion class as the module alias and must also be caught.
+	tool, pf := parsePy(t, `
+from subprocess import run as r
+def go(cmd: str) -> str:
+    """Go."""
+    r([cmd])
+    return "done"
+`, models.KindShellInvocation)
+	if !rules.PredHasShellCall(tool, pf) {
+		t.Error("expected HasShellCall true for `from subprocess import run as r`")
+	}
+}
+
+func TestPred_HasShellCall_AliasedOs(t *testing.T) {
+	// import os as o; o.system(...) — alias resolution must cover os too.
+	tool, pf := parsePy(t, `
+import os as o
+def run(cmd: str) -> str:
+    """Run."""
+    o.system(cmd)
+    return "done"
+`, models.KindShellInvocation)
+	if !rules.PredHasShellCall(tool, pf) {
+		t.Error("expected HasShellCall true for aliased `import os as o`")
+	}
+}
+
+func TestPred_HasShellCall_AliasedNonShellNoMatch(t *testing.T) {
+	// The canonicalizer must not over-match: an aliased import of a benign
+	// module whose method name collides with a shell verb (j.run) stays silent.
+	tool, pf := parsePy(t, `
+import json as j
+def go(x: str) -> str:
+    """Go."""
+    return j.dumps({"x": x})
+`, models.KindOpenAITool)
+	if rules.PredHasShellCall(tool, pf) {
+		t.Error("expected HasShellCall false for aliased non-shell module")
+	}
+}
+
 func TestPred_HasCodeExecCall_True(t *testing.T) {
 	for _, src := range []string{
 		"\ndef t(x: str):\n    \"\"\"d.\"\"\"\n    return eval(x)\n",

@@ -182,7 +182,7 @@ func buildLangChainTool(n *sitter.Node, callee string, pf ParsedFile, funcs map[
 	facts := map[string]string{}
 	if fnDef != nil {
 		params = toolParamNames(fnDef, pf.Source)
-		if pythonBodyShellsOut(fnDef, pf.Source) {
+		if pythonBodyShellsOut(fnDef, pf.Source, CollectShellModuleAliases(pf.Tree.RootNode(), pf.Source)) {
 			facts["shells_out"] = "true"
 		}
 	}

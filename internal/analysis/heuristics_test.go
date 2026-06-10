@@ -146,3 +146,42 @@ func TestIsHTTPCallNode_AiohttpAliasIsRuleCallee(t *testing.T) {
 		t.Errorf("canonical %q is not in the rule-callee set — unmatchable by any rule", got)
 	}
 }
+
+func TestShellModuleAliases_Canonical(t *testing.T) {
+	src := `
+import subprocess as sp
+import os as o
+from subprocess import run as r
+from os import system
+import json as j
+`
+	tree, err := astutil.Parse([]byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	a := CollectShellModuleAliases(tree.RootNode(), []byte(src))
+	cases := []struct {
+		callee      string
+		canonical   string
+		wantIsShell bool
+	}{
+		{"sp.run", "subprocess.run", true},         // module alias
+		{"sp.Popen", "subprocess.Popen", true},     // module alias, any attr
+		{"o.system", "os.system", true},            // os module alias
+		{"o.spawnl", "os.spawnl", true},            // os.spawn* family
+		{"r", "subprocess.run", true},              // from-import alias
+		{"system", "os.system", true},              // from-import bare symbol
+		{"subprocess.run", "subprocess.run", true}, // literal, unchanged
+		{"j.dumps", "j.dumps", false},              // benign module alias, unchanged
+		{"open", "open", false},                    // unrelated bare callee
+	}
+	for _, c := range cases {
+		got := a.Canonical(c.callee)
+		if got != c.canonical {
+			t.Errorf("Canonical(%q) = %q, want %q", c.callee, got, c.canonical)
+		}
+		if IsShellCallee(got) != c.wantIsShell {
+			t.Errorf("IsShellCallee(Canonical(%q)=%q) = %v, want %v", c.callee, got, IsShellCallee(got), c.wantIsShell)
+		}
+	}
+}

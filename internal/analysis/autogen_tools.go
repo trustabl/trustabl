@@ -186,7 +186,7 @@ func discoverAutoGenToolsInFile(pf ParsedFile) []models.ToolDef {
 // shells_out structural fact is stamped for agent-scope reach checks.
 func buildAutoGenToolFromFunc(fn *sitter.Node, pf ParsedFile, name, description string) models.ToolDef {
 	facts := map[string]string{}
-	if pythonBodyShellsOut(fn, pf.Source) {
+	if pythonBodyShellsOut(fn, pf.Source, CollectShellModuleAliases(pf.Tree.RootNode(), pf.Source)) {
 		facts["shells_out"] = "true"
 	}
 	return models.ToolDef{
