@@ -28,13 +28,13 @@ package acac
 // Completing the map across packs is a separate editorial workstream.
 var owaspMap = map[string][]string{
 	// claude_sdk — agent scope
-	"CSDK-101": {"ASI03"},          // subagent granted Bash
-	"CSDK-103": {"ASI03"},          // permissionMode bypassPermissions
-	"CSDK-104": {"ASI03"},          // subagent granted fs-write built-ins
-	"CSDK-105": {"ASI03"},          // subagent granted WebFetch
-	"CSDK-120": {"ASI03"},          // TS bypassPermissions
-	"CSDK-130": {"ASI03"},          // TS main agent granted Bash
-	"CSDK-131": {"ASI03"},          // TS main agent fs-write/web-fetch built-ins
+	"CSDK-101": {"ASI03"}, // subagent granted Bash
+	"CSDK-103": {"ASI03"}, // permissionMode bypassPermissions
+	"CSDK-104": {"ASI03"}, // subagent granted fs-write built-ins
+	"CSDK-105": {"ASI03"}, // subagent granted WebFetch
+	"CSDK-120": {"ASI03"}, // TS bypassPermissions
+	"CSDK-130": {"ASI03"}, // TS main agent granted Bash
+	"CSDK-131": {"ASI03"}, // TS main agent fs-write/web-fetch built-ins
 	// claude_sdk — tool scope
 	"CSDK-004": {"ASI02"},          // path param used in I/O without validation
 	"CSDK-009": {"ASI02"},          // SSRF: caller-controlled URL
