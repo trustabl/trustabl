@@ -554,6 +554,12 @@ trustabl scan ./repo --verbose       # -v: rule provenance, discovery counts, re
 trustabl scan ./repo --debug         # + per-phase timing and per-entity/per-finding detail
 trustabl scan ./repo --debug --format json > out.json   # clean JSON on stdout, diagnostics on stderr
 
+# Generate an Agent Format (.agf.yaml) deployment manifest for one agent
+# (see "Generate an Agent Format manifest" below)
+trustabl generate agent-yaml ./repo                          # single-agent repo
+trustabl generate agent-yaml ./repo --agent "Research Agent" # multi-agent repo
+trustabl generate agent-yaml ./repo --fail-on needs_work     # stricter CI gate
+
 # Run as a stdio MCP server so an MCP client (Claude Code, Cursor, Claude
 # Desktop) can scan code an agent just wrote (see "Run as an MCP server" below)
 trustabl mcp
@@ -595,6 +601,35 @@ git source. A scan that did not use blessed production rules (a pre-release
 in the JSON `rules_origin` field, and its provenance is folded into `ScanID`.
 Signed channels require a build with published signing keys; until then
 `--channel` refuses with a clear message.
+
+### Generate an Agent Format manifest
+
+`trustabl generate agent-yaml [PATH]` scans a repo and emits a portable
+[Agent Format](https://agentformat.org) manifest (`.agf.yaml`) for **one
+agent**, carrying a `x-trustabl` extension block with per-surface readiness
+scores, the findings attributed to that agent's graph (annotated with OWASP
+ASI/AST IDs from a pinned engine map), the skill/hosted-tool inventory, and
+honest coverage data (detected SDKs, unaudited SDKs, dependency BOM summary).
+
+- **One manifest, one agent.** A single-agent repo selects automatically; a
+  multi-agent repo requires `--agent <name>` (without it, exit `2` listing the
+  candidates). Subagents and skills are never manifest roots — they ride along
+  on the selected agent.
+- **Derived where provable, scaffolded where not.** Everything the scan can
+  prove (tools, model, instructions, memory use) is auto-filled. Human intent
+  (versioning, budgets, the I/O contract, MCP registry identities) is emitted
+  as a scaffold with a `# trustabl: needs-human-input` / `suggested — confirm`
+  / `review` comment — checked for presence, never invented.
+- **Deterministic by default.** Same repo + same rules version → byte-identical
+  manifest. `--timestamp` opts in to a `generated_at` field.
+- **Readiness gate for CI.** Exit `0` when generated and the gate passes; `1`
+  when `deployment_readiness` is at or below `--fail-on`
+  (`not_ready` default | `needs_work` | `never`); `2` on operational errors.
+- **`reliability_score` is informational in v0.x.** Its thresholds are
+  provisional pending corpus calibration of the scoring constants; do not gate
+  releases on the absolute number yet.
+- `--vuln-scan` additionally carries known-CVE matches in
+  `x-trustabl.vulnerabilities`.
 
 ### Continuous integration
 

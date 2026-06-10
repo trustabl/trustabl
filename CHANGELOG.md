@@ -18,6 +18,24 @@ to follow Semantic Versioning once it reaches 1.0.
 
 ### Added
 
+- **`trustabl generate agent-yaml` — Agent Configuration as Code (ACaC).** A
+  new command that turns a scan into a portable [Agent Format](https://agentformat.org)
+  manifest (`.agf.yaml`) for one selected agent (`--agent` when a repo declares
+  several), carrying an `x-trustabl` extension block: per-surface readiness
+  scores, the findings attributed to that agent's graph (with OWASP ASI/AST IDs
+  from a pinned engine-side map), skill and hosted-tool inventories, honest
+  coverage (detected + unaudited SDKs, dependency BOM summary), and — under
+  `--vuln-scan` — known-CVE matches. Everything provable from code is
+  auto-derived; human intent is scaffolded with `trustabl:` marker comments,
+  never invented. Output is deterministic by default (`--timestamp` opts in to
+  a `generated_at` line) and validates against the vendored published
+  AgentFormat schema (enforced by tests). Exit codes: `0` generated + readiness
+  gate passed, `1` generated but `deployment_readiness` at or below `--fail-on`
+  (`not_ready` default | `needs_work` | `never`), `2` operational error. The
+  `reliability_score` is **informational in v0.x** — thresholds are provisional
+  pending corpus calibration. `--enrich` is accepted but not yet wired (errors
+  rather than silently no-ops).
+
 - **`guardrails` and `sessions` in the JSON report.** `ScanResult` now carries
   the discovered guardrail functions (`@input_guardrail` / `@output_guardrail`
   and the TS `define*Guardrail` factories) and session-construction sites

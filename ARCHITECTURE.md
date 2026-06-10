@@ -1164,8 +1164,11 @@ this sequence and uploads the SARIF to Code Scanning.
 
 An earlier version of Trustabl also generated committable artifacts
 (Pre/PostToolUse hook scripts, an OpenShell sandbox-policy starter) and could
-apply or export them. That generation path has been removed — Trustabl now
-detects and reports only.
+apply or export them. That generation path was removed; generation has since
+returned in a narrower shape: `trustabl generate agent-yaml` (§8.2) consumes a
+completed `ScanResult` and writes an Agent Format manifest to a user-named
+path. The scan itself remains read-only — generation is a separate write step
+that never touches the scanned repo.
 
 ---
 
@@ -1636,6 +1639,14 @@ internal/
 │   ├── jsonrpc.go               JSON-RPC 2.0 stdio framing (no third-party SDK).
 │   └── server.go                MCP methods (initialize/tools-list/tools-call) + scan tool.
 ├── review/                      Human renderer (read-only; no file writes).
+├── acac/                        Agent Configuration as Code (§8.2): ScanResult → Agent Format manifest.
+│   ├── types.go                 Manifest + x-trustabl data model (spec §4–5 shapes).
+│   ├── build.go                 SelectAgent (one manifest = one agent) + Build (pure transform).
+│   ├── gate.go                  Provisional readiness gate; ALL thresholds live here (calibration lands as a constants-only diff).
+│   ├── owaspmap.go              Pinned rule-ID → OWASP ASI/AST map (engine-side; never a RuleDef field).
+│   ├── emit.go                  Deterministic commented-YAML emitter (yaml.v3 nodes, fixed order, LF).
+│   ├── schema/                  Vendored published AgentFormat JSON Schema (offline validation; CI staleness check).
+│   └── testdata/                Golden .agf.yaml manifests for three corpus fixtures.
 └── inference/                   BYOK inference router (interface + cache).
 
 The YAML rule packs themselves live in the **separate** `trustabl-rules`
@@ -1960,8 +1971,9 @@ Exit codes:
   (run `trustabl rules pull`).
 
 The CLI is a thin shell over `scanner.Run`. The same
-`Run(Config) (ScanResult, error)` is what the MCP frontend (§8.1), a future
-GitHub Action, or a test harness calls; the boundary is intentionally narrow.
+`Run(Config) (ScanResult, error)` is what the MCP frontend (§8.1), the
+manifest generator (§8.2), a GitHub Action, or a test harness calls; the
+boundary is intentionally narrow.
 
 ### 8.1 MCP frontend ([cmd/trustabl/mcp.go](cmd/trustabl/mcp.go) + [internal/mcpserver/](internal/mcpserver/))
 
@@ -2000,7 +2012,49 @@ the "server ready" line and any diagnostics go to stderr. The server serializes
 results itself; the byte-stable `ScanResult` is reused verbatim, so the
 determinism contract holds across this frontend too.
 
-### 8.2 Enrich subcommand ([cmd/trustabl/enrich.go](cmd/trustabl/enrich.go) + [internal/enrichment/](internal/enrichment/))
+### 8.2 Manifest generator ([cmd/trustabl/generate.go](cmd/trustabl/generate.go) + [internal/acac/](internal/acac/))
+
+`trustabl generate agent-yaml [PATH]` is a third frontend over the same
+scanner core: it reuses the scan command's rules-resolution + scan path
+(`resolveAndScan`) verbatim, then hands the completed `ScanResult` to
+`internal/acac` — Agent Configuration as Code. The package is a pure,
+deterministic transform in three steps:
+
+1. **`SelectAgent`** — one manifest describes one agent system. Exactly one
+   discovered `AgentDef` selects automatically; more than one requires
+   `--agent <name>` (exit `2` listing candidates otherwise); zero is exit `2`
+   ("nothing to generate"). Subagents and skills are never manifest roots.
+2. **`Build`** — derives the manifest tree from the typed `ScanResult` (it
+   never re-parses source): `metadata` from the agent's kwargs (name slugified
+   to the schema's id pattern), `action_space.local_tools` from the agent's
+   edge-resolved `ToolRef`s (an `approval: true` suggestion when the tool's
+   facts show `shells_out`/`writes_fs`/`code_exec`), `mcp_servers` and
+   `local_agents` (markdown subagents + handoff targets) from the other edges,
+   `memory.required` from `SessionUse` presence, `execution_policy`
+   (`agf.react`) from the instructions/model kwargs — plus the `x-trustabl`
+   extension: per-surface scores (×100, round-half-up), the findings attributed
+   to the selected agent's graph (with OWASP ASI/AST IDs from the pinned map in
+   `owaspmap.go`), the skill and hosted-tool inventories, honest coverage
+   (detected + unaudited SDKs, dependency BOM summary), and the provisional
+   readiness gate (`gate.go` — all thresholds in one file so calibration lands
+   as a constants-only diff). Fields not derivable from code are scaffolded
+   with `trustabl:` marker comments, never invented.
+3. **`Emit`** — manifest tree → YAML via yaml.v3 nodes: fixed key order,
+   pre-sorted lists, explicit scalar tags, LF endings, marker comments. Same
+   input → identical bytes on every platform. `--timestamp` opts in to a
+   `generated_at` line (informational, never part of `ScanID`).
+
+A generated manifest must validate against the vendored published AgentFormat
+schema (`internal/acac/schema/agentformat-1.0.json`) — enforced by
+`golden_test.go`, which also pins three corpus-fixture goldens byte-for-byte
+and re-generates each twice to prove determinism. A scheduled CI job diffs the
+vendored schema against the live URL and warns on drift.
+
+Exit codes for generate: `0` generated + readiness gate passed; `1` generated
+but `deployment_readiness` at or below `--fail-on`; `2` operational error.
+`--enrich` is accepted but not wired (it errors rather than silently no-op).
+
+### 8.3 Enrich subcommand ([cmd/trustabl/enrich.go](cmd/trustabl/enrich.go) + [internal/enrichment/](internal/enrichment/))
 
 `trustabl enrich` is a post-scan enrichment step: it reads a `ScanResult`
 produced by `trustabl scan --format json`, runs each finding through a
@@ -2069,7 +2123,7 @@ take it absent a concrete distribution requirement.
   model), `ValidateKey`, and `MaskKey`. A `defaultModels` map supplies
   fast/cheap defaults per known provider (`anthropic → claude-haiku-4-5`,
   `openai → gpt-4.1-nano`, `google → gemini-2.5-flash-lite`).
-  `trustabl enrich` (§8.2) reads this config to call Claude with BYOK.
+  `trustabl enrich` (§8.3) reads this config to call Claude with BYOK.
   The scan pipeline itself makes no LLM call — rule-based detection is the
   entire scan, with or without a key configured.
 - **No corpus-eval benchmark.** Detection quality measured on a 20–40

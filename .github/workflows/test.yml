@@ -30,6 +30,26 @@ jobs:
       - name: build
         run: go build ./cmd/trustabl
 
+  # Cross-OS byte-stability for the ACaC goldens: the same corpus fixtures and
+  # rules fixture must produce byte-identical .agf.yaml manifests on Windows
+  # and Linux (golden_test.go compares against the committed goldens, which
+  # .gitattributes pins to LF on every checkout). Scoped to the packages that
+  # own the byte-stable generate path rather than the full suite — the full
+  # suite has a known Windows-only failure (internal/llm asserts Unix file
+  # modes) that is unrelated to this contract.
+  test-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: test (acac + scanner)
+        run: go test ./internal/acac/ ./internal/scanner/
+
   rules-sync:
     # Fail if the in-repo rules fixture has drifted from the production
     # trustabl-rules pack (a rule shipped but not mirrored, or vice versa).
