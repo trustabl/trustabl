@@ -2028,8 +2028,27 @@ determinism contract holds across this frontend too.
 `trustabl generate agent-yaml [PATH]` is a third frontend over the same
 scanner core: it reuses the scan command's rules-resolution + scan path
 (`resolveAndScan`) verbatim, then hands the completed `ScanResult` to
-`internal/acac` — Agent Configuration as Code. The package is a pure,
-deterministic transform in three steps:
+`internal/acac` — Agent Configuration as Code.
+
+```mermaid
+sequenceDiagram
+    actor User
+    participant CLI as generate agent-yaml
+    participant RS as rulesource
+    participant SC as scanner.Run
+    participant AC as internal/acac
+
+    User->>CLI: generate agent-yaml ./repo --agent X
+    CLI->>RS: Resolve rules (fetch or cache, pin SHA)
+    CLI->>SC: Run(repo, rulesFS) — read-only
+    SC-->>CLI: ScanResult
+    CLI->>AC: SelectAgent (zero/ambiguous: exit 2)
+    CLI->>AC: Build + readiness gate + Emit
+    AC-->>User: agent-id.agf.yaml (+ optional OpenShell policy)
+    Note over CLI: exit 0 gate passed · 1 gate failed at --fail-on · 2 operational
+```
+
+The package is a pure, deterministic transform in three steps:
 
 1. **`SelectAgent`** — one manifest describes one agent system. Exactly one
    discovered `AgentDef` selects automatically; more than one requires
@@ -2057,6 +2076,46 @@ deterministic transform in three steps:
    pre-sorted lists, explicit scalar tags, LF endings, marker comments. Same
    input → identical bytes on every platform. `--timestamp` opts in to a
    `generated_at` line (informational, never part of `ScanID`).
+
+The derivation map — green/plain edges are auto-derived from code, the
+labeled ones carry scaffold or suggestion markers:
+
+```mermaid
+flowchart LR
+    subgraph SR["ScanResult"]
+        kw["AgentDef kwargs"]
+        tr["ToolRefs + facts"]
+        mcp["MCPServerRefs"]
+        ho["HandoffRefs + Subagents"]
+        se["Sessions"]
+        ht["HostedToolRefs"]
+        sk["Skills"]
+        su["Surfaces + Findings + OverallScore"]
+        cov["SDKs + Dependencies + Vulnerabilities"]
+    end
+    subgraph MF["agent-id.agf.yaml"]
+        md["metadata + execution_policy"]
+        lt["action_space.local_tools"]
+        ms["action_space.mcp_servers"]
+        la["action_space.local_agents"]
+        mem["memory.required"]
+        xt["x-trustabl block"]
+    end
+    kw --> md
+    tr --> lt
+    tr -->|"shells_out/writes_fs/code_exec:<br/>approval suggested — confirm"| lt
+    mcp -->|"server_ref scaffolded:<br/>needs-human-input"| ms
+    ho -->|"handoff source is code:<br/>review marker"| la
+    se --> mem
+    ht --> xt
+    sk --> xt
+    su --> xt
+    cov --> xt
+```
+
+Not derivable from code at all (always scaffolded with `needs-human-input`):
+`metadata.version`, the `interface` I/O contract, `constraints`
+budget/limits/governance_policies.
 
 A generated manifest must validate against the vendored published AgentFormat
 schema (`internal/acac/schema/agentformat-1.0.json`) — enforced by
