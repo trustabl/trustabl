@@ -1,0 +1,8 @@
+[project]
+name = "acac-static-capture"
+version = "0.0.1"
+dependencies = [
+    "openai-agents>=0.0.7",
+    "requests>=2.32",
+    "tenacity>=8.0",
+]

@@ -34,6 +34,10 @@ var goldenCases = []struct {
 	{"basic-openai-agent", "basic-openai-agent", "Hello world"},
 	{"ts-claude-sdk-min", "ts-claude-sdk-min", "analyst"},
 	{"financial_research_agent", "financial_research_agent", "FinancialSearchAgent"},
+	// Single-agent fixture authored for the Stage 2 typed captures: static
+	// HTTP hosts, static write paths, retry_present — all visible in the
+	// golden's x-trustabl surface facts. No --agent needed.
+	{"acac-static-capture", "acac-static-capture", ""},
 }
 
 func repoRoot(t *testing.T) string {

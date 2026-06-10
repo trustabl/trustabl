@@ -222,13 +222,28 @@ func graphSurfaces(result models.ScanResult, agent models.AgentDef) map[surfaceK
 func buildXTrustabl(result models.ScanResult, agent models.AgentDef, rootID string, opts BuildOptions) XTrustabl {
 	included := graphSurfaces(result, agent)
 
-	// Tool facts, keyed for surface enrichment.
+	// Tool facts, keyed for surface enrichment. The Stage 2 typed captures
+	// (static HTTP hosts, static write-path literals) join the emitted facts
+	// map as comma-joined synthetic keys — the typed slices stay the
+	// machine-readable source (the OpenShell exporter reads them directly);
+	// the facts view is the human-readable mirror.
 	factsByTool := map[surfaceKey]map[string]string{}
 	for i := range result.Tools {
 		t := &result.Tools[i]
-		if len(t.Facts) > 0 {
-			factsByTool[surfaceKey{models.ScopeTool, t.FilePath, t.Name}] = t.Facts
+		if len(t.Facts) == 0 && len(t.HTTPHosts) == 0 && len(t.FSWritePaths) == 0 {
+			continue
 		}
+		facts := make(map[string]string, len(t.Facts)+2)
+		for k, v := range t.Facts {
+			facts[k] = v
+		}
+		if len(t.HTTPHosts) > 0 {
+			facts["http_hosts"] = strings.Join(t.HTTPHosts, ", ")
+		}
+		if len(t.FSWritePaths) > 0 {
+			facts["fs_write_paths"] = strings.Join(t.FSWritePaths, ", ")
+		}
+		factsByTool[surfaceKey{models.ScopeTool, t.FilePath, t.Name}] = facts
 	}
 
 	// Surfaces: filter the report's surface list (already deterministically
