@@ -93,12 +93,14 @@ func extractTSOpenAITool(call *sitter.Node, pf ParsedFile) (models.ToolDef, bool
 			td.ParamNames = names
 		}
 	}
-	// execute: walk for body facts
+	// execute: walk for body facts + Stage 2 typed captures
 	if execNode := getObjectProperty(opts, "execute", pf.Source); execNode != nil {
-		facts := tsHandlerFacts(execNode, pf.Source)
-		if len(facts) > 0 {
-			td.Facts = facts
+		hc := tsHandlerCapture(execNode, pf.Source)
+		if len(hc.facts) > 0 {
+			td.Facts = hc.facts
 		}
+		td.HTTPHosts = hc.httpHosts
+		td.FSWritePaths = hc.fsWritePaths
 	}
 	// Config: flatten every non-consumed kwarg, including nested objects with
 	// dot-joined keys (matching the Claude path's flattenKwargs). The leaf-only

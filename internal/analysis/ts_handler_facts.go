@@ -6,15 +6,27 @@ import (
 	"github.com/trustabl/trustabl/internal/analysis/astutil"
 )
 
-// tsHandlerFacts walks a handler node (arrow_function or function) and
-// returns body facts. Recognizes JS/TS shell and HTTP call shapes used by
-// both Claude SDK tool() handlers and OpenAI Agents SDK tool({execute: ...})
-// handlers. Lifted from ts_discovery.go so both discovery paths share it.
-func tsHandlerFacts(handler *sitter.Node, src []byte) map[string]string {
-	out := map[string]string{}
+// handlerCapture is everything one walk of a TS/JS handler body extracts:
+// the boolean body facts plus the Stage 2 typed captures (static HTTP hosts
+// and static write-path literals).
+type handlerCapture struct {
+	facts        map[string]string
+	httpHosts    []string
+	fsWritePaths []string
+}
+
+// tsHandlerCapture walks a handler node (arrow_function or function) and
+// returns body facts plus typed captures. Recognizes JS/TS shell and HTTP
+// call shapes used by both Claude SDK tool() handlers and OpenAI Agents SDK
+// tool({execute: ...}) handlers. Lifted from ts_discovery.go so every TS
+// discovery path shares it.
+func tsHandlerCapture(handler *sitter.Node, src []byte) handlerCapture {
+	out := handlerCapture{facts: map[string]string{}}
 	if handler == nil {
 		return out
 	}
+	hostSet := map[string]bool{}
+	pathSet := map[string]bool{}
 	astutil.Walk(handler, func(n *sitter.Node) bool {
 		// new_expression: `new Function(...)` is NOT a call_expression; its
 		// constructor identifier is at ChildByFieldName("constructor").
@@ -23,7 +35,7 @@ func tsHandlerFacts(handler *sitter.Node, src []byte) map[string]string {
 		if n.Type() == "new_expression" {
 			ctor := n.ChildByFieldName("constructor")
 			if ctor != nil && astutil.NodeText(ctor, src) == "Function" {
-				out["code_exec"] = "true"
+				out.facts["code_exec"] = "true"
 			}
 			return true
 		}
@@ -39,12 +51,23 @@ func tsHandlerFacts(handler *sitter.Node, src []byte) map[string]string {
 		case "fetch", "axios", "axios.get", "axios.post", "axios.put", "axios.delete",
 			"axios.patch", "axios.request", "got", "got.get", "got.post",
 			"undici.fetch", "undici.request":
-			out["http_call"] = "true"
+			out.facts["http_call"] = "true"
 			if urlArgIsDynamic(n, src) {
-				out["dynamic_url"] = "true"
+				out.facts["dynamic_url"] = "true"
+			} else if lit, ok := tsStringLiteral(firstCallArg(n), src); ok {
+				// Stage 2: the non-dynamic branch records the literal URL's
+				// canonical host:port. A relative literal has no host and
+				// captures nothing.
+				if hp, ok := hostFromURLLiteral(lit); ok {
+					hostSet[hp] = true
+				}
 			}
 			if !httpCallHasTimeout(n, src) {
-				out["http_no_timeout"] = "true"
+				out.facts["http_no_timeout"] = "true"
+			}
+			// got-style retry: an options object carrying a `retry` key.
+			if httpCallHasOptionKey(n, src, "retry") {
+				out.facts["retry_present"] = "true"
 			}
 		case "execSync", "exec", "execFile", "execFileSync", "spawn", "spawnSync", "fork",
 			// Namespace-import / require shape: `child_process.exec(...)` from
@@ -54,7 +77,7 @@ func tsHandlerFacts(handler *sitter.Node, src []byte) map[string]string {
 			"child_process.spawn", "child_process.spawnSync",
 			"child_process.execFile", "child_process.execFileSync",
 			"child_process.fork":
-			out["shells_out"] = "true"
+			out.facts["shells_out"] = "true"
 		case "writeFile", "writeFileSync", "appendFile", "appendFileSync",
 			"createWriteStream",
 			// Namespace-import shape: `fs.writeFileSync(...)` /
@@ -63,15 +86,67 @@ func tsHandlerFacts(handler *sitter.Node, src []byte) map[string]string {
 			"fs.writeFile", "fs.writeFileSync", "fs.appendFile",
 			"fs.appendFileSync", "fs.createWriteStream",
 			"fsPromises.writeFile", "fsPromises.appendFile":
-			out["writes_fs"] = "true"
+			out.facts["writes_fs"] = "true"
+			// Stage 2: capture a literal first-arg path. A joined/computed
+			// path (path.join(...), template substitution) captures nothing.
+			if lit, ok := tsStringLiteral(firstCallArg(n), src); ok {
+				pathSet[lit] = true
+			}
 		case "eval":
 			// Bare `eval` callee only — callee text for `retrieval(x)` is
 			// "retrieval", so this exact-match eliminates the false-positive.
-			out["code_exec"] = "true"
+			out.facts["code_exec"] = "true"
+		case "pRetry", "axiosRetry", "backOff", "retry":
+			// Retry wrappers: p-retry's default import (pRetry), axios-retry
+			// (axiosRetry), exponential-backoff (backOff), and async-retry's
+			// conventional `retry` import. Best-effort by callee text — a
+			// same-named local helper counts, the honest trade for not
+			// chasing import bindings here.
+			out.facts["retry_present"] = "true"
 		}
 		return true
 	})
+	out.httpHosts = setToSorted(hostSet)
+	out.fsWritePaths = setToSorted(pathSet)
 	return out
+}
+
+// firstCallArg returns the first positional argument node of a TS call.
+func firstCallArg(call *sitter.Node) *sitter.Node {
+	args := call.ChildByFieldName("arguments")
+	if args == nil || args.NamedChildCount() == 0 {
+		return nil
+	}
+	return args.NamedChild(0)
+}
+
+// tsStringLiteral returns the unquoted text of a static TS string literal: a
+// plain "..."/'...' string, or a backtick template with zero substitutions
+// (effectively a literal). Everything else — template with ${...},
+// identifier, member access, concatenation, call — is dynamic and captures
+// nothing.
+func tsStringLiteral(n *sitter.Node, src []byte) (string, bool) {
+	if n == nil {
+		return "", false
+	}
+	switch n.Type() {
+	case "string":
+		raw := astutil.NodeText(n, src)
+		if len(raw) < 2 {
+			return "", false
+		}
+		return raw[1 : len(raw)-1], true
+	case "template_string":
+		if n.NamedChildCount() > 0 {
+			return "", false
+		}
+		raw := astutil.NodeText(n, src)
+		if len(raw) < 2 {
+			return "", false
+		}
+		return raw[1 : len(raw)-1], true
+	}
+	return "", false
 }
 
 // urlArgIsDynamic reports whether the first positional argument of an HTTP
@@ -93,14 +168,7 @@ func tsHandlerFacts(handler *sitter.Node, src []byte) map[string]string {
 // The `arguments` field name is confirmed — call_expression uses ChildByFieldName("arguments")
 // throughout this package (see extractTSOpenAITool, extractTSADKTool).
 func urlArgIsDynamic(call *sitter.Node, src []byte) bool {
-	args := call.ChildByFieldName("arguments")
-	if args == nil {
-		return false
-	}
-	var arg *sitter.Node
-	if args.NamedChildCount() > 0 {
-		arg = args.NamedChild(0)
-	}
+	arg := firstCallArg(call)
 	if arg == nil {
 		return false
 	}
@@ -136,6 +204,17 @@ var timeoutOptionKeys = map[string]bool{
 // built on the resulting `http_no_timeout` fact is calibrated at modest
 // confidence (and its blind spots are documented in the rulebook).
 func httpCallHasTimeout(call *sitter.Node, src []byte) bool {
+	for k := range timeoutOptionKeys {
+		if httpCallHasOptionKey(call, src, k) {
+			return true
+		}
+	}
+	return false
+}
+
+// httpCallHasOptionKey reports whether any options-object argument of the
+// call carries the named top-level key.
+func httpCallHasOptionKey(call *sitter.Node, src []byte, key string) bool {
 	args := call.ChildByFieldName("arguments")
 	if args == nil {
 		return false
@@ -164,7 +243,7 @@ func httpCallHasTimeout(call *sitter.Node, src []byte) bool {
 					kname = raw[1 : len(raw)-1]
 				}
 			}
-			if timeoutOptionKeys[kname] {
+			if kname == key {
 				return true
 			}
 		}

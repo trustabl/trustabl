@@ -143,9 +143,12 @@ func buildTSVercelTool(call *sitter.Node, dynamic bool, pf ParsedFile) (models.T
 	}
 	// execute → body facts (shells_out / code_exec / dynamic_url).
 	if exec := getObjectProperty(opts, "execute", pf.Source); exec != nil {
-		if facts := tsHandlerFacts(exec, pf.Source); len(facts) > 0 {
-			td.Facts = facts
+		hc := tsHandlerCapture(exec, pf.Source)
+		if len(hc.facts) > 0 {
+			td.Facts = hc.facts
 		}
+		td.HTTPHosts = hc.httpHosts
+		td.FSWritePaths = hc.fsWritePaths
 	}
 	consumed := map[string]bool{
 		"description": true, "inputSchema": true, "parameters": true, "execute": true,

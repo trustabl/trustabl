@@ -134,9 +134,12 @@ func extractTSMCPTool(call *sitter.Node, method string, pf ParsedFile) (models.T
 
 	// Handler is always the last positional argument in both forms.
 	if len(pos) >= 2 {
-		if facts := tsHandlerFacts(pos[len(pos)-1], pf.Source); len(facts) > 0 {
-			td.Facts = facts
+		hc := tsHandlerCapture(pos[len(pos)-1], pf.Source)
+		if len(hc.facts) > 0 {
+			td.Facts = hc.facts
 		}
+		td.HTTPHosts = hc.httpHosts
+		td.FSWritePaths = hc.fsWritePaths
 	}
 
 	switch method {

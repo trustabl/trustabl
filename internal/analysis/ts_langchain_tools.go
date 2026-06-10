@@ -135,9 +135,12 @@ func buildTSLangChainTool(node, optsObj, funcNode *sitter.Node, pf ParsedFile) (
 		handler = getObjectProperty(optsObj, "func", pf.Source)
 	}
 	if handler != nil {
-		if facts := tsHandlerFacts(handler, pf.Source); len(facts) > 0 {
-			td.Facts = facts
+		hc := tsHandlerCapture(handler, pf.Source)
+		if len(hc.facts) > 0 {
+			td.Facts = hc.facts
 		}
+		td.HTTPHosts = hc.httpHosts
+		td.FSWritePaths = hc.fsWritePaths
 	}
 	consumed := map[string]bool{"name": true, "description": true, "schema": true, "func": true}
 	cfg := map[string]string{}

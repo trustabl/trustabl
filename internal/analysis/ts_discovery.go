@@ -84,17 +84,20 @@ func extractTSToolFromCall(call *sitter.Node, pf ParsedFile) (models.ToolDef, bo
 		sort.Strings(tool.ParamNames) // map iteration order is nondeterministic; ParamNames is serialized
 		tool.HasTypedParams = len(kt.Children) > 0
 	}
-	// Handler body facts (arg 3): shells_out, http_call.
+	// Handler body facts (arg 3): shells_out, http_call — plus the Stage 2
+	// typed captures (static hosts / write paths).
 	if len(posArgs) >= 4 {
-		facts := tsHandlerFacts(posArgs[3], pf.Source)
-		if len(facts) > 0 {
+		hc := tsHandlerCapture(posArgs[3], pf.Source)
+		if len(hc.facts) > 0 {
 			if tool.Facts == nil {
 				tool.Facts = map[string]string{}
 			}
-			for k, v := range facts {
+			for k, v := range hc.facts {
 				tool.Facts[k] = v
 			}
 		}
+		tool.HTTPHosts = hc.httpHosts
+		tool.FSWritePaths = hc.fsWritePaths
 	}
 	// Extras (arg 4) flattened into Config.
 	if len(posArgs) >= 5 && posArgs[4].Type() == "object" {
