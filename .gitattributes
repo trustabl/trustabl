@@ -22,3 +22,11 @@ testdata/rules-fixture/**/*.yaml     text eol=lf
 testdata/rules-fixture/**/*.md       text eol=lf
 testdata/rules-fixture/manifest.yaml text eol=lf
 internal/sarif/testdata/*.sarif.json text eol=lf
+
+# ACaC golden manifests are byte-compared by internal/acac/golden_test.go on
+# every platform; a CRLF checkout on Windows would fail the comparison for
+# line-ending reasons alone. (.golden is not covered by the extension rules
+# above.) The vendored AgentFormat schema is pinned the same way so its CI
+# staleness diff against the live URL shows only real drift.
+internal/acac/testdata/*.golden        text eol=lf
+internal/acac/schema/*.json            text eol=lf
