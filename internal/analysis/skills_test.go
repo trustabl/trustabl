@@ -252,6 +252,138 @@ func TestSkills_FrontmatterFields(t *testing.T) {
 	}
 }
 
+func TestSkills_BodyFacts_ShellExec(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+	}{
+		{"bash-fence", "---\nname: s\n---\n\n```bash\necho hi\n```\n"},
+		{"sh-fence", "---\nname: s\n---\n\n```sh\nls\n```\n"},
+		{"subshell-dollar-paren", "---\nname: s\n---\n\noutput=$(ls)\n"},
+		{"subprocess", "---\nname: s\n---\n\nsubprocess.run(['ls'])\n"},
+		{"os-system", "---\nname: s\n---\n\nos.system('ls')\n"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeFixture(t, dir, "x/SKILL.md", tc.body)
+			manifest := models.ScanManifest{RepoRoot: dir, MarkdownFiles: []string{"x/SKILL.md"}}
+			got := analysis.DiscoverSkills(manifest)
+			if len(got) != 1 {
+				t.Fatalf("got %d skills, want 1", len(got))
+			}
+			if !got[0].HasShellExec {
+				t.Errorf("HasShellExec = false, want true for %q", tc.name)
+			}
+		})
+	}
+	// Clean body must not flag.
+	t.Run("clean-body", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFixture(t, dir, "x/SKILL.md", "---\nname: s\n---\n\nJust markdown prose.\n")
+		manifest := models.ScanManifest{RepoRoot: dir, MarkdownFiles: []string{"x/SKILL.md"}}
+		got := analysis.DiscoverSkills(manifest)
+		if len(got) != 1 {
+			t.Fatalf("got %d skills, want 1", len(got))
+		}
+		if got[0].HasShellExec {
+			t.Error("HasShellExec = true for clean body, want false")
+		}
+	})
+}
+
+func TestSkills_BodyFacts_CredentialLiteral(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+	}{
+		// AKIAIOSFODNN7EXAMPLE is the public AWS-docs synthetic key (16 uppercase alphanums after AKIA).
+		{"aws-key", "---\nname: s\n---\n\nkey: AKIAIOSFODNN7EXAMPLE\n"},
+		{"gh-token", "---\nname: s\n---\n\nghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n"},
+		{"slack-token", "---\nname: s\n---\n\nxoxb-111-222-abcdefghij\n"},
+		{"pem-header", "---\nname: s\n---\n\n-----BEGIN PRIVATE KEY-----\nMIIE...\n"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeFixture(t, dir, "x/SKILL.md", tc.body)
+			manifest := models.ScanManifest{RepoRoot: dir, MarkdownFiles: []string{"x/SKILL.md"}}
+			got := analysis.DiscoverSkills(manifest)
+			if len(got) != 1 {
+				t.Fatalf("got %d skills, want 1", len(got))
+			}
+			if !got[0].HasCredentialLiteral {
+				t.Errorf("HasCredentialLiteral = false, want true for %q", tc.name)
+			}
+		})
+	}
+	t.Run("clean-body", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFixture(t, dir, "x/SKILL.md", "---\nname: s\n---\n\nJust markdown prose.\n")
+		manifest := models.ScanManifest{RepoRoot: dir, MarkdownFiles: []string{"x/SKILL.md"}}
+		got := analysis.DiscoverSkills(manifest)
+		if len(got) != 1 {
+			t.Fatalf("got %d skills, want 1", len(got))
+		}
+		if got[0].HasCredentialLiteral {
+			t.Error("HasCredentialLiteral = true for clean body, want false")
+		}
+	})
+}
+
+func TestSkills_BodyFacts_DynamicArgs(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+	}{
+		{"ARGUMENTS", "---\nname: s\n---\n\nRun with $ARGUMENTS\n"},
+		{"template-braces", "---\nname: s\n---\n\n{{user_input}}\n"},
+		{"INPUT", "---\nname: s\n---\n\nProcess $INPUT now\n"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeFixture(t, dir, "x/SKILL.md", tc.body)
+			manifest := models.ScanManifest{RepoRoot: dir, MarkdownFiles: []string{"x/SKILL.md"}}
+			got := analysis.DiscoverSkills(manifest)
+			if len(got) != 1 {
+				t.Fatalf("got %d skills, want 1", len(got))
+			}
+			if !got[0].HasDynamicArgs {
+				t.Errorf("HasDynamicArgs = false, want true for %q", tc.name)
+			}
+		})
+	}
+	t.Run("clean-body", func(t *testing.T) {
+		dir := t.TempDir()
+		writeFixture(t, dir, "x/SKILL.md", "---\nname: s\n---\n\nJust markdown prose.\n")
+		manifest := models.ScanManifest{RepoRoot: dir, MarkdownFiles: []string{"x/SKILL.md"}}
+		got := analysis.DiscoverSkills(manifest)
+		if len(got) != 1 {
+			t.Fatalf("got %d skills, want 1", len(got))
+		}
+		if got[0].HasDynamicArgs {
+			t.Error("HasDynamicArgs = true for clean body, want false")
+		}
+	})
+}
+
+func TestSkills_BodyFacts_ReferencesSkills(t *testing.T) {
+	dir := t.TempDir()
+	body := "---\nname: s\n---\n\n/skill deploy\n/skill deploy\n/skill test-runner\n"
+	writeFixture(t, dir, "x/SKILL.md", body)
+	manifest := models.ScanManifest{RepoRoot: dir, MarkdownFiles: []string{"x/SKILL.md"}}
+	got := analysis.DiscoverSkills(manifest)
+	if len(got) != 1 {
+		t.Fatalf("got %d skills, want 1", len(got))
+	}
+	// Duplicates should be removed; order is first-seen.
+	want := []string{"deploy", "test-runner"}
+	if !reflect.DeepEqual(got[0].ReferencesSkills, want) {
+		t.Errorf("ReferencesSkills = %v, want %v", got[0].ReferencesSkills, want)
+	}
+}
+
 // TestSkills_CorpusFixtures runs discovery over the committed synthetic skill
 // corpus and asserts the enriched facts end-to-end (body + bundled files +
 // frontmatter), the same fixtures the CSKILL-* rule tests fire against.
