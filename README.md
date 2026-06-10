@@ -322,33 +322,46 @@ fidelity on modern Python); TypeScript would need a separate replacement.
 
 ## Use
 
+One representative invocation per capability — the full flag surface of each is
+in `trustabl <command> --help`.
+
 ```bash
-# Scan a local repo or a GitHub URL (the latter is shallow-cloned, removed on exit)
+# Scan a local repo, a GitHub URL (shallow-cloned, removed on exit), or one skill
 trustabl scan ./path/to/agent-repo
 trustabl scan https://github.com/org/repo
+trustabl scan ./path/to/my-skill
 
-# Machine output for CI (JSON or SARIF; --output writes even when the scan exits 1)
-trustabl scan ./repo --format json
-trustabl scan ./repo --format sarif --output trustabl.sarif
-
-# Fail on any finding; restrict to specific SDK detectors
-trustabl scan ./repo --strict
+# Restrict to specific SDK detectors
 trustabl scan ./repo --detectors claude_sdk,openai_sdk
 
-# Supply chain: CycloneDX BOM, and an opt-in OSV vulnerability scan
+# Machine output for CI (--output writes even when the scan exits 1 on findings)
+trustabl scan ./repo --format json
+trustabl scan ./repo --format sarif --output trustabl.sarif
+trustabl scan ./repo --strict                 # fail on any finding, any severity
+
+# Supply chain: a CycloneDX BOM, and an opt-in online OSV vulnerability scan
 trustabl scan ./repo --bom-out sbom.json
 trustabl scan ./repo --vuln-scan
 
-# Generate an Agent Format (.agf.yaml) manifest for one agent (see below)
+# Diagnostics on stderr (stdout/report unaffected); -v narrates, --debug adds detail
+trustabl scan ./repo --verbose
+
+# Generate an Agent Format (.agf.yaml) manifest, and optionally an OpenShell policy
 trustabl generate agent-yaml ./repo --agent "Research Agent" --fail-on needs_work
+trustabl generate agent-yaml ./repo --openshell-policy policy.yaml
 
-# Run as a stdio MCP server for an MCP client (see "Run as an MCP server")
+# Manage the detection rules and the vulnerability database
+trustabl rules pull                           # refresh the local rules cache
+trustabl rules validate ./trustabl-rules      # CI gate: strict-load a rule-pack dir
+trustabl vulndb pull                          # pre-download the OSV snapshot
+
+# Run as a stdio MCP server so an MCP client (Claude Code, Cursor, …) can scan
 trustabl mcp
-```
 
-The full flag surface — `--rules-repo`/`--rules-ref`/`--no-rules-update`,
-`--json-out`/`--sarif-out`, `--verbose`/`--debug`, and the `rules`, `vulndb`,
-`llm`, and `enrich` subcommands — is in `trustabl <command> --help`.
+# Configure a BYOK LLM provider, then enrich a scan with AI explanations + fixes
+trustabl llm key set                          # store an API key (manage via `llm --help`)
+trustabl scan ./repo --format json | trustabl enrich --repo ./repo --apply
+```
 
 Rules are cached under your OS cache dir (`os.UserCacheDir()`, e.g.
 `%LocalAppData%\trustabl\rules\` on Windows, `~/.cache/trustabl/rules/`
