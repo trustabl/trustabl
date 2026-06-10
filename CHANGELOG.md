@@ -18,6 +18,13 @@ to follow Semantic Versioning once it reaches 1.0.
 
 ### Added
 
+- **`guardrails` and `sessions` in the JSON report.** `ScanResult` now carries
+  the discovered guardrail functions (`@input_guardrail` / `@output_guardrail`
+  and the TS `define*Guardrail` factories) and session-construction sites
+  (`SQLiteSession` et al.), both deterministically sorted. Previously these
+  were inventoried but dropped from the report. Additive report-shape change:
+  consumers of `--format json` see two new top-level keys.
+
 - **Signed rules distribution — trust core (opt-in).** New `internal/rulesign`
   package: a reproducible bundle digest (sha256 over a normalized tar), an
   embedded Ed25519 trust keyring (verify-by-key-ID with validity windows,

@@ -478,6 +478,8 @@ type ScanResult struct {
 	MCPServers          []MCPServerDef     `json:"mcp_servers"`
 	Subagents           []SubagentDef      `json:"subagents"`
 	Skills              []SkillDef         `json:"skills"`
+	Guardrails          []GuardrailDef     `json:"guardrails"`                // discovered guardrail functions; feeds agent-edge cross-checks and ACaC
+	Sessions            []SessionUse       `json:"sessions"`                  // session-construction sites; presence drives ACaC memory.required
 	Dependencies        []DepRef           `json:"dependencies"`              // repo-wide declared-dependency BOM (TR-278); not folded into ScanID
 	Vulnerabilities     []DepVuln          `json:"vulnerabilities,omitempty"` // --vuln-scan OSV matches (TR-271); absent on the default path
 	SlashCommands       []SlashCommandDef  `json:"slash_commands"`

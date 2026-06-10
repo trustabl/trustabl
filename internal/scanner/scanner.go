@@ -345,6 +345,27 @@ func Run(cfg Config) (models.ScanResult, error) {
 		}
 		return agents[i].Name < agents[j].Name
 	})
+	// Guardrails and sessions flow into ScanResult too, and ResolveEdges stores
+	// *GuardrailDef pointers into the guardrails backing array, so they get the
+	// same canonicalization at the same point: sorted here, never reordered after.
+	sort.Slice(guardrails, func(i, j int) bool {
+		if guardrails[i].FilePath != guardrails[j].FilePath {
+			return guardrails[i].FilePath < guardrails[j].FilePath
+		}
+		if guardrails[i].Line != guardrails[j].Line {
+			return guardrails[i].Line < guardrails[j].Line
+		}
+		return guardrails[i].Name < guardrails[j].Name
+	})
+	sort.Slice(sessions, func(i, j int) bool {
+		if sessions[i].FilePath != sessions[j].FilePath {
+			return sessions[i].FilePath < sessions[j].FilePath
+		}
+		if sessions[i].Line != sessions[j].Line {
+			return sessions[i].Line < sessions[j].Line
+		}
+		return sessions[i].Class < sessions[j].Class
+	})
 
 	inventory := models.RepoInventory{
 		Tools:      tools,
@@ -501,6 +522,8 @@ func Run(cfg Config) (models.ScanResult, error) {
 		MCPServers:          inventory.MCPServers,
 		Subagents:           inventory.Subagents,
 		Skills:              inventory.Skills,
+		Guardrails:          inventory.Guardrails,
+		Sessions:            inventory.Sessions,
 		Dependencies:        inventory.Dependencies,
 		Vulnerabilities:     vulns,
 		SlashCommands:       inventory.SlashCommands,

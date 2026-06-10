@@ -1469,6 +1469,8 @@ ScanResult {
     MCPServers         []MCPServerDef
     Subagents          []SubagentDef
     Skills             []SkillDef
+    Guardrails         []GuardrailDef      // sorted (FilePath, Line, Name)
+    Sessions           []SessionUse        // sorted (FilePath, Line, Class)
     SlashCommands      []SlashCommandDef
     PluginManifests    []PluginManifest
     ClaudeSettings     []ClaudeSettings
