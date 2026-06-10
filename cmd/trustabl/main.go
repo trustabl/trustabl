@@ -3,6 +3,7 @@
 // Subcommands:
 //
 //	trustabl scan <target> [flags]   primary command: scan a repo
+//	trustabl generate agent-yaml     generate an Agent Format manifest from a scan
 //	trustabl enrich [flags]          enrich a scan result with AI fixes
 //	trustabl mcp [flags]             run a stdio MCP server exposing the scan
 //	trustabl rules pull [flags]      pre-fetch the detection rule packs
@@ -91,6 +92,7 @@ with --strict), 2 = scanner error or no usable rules.`,
 	rootCmd.PersistentFlags().Bool("debug", false,
 		"debug diagnostics on stderr: everything --verbose shows plus per-phase timing and per-entity/per-finding detail (implies --verbose)")
 	rootCmd.AddCommand(newScanCommand())
+	rootCmd.AddCommand(newGenerateCommand())
 	rootCmd.AddCommand(newVersionCommand())
 	rootCmd.AddCommand(newRulesCommand())
 	rootCmd.AddCommand(newVulnDBCommand())

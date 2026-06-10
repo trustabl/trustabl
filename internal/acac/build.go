@@ -165,7 +165,7 @@ func Build(result models.ScanResult, agent models.AgentDef, opts BuildOptions) M
 	m.Constraints = Constraints{TightenOnlyInvariant: true}
 
 	// execution_policy — agf.react; instructions/model from captured kwargs.
-	instructions, instrDerived := kwargStringFirst(agent.Kwargs, "instructions", "prompt", "system_prompt", "systemPrompt")
+	instructions, instrDerived := kwargStringFirst(agent.Kwargs, instructionKwargs...)
 	if !instrDerived {
 		instructions = "Provide the agent's system prompt."
 	}
@@ -338,18 +338,18 @@ func buildXTrustabl(result models.ScanResult, agent models.AgentDef, rootID stri
 
 	score := Score100(result.OverallScore)
 	return XTrustabl{
-		SpecVersion:     SpecVersion,
-		EngineVersion:   opts.EngineVersion,
-		RulesVersion:    result.RulesVersion,
-		ScanID:          result.ScanID,
-		GeneratedAt:     opts.GeneratedAt,
-		Agent:           rootID,
-		Readiness:       ReadinessFor(score, findings),
-		Score100:        score,
-		Surfaces:        surfaces,
-		Findings:        findings,
-		Skills:          skills,
-		HostedTools:     hosted,
+		SpecVersion:   SpecVersion,
+		EngineVersion: opts.EngineVersion,
+		RulesVersion:  result.RulesVersion,
+		ScanID:        result.ScanID,
+		GeneratedAt:   opts.GeneratedAt,
+		Agent:         rootID,
+		Readiness:     ReadinessFor(score, findings),
+		Score100:      score,
+		Surfaces:      surfaces,
+		Findings:      findings,
+		Skills:        skills,
+		HostedTools:   hosted,
 		Coverage: Coverage{
 			SDKsDetected: sdks,
 			Unaudited:    unaudited,
@@ -528,13 +528,18 @@ func buildLocalAgents(agent models.AgentDef, result models.ScanResult) []LocalAg
 	return out
 }
 
+// instructionKwargs are the system-prompt kwarg spellings across SDKs, in
+// preference order: OpenAI Agents (instructions), Google ADK (instruction),
+// Claude AgentDefinition (prompt), plus the snake/camel system-prompt forms.
+var instructionKwargs = []string{"instructions", "instruction", "prompt", "system_prompt", "systemPrompt"}
+
 // agentDescription derives metadata.description: the description kwarg where
 // captured, else the first line of the instructions/prompt literal.
 func agentDescription(agent models.AgentDef) (string, bool) {
 	if d, ok := kwargStringFirst(agent.Kwargs, "description"); ok {
 		return d, true
 	}
-	if instr, ok := kwargStringFirst(agent.Kwargs, "instructions", "prompt", "system_prompt", "systemPrompt"); ok {
+	if instr, ok := kwargStringFirst(agent.Kwargs, instructionKwargs...); ok {
 		line := instr
 		if i := strings.IndexByte(line, '\n'); i >= 0 {
 			line = line[:i]

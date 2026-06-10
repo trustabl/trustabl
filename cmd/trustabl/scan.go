@@ -358,63 +358,75 @@ func resolveAndScan(cfg *scanner.Config, f scanFlags, rep progress.Reporter) (mo
 	return result, nil
 }
 
+// presentKnownScanError prints the well-known rules-resolution refusals to
+// stderr with actionable guidance and returns (exitCodeError{2}, true) for
+// them. Shared by every command that runs a scan (scan, generate) so the
+// guidance never drifts between entry points. Unrecognized errors return
+// (nil, false) — presentation is the caller's job.
+func presentKnownScanError(jobErr error) (error, bool) {
+	if errors.Is(jobErr, rules.ErrAllRulesIncompatible) {
+		fmt.Fprintf(os.Stderr,
+			"Every rule in the resolved pack requires a newer Trustabl than this "+
+				"build (this engine supports rule schema version up to %d).\n",
+			rules.SupportedSchemaVersion)
+		fmt.Fprintln(os.Stderr, "Fix it one of two ways:")
+		fmt.Fprintln(os.Stderr,
+			"  - Upgrade Trustabl to a build that supports the newer schema, or")
+		fmt.Fprintf(os.Stderr,
+			"  - Pin an older rules branch or tag whose pack targets schema <=%d:\n"+
+				"      trustabl scan <path> --rules-ref <branch-or-tag>\n"+
+				"    (--rules-ref resolves branches and tags only, not commit SHAs,\n"+
+				"     so a compatible branch or tag must exist in the rules repo).\n",
+			rules.SupportedSchemaVersion)
+		return exitCodeError{2}, true
+	}
+	if errors.Is(jobErr, rulesource.ErrNoCompatibleRules) {
+		fmt.Fprintln(os.Stderr,
+			"The resolved rule pack has no usable schema manifest (it may be "+
+				"corrupt or truncated).")
+		fmt.Fprintln(os.Stderr,
+			`Run "trustabl rules pull" to refresh the rule packs.`)
+		return exitCodeError{2}, true
+	}
+	if errors.Is(jobErr, rulesource.ErrNoRules) {
+		fmt.Fprintln(os.Stderr,
+			"No usable rules found: none cached locally and none could be fetched.")
+		fmt.Fprintln(os.Stderr,
+			`Run "trustabl rules pull" to download the rule packs.`)
+		return exitCodeError{2}, true
+	}
+	if errors.Is(jobErr, rules.ErrNoRulesInPack) {
+		fmt.Fprintln(os.Stderr,
+			"No usable rules: the resolved rule pack contains zero rules.")
+		fmt.Fprintln(os.Stderr,
+			`The rules repository may be empty or truncated. Run "trustabl rules pull" to refresh.`)
+		return exitCodeError{2}, true
+	}
+	if errors.Is(jobErr, rulesource.ErrNoTrustKeys) {
+		fmt.Fprintln(os.Stderr,
+			"This build of Trustabl embeds no rule-signing keys, so signed channels "+
+				"(--channel) cannot be verified yet.")
+		fmt.Fprintln(os.Stderr,
+			"Omit --channel to use the default rules source.")
+		return exitCodeError{2}, true
+	}
+	if isRuleSignFailure(jobErr) {
+		fmt.Fprintln(os.Stderr,
+			"Refusing to scan: the signed rules channel failed verification.")
+		fmt.Fprintf(os.Stderr, "  %v\n", jobErr)
+		fmt.Fprintln(os.Stderr,
+			"Trustabl will not run unofficial, tampered, stale, or rolled-back rules. "+
+				"Check the --channel value, or omit it to use the default rules source.")
+		return exitCodeError{2}, true
+	}
+	return nil, false
+}
+
 // finishScan turns a job outcome into output + the process exit code.
 func finishScan(result models.ScanResult, jobErr error, f scanFlags, log *logx.Logger) error {
 	if jobErr != nil {
-		if errors.Is(jobErr, rules.ErrAllRulesIncompatible) {
-			fmt.Fprintf(os.Stderr,
-				"Every rule in the resolved pack requires a newer Trustabl than this "+
-					"build (this engine supports rule schema version up to %d).\n",
-				rules.SupportedSchemaVersion)
-			fmt.Fprintln(os.Stderr, "Fix it one of two ways:")
-			fmt.Fprintln(os.Stderr,
-				"  - Upgrade Trustabl to a build that supports the newer schema, or")
-			fmt.Fprintf(os.Stderr,
-				"  - Pin an older rules branch or tag whose pack targets schema <=%d:\n"+
-					"      trustabl scan <path> --rules-ref <branch-or-tag>\n"+
-					"    (--rules-ref resolves branches and tags only, not commit SHAs,\n"+
-					"     so a compatible branch or tag must exist in the rules repo).\n",
-				rules.SupportedSchemaVersion)
-			return exitCodeError{2}
-		}
-		if errors.Is(jobErr, rulesource.ErrNoCompatibleRules) {
-			fmt.Fprintln(os.Stderr,
-				"The resolved rule pack has no usable schema manifest (it may be "+
-					"corrupt or truncated).")
-			fmt.Fprintln(os.Stderr,
-				`Run "trustabl rules pull" to refresh the rule packs.`)
-			return exitCodeError{2}
-		}
-		if errors.Is(jobErr, rulesource.ErrNoRules) {
-			fmt.Fprintln(os.Stderr,
-				"No usable rules found: none cached locally and none could be fetched.")
-			fmt.Fprintln(os.Stderr,
-				`Run "trustabl rules pull" to download the rule packs.`)
-			return exitCodeError{2}
-		}
-		if errors.Is(jobErr, rules.ErrNoRulesInPack) {
-			fmt.Fprintln(os.Stderr,
-				"No usable rules: the resolved rule pack contains zero rules.")
-			fmt.Fprintln(os.Stderr,
-				`The rules repository may be empty or truncated. Run "trustabl rules pull" to refresh.`)
-			return exitCodeError{2}
-		}
-		if errors.Is(jobErr, rulesource.ErrNoTrustKeys) {
-			fmt.Fprintln(os.Stderr,
-				"This build of Trustabl embeds no rule-signing keys, so signed channels "+
-					"(--channel) cannot be verified yet.")
-			fmt.Fprintln(os.Stderr,
-				"Omit --channel to use the default rules source.")
-			return exitCodeError{2}
-		}
-		if isRuleSignFailure(jobErr) {
-			fmt.Fprintln(os.Stderr,
-				"Refusing to scan: the signed rules channel failed verification.")
-			fmt.Fprintf(os.Stderr, "  %v\n", jobErr)
-			fmt.Fprintln(os.Stderr,
-				"Trustabl will not run unofficial, tampered, stale, or rolled-back rules. "+
-					"Check the --channel value, or omit it to use the default rules source.")
-			return exitCodeError{2}
+		if err, ok := presentKnownScanError(jobErr); ok {
+			return err
 		}
 		// A generic error was already surfaced to the user by the reporter's
 		// Fatal() in plain/tty modes (the "[phase] failed: …" line / the ✗ row).
