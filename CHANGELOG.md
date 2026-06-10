@@ -18,6 +18,19 @@ to follow Semantic Versioning once it reaches 1.0.
 
 ### Added
 
+- **`--openshell-policy <file>` on `generate agent-yaml` (experimental).**
+  Emits an NVIDIA OpenShell sandbox policy derived from the selected agent's
+  tool graph: hardened static defaults, `read_write` extended with captured
+  absolute write-path literals, and one network policy per tool with a
+  captured static host (conservative read-only access + confirm marker,
+  interpreter-path guesses with review markers). Dynamic URLs/paths and
+  private-range/loopback hosts are never guessed — review comments instead.
+  Output is validated against OpenShell's documented constraints before
+  writing and is byte-stable. The policy is primarily creation-time
+  (filesystem/process sections lock at sandbox creation; only
+  network_policies hot-reload). Experimental until verified against a live
+  OpenShell sandbox.
+
 - **Typed tool-body captures: `http_hosts`, `fs_write_paths`, `retry_present`.**
   Discovery (Python + TypeScript) now records, per tool: the canonical
   `host:port` of every recognized HTTP call whose URL is a static string

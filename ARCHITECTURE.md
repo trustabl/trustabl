@@ -2065,6 +2065,23 @@ Exit codes for generate: `0` generated + readiness gate passed; `1` generated
 but `deployment_readiness` at or below `--fail-on`; `2` operational error.
 `--enrich` is accepted but not wired (it errors rather than silently no-op).
 
+**OpenShell export (`--openshell-policy <file>`, experimental).**
+`openshell.go` builds a self-contained sandbox policy from the selected
+agent's tool graph: fixed hardening defaults (read-only `/usr,/lib,/etc`,
+writable `/sandbox,/tmp` ∪ the graph tools' captured absolute
+`FSWritePaths`, landlock best-effort, non-root process), plus one
+`network_policies` entry per tool with ≥1 captured `HTTPHosts` entry —
+endpoints conservative (`access: read-only` + suggested marker), binaries an
+interpreter-path guess (review marker). Private-range/loopback/link-local
+hosts and dynamic URLs are never emitted; they become review-marker comments.
+`ValidateOpenShellPolicy` mirrors OpenShell's documented load-time rules as
+generate-time hard errors (absolute paths, no `..`, no overly-broad writable
+roots, ≤4096 chars/path, ≤256 paths, non-root user/group, first-label-only
+wildcards, no loopback/link-local/private endpoint). Emission reuses the
+manifest's yaml.v3 node infrastructure; a golden policy pins the bytes. The
+flag ships labeled experimental until a live-sandbox end-to-end run (a human
+gate) confirms `policy set` acceptance and observed enforcement.
+
 ### 8.3 Enrich subcommand ([cmd/trustabl/enrich.go](cmd/trustabl/enrich.go) + [internal/enrichment/](internal/enrichment/))
 
 `trustabl enrich` is a post-scan enrichment step: it reads a `ScanResult`
