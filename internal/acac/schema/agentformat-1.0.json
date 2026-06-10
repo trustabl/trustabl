@@ -1,0 +1,995 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentformat.org/schema/1.0/agentformat-schema.json",
+  "title": "AgentFormat Standard",
+  "description": "A declarative standard for defining AI Agent Systems, separating definition from runtime execution.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "metadata",
+    "interface",
+    "execution_policy"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "The version of the AgentFormat schema this file targets (e.g. 1.0.0)."
+    },
+    "metadata": {
+      "$ref": "#/$defs/Metadata"
+    },
+    "interface": {
+      "$ref": "#/$defs/Interface"
+    },
+    "memory": {
+      "$ref": "#/$defs/Memory"
+    },
+    "constraints": {
+      "$ref": "#/$defs/Constraints"
+    },
+    "action_space": {
+      "$ref": "#/$defs/ActionSpace"
+    },
+    "execution_policy": {
+      "$ref": "#/$defs/ExecutionPolicy"
+    }
+  },
+  "$defs": {
+    "Metadata": {
+      "type": "object",
+      "required": [
+        "name",
+        "version",
+        "id",
+        "description"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_\\-]*$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Agent version. Semantic versioning (e.g. '1.0.0') is RECOMMENDED for registry compatibility."
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "authors": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "license": {
+          "type": "string"
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Kubernetes-style key-value labels for selection, filtering, and governance policy matching."
+        },
+        "annotations": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Opaque key-value pairs for SDK/runtime pass-through data. Not used for selection or policy matching."
+        },
+        "homepage": {
+          "type": "string",
+          "format": "uri"
+        },
+        "data_classification": {
+          "type": "string",
+          "description": "Sensitivity level of data this agent handles (e.g. public, internal, confidential, restricted)."
+        },
+        "namespace": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_.\\-]*$",
+          "description": "Organizational scope (e.g. myorg.finance). Used by registries for namespace isolation and governance policy matching."
+        }
+      }
+    },
+    "Interface": {
+      "type": "object",
+      "required": [
+        "input",
+        "output"
+      ],
+      "properties": {
+        "input": {
+          "$ref": "#/$defs/SchemaRef"
+        },
+        "output": {
+          "$ref": "#/$defs/SchemaRef"
+        }
+      }
+    },
+    "SchemaRef": {
+      "type": "object",
+      "description": "A JSON Schema definition. The root type can be any JSON Schema type: object, string, number, integer, boolean, or array. Also supports enum, anyOf, $ref, and other standard JSON Schema features.",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["object", "string", "number", "integer", "boolean", "array"],
+          "description": "The JSON Schema type. When omitted, the schema uses other keywords (enum, anyOf, $ref) to define the shape."
+        }
+      }
+    },
+    "Memory": {
+      "type": "object",
+      "description": "Declares the agent's memory requirements.",
+      "properties": {
+        "required": {
+          "type": "boolean",
+          "default": false,
+          "description": "If true, the runtime MUST provide a stable memory context and the Agent User MUST provide a MemoryScope. The agent MUST NOT execute without memory. If false or absent, the runtime MAY execute statelessly or with best-effort memory."
+        }
+      }
+    },
+    "Constraints": {
+      "type": "object",
+      "properties": {
+        "tighten_only_invariant": {
+          "type": "boolean",
+          "default": true,
+          "description": "When true, child agents and governance policies can only tighten constraints, never relax them."
+        },
+        "budget": {
+          "type": "object",
+          "properties": {
+            "max_token_usage": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Maximum total token usage (input + output) for a single agent run."
+            },
+            "max_duration_seconds": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Maximum wall-clock time in seconds for a single agent run."
+            }
+          }
+        },
+        "limits": {
+          "type": "object",
+          "properties": {
+            "max_llm_calls": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Maximum number of LLM API calls per run."
+            },
+            "max_tool_calls": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Maximum number of tool invocations per run."
+            },
+            "max_delegation_depth": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Maximum depth of sub-agent delegation."
+            }
+          }
+        },
+        "governance_policies": {
+          "type": "array",
+          "description": "References to governance policies managed in an external Policy Registry. The Runtime Owner resolves these at execution time. Policy details are opaque to the Agent Owner.",
+          "items": {
+            "$ref": "#/$defs/GovernancePolicyRef"
+          }
+        }
+      }
+    },
+    "GovernancePolicyRef": {
+      "type": "object",
+      "required": [
+        "policy_ref"
+      ],
+      "properties": {
+        "policy_ref": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_.\\-]*$",
+          "description": "Unique identifier for a governance policy in the Policy Registry. Convention: <org>.<team>.<policy-name>[-<version>]."
+        },
+        "required": {
+          "type": "boolean",
+          "default": true,
+          "description": "If true (default), the agent MUST NOT execute if this policy cannot be resolved from the Policy Registry. If false, the agent may execute without it (advisory)."
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description of why this policy is referenced. For documentation purposes only."
+        }
+      }
+    },
+    "ActionSpace": {
+      "type": "object",
+      "properties": {
+        "local_tools": {
+          "type": "array",
+          "description": "Runtime-bound tool functions. Each entry MUST have a unique 'alias' within this array. Runtimes MUST reject duplicate aliases.",
+          "items": {
+            "type": "object",
+            "required": [
+              "alias"
+            ],
+            "properties": {
+              "alias": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+                "description": "Identifier-safe alias. Must match the path expression grammar (letters, digits, underscores; starts with letter or underscore)."
+              },
+              "name": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "approval": {
+                "$ref": "#/$defs/Approval"
+              }
+            }
+          }
+        },
+        "mcp_servers": {
+          "type": "array",
+          "description": "MCP server references. Each entry MUST have a unique 'alias' within this array. Runtimes MUST reject duplicate aliases.",
+          "items": {
+            "type": "object",
+            "required": [
+              "alias"
+            ],
+            "properties": {
+              "alias": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+                "description": "Identifier-safe alias for this MCP server. Must match the path expression grammar (letters, digits, underscores; starts with letter or underscore)."
+              },
+              "server_ref": {
+                "type": "string",
+                "description": "Portable registry or catalog identity for this MCP server (e.g. a public MCP registry ID or enterprise internal catalog entry). The Runtime Owner maps this to connection details."
+              },
+              "description": {
+                "type": "string"
+              },
+              "allowed_tools": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/McpToolRef"
+                }
+              },
+              "approval": {
+                "$ref": "#/$defs/Approval"
+              }
+            }
+          }
+        },
+        "local_agents": {
+          "type": "array",
+          "description": "Sub-agent references. Each entry MUST have a unique 'alias' within this array. Runtimes MUST reject duplicate aliases.",
+          "items": {
+            "type": "object",
+            "required": [
+              "alias",
+              "source"
+            ],
+            "properties": {
+              "alias": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+                "description": "Identifier-safe alias. Must match the path expression grammar (letters, digits, underscores; starts with letter or underscore)."
+              },
+              "source_type": {
+                "type": "string",
+                "default": "file",
+                "description": "Declares how the 'source' field should be resolved. Standard types: 'file' (default), 'registry', 'db'. Runtimes may define additional types."
+              },
+              "source": {
+                "type": "string",
+                "minLength": 1,
+                "description": "Reference to the sub-agent's definition. Interpretation depends on 'source_type'."
+              },
+              "description": {
+                "type": "string"
+              },
+              "approval": {
+                "$ref": "#/$defs/Approval"
+              },
+              "memory_scope_strategy": {
+                "type": "string",
+                "enum": [
+                  "inherit",
+                  "isolated",
+                  "none"
+                ],
+                "default": "inherit",
+                "description": "How this sub-agent's memory scope relates to the parent. 'inherit': child shares parent memory context. 'isolated': runtime derives a child-specific memory context. 'none': child runs with no memory context (stateless)."
+              }
+            }
+          }
+        },
+        "remote_agents": {
+          "type": "array",
+          "description": "Remote agent references (A2A-aligned). Each entry MUST have a unique 'alias' within this array. Runtimes MUST reject duplicate aliases.",
+          "items": {
+            "type": "object",
+            "required": [
+              "alias"
+            ],
+            "properties": {
+              "alias": {
+                "type": "string",
+                "minLength": 1,
+                "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+                "description": "Identifier-safe alias. The runtime maps this to connection details (endpoint, auth, protocol). Must match the path expression grammar."
+              },
+              "description": {
+                "type": "string"
+              },
+              "input_modes": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Media types (MIME) the parent expects to send."
+              },
+              "output_modes": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Media types the parent expects to receive."
+              },
+              "allowed_skills": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/SkillRef"
+                }
+              },
+              "approval": {
+                "$ref": "#/$defs/Approval"
+              }
+            }
+          }
+        }
+      }
+    },
+    "ExecutionPolicy": {
+      "type": "object",
+      "required": [
+        "id",
+        "config"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Policy identifier. Standard policies: 'agf.react', 'agf.sequential', 'agf.parallel', 'agf.loop', 'agf.batch', 'agf.conditional'. Vendor/runtime extensions use 'x-<vendor>.*' prefix (e.g. 'x-myruntime.custom_react')."
+        },
+        "config": {
+          "type": "object",
+          "description": "Policy-specific configuration. For standard (agf.*) policies, the structure is defined by the standard. For vendor (x-*) policies, the structure is defined by the runtime."
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "id": {
+                "const": "agf.react"
+              }
+            },
+            "required": [
+              "id"
+            ]
+          },
+          "then": {
+            "properties": {
+              "config": {
+                "$ref": "#/$defs/ReactConfig"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "id": {
+                "const": "agf.sequential"
+              }
+            },
+            "required": [
+              "id"
+            ]
+          },
+          "then": {
+            "properties": {
+              "config": {
+                "$ref": "#/$defs/SequentialConfig"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "id": {
+                "const": "agf.parallel"
+              }
+            },
+            "required": [
+              "id"
+            ]
+          },
+          "then": {
+            "properties": {
+              "config": {
+                "$ref": "#/$defs/ParallelConfig"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "id": {
+                "const": "agf.loop"
+              }
+            },
+            "required": [
+              "id"
+            ]
+          },
+          "then": {
+            "properties": {
+              "config": {
+                "$ref": "#/$defs/LoopConfig"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "id": {
+                "const": "agf.batch"
+              }
+            },
+            "required": [
+              "id"
+            ]
+          },
+          "then": {
+            "properties": {
+              "config": {
+                "$ref": "#/$defs/BatchConfig"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "id": {
+                "const": "agf.conditional"
+              }
+            },
+            "required": [
+              "id"
+            ]
+          },
+          "then": {
+            "properties": {
+              "config": {
+                "$ref": "#/$defs/ConditionalConfig"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "PolicyStep": {
+      "type": "object",
+      "required": [
+        "agent"
+      ],
+      "description": "A step in a multi-agent execution policy.",
+      "properties": {
+        "agent": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Alias of the sub-agent to invoke (must match a local_agents[].alias)."
+        },
+        "input_mapping": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Maps agent input fields to expressions referencing parent input or prior step output."
+        }
+      }
+    },
+    "OutputFrom": {
+      "description": "Declares how the final output is derived from sub-agent results. String shorthand or object form with mutually exclusive agent/strategy/custom_transform.",
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1,
+          "description": "Shorthand: an agent alias whose output becomes the policy output, or a strategy keyword (last, merge, first). If the string matches a strategy keyword, it is interpreted as a strategy; otherwise it is treated as an agent alias. To reference an agent whose alias conflicts with a keyword, use the object form (e.g. { agent: 'last' })."
+        },
+        {
+          "type": "object",
+          "description": "Object form. Exactly one of agent, strategy, or custom_transform must be set — they are mutually exclusive.",
+          "properties": {
+            "agent": {
+              "type": "string",
+              "description": "Alias of the sub-agent whose output becomes the policy output. Mutually exclusive with strategy and custom_transform."
+            },
+            "strategy": {
+              "type": "string",
+              "enum": [
+                "last",
+                "merge",
+                "first"
+              ],
+              "description": "Built-in output strategy. Mutually exclusive with agent and custom_transform."
+            },
+            "custom_transform": {
+              "type": "string",
+              "description": "Reference to a runtime-registered transformation function. The runtime passes all sub-agent outputs to this function and uses its return value as the final output. Convention: <org>.<transform-name> (e.g. 'myorg.summarize_outputs'). Mutually exclusive with agent and strategy."
+            },
+            "description": {
+              "type": "string",
+              "description": "Human-readable description of the output selection logic. For documentation purposes only — not used by the runtime."
+            }
+          },
+          "oneOf": [
+            {
+              "required": [
+                "agent"
+              ]
+            },
+            {
+              "required": [
+                "strategy"
+              ]
+            },
+            {
+              "required": [
+                "custom_transform"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "ReactConfig": {
+      "type": "object",
+      "description": "Configuration for agf.react. The agent iterates through reasoning and acting cycles, using tools to gather information before producing a final response.",
+      "required": [
+        "instructions",
+        "model"
+      ],
+      "properties": {
+        "instructions": {
+          "type": "string",
+          "minLength": 1,
+          "description": "System prompt that defines the agent's persona, capabilities, and behavioral guidelines."
+        },
+        "provider": {
+          "type": "string",
+          "description": "Model provider identifier (e.g. 'google', 'openai', 'anthropic'). Serves as a hint — the runtime may override based on deployment policy."
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Model identifier within the provider (e.g. 'gemini-2.5-pro', 'gpt-4o', 'claude-sonnet-4-20250514'). Serves as a hint — the runtime may override."
+        },
+        "temperature": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 2,
+          "description": "Sampling temperature for the LLM. Lower values (0.0-0.3) produce more deterministic outputs; higher values (0.7-1.5) produce more creative outputs."
+        },
+        "top_p": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Nucleus sampling probability (0.0-1.0). Typically used as an alternative to temperature."
+        },
+        "top_k": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Top-k sampling — limits token selection to the k most probable candidates at each step. If the underlying model does not support top-k, the runtime SHOULD silently ignore this field."
+        },
+        "max_output_tokens": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Maximum number of tokens the model may generate in a single response."
+        },
+        "stop_sequences": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Sequences that cause the model to stop generating further tokens."
+        },
+        "max_steps": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 10,
+          "description": "Maximum number of reasoning-acting cycles before the agent must produce a final answer."
+        },
+        "tool_choice": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "required",
+            "none"
+          ],
+          "description": "Controls how the LLM selects tools. 'auto': LLM decides. 'required': must call at least one tool per step. 'none': text generation only."
+        },
+        "user_prompt_template": {
+          "type": "string",
+          "description": "Mustache-style template for the initial user message. Placeholders: {{field_name}}. When absent, the runtime converts input to a natural-language prompt."
+        }
+      }
+    },
+    "SequentialConfig": {
+      "type": "object",
+      "description": "Configuration for agf.sequential. Steps execute in order; each step can reference outputs from prior steps via input_mapping.",
+      "required": [
+        "steps"
+      ],
+      "properties": {
+        "steps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PolicyStep"
+          },
+          "minItems": 1,
+          "description": "Ordered list of sub-agent invocations. Steps execute sequentially; each step completes before the next begins."
+        },
+        "output_from": {
+          "$ref": "#/$defs/OutputFrom",
+          "default": "last",
+          "description": "Determines the policy's final output. Default: the last step's output."
+        }
+      }
+    },
+    "ParallelConfig": {
+      "type": "object",
+      "description": "Configuration for agf.parallel. All sub-agents execute concurrently; results are combined when all complete.",
+      "required": [
+        "agents"
+      ],
+      "properties": {
+        "agents": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PolicyStep"
+          },
+          "minItems": 1,
+          "description": "List of sub-agent invocations to run concurrently. Order in the array does not imply execution order."
+        },
+        "output_from": {
+          "$ref": "#/$defs/OutputFrom",
+          "default": "merge",
+          "description": "Determines the policy's final output. Default: merge all sub-agent outputs into a single object."
+        }
+      }
+    },
+    "LoopConfig": {
+      "type": "object",
+      "description": "Configuration for agf.loop. Steps repeat each iteration until exit_condition is satisfied or max_iterations is reached.",
+      "required": [
+        "steps"
+      ],
+      "properties": {
+        "steps": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PolicyStep"
+          },
+          "minItems": 1,
+          "description": "Steps to execute per iteration. All steps run sequentially within each iteration."
+        },
+        "max_iterations": {
+          "type": "integer",
+          "minimum": 1,
+          "default": 10,
+          "description": "Maximum number of loop iterations. Acts as a safety bound even if exit_condition is never met."
+        },
+        "exit_condition": {
+          "description": "Condition evaluated after each iteration using ConditionGroup matchers. The loop exits when the condition matches. A single ConditionGroup (AND) or array of ConditionGroups (OR-of-ANDs). When absent, the loop runs for exactly max_iterations.",
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ConditionGroup"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ConditionGroup"
+              },
+              "minItems": 1
+            }
+          ]
+        },
+        "output_from": {
+          "$ref": "#/$defs/OutputFrom",
+          "default": "last",
+          "description": "Determines the policy's final output. Default: the last iteration's last step's output."
+        }
+      }
+    },
+    "BatchConfig": {
+      "type": "object",
+      "description": "Configuration for agf.batch. A single sub-agent processes each item from an input collection independently.",
+      "required": [
+        "agent",
+        "input_mapping"
+      ],
+      "properties": {
+        "agent": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Alias of the sub-agent that processes each item (must match a local_agents[].alias)."
+        },
+        "input_mapping": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Maps the sub-agent's input fields to path expressions. Must contain at least one field with '[]' array iteration syntax (e.g. 'parent.input.items.[].value')."
+        },
+        "max_batch_count": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0,
+          "description": "Maximum number of items to process. 0 means unlimited — process the entire input array."
+        }
+      }
+    },
+    "ConditionalConfig": {
+      "type": "object",
+      "description": "Configuration for agf.conditional. Evaluates conditions in order and routes to the first matching sub-agent.",
+      "required": [
+        "routes"
+      ],
+      "properties": {
+        "routes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ConditionalRoute"
+          },
+          "minItems": 1,
+          "description": "Ordered list of condition-agent pairs. The first matching route is executed. If no route matches, default_agent is used."
+        },
+        "default_agent": {
+          "type": "string",
+          "description": "Alias of the fallback sub-agent when no route condition matches. When absent and no route matches, the runtime MUST return an error."
+        }
+      }
+    },
+    "ConditionalRoute": {
+      "type": "object",
+      "required": [
+        "when",
+        "agent"
+      ],
+      "description": "A condition-agent pair in a conditional routing policy.",
+      "properties": {
+        "when": {
+          "description": "Condition evaluated using ConditionGroup matchers. A single ConditionGroup (AND) or array of ConditionGroups (OR-of-ANDs). Path expressions in field names reference parent input.",
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ConditionGroup"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ConditionGroup"
+              },
+              "minItems": 1
+            }
+          ]
+        },
+        "agent": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Alias of the sub-agent to invoke when the condition matches."
+        },
+        "input_mapping": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Maps the sub-agent's input fields to path expressions. When absent, the parent's full input is passed through."
+        }
+      }
+    },
+    "Approval": {
+      "description": "Approval requirement. true = always require approval. false = never require. Object = conditional or configured approval.",
+      "oneOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "$ref": "#/$defs/ApprovalConfig"
+        }
+      ]
+    },
+    "ApprovalConfig": {
+      "type": "object",
+      "properties": {
+        "message_template": {
+          "type": "string",
+          "description": "Human-readable message template with mustache-style placeholders (e.g. '{{tool_args.amount}}')."
+        },
+        "condition": {
+          "description": "When present, approval is conditional. A single ConditionGroup (AND) or an array of ConditionGroups (OR-of-ANDs).",
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ConditionGroup"
+            },
+            {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ConditionGroup"
+              },
+              "minItems": 1
+            }
+          ]
+        }
+      }
+    },
+    "ConditionGroup": {
+      "type": "object",
+      "properties": {
+        "args_match": {
+          "type": "object",
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "gt": {
+                    "type": "number"
+                  },
+                  "gte": {
+                    "type": "number"
+                  },
+                  "lt": {
+                    "type": "number"
+                  },
+                  "lte": {
+                    "type": "number"
+                  },
+                  "ne": {
+                    "oneOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "boolean"
+                      }
+                    ]
+                  },
+                  "pattern": {
+                    "type": "string"
+                  },
+                  "in": {
+                    "type": "array",
+                    "items": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "boolean"
+                        }
+                      ]
+                    }
+                  },
+                  "not_in": {
+                    "type": "array",
+                    "items": {
+                      "oneOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "boolean"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "additionalProperties": false
+              }
+            ]
+          },
+          "description": "Match against invocation arguments. In approval context, keys are plain argument names (e.g. 'amount', 'currency'). In execution policy context (exit_condition, when), keys are path expressions (e.g. 'checker.output.score'). Each value is either a literal for exact match or an object with a match operator (gt, gte, lt, lte, ne, pattern, in, not_in). An empty object (args_match: {}) matches all invocations (vacuous truth)."
+        }
+      }
+    },
+    "McpToolRef": {
+      "description": "Reference to a tool on an MCP server — either a plain tool name (string) or an object with name and optional approval.",
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "object",
+          "required": [
+            "name"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "approval": {
+              "$ref": "#/$defs/Approval"
+            }
+          }
+        }
+      ]
+    },
+    "SkillRef": {
+      "description": "Reference to a skill on a remote agent — either a plain skill ID (string) or an object with id and optional approval.",
+      "oneOf": [
+        {
+          "type": "string",
+          "minLength": 1
+        },
+        {
+          "type": "object",
+          "required": [
+            "id"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "approval": {
+              "$ref": "#/$defs/Approval"
+            }
+          }
+        }
+      ]
+    }
+  }
+}
