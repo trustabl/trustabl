@@ -2046,10 +2046,13 @@ deterministic transform in three steps:
    extension: per-surface scores (×100, round-half-up), the findings attributed
    to the selected agent's graph (with OWASP ASI/AST IDs from the pinned map in
    `owaspmap.go`), the skill and hosted-tool inventories, honest coverage
-   (detected + unaudited SDKs, dependency BOM summary), and the provisional
-   readiness gate (`gate.go` — all thresholds in one file so calibration lands
-   as a constants-only diff). Fields not derivable from code are scaffolded
-   with `trustabl:` marker comments, never invented.
+   (detected + unaudited SDKs, dependency BOM summary), and the readiness
+   gate (`gate.go` — all thresholds in one file; the 2026-06-10 calibration
+   run kept the shipped constants). `ready` requires a score ≥ 85 with no
+   high/critical finding AND that the scan audited something: at least one
+   scored surface in the graph and zero unaudited SDKs — a repo Trustabl
+   could not vouch for caps at `needs_work`. Fields not derivable from code
+   are scaffolded with `trustabl:` marker comments, never invented.
 3. **`Emit`** — manifest tree → YAML via yaml.v3 nodes: fixed key order,
    pre-sorted lists, explicit scalar tags, LF endings, marker comments. Same
    input → identical bytes on every platform. `--timestamp` opts in to a

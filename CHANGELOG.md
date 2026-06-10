@@ -16,6 +16,18 @@ to follow Semantic Versioning once it reaches 1.0.
   is now part of a scan's identity by design; baselines pinned to old IDs must
   be re-captured once.
 
+### Changed
+
+- **ACaC readiness gate: unauditable repos can no longer gate `ready`.**
+  `deployment_readiness: ready` now additionally requires at least one audited
+  surface in the selected agent's graph and an empty `coverage.unaudited`
+  list. A scan that audited nothing scores a vacuous 1.0, and an
+  observed-but-unaudited SDK can hide arbitrary risk behind a clean bill;
+  both now cap the verdict at `needs_work` (never `not_ready` — absence of
+  evidence is not evidence of badness). Spec §5.1 amendment; thresholds and
+  scoring constants themselves were calibrated against a human-labeled corpus
+  on 2026-06-10 and kept as shipped.
+
 ### Added
 
 - **`--openshell-policy <file>` on `generate agent-yaml` (experimental).**

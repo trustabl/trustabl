@@ -625,6 +625,10 @@ honest coverage data (detected SDKs, unaudited SDKs, dependency BOM summary).
 - **Readiness gate for CI.** Exit `0` when generated and the gate passes; `1`
   when `deployment_readiness` is at or below `--fail-on`
   (`not_ready` default | `needs_work` | `never`); `2` on operational errors.
+  `ready` additionally requires that the scan actually audited something: at
+  least one scored surface in the agent's graph and no observed-but-unaudited
+  SDK. A repo Trustabl could not vouch for caps at `needs_work` — absence of
+  evidence is never a clean bill.
 - **`reliability_score` is informational in v0.x.** Its thresholds are
   provisional pending corpus calibration of the scoring constants; do not gate
   releases on the absolute number yet.

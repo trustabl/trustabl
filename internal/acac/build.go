@@ -359,7 +359,7 @@ func buildXTrustabl(result models.ScanResult, agent models.AgentDef, rootID stri
 		ScanID:        result.ScanID,
 		GeneratedAt:   opts.GeneratedAt,
 		Agent:         rootID,
-		Readiness:     ReadinessFor(score, findings),
+		Readiness:     ReadinessFor(score, findings, len(surfaces), len(unaudited)),
 		Score100:      score,
 		Surfaces:      surfaces,
 		Findings:      findings,
