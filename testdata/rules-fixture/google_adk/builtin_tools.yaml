@@ -10,7 +10,7 @@ policy:
 rules:
   - id: ADK-008
     title: Agent grants BashTool with no restrictive command policy
-    severity: high
+    severity: critical
     confidence: 0.75
     language: python
     applies_to:

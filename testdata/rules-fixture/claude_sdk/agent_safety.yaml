@@ -63,7 +63,7 @@ rules:
 
   - id: CSDK-103
     title: AgentDefinition sets permissionMode to bypassPermissions
-    severity: high
+    severity: critical
     confidence: 0.9
     language: python
     applies_to:
@@ -145,7 +145,7 @@ rules:
 
   - id: CSDK-120
     title: TypeScript AgentDefinition sets permissionMode to bypassPermissions
-    severity: high
+    severity: critical
     confidence: 0.9
     language: typescript
     applies_to:

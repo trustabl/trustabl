@@ -10,7 +10,7 @@ policy:
 rules:
   - id: CSDK-201
     title: Project default permission mode bypasses approvals
-    severity: high
+    severity: critical
     confidence: 0.9
     applies_to:
       - claude_sdk
@@ -35,7 +35,7 @@ rules:
 
   - id: CSDK-202
     title: Session permission mode bypasses approvals
-    severity: high
+    severity: critical
     confidence: 0.9
     applies_to:
       - claude_sdk

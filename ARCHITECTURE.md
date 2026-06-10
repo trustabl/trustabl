@@ -955,21 +955,21 @@ Shipped rules (one row per YAML rule entry):
 | CSDK-009 | tool     | claude_sdk | high     | `claude_sdk/ssrf.yaml`             | Tool fetches a caller-controlled URL (SSRF)                                           |
 | CSDK-101 | agent    | claude_sdk | high     | `claude_sdk/agent_safety.yaml`     | Claude subagent is granted the Bash tool                                              |
 | CSDK-102 | agent    | claude_sdk | high     | `claude_sdk/agent_safety.yaml`     | Claude subagent is granted the WebSearch tool                                         |
-| CSDK-103 | agent    | claude_sdk | high     | `claude_sdk/agent_safety.yaml`     | AgentDefinition sets permissionMode to bypassPermissions                              |
+| CSDK-103 | agent    | claude_sdk | critical | `claude_sdk/agent_safety.yaml`     | AgentDefinition sets permissionMode to bypassPermissions                              |
 | CSDK-104 | agent    | claude_sdk | high     | `claude_sdk/agent_safety.yaml`     | Claude subagent is granted filesystem-write built-ins                                 |
 | CSDK-105 | agent    | claude_sdk | high     | `claude_sdk/agent_safety.yaml`     | Claude subagent is granted the WebFetch tool                                          |
 | CSDK-107 | tool     | claude_sdk | high     | `claude_sdk/code_execution.yaml`   | Tool body calls eval/exec/compile on dynamic input                                    |
 | CSDK-108 | tool     | claude_sdk | high     | `claude_sdk/shell_safety.yaml`     | Tool body spawns a subprocess                                                         |
 | CSDK-110 | subagent | claude_sdk | high     | `claude_sdk/subagent_safety.yaml`  | Subagent granted the built-in Bash tool                                               |
 | CSDK-111 | subagent | claude_sdk | high     | `claude_sdk/subagent_safety.yaml`  | Subagent granted filesystem-write or web-fetch built-ins                              |
-| CSDK-201 | repo     | claude_sdk | high     | `claude_sdk/repo.yaml`             | Project default permission mode bypasses approvals                                    |
-| CSDK-202 | repo     | claude_sdk | high     | `claude_sdk/repo.yaml`             | Session permission mode bypasses approvals                                            |
+| CSDK-201 | repo     | claude_sdk | critical | `claude_sdk/repo.yaml`             | Project default permission mode bypasses approvals                                    |
+| CSDK-202 | repo     | claude_sdk | critical | `claude_sdk/repo.yaml`             | Session permission mode bypasses approvals                                            |
 | CSDK-203 | repo     | claude_sdk | low      | `claude_sdk/repo_hygiene.yaml`     | Claude Agent SDK code with no agent-guidance doc (AGENTS.md/CLAUDE.md)                |
 | CSDK-010 | tool     | claude_sdk | high     | `claude_sdk/shell_safety.yaml`     | TypeScript tool body spawns a subprocess (`language: typescript`)                     |
 | CSDK-011 | tool     | claude_sdk | high     | `claude_sdk/code_execution.yaml`   | TypeScript tool body calls eval / new Function on dynamic input                       |
 | CSDK-012 | tool     | claude_sdk | high     | `claude_sdk/path_safety.yaml`      | TypeScript tool writes to the filesystem                                               |
 | CSDK-013 | tool     | claude_sdk | high     | `claude_sdk/ssrf.yaml`             | TypeScript tool fetches a caller-controlled URL (SSRF / dynamic URL)                  |
-| CSDK-120 | agent    | claude_sdk | high     | `claude_sdk/agent_safety.yaml`     | TypeScript AgentDefinition sets permissionMode to bypassPermissions                   |
+| CSDK-120 | agent    | claude_sdk | critical | `claude_sdk/agent_safety.yaml`     | TypeScript AgentDefinition sets permissionMode to bypassPermissions                   |
 | CSDK-014 | tool     | claude_sdk | low      | `claude_sdk/tool_definition.yaml`  | TypeScript Claude SDK tool has no description                                         |
 | CSDK-016 | tool     | claude_sdk | medium   | `claude_sdk/idempotency.yaml`      | TypeScript Claude SDK mutating tool has no idempotency key                            |
 | CSDK-130 | agent    | claude_sdk | high     | `claude_sdk/agent_safety.yaml`     | TypeScript query() main agent is granted the Bash tool                                |
@@ -1013,7 +1013,7 @@ Shipped rules (one row per YAML rule entry):
 | ADK-005  | tool     | google_adk | medium   | `google_adk/error_handling.yaml`   | Tool raises exceptions without a structured error contract                            |
 | ADK-006  | tool     | google_adk | medium   | `google_adk/idempotency.yaml`      | Mutating tool has no idempotency key                                                  |
 | ADK-007  | tool     | google_adk | low      | `google_adk/tool_definition.yaml`  | Ambiguous tool name                                                                   |
-| ADK-008  | agent    | google_adk | high     | `google_adk/builtin_tools.yaml`    | Agent grants BashTool with no restrictive command policy                              |
+| ADK-008  | agent    | google_adk | critical | `google_adk/builtin_tools.yaml`    | Agent grants BashTool with no restrictive command policy                              |
 | ADK-009  | tool     | google_adk | low      | `google_adk/tool_definition.yaml`  | FunctionTool body prints to stdout                                                    |
 | ADK-010  | tool     | google_adk | high     | `google_adk/shell_safety.yaml`     | Tool body spawns a subprocess                                                         |
 | ADK-011  | tool     | google_adk | high     | `google_adk/code_execution.yaml`   | Tool body calls eval/exec/compile on dynamic input                                    |
@@ -1057,7 +1057,7 @@ Shipped rules (one row per YAML rule entry):
 | LC-012   | tool     | langchain  | high     | `langchain/code_execution.yaml`    | TypeScript LangChain tool evaluates dynamic code                                      |
 | LC-013   | tool     | langchain  | high     | `langchain/ssrf.yaml`              | TypeScript LangChain tool fetches a caller-controlled URL (SSRF)                      |
 | LC-014   | tool     | langchain  | medium   | `langchain/tool_behavior.yaml`     | TypeScript LangChain tool returns output directly (`returnDirect`)                    |
-| LC-101   | agent    | langchain  | high     | `langchain/agent_safety.yaml`      | LangChain agent wires a code-execution or shell built-in tool                         |
+| LC-101   | agent    | langchain  | critical | `langchain/agent_safety.yaml`      | LangChain agent wires a code-execution or shell built-in tool                         |
 | LC-102   | agent    | langchain  | medium   | `langchain/agent_safety.yaml`      | LangChain AgentExecutor has no max_iterations limit                                   |
 | LC-111   | agent    | langchain  | medium   | `langchain/agent_safety.yaml`      | TypeScript LangChain AgentExecutor has no maxIterations limit                         |
 | LC-201   | repo     | langchain  | low      | `langchain/repo_hygiene.yaml`      | LangChain project with no agent-guidance doc (AGENTS.md/CLAUDE.md)                     |
