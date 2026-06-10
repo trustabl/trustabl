@@ -15,19 +15,20 @@ import (
 )
 
 type generateFlags struct {
-	agent         string
-	base          string
-	out           string
-	owasp         bool
-	timestamp     bool
-	enrich        bool
-	failOn        string
-	rulesRepo     string
-	rulesRef      string
-	channel       string
-	noRulesUpdate bool
-	noProgress    bool
-	vulnScan      bool
+	agent           string
+	base            string
+	out             string
+	openshellPolicy string
+	owasp           bool
+	timestamp       bool
+	enrich          bool
+	failOn          string
+	rulesRepo       string
+	rulesRef        string
+	channel         string
+	noRulesUpdate   bool
+	noProgress      bool
+	vulnScan        bool
 }
 
 func newGenerateCommand() *cobra.Command {
@@ -97,6 +98,9 @@ Exit codes:
 		"base manifest standard (agent-format is the default and only base in v0.x)")
 	cmd.Flags().StringVar(&f.out, "out", "",
 		"output file (default: ./<agent-id>.agf.yaml)")
+	cmd.Flags().StringVar(&f.openshellPolicy, "openshell-policy", "",
+		"(experimental) also emit an OpenShell sandbox policy derived from the same scan to this file; "+
+			"pending end-to-end verification against a live sandbox")
 	cmd.Flags().BoolVar(&f.owasp, "owasp", true,
 		"annotate findings with OWASP ASI/AST IDs from the pinned engine map")
 	cmd.Flags().BoolVar(&f.timestamp, "timestamp", false,
@@ -189,6 +193,22 @@ func runGenerateAgentYAML(target string, f generateFlags, level logx.Level) erro
 	}
 	fmt.Fprintf(os.Stderr, "wrote %s · deployment_readiness %s · reliability_score %d (informational pending calibration)\n",
 		path, manifest.XTrustabl.Readiness, manifest.XTrustabl.Score100)
+
+	if f.openshellPolicy != "" {
+		policy := acac.BuildOpenShellPolicy(result, agent)
+		if err := acac.ValidateOpenShellPolicy(policy); err != nil {
+			return err
+		}
+		policyOut, err := acac.EmitOpenShellPolicy(policy)
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(f.openshellPolicy, policyOut, 0o644); err != nil {
+			return fmt.Errorf("writing OpenShell policy to %s: %w", f.openshellPolicy, err)
+		}
+		fmt.Fprintf(os.Stderr, "wrote %s (experimental — verify against a live OpenShell sandbox before relying on it)\n",
+			f.openshellPolicy)
+	}
 
 	if gateFails(manifest.XTrustabl.Readiness, f.failOn) {
 		fmt.Fprintf(os.Stderr, "readiness gate failed: deployment_readiness is %s (--fail-on %s)\n",
