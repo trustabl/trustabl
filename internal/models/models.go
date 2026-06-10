@@ -188,7 +188,21 @@ type ToolDef struct {
 	HasTypedParams bool              `json:"has_typed_params"`
 	ParamNames     []string          `json:"param_names,omitempty"`
 	Facts          map[string]string `json:"facts,omitempty"`
-	Config         map[string]string `json:"config,omitempty"` // decorator kwargs
+	Config         map[string]string `json:"config,omitempty"`
+	// HTTPHosts are the canonical host:port targets of recognized HTTP calls
+	// in the tool body whose URL argument is a plain string literal. The
+	// scheme's default port is applied when the literal names none (https →
+	// 443, http → 80) so consumers never re-derive it from a scheme the
+	// inventory no longer carries. Static literals only: any interpolation
+	// (f-string, template substitution, concatenation) captures nothing —
+	// the existing dynamic-URL signals are unchanged. Sorted + deduped at
+	// capture; never DNS-resolved (determinism contract).
+	HTTPHosts []string `json:"http_hosts,omitempty"`
+	// FSWritePaths are path literals passed to recognized filesystem-write
+	// shapes in the tool body (open with a write mode, pathlib write_*,
+	// shutil copy/move targets; fs.writeFile*/createWriteStream). Recorded
+	// verbatim as written in source. Static literals only; sorted + deduped.
+	FSWritePaths []string `json:"fs_write_paths,omitempty"` // decorator kwargs
 }
 
 // ComponentKind labels the type of an agent component the normalizer found

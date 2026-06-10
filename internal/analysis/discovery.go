@@ -384,6 +384,13 @@ func buildTool(fn *sitter.Node, pf ParsedFile, kind models.ToolKind) models.Tool
 		facts["shells_out"] = "true"
 	}
 
+	// Stage 2 typed captures: static HTTP hosts, static write-path literals,
+	// retry presence (tenacity/backoff decorators, client retry kwargs).
+	hosts, writePaths, retry := pythonBodyCaptures(fn, pf.Source)
+	if retry {
+		facts["retry_present"] = "true"
+	}
+
 	return models.ToolDef{
 		Name:     name,
 		Kind:     kind,
@@ -397,6 +404,8 @@ func buildTool(fn *sitter.Node, pf ParsedFile, kind models.ToolKind) models.Tool
 		HasTypedParams: astutil.FunctionHasTypedParams(fn, pf.Source),
 		ParamNames:     filtered,
 		Facts:          facts,
+		HTTPHosts:      hosts,
+		FSWritePaths:   writePaths,
 	}
 }
 
