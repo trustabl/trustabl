@@ -36,6 +36,20 @@ var depNameToSDK = map[string]models.SDK{
 	"vercel-ai":        models.SDKVercelAI,
 }
 
+// UnauditedSDKs returns the subset of sdks that have no shipped policy pack,
+// in input order. This is the same membership test META-001 applies; it is
+// exported so report consumers (the ACaC generator's honest-coverage block)
+// share one source of truth with the scan pipeline.
+func UnauditedSDKs(sdks []models.SDK) []models.SDK {
+	var out []models.SDK
+	for _, sdk := range sdks {
+		if !shippedPolicySDKs[sdk] {
+			out = append(out, sdk)
+		}
+	}
+	return out
+}
+
 // SelectAndEmitMETA inspects the profile + inventory and emits engine-level
 // info findings:
 //
