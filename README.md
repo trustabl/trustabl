@@ -108,21 +108,7 @@ TypeScript agent.
 
 ## How it reasons — the scanning pipeline
 
-trustabl scans in four steps. Each step's output is the typed input to the
-next, with no shared state between runs — and the inventory the early
-steps build is what makes policy selection *data-driven* rather than
-statically configured.
-
-The binary ships with **no embedded rules**. Before the pipeline runs,
-Trustabl resolves its detection rules from a separate git repository
-([`trustabl-rules`](https://github.com/trustabl/trustabl-rules)) —
-fetching the latest, caching the clone locally, and falling back to the
-cache when the network is unreachable. This decouples rule updates from
-binary releases: rules can be added or changed without rebuilding the
-scanner. The resolved rules commit is recorded in the result and folded
-into the `ScanID`, so a scan is honest about *which* rules produced it.
-If no rules can be fetched and none are cached, the scan exits `2` and
-tells you to run `trustabl rules pull` — Trustabl never runs rule-less.
+trustabl scans in four steps, each step's typed output feeding the next:
 
 ```mermaid
 flowchart LR
@@ -137,117 +123,42 @@ flowchart LR
     target --> recon --> inv --> pol --> ana --> score --> out
 ```
 
-1. **Recon** — walk the repo and answer "what's in here" cheaply, without
-   parsing any source language: languages present (by extension), SDK
-   dependencies declared in manifests (`pyproject.toml` / `requirements.txt`
-   / `Pipfile` / `poetry.lock` / `package.json` for the
-   `claude-agent-sdk` / `@anthropic-ai/claude-agent-sdk` / `openai-agents` /
-   `@openai/agents` / `google-adk` / `@google/adk` needles), the file inventory, and
-   discovered agent components (MCP configs, hook scripts, `CLAUDE.md` and
-   `AGENTS.md` guidance docs,
-   `.claude/agents/*.md` subagents at any depth, `SKILL.md` skills,
-   slash commands at both `.claude/commands/*.md` and
-   `<plugin-root>/commands/*.md`, `.claude-plugin/{plugin,marketplace}.json`
-   manifests, sandbox policies). No
-   tree-sitter parses happen here — this step decides whether the
-   expensive AST work is even worth attempting.
-2. **Inventory** — for each language Recon cleared, do the AST work and
-   extract a typed inventory: `ToolDef`s with their config and body facts,
-   `AgentDef`s with all kwargs captured, `SubagentDef`s / `SkillDef`s /
-   `SlashCommandDef`s / `PluginManifest`s parsed from markdown and JSON
-   frontmatter, `MCPServerDef`s, guardrails, sessions, and the resolved
-   edges between agents and the tools/guardrails they reference. Detectors
-   read fields off these structs — they never re-parse raw source.
-3. **Policy selection** — load **only** the rule packs for SDKs actually
-   *observed in code*. An SDK seen in code with no shipped pack emits a
-   `META-001` info finding ("Trustabl does not currently audit this SDK")
-   — silence on an unknown SDK is wrong. A dep declared but never used in
-   code emits a different info finding flagging the drift.
-4. **Analysis** — run the selected scope-aware detectors against the
-   inventory. Findings carry the scope they fired at and attribute to the
-   right location: tool file/line, agent call site, subagent markdown
-   file, or the manifest.
+1. **Recon** — walk the repo cheaply (no parsing): languages, declared SDK
+   deps, and agent components (MCP configs, `CLAUDE.md`/`AGENTS.md`,
+   `.claude/agents/*.md`, `SKILL.md`, slash commands, plugin manifests).
+2. **Inventory** — for each language Recon cleared, do the AST work into a
+   typed inventory (`ToolDef`/`AgentDef`/`SubagentDef`/`SkillDef`/…) with
+   agent→tool/guardrail edges resolved. Detectors read these structs; they
+   never re-parse source.
+3. **Policy selection** — load **only** the packs for SDKs observed in code.
+   An observed-but-unshipped SDK emits a `META-001` info finding; silence on
+   an unknown SDK is wrong.
+4. **Analysis** — run the scope-aware detectors; findings attribute to the
+   tool file/line, agent call site, subagent file, or manifest.
 
-Three properties fall out of this staging, by design:
-
-- **Performance.** A repo with no Python skips Python AST work; a repo
-  with only Claude TS code skips Python AST work AND OpenAI policy
-  loading.
-- **Honest coverage.** An "unaudited SDK" info finding is louder than a
-  zero-findings clean bill of health on an SDK Trustabl doesn't know. A
-  `META-004` finding further distinguishes "audited and clean" from
-  "could not audit — discovery extracted nothing a rule targets."
-- **Determinism is a contract.** Same inputs → same `ScanID`, and the
-  report is byte-stable across runs (findings sorted by
-  `(RuleID, FilePath, Line)`, inventory slices sorted deterministically).
-  CI consumers can diff scans without spurious churn.
-
-See [ARCHITECTURE.md § 2](ARCHITECTURE.md#2-pipeline) for the full
-diagram with typed inputs at each step.
+The binary ships with **no embedded rules** — they resolve from the separate
+[`trustabl-rules`](https://github.com/trustabl/trustabl-rules) repo at scan
+time (cached, offline-fallback), and the resolved commit folds into the
+`ScanID`. The staging buys performance (skip AST work for absent languages),
+honest coverage (an unaudited SDK is louder than a false clean bill), and
+determinism (same inputs → same `ScanID`, byte-stable report). The full
+pipeline with typed inputs at each step is in
+[ARCHITECTURE.md § 2](ARCHITECTURE.md#2-pipeline).
 
 ### What's wired today
 
-Tool/agent AST discovery is wired for:
+Full-depth **Python + TypeScript** AST discovery (tools, agents, hosted tools,
+MCP servers, guardrails, sessions) ships for nine SDKs — Claude Agent SDK,
+OpenAI Agents SDK, Google ADK, LangChain / LangGraph, CrewAI, AutoGen / AG2,
+Pydantic AI, the Vercel AI SDK, and MCP — with shared constructors (`Agent(...)`,
+`@tool`, `tool(...)`) import-gated per SDK so they never cross-match.
+**JavaScript** (`.js`/`.jsx`/`.mjs`/`.cjs`) routes through the same TS-family
+pipeline. **Go, C#, PHP, and Rust** have MCP-server discovery (the official SDKs
+plus key community ones). Other SDKs in those languages are recognized by Recon
+but not yet AST-parsed.
 
-- **Python** — Claude Agent SDK (decorators), OpenAI Agents SDK, Google
-  ADK, LangChain / LangGraph, CrewAI, AutoGen / AG2, and Pydantic AI.
-  Discovery extracts tool definitions, agent constructors, hosted
-  tools, MCP servers, guardrails, sessions. The bare `Agent(...)`
-  constructor shared by OpenAI / ADK / CrewAI / Pydantic AI is
-  import-gated per SDK so the classes never cross-match, and the
-  shared `@tool` decorator is routed to the owning SDK by its import
-  binding.
-- **TypeScript** — Claude Agent SDK (the `tool()` factory, the
-  `query()` main-thread `QueryMainAgent`, inline-in-`query()` sub-agents,
-  typed-const `AgentDefinition`s, `createSdkMcpServer` and the four
-  `options.mcpServers` config literals), OpenAI Agents SDK (the
-  `tool({...})` factory, `new Agent({...})` and `Agent.create({...})`,
-  9 hosted-tool factories, MCP server classes across 3 transports plus
-  the `MCPServers` wrapper, 4 `defineX` guardrail factories, and the
-  `MemorySession` / `OpenAIConversationsSession` /
-  `OpenAIResponsesCompactionSession` session classes — gated on imports
-  from `@openai/agents`, `@openai/agents-core`, or
-  `@openai/agents-openai`), and Google ADK (the
-  `new FunctionTool({...})` constructor, 5 agent constructors —
-  `new LlmAgent({...})` / `SequentialAgent` / `ParallelAgent` /
-  `LoopAgent` / `RoutedAgent` — 13 hosted-tool classes, and `subAgents`
-  edges — gated on imports from `@google/adk`), LangChain / LangGraph
-  (the `tool(fn, {...})` factory, `DynamicStructuredTool` / `DynamicTool`,
-  and `createReactAgent` / `createAgent` / `new AgentExecutor` — gated on
-  the `@langchain/*` / `langchain` / `langgraph` ecosystem), and the
-  Vercel AI SDK (the `tool({...})` / `dynamicTool({...})` single-object
-  factory, the call-based `generateText` / `streamText` / `generateObject`
-  / `streamObject` agents and the class `ToolLoopAgent` /
-  `Experimental_Agent`, with `tools` walked as an object/record, plus the
-  `<provider>.tools.*()` hosted tools — gated on the bare `ai` import).
-  Handles `.ts` / `.tsx` / `.mts` / `.cts` plus JavaScript
-  `.js` / `.jsx` / `.mjs` / `.cjs` with the `tree-sitter-typescript` and
-  `tree-sitter-tsx` grammars (JavaScript routes to the tsx grammar — a JS
-  superset — and is audited by the same `language: typescript` rule packs).
-  TypeScript rule packs ship for the Claude Agent SDK
-  (CSDK-010/011/012/013/014/016 tool rules; CSDK-120/130/131 agent rules),
-  OpenAI Agents SDK (OAI-016/017/019/022/024 tool rules; OAI-105 agent rule),
-  Google ADK (ADK-013/015/016 tool rules; ADK-109 agent rule), MCP
-  (MCP-011/012/013/014 tool rules), LangChain (LC-010/011/012/013/014 tool
-  rules; LC-111 agent rule), and the Vercel AI SDK (VAI-001..008 tool/agent
-  rules; VAI-012 repo rule). A TS repo for any of these no longer produces a
-  blanket `META-004`; see `COVERAGE.md` for the full matrix.
-
-JavaScript (`.js` / `.jsx` / `.mjs` / `.cjs`) is AST-parsed through the shared
-TypeScript-family pipeline: its tools and agents are discovered, tagged
-`javascript`, and audited by the `language: typescript` rule packs (both ES
-`import` and CommonJS `require()` bindings are recognized). Go has
-tree-sitter-go discovery for MCP tools (mark3labs/mcp-go and the official
-modelcontextprotocol/go-sdk), audited by the `language: go` rules in the MCP
-pack. C# has tree-sitter-c-sharp discovery for the official ModelContextProtocol
-SDK's `[McpServerTool]` methods, audited by the `language: csharp` rules. PHP has
-tree-sitter-php discovery for `#[McpTool]`-attributed methods (official mcp/sdk
-and community php-mcp/server), audited by the `language: php` rules. Rust has
-tree-sitter-rust discovery for the official rmcp crate's `#[tool]`-attributed
-methods (descriptions read from the `description = "..."` arg or the `///` doc
-comment), audited by the `language: rust` rules; other Go, .NET, PHP, and Rust
-SDKs are recognized as files by Recon but not yet AST-parsed.
-The rule schema's `language:` field gates per-language rule sets.
+The exact per-SDK, per-language recognition and rule coverage — including which
+TypeScript rule packs ship — is the [COVERAGE.md](COVERAGE.md) matrix.
 
 ### Scope boundaries
 
@@ -322,86 +233,27 @@ file independent of `--format` — one scan can print the human summary to stdou
 while persisting both machine artifacts. The file bytes are identical to the
 matching `--format` stdout output.
 
-`--bom-out <file>` additionally writes a byte-stable CycloneDX 1.5 BOM of the
-dependencies the repo declares across every supported language — `requirements.txt`
-/ `pyproject.toml` / `Pipfile` (pip), `package.json` (npm), `go.mod` (Go),
-`composer.json` (Composer), `*.csproj` (NuGet), `Cargo.toml` (Cargo). It is pure
-inventory of DECLARED direct deps and makes no network call.
+**Supply chain (`--bom-out`, `--vuln-scan`).** `--bom-out <file>` writes a
+byte-stable CycloneDX 1.5 BOM of the repo's declared direct deps across every
+supported language (pure inventory, no network). `--vuln-scan` (opt-in, online)
+matches concretely-pinned deps against a cached [OSV](https://osv.dev) snapshot
+and reports each affected package as a finding (advisory ID, CVSS severity,
+fixed version) that fails the scan through the normal gate; combined with
+`--bom-out` the CycloneDX document gains a VEX `vulnerabilities[]` array. Only
+the `--vuln-scan` path makes a network call and folds the snapshot version into
+`ScanID`; a default scan stays byte-identical.
 
-`--vuln-scan` turns that BOM into a vulnerability verdict: it matches the repo's
-concretely-pinned dependencies against a pinned [OSV](https://osv.dev) snapshot
-and reports each affected package as a finding carrying the advisory ID
-(CVE / GHSA / PYSEC / …), a CVSS-derived severity, and the first fixed version —
-so a vulnerable dependency fails the scan through the normal severity gate and
-exit codes and lands in the JSON / SARIF output alongside the rule findings, on
-`ScanResult.vulnerabilities`. Unlike the rest of a scan it is **opt-in and
-online**: the OSV snapshot is fetched from osv.dev on first use, cached under
-your user cache directory, and then **cache-first** — a later `--vuln-scan`
-reuses the cached database (no re-download) until it is older than 24h, so
-repeated scans are fast and offline-capable. `trustabl vulndb pull` refreshes the
-cache on demand; `--no-rules-update` pins to the cache at any age (fully offline).
-Only concretely-pinned versions are matched
-— a declared range (`^1.0`, `>=2`) can't be resolved to one version without a
-lockfile, so it is left unmatched rather than guessed. The snapshot version is
-folded into the `ScanID` only when `--vuln-scan` is on, so the result is honest
-about which vulnerability data produced it while a default scan stays
-byte-identical to before.
+`--format json` and `--format sarif` are byte-stable across identical-input runs
+(pure functions of the `ScanResult`); the human format is not, since its color
+auto-detects from the terminal (use `--no-color` or diff the JSON/SARIF when
+byte-stability matters).
 
-Combining `--vuln-scan` with `--bom-out` upgrades the CycloneDX document from a
-plain inventory into a BOM **plus VEX**: the matched advisories are emitted as a
-CycloneDX 1.5 `vulnerabilities[]` array — each with the advisory ID, an OSV
-`source`, a severity `rating`, an upgrade `recommendation`, and an `affects[]`
-reference linking it to the affected component's `bom-ref` — so a single
-`trustabl scan ./repo --vuln-scan --bom-out bom.json` produces a standards-based
-artifact that any CycloneDX-aware tool can ingest. Without `--vuln-scan` the
-`vulnerabilities[]` array is omitted and the BOM stays pure inventory.
-
-`--format json` and `--format sarif` are progress-silent and byte-stable
-across identical-input runs (pure functions of the `ScanResult`). The human
-format is not byte-stable by design: its ANSI color is auto-detected from the
-terminal (TTY vs pipe, `NO_COLOR`), so the same scan can render with or without
-color. Use `--no-color`, or diff the JSON/SARIF output, when byte-stability
-matters.
-
-### Diagnostics (`--verbose` / `--debug`)
-
-`--verbose` (`-v`) narrates the scan on **stderr**: rule provenance (repo, ref,
-resolved SHA, and any cache fallback), per-phase discovery counts (languages,
-tools, agents, detected SDKs, loaded detectors, unaudited SDKs), output
-destinations, and a final result summary (scan ID, score, findings by severity,
-exit code). `--debug` adds everything `--verbose` shows plus per-phase timing and
-capped per-entity / per-finding detail (each discovered tool/agent and each
-finding with its `file:line`).
-
-Both are **global** flags — they work on `scan`, `mcp`, and `rules pull`, and may
-appear before or after the subcommand (`trustabl -v scan …` or `trustabl scan -v
-…`). `--debug` implies `--verbose`. Both write **only to stderr**, so they never
-perturb the report on stdout or the JSON/SARIF byte-stability contract:
-`--format json --debug` still emits a clean document on stdout while the
-diagnostics stream to stderr. Diagnostic color follows the same rules as the
-report (off under `--no-color`, `NO_COLOR`, or when stderr is not a terminal).
-Because an animated progress panel and interleaved log lines would corrupt each
-other on the same stderr, `--verbose`/`--debug` automatically render progress as
-plain `[phase]` lines instead of the live spinner.
-
-**Saving diagnostics to a file.** There is no dedicated `--log-file` flag —
-because diagnostics are a separate stream (stderr), redirecting stderr is the
-intended mechanism:
-
-```bash
-# Report and diagnostics to separate files (stdout vs stderr)
-trustabl scan ./repo --debug --format json >report.json 2>diagnostics.log
-
-# Human report on screen, diagnostics to a file
-trustabl scan ./repo --debug 2>diagnostics.log
-
-# Everything (report + diagnostics) in one file
-trustabl scan ./repo --debug &>everything.log
-```
-
-With `--format json`/`sarif` progress is off, so the stderr file is
-diagnostics-only; with `--format human` it also carries the plain `[phase]`
-progress lines.
+**Diagnostics (`--verbose` / `--debug`).** Global flags (`scan`, `mcp`,
+`rules pull`; before or after the subcommand) that narrate the scan on
+**stderr** only — rule provenance, discovery counts, and a result summary
+(`-v`), plus per-phase timing and per-entity/per-finding detail (`--debug`). They
+never touch stdout, so `--format json --debug` still emits a clean document.
+There's no `--log-file`: redirect stderr (`2>diagnostics.log`).
 
 Exit codes:
 - `0` — no findings ≥ medium severity (or no findings at all).
@@ -413,19 +265,10 @@ Exit codes:
   expired or rolled-back statement, or a digest mismatch) — Trustabl refuses to
   run unverified rules.
 
-OpenShell surfaces are still discovered (shell-invocation functions,
-`openshell/*.yaml` policies) and reported on a `Risk surfaces: openshell`
-block in the human format: the count of shell-invoking functions, the first
-three file:line locations (deterministically sorted), a `why:` line stating
-the threat model (a prompt-injected agent that exposes one of these as a
-callable tool can run arbitrary commands), and a `fix:` line with concrete
-remediations (sandbox, allowlist, drop `shell=True`, keep shell logic out
-of agent-callable code). The OSH-* detection rules that audited these
-surfaces have moved to a closed-source companion project; with no OSH rules
-shipped, such repos fire no rule and no `META` finding — the block makes
-the unaudited risk legible without claiming an audit happened. OpenShell is
-a risk surface, not an SDK, so it is not flagged as "unaudited" the way an
-unknown SDK would be.
+Shell-invocation functions are still discovered and reported in a
+`Risk surfaces: openshell` block (count, first locations, threat model, fix),
+making the risk legible even though the OSH-* detection rules now live in a
+closed-source companion project — the block claims no audit happened.
 
 ## Install
 
@@ -480,109 +323,32 @@ fidelity on modern Python); TypeScript would need a separate replacement.
 ## Use
 
 ```bash
-# Local repo
+# Scan a local repo or a GitHub URL (the latter is shallow-cloned, removed on exit)
 trustabl scan ./path/to/agent-repo
-
-# GitHub repo (shallow clone to temp dir, removed on exit)
 trustabl scan https://github.com/org/repo
 
-# Restrict detectors
-trustabl scan ./repo --detectors claude_sdk
-trustabl scan ./repo --detectors openai_sdk
-trustabl scan ./repo --detectors google_adk
-trustabl scan ./repo --detectors claude_sdk,openai_sdk,google_adk
-# --detectors openshell is accepted but selects zero rules (pack is closed-source now)
-
-# Agent Skill security (SKILL.md) — flags unrestricted allowed-tools (a bare
-# `Bash` grant), pre-model dynamic-context exec, bundled-script network egress /
-# secret reads, committed secrets, hidden-Unicode prompt injection, and a
-# description that claims read-only while granting side-effecting tools (the
-# CSKILL-* rules). Skills are discovered and scanned automatically.
-trustabl scan ./repo                              # scans skills alongside tools/agents/MCP
-trustabl scan ./repo --detectors claude_skill     # only the Agent Skill (CSKILL-*) rules
-trustabl scan ./path/to/my-skill                  # point straight at one skill's directory
-
-# Dependency BOM (supply chain): export the repo's DECLARED deps across all
-# supported languages (pip / npm / Go / Composer / NuGet / Cargo manifests) as a
-# CycloneDX SBOM, to hand to OSV-Scanner / Dependabot / syft. Pure inventory —
-# the scan itself does no CVE lookup.
-trustabl scan ./repo --bom-out sbom.json
-
-# Vulnerability scan (opt-in, online): match the repo's pinned deps against the
-# OSV database and FAIL on known CVEs — advisory id, CVSS severity, fixed version.
-trustabl vulndb pull                              # pre-download OSV (optional; --vuln-scan auto-fetches)
-trustabl scan ./repo --vuln-scan                  # BOM inventory + CVE verdict in one pass
-trustabl scan ./repo --vuln-scan --bom-out bom.json  # CycloneDX BOM + VEX (vulnerabilities[]) in one file
-
-# JSON output for CI piping
+# Machine output for CI (JSON or SARIF; --output writes even when the scan exits 1)
 trustabl scan ./repo --format json
-
-# SARIF output for GitHub Code Scanning / SARIF-aware tools
-trustabl scan ./repo --format sarif > trustabl.sarif
-
-# Write the report to a file instead of stdout (any format). --output writes
-# the file even when the scan exits 1 on findings, so a CI step can upload it.
 trustabl scan ./repo --format sarif --output trustabl.sarif
 
-# One scan, both machine artifacts written to files (human summary to stdout)
-trustabl scan ./repo --json-out trustabl.json --sarif-out trustabl.sarif
-
-# Exit 1 on any finding regardless of severity
+# Fail on any finding; restrict to specific SDK detectors
 trustabl scan ./repo --strict
+trustabl scan ./repo --detectors claude_sdk,openai_sdk
 
-# Download / refresh the detection rule packs into the local cache
-trustabl rules pull
+# Supply chain: CycloneDX BOM, and an opt-in OSV vulnerability scan
+trustabl scan ./repo --bom-out sbom.json
+trustabl scan ./repo --vuln-scan
 
-# Validate a local rule-pack directory against this build's schema (CI gate
-# for the trustabl-rules repo — strict-loads every pack, fails on the first error)
-trustabl rules validate ./trustabl-rules
+# Generate an Agent Format (.agf.yaml) manifest for one agent (see below)
+trustabl generate agent-yaml ./repo --agent "Research Agent" --fail-on needs_work
 
-# Use a custom rules repo, or pin a specific released ruleset (env: TRUSTABL_RULES_REPO).
-# Default pulls the latest reviewed rules from trustabl-rules main; pin a tag for stability.
-trustabl scan ./repo --rules-repo https://github.com/org/my-rules
-trustabl scan ./repo --rules-ref v0.1.0
-
-# Air-gapped / offline: skip the network fetch, use the cached rules only
-trustabl scan ./repo --no-rules-update
-
-# Progress output (human format): animated on a terminal, plain lines when piped
-trustabl scan ./repo                 # spinner + bars on a TTY; "[phase] summary" lines when piped
-trustabl scan ./repo --no-progress   # disable progress entirely
-
-# Diagnostics on stderr (global flags; stdout/report unaffected)
-trustabl scan ./repo --verbose       # -v: rule provenance, discovery counts, result summary
-trustabl scan ./repo --debug         # + per-phase timing and per-entity/per-finding detail
-trustabl scan ./repo --debug --format json > out.json   # clean JSON on stdout, diagnostics on stderr
-
-# Generate an Agent Format (.agf.yaml) deployment manifest for one agent
-# (see "Generate an Agent Format manifest" below)
-trustabl generate agent-yaml ./repo                          # single-agent repo
-trustabl generate agent-yaml ./repo --agent "Research Agent" # multi-agent repo
-trustabl generate agent-yaml ./repo --fail-on needs_work     # stricter CI gate
-
-# Run as a stdio MCP server so an MCP client (Claude Code, Cursor, Claude
-# Desktop) can scan code an agent just wrote (see "Run as an MCP server" below)
+# Run as a stdio MCP server for an MCP client (see "Run as an MCP server")
 trustabl mcp
-
-# Configure LLM provider, then enrich a scan result with AI explanations and fixes
-trustabl llm list                          # show configured providers with masked keys
-trustabl llm key set                       # prompt securely for an API key
-trustabl llm key set sk-ant-api03-...      # set key non-interactively
-trustabl llm key get                       # show masked key for active provider
-trustabl llm key delete                    # delete key with confirmation prompt
-trustabl llm model set claude-sonnet-4-6   # change model for active provider
-trustabl llm provider set openai           # switch active provider (auto-creates entry)
-trustabl llm provider list                 # list configured providers
-
-# Enrich a scan result (requires anthropic provider with a key set)
-trustabl scan ./myrepo --format json | trustabl enrich --repo ./myrepo        # pipe scan into enrich (stdout)
-trustabl enrich --input scan.json --repo ./myrepo --output enriched.json      # file in, file out
-trustabl enrich --input scan.json --repo ./myrepo --diff                      # preview proposed fixes as a unified diff (stderr)
-trustabl enrich --input scan.json --repo ./myrepo --diff --apply              # preview and apply fixes
-trustabl enrich --input scan.json --repo ./myrepo --apply                     # apply fixes without previewing
-trustabl enrich --input scan.json --repo ./myrepo --rule CSDK-010             # focus on one rule
-trustabl enrich --input scan.json --repo ./myrepo --only-enriched             # CI: only enriched findings
 ```
+
+The full flag surface — `--rules-repo`/`--rules-ref`/`--no-rules-update`,
+`--json-out`/`--sarif-out`, `--verbose`/`--debug`, and the `rules`, `vulndb`,
+`llm`, and `enrich` subcommands — is in `trustabl <command> --help`.
 
 Rules are cached under your OS cache dir (`os.UserCacheDir()`, e.g.
 `%LocalAppData%\trustabl\rules\` on Windows, `~/.cache/trustabl/rules/`
@@ -774,44 +540,18 @@ own and modifies nothing outside the scan target.
 
 ### "rules are newer than this Trustabl build"
 
-Trustabl loads rules **forward-compatibly**. If the resolved pack targets a
-newer rule-schema version than your binary understands, the scan still runs: it
-evaluates every rule your build *can* understand and **skips** the rest, warning
-on stderr (and recording the skipped rule IDs on `ScanResult.RulesSkipped`):
+Rule loading is **forward-compatible**: a pack (or individual rule) that targets
+a newer schema, scope, `applies_to`, or predicate than your binary understands
+is **skipped** — its siblings still run — with a stderr warning and a `META-005`
+info finding, so a degraded scan is never mistaken for a clean one. A *malformed*
+known rule still hard-fails the load (authoring errors aren't silently dropped).
+**Upgrade Trustabl** to evaluate the skipped rules, or keep running the subset.
 
-```
-warning: the rules target schema version 9 but this Trustabl build supports up to 8; 2 rule(s) newer than this build were skipped. Upgrade Trustabl to evaluate them.
-```
-
-The same per-rule skip happens for any *individual* rule that references a
-`scope`, an `applies_to` value, or a predicate your build does not understand —
-that rule is dropped while its siblings still run, so a newer rules release never
-forces a lockstep binary upgrade. Every skip is also surfaced **in the report
-itself** as a single `META-005` info finding ("N rules require a newer Trustabl
-engine"), so a degraded scan is never mistaken for a clean one. A *malformed*
-rule your build does understand (a missing field, a bad value) is **not**
-forward-skipped — it still hard-fails the load, so real authoring errors are
-never silently dropped.
-
-To evaluate the skipped rules, **upgrade Trustabl** to a build whose
-`SupportedSchemaVersion` (see `internal/rules/schema_version.go`) covers the
-pack. No action is needed if you're comfortable running the subset.
-
-The scan only **fails** (exit 2) when nothing usable remains:
-
-- **"all rules require a newer engine schema"** — *every* rule is too new for
-  your build, so there is nothing to run. Upgrade Trustabl, or pin an older
-  rules branch/tag your build fully understands (`--rules-ref` resolves branches
-  and tags only, not raw commit SHAs, so a compatible ref must already exist):
-
-  ```bash
-  trustabl scan ./repo --rules-ref <branch-or-tag>
-  ```
-- **"no usable rules manifest"** — the pack's `manifest.yaml` is missing,
-  unparseable, or declares a non-positive version (a corrupt/truncated pack).
-  Run `trustabl rules pull` to refresh.
-- **"no usable rules found"** — nothing cached and nothing fetchable (offline
-  with a cold cache). Run `trustabl rules pull` while online.
+The scan only **fails** (exit `2`) when *nothing* is usable: every rule too new
+(`--rules-ref <older-branch-or-tag>` to pin a compatible pack), a corrupt
+`manifest.yaml`, or nothing cached and nothing fetchable (`trustabl rules pull`
+while online). See [ARCHITECTURE.md § 5](ARCHITECTURE.md#5-the-rules-engine-schema-evaluator-loader)
+for the schema-version discipline.
 
 ## Where the code lives
 
