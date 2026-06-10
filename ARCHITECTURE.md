@@ -1326,8 +1326,10 @@ ToolDef {
     Description    string
     HasTypedParams bool
     ParamNames     []string
-    Facts          map[string]string // detector-injected body facts
+    Facts          map[string]string // detector-injected body facts (incl. retry_present)
     Config         map[string]string // decorator kwargs (e.g. strict_mode, failure_error_function)
+    HTTPHosts      []string          // canonical host:port of static URL literals in recognized HTTP calls; sorted+deduped, never DNS-resolved
+    FSWritePaths   []string          // path literals passed to recognized write shapes, verbatim; sorted+deduped
 }
 
 ScanManifest {
@@ -1537,6 +1539,15 @@ Discipline rules:
 - `ToolDef.Facts map[string]string` is reserved for detector-injected body
   facts (e.g., "this function shells out") that downstream steps can read
   without re-walking the AST.
+- `ToolDef.HTTPHosts` / `ToolDef.FSWritePaths` are the typed Stage 2 captures:
+  static-literal-only extraction of outbound hosts (canonical `host:port`,
+  scheme default applied — https → 443, http → 80) and write-path literals.
+  Any interpolation (f-string substitution, template substitution,
+  concatenation) captures nothing — the existing dynamic-URL signals are
+  unchanged. No DNS is ever performed (determinism contract). The
+  `retry_present` boolean joins `Facts` (tenacity/backoff decorators, client
+  retry kwargs, p-retry/axios-retry/got-retry shapes; best-effort). These feed
+  `x-trustabl.surfaces[].facts` and the OpenShell policy exporter.
 - `AgentComponent.Path` always uses forward slashes (`filepath.ToSlash`),
   even on Windows. This keeps manifest output platform-stable so JSON
   consumers and snapshot tests don't see `/` vs `\` differences.

@@ -18,6 +18,19 @@ to follow Semantic Versioning once it reaches 1.0.
 
 ### Added
 
+- **Typed tool-body captures: `http_hosts`, `fs_write_paths`, `retry_present`.**
+  Discovery (Python + TypeScript) now records, per tool: the canonical
+  `host:port` of every recognized HTTP call whose URL is a static string
+  literal; the verbatim path literals passed to recognized filesystem-write
+  shapes; and a best-effort retry-presence body fact (tenacity/backoff
+  decorators, client retry kwargs, p-retry/axios-retry/got `retry` options).
+  Static literals only — interpolated URLs/paths capture nothing and the
+  existing dynamic-URL signals are unchanged; nothing is ever DNS-resolved.
+  Additive `ToolDef` report-shape change (`http_hosts`, `fs_write_paths`
+  keys, omitted when empty); the captures also surface in the ACaC manifest's
+  `x-trustabl` surface facts and feed the OpenShell policy export. No rule
+  behavior changes.
+
 - **`trustabl generate agent-yaml` — Agent Configuration as Code (ACaC).** A
   new command that turns a scan into a portable [Agent Format](https://agentformat.org)
   manifest (`.agf.yaml`) for one selected agent (`--agent` when a repo declares
