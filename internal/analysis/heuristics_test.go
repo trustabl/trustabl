@@ -185,3 +185,68 @@ import json as j
 		}
 	}
 }
+
+func TestCodeExecAliases_Canonical(t *testing.T) {
+	src := `
+import builtins
+import builtins as b
+from builtins import eval as ev
+from builtins import exec
+`
+	tree, err := astutil.Parse([]byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	a := CollectCodeExecAliases(tree.RootNode(), []byte(src))
+	cases := []struct {
+		callee    string
+		canonical string
+		wantExec  bool
+	}{
+		{"eval", "eval", true},              // bare builtin
+		{"ev", "eval", true},                // from-import alias
+		{"exec", "exec", true},              // from-import (no alias)
+		{"builtins.eval", "eval", true},     // module-qualified
+		{"b.exec", "exec", true},            // module alias
+		{"re.compile", "re.compile", false}, // non-builtins attribute, unchanged
+		{"compile", "compile", true},        // bare builtin (always)
+		{"upper", "upper", false},           // unrelated bare name
+	}
+	for _, c := range cases {
+		got := a.Canonical(c.callee)
+		if got != c.canonical {
+			t.Errorf("Canonical(%q) = %q, want %q", c.callee, got, c.canonical)
+		}
+		if IsCodeExecCallee(got) != c.wantExec {
+			t.Errorf("IsCodeExecCallee(Canonical(%q)=%q) = %v, want %v", c.callee, got, IsCodeExecCallee(got), c.wantExec)
+		}
+	}
+}
+
+func TestCollectHTTPModuleAliases(t *testing.T) {
+	src := `
+import requests as rq
+import httpx as hx
+import json as j
+import aiohttp as ah
+`
+	tree, err := astutil.Parse([]byte(src))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	got := CollectHTTPModuleAliases(tree.RootNode(), []byte(src))
+	want := map[string]string{"rq": "requests", "hx": "httpx"} // json/aiohttp not module-alias-resolved
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("alias %q = %q, want %q", k, got[k], v)
+		}
+	}
+	// The aliased call must canonicalize to a rule callee via IsHTTPCallNode.
+	c, b := firstCallNamed(t, `rq.get("u")`, "rq.get")
+	if canon, ok := IsHTTPCallNode(c, b, got); !ok || canon != "requests.get" {
+		t.Errorf("rq.get via module alias: got (%q,%v), want (requests.get,true)", canon, ok)
+	}
+}

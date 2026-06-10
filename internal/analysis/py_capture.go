@@ -13,11 +13,13 @@ import (
 // best-effort retry-presence signal. Static literals only — any interpolation
 // (f-string with substitutions, concatenation, name reference) captures
 // nothing, leaving the existing dynamic-URL behavior untouched.
-func pythonBodyCaptures(fn *sitter.Node, src []byte) (hosts, writePaths []string, retry bool) {
+func pythonBodyCaptures(fn *sitter.Node, src []byte, fileRoot *sitter.Node) (hosts, writePaths []string, retry bool) {
 	if fn == nil {
 		return nil, nil, false
 	}
-	aliases := ResolveClientAliases(fn, src)
+	// fileRoot lets HTTP host capture see module import aliases (import requests
+	// as rq) in addition to same-function client aliases (s = requests.Session()).
+	aliases := HTTPCallAliases(fileRoot, fn, src)
 	hostSet := map[string]bool{}
 	pathSet := map[string]bool{}
 

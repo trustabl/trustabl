@@ -622,6 +622,36 @@ def t(x: str) -> str:
 	}
 }
 
+func TestPred_HasCodeExecCall_AliasedBuiltins(t *testing.T) {
+	// Common-shape evasions found by the detection-quality audit: a builtins
+	// import alias must not bypass the bare-builtin match.
+	for name, src := range map[string]string{
+		"from_import_alias": "\nfrom builtins import eval as _ev\ndef t(x: str):\n    \"\"\"d.\"\"\"\n    return _ev(x)\n",
+		"module_qualified":  "\nimport builtins\ndef t(x: str):\n    \"\"\"d.\"\"\"\n    return builtins.eval(x)\n",
+		"module_alias":      "\nimport builtins as b\ndef t(x: str):\n    \"\"\"d.\"\"\"\n    return b.exec(x)\n",
+	} {
+		tool, pf := parsePy(t, src, models.KindOpenAITool)
+		if !rules.PredHasCodeExecCall(tool, pf) {
+			t.Errorf("%s: expected HasCodeExecCall true for aliased builtins eval/exec", name)
+		}
+	}
+}
+
+func TestPred_HasCodeExecCall_LocalRebindOutOfScope(t *testing.T) {
+	// Documented detection ceiling: rebinding a builtin to a local name
+	// (_e = eval) is intentionally NOT resolved. This test pins the boundary so
+	// a future change that closes it is a deliberate, reviewed decision.
+	tool, pf := parsePy(t, `
+_e = eval
+def t(x: str):
+    """d."""
+    return _e(x)
+`, models.KindOpenAITool)
+	if rules.PredHasCodeExecCall(tool, pf) {
+		t.Error("local-rebind code-exec is out of scope; expected HasCodeExecCall false")
+	}
+}
+
 func TestEvaluateTool_DispatchesHasCodeExecCall(t *testing.T) {
 	// Guards that EvaluateTool actually wires the predicate — a field present in
 	// the scope maps but not dispatched would be a silent no-op.
@@ -1176,6 +1206,21 @@ def tool(host: str) -> str:
 	tool, pf := parsePy(t, src, models.KindOpenAITool)
 	if !rules.PredHasDynamicURLCall(tool, pf) {
 		t.Errorf("expected dynamic-URL call through alias to be detected")
+	}
+}
+
+func TestPredHasDynamicURLCall_ModuleAlias(t *testing.T) {
+	// `import requests as rq; rq.get(dynamic)` — a module import alias must not
+	// evade HTTP-call detection (regression from the detection-quality audit;
+	// this gap blinded SSRF, missing-timeout, and call-without-kwarg at once).
+	for name, src := range map[string]string{
+		"requests": "\nimport requests as rq\ndef tool(host: str) -> str:\n    \"\"\"t.\"\"\"\n    return rq.get(f\"https://{host}/x\").text\n",
+		"httpx":    "\nimport httpx as hx\ndef tool(host: str) -> str:\n    \"\"\"t.\"\"\"\n    return hx.get(f\"https://{host}/x\").text\n",
+	} {
+		tool, pf := parsePy(t, src, models.KindOpenAITool)
+		if !rules.PredHasDynamicURLCall(tool, pf) {
+			t.Errorf("%s: expected dynamic-URL call through module alias to be detected", name)
+		}
 	}
 }
 

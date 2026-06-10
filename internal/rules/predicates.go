@@ -95,10 +95,17 @@ func PredHasCodeExecCall(t models.ToolDef, pf analysis.ParsedFile) bool {
 	if models.IsTSOrJS(t.Language) {
 		return t.Facts["code_exec"] == "true"
 	}
+	if pf.Tree == nil {
+		return false
+	}
 	root := analysis.FindFunctionNode(t, pf)
 	if root == nil {
 		return false
 	}
+	// Resolve builtins import aliases (from builtins import eval as ev;
+	// import builtins; builtins.eval) so an aliased import does not evade the
+	// bare-builtin match. Local rebinding and dynamic dispatch stay out of scope.
+	aliases := analysis.CollectCodeExecAliases(pf.Tree.RootNode(), pf.Source)
 	found := false
 	astutil.Walk(root, func(n *sitter.Node) bool {
 		if found {
@@ -111,8 +118,7 @@ func PredHasCodeExecCall(t models.ToolDef, pf analysis.ParsedFile) bool {
 		if fn == nil {
 			return true
 		}
-		switch astutil.NodeText(fn, pf.Source) {
-		case "eval", "exec", "compile":
+		if analysis.IsCodeExecCallee(aliases.Canonical(astutil.NodeText(fn, pf.Source))) {
 			found = true
 			return false
 		}
@@ -209,7 +215,7 @@ func PredHasDynamicURLCall(t models.ToolDef, pf analysis.ParsedFile) bool {
 	if root == nil {
 		return false
 	}
-	aliases := analysis.ResolveClientAliases(root, pf.Source)
+	aliases := analysis.HTTPCallAliases(pf.Tree.RootNode(), root, pf.Source)
 	found := false
 	astutil.Walk(root, func(n *sitter.Node) bool {
 		if found {
@@ -350,7 +356,7 @@ func PredCallWithoutKwarg(expr CallWithoutKwargExpr, t models.ToolDef, pf analys
 	if root == nil {
 		return false
 	}
-	aliases := analysis.ResolveClientAliases(root, pf.Source)
+	aliases := analysis.HTTPCallAliases(pf.Tree.RootNode(), root, pf.Source)
 	calleeSet := make(map[string]struct{}, len(expr.Callees))
 	for _, c := range expr.Callees {
 		calleeSet[c] = struct{}{}

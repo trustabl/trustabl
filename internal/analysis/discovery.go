@@ -380,17 +380,17 @@ func buildTool(fn *sitter.Node, pf ParsedFile, kind models.ToolKind) models.Tool
 	// agent_uses_tool_kind:[shell_invocation] only catches BARE shell functions
 	// (KindShellInvocation), missing the common @function_tool-wraps-subprocess
 	// shape the agent shell-tool rules (OAI-101/104) promise to flag.
-	var shellAliases ShellModuleAliases
+	var fileRoot *sitter.Node
 	if pf.Tree != nil {
-		shellAliases = CollectShellModuleAliases(pf.Tree.RootNode(), pf.Source)
+		fileRoot = pf.Tree.RootNode()
 	}
-	if pythonBodyShellsOut(fn, pf.Source, shellAliases) {
+	if pythonBodyShellsOut(fn, pf.Source, CollectShellModuleAliases(fileRoot, pf.Source)) {
 		facts["shells_out"] = "true"
 	}
 
 	// Stage 2 typed captures: static HTTP hosts, static write-path literals,
 	// retry presence (tenacity/backoff decorators, client retry kwargs).
-	hosts, writePaths, retry := pythonBodyCaptures(fn, pf.Source)
+	hosts, writePaths, retry := pythonBodyCaptures(fn, pf.Source, fileRoot)
 	if retry {
 		facts["retry_present"] = "true"
 	}

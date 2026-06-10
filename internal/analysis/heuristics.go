@@ -237,15 +237,11 @@ func CollectShellModuleAliases(root *sitter.Node, src []byte) ShellModuleAliases
 	if root == nil {
 		return a
 	}
-	norm := func(s string) string {
-		s = strings.NewReplacer("(", " ", ")", " ", "\n", " ", "\t", " ", "\\", " ").Replace(s)
-		return strings.Join(strings.Fields(s), " ")
-	}
 	astutil.Walk(root, func(n *sitter.Node) bool {
 		switch n.Type() {
 		case "import_statement":
 			// import a [as x], b [as y]
-			rest := strings.TrimSpace(strings.TrimPrefix(norm(astutil.NodeText(n, src)), "import "))
+			rest := strings.TrimSpace(strings.TrimPrefix(normImport(astutil.NodeText(n, src)), "import "))
 			for _, part := range strings.Split(rest, ",") {
 				part = strings.TrimSpace(part)
 				if mod, alias, ok := splitAs(part); ok {
@@ -256,7 +252,7 @@ func CollectShellModuleAliases(root *sitter.Node, src []byte) ShellModuleAliases
 			}
 		case "import_from_statement":
 			// from MODULE import a [as x], b [as y]
-			t := norm(astutil.NodeText(n, src))
+			t := normImport(astutil.NodeText(n, src))
 			t = strings.TrimSpace(strings.TrimPrefix(t, "from "))
 			i := strings.Index(t, " import ")
 			if i < 0 {
@@ -317,6 +313,143 @@ func IsShellCallee(c string) bool {
 	return strings.HasPrefix(c, "subprocess.") || c == "os.system" || c == "os.popen" ||
 		strings.HasPrefix(c, "os.spawn")
 }
+
+// normImport flattens an import statement's node text to a single space-joined
+// line with parentheses and continuations removed, so the text-based import
+// parsers can split it on commas and "as". Shared by the alias collectors.
+func normImport(s string) string {
+	s = strings.NewReplacer("(", " ", ")", " ", "\n", " ", "\t", " ", "\\", " ").Replace(s)
+	return strings.Join(strings.Fields(s), " ")
+}
+
+// httpModuleAliasPrefix maps a top-level HTTP module to the canonical receiver
+// prefix IsHTTPCallNode prepends when rewriting an aliased call. Only modules
+// whose call surface is module-level functions (requests.get, httpx.get) are
+// handled; aiohttp (ClientSession-based) and urllib are intentionally out of
+// scope for module-alias resolution — the documented detection ceiling.
+func httpModuleAliasPrefix(module string) string {
+	switch module {
+	case "requests":
+		return "requests"
+	case "httpx":
+		return "httpx"
+	}
+	return ""
+}
+
+// CollectHTTPModuleAliases scans a parsed Python file for `import requests as
+// rq` / `import httpx as hx` module aliases and returns alias -> canonical
+// receiver prefix, so an aliased module call (rq.get) canonicalizes to the rule
+// callee (requests.get) via IsHTTPCallNode. Without it a one-line module alias
+// evades every HTTP-based rule (SSRF, missing-timeout, call-without-kwarg).
+// Plain `import requests` needs no entry — its calls already read requests.get.
+func CollectHTTPModuleAliases(root *sitter.Node, src []byte) map[string]string {
+	out := map[string]string{}
+	if root == nil {
+		return out
+	}
+	astutil.Walk(root, func(n *sitter.Node) bool {
+		if n.Type() != "import_statement" {
+			return true
+		}
+		rest := strings.TrimSpace(strings.TrimPrefix(normImport(astutil.NodeText(n, src)), "import "))
+		for _, part := range strings.Split(rest, ",") {
+			if mod, alias, ok := splitAs(strings.TrimSpace(part)); ok {
+				if pref := httpModuleAliasPrefix(mod); pref != "" {
+					out[alias] = pref
+				}
+			}
+		}
+		return true
+	})
+	return out
+}
+
+// HTTPCallAliases returns the combined alias map IsHTTPCallNode consumes:
+// whole-file module import aliases (import requests as rq) plus same-function
+// local client aliases (s = requests.Session()), with local aliases winning on
+// a name collision.
+func HTTPCallAliases(fileRoot, fn *sitter.Node, src []byte) map[string]string {
+	m := CollectHTTPModuleAliases(fileRoot, src)
+	for k, v := range ResolveClientAliases(fn, src) {
+		m[k] = v
+	}
+	return m
+}
+
+// codeExecBuiltins is the set of builtin dynamic-code primitives.
+var codeExecBuiltins = map[string]bool{"eval": true, "exec": true, "compile": true}
+
+// CodeExecAliases canonicalizes aliased references to the eval/exec/compile
+// builtins back to the bare name, so an aliased import does not evade
+// has_code_exec_call:
+//
+//	from builtins import eval as ev  -> symbol["ev"] = "eval"
+//	import builtins [as b]           -> b.eval / builtins.eval -> "eval"
+//
+// Local rebinding (ev = eval) and fully dynamic dispatch (getattr(builtins,
+// "ev"+"al")) are out of scope — the documented static-detection ceiling.
+type CodeExecAliases struct {
+	symbol  map[string]string // local symbol  -> "eval"|"exec"|"compile"
+	modules map[string]bool   // local names bound to the builtins module
+}
+
+// CollectCodeExecAliases scans a parsed Python file for builtins import aliases.
+func CollectCodeExecAliases(root *sitter.Node, src []byte) CodeExecAliases {
+	// "builtins" itself is always a valid qualifier for builtins.eval.
+	a := CodeExecAliases{symbol: map[string]string{}, modules: map[string]bool{"builtins": true}}
+	if root == nil {
+		return a
+	}
+	astutil.Walk(root, func(n *sitter.Node) bool {
+		switch n.Type() {
+		case "import_statement":
+			rest := strings.TrimSpace(strings.TrimPrefix(normImport(astutil.NodeText(n, src)), "import "))
+			for _, part := range strings.Split(rest, ",") {
+				if mod, alias, ok := splitAs(strings.TrimSpace(part)); ok && mod == "builtins" {
+					a.modules[alias] = true
+				}
+			}
+		case "import_from_statement":
+			t := strings.TrimSpace(strings.TrimPrefix(normImport(astutil.NodeText(n, src)), "from "))
+			i := strings.Index(t, " import ")
+			if i < 0 || strings.TrimSpace(t[:i]) != "builtins" {
+				return true
+			}
+			for _, part := range strings.Split(t[i+len(" import "):], ",") {
+				part = strings.TrimSpace(part)
+				if orig, alias, ok := splitAs(part); ok && codeExecBuiltins[orig] {
+					a.symbol[alias] = orig
+				} else if codeExecBuiltins[part] {
+					a.symbol[part] = part
+				}
+			}
+		}
+		return true
+	})
+	return a
+}
+
+// Canonical rewrites a callee ("ev", "builtins.eval", "b.exec") to the bare
+// builtin name it refers to, or returns the callee unchanged. Attribute calls
+// on non-builtins receivers (re.compile) pass through, preserving the existing
+// "bare builtin only" semantics.
+func (a CodeExecAliases) Canonical(callee string) string {
+	if dot := strings.IndexByte(callee, '.'); dot >= 0 {
+		if a.modules[callee[:dot]] && codeExecBuiltins[callee[dot+1:]] {
+			return callee[dot+1:]
+		}
+		return callee
+	}
+	if real, ok := a.symbol[callee]; ok {
+		return real
+	}
+	return callee
+}
+
+// IsCodeExecCallee reports whether a (canonicalized) callee is a bare
+// eval/exec/compile.
+func IsCodeExecCallee(c string) bool { return codeExecBuiltins[c] }
 
 // IsPathishParam returns true if a parameter name is clearly path-like.
 // Uses word-boundary logic to avoid matching names like "editor_id" or
