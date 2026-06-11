@@ -6,10 +6,13 @@
 version: 1
 filesystem_policy:
   include_workdir: true
-  read_only: [/usr, /lib, /etc]
-  read_write: [/sandbox, /tmp, /workspace/archive/report.txt, /workspace/out/report.txt]
+  read_only: [/usr, /lib, /proc, /dev/urandom, /app, /etc, /var/log]
+  read_write: [/dev/null, /sandbox, /tmp, /workspace/archive/report.txt, /workspace/out/report.txt]
 landlock:
-  compatibility: best_effort
+  compatibility: best_effort # alternative: hard_requirement fails closed when the kernel lacks Landlock
+# run_as_user/group must be 'sandbox' (OpenShell-enforced).
+# BYOC note: `sandbox create --from <image>` clears these because a custom
+# image may lack a 'sandbox' user.
 process:
   run_as_user: sandbox
   run_as_group: sandbox

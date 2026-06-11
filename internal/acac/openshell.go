@@ -23,10 +23,13 @@ import (
 // as review notes instead. Dynamic-URL tools produce review-note stubs, never
 // guessed policies.
 
-// Baseline hardening defaults (spec §6 table: fixed, day one).
+// Baseline hardening defaults, mirroring OpenShell's own
+// restrictive_default_policy() (crates/openshell-policy/src/lib.rs @ v0.0.59):
+// the same 7 read-only and 3 read-write roots the runtime ships as its safe
+// default, so a generated policy is never thinner than OpenShell's baseline.
 var (
-	openShellReadOnly  = []string{"/usr", "/lib", "/etc"}
-	openShellReadWrite = []string{"/sandbox", "/tmp"}
+	openShellReadOnly  = []string{"/usr", "/lib", "/proc", "/dev/urandom", "/app", "/etc", "/var/log"}
+	openShellReadWrite = []string{"/sandbox", "/tmp", "/dev/null"}
 )
 
 const (

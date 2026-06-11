@@ -45,8 +45,9 @@ func TestBuildOpenShellPolicy_Derivations(t *testing.T) {
 
 	p := BuildOpenShellPolicy(models.ScanResult{}, agent)
 
-	// Baseline + captured absolute write path; the relative one is a note.
-	wantRW := []string{"/sandbox", "/tmp", "/workspace/out/report.txt"}
+	// Baseline (incl. /dev/null) + captured absolute write path; the relative
+	// one is a note. read_write is sorted, so /dev/null leads.
+	wantRW := []string{"/dev/null", "/sandbox", "/tmp", "/workspace/out/report.txt"}
 	if strings.Join(p.ReadWrite, "|") != strings.Join(wantRW, "|") {
 		t.Errorf("ReadWrite = %v, want %v", p.ReadWrite, wantRW)
 	}

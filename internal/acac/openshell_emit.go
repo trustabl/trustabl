@@ -12,6 +12,19 @@ import (
 // node infrastructure as the manifest emitter: fixed key order, pre-sorted
 // lists, explicit scalar tags, marker comments, LF endings.
 func EmitOpenShellPolicy(p OpenShellPolicy) ([]byte, error) {
+	// landlock.compatibility defaults to best_effort (degrade on kernels without
+	// Landlock); hard_requirement fails closed instead — a deployment choice.
+	compat := strNode("best_effort")
+	compat.LineComment = "alternative: hard_requirement fails closed when the kernel lacks Landlock"
+
+	// run_as_user/group are required to be exactly "sandbox" by OpenShell; the
+	// BYOC note records the one documented exception so the value is not mistaken
+	// for a freely-editable field.
+	processKey := keyNode("process")
+	processKey.HeadComment = "run_as_user/group must be 'sandbox' (OpenShell-enforced).\n" +
+		"BYOC note: `sandbox create --from <image>` clears these because a custom\n" +
+		"image may lack a 'sandbox' user."
+
 	root := mappingNode(
 		keyNode("version"), intNode(1),
 		keyNode("filesystem_policy"), mappingNode(
@@ -20,9 +33,9 @@ func EmitOpenShellPolicy(p OpenShellPolicy) ([]byte, error) {
 			keyNode("read_write"), flowStrings(p.ReadWrite),
 		),
 		keyNode("landlock"), mappingNode(
-			keyNode("compatibility"), strNode("best_effort"),
+			keyNode("compatibility"), compat,
 		),
-		keyNode("process"), mappingNode(
+		processKey, mappingNode(
 			keyNode("run_as_user"), strNode(p.RunAsUser),
 			keyNode("run_as_group"), strNode(p.RunAsGroup),
 		),
