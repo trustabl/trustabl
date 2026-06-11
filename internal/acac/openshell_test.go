@@ -121,6 +121,26 @@ func TestBuildOpenShellPolicy_AccessFromMethods(t *testing.T) {
 	}
 }
 
+func TestBuildOpenShellPolicy_UnspecifiedHostDropped(t *testing.T) {
+	// 0.0.0.0 is always blocked by OpenShell — it must become a review note, not
+	// an endpoint or an allowed_ips entry (audit finding).
+	tool := toolWithCaptures("probe", "tools.py",
+		[]string{"0.0.0.0:443"}, nil, map[string]string{"http_call": "true"})
+	p := BuildOpenShellPolicy(models.ScanResult{}, agentWiring(&tool))
+	if len(p.Network) != 0 {
+		t.Errorf("0.0.0.0 must not produce a network policy, got %+v", p.Network)
+	}
+	hasNote := false
+	for _, n := range p.ReviewNotes {
+		if strings.Contains(n, "unspecified") {
+			hasNote = true
+		}
+	}
+	if !hasNote {
+		t.Errorf("expected an 'unspecified' review note, got %v", p.ReviewNotes)
+	}
+}
+
 func TestBuildOpenShellPolicy_L7Rules(t *testing.T) {
 	// Every call to the host has a specific path → emit rules, omit access.
 	tool := toolWithCaptures("api", "tools.py",
@@ -208,6 +228,9 @@ func TestValidateOpenShellPolicy_RejectsEachConstraint(t *testing.T) {
 		{"loopback allowed_ip", func(p *OpenShellPolicy) {
 			p.Network[0].Endpoints[0].AllowedIPs = []string{"127.0.0.1"}
 		}, "loopback/link-local"},
+		{"unspecified allowed_ip", func(p *OpenShellPolicy) {
+			p.Network[0].Endpoints[0].AllowedIPs = []string{"0.0.0.0"}
+		}, "always blocked"},
 		{"loopback endpoint", func(p *OpenShellPolicy) {
 			p.Network[0].Endpoints[0].Host = "127.0.0.1"
 		}, "loopback"},

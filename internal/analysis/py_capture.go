@@ -41,7 +41,7 @@ func pythonBodyCaptures(fn *sitter.Node, src []byte, fileRoot *sitter.Node) (hos
 		// spell client-level retries as retries=/max_retries=).
 		if canonical, ok := IsHTTPCallNode(n, src, aliases); ok {
 			method := httpMethodFromPyCall(canonical, n, src)
-			if lit, ok := pythonStringLiteral(firstPositionalArg(n), src); ok {
+			if lit, ok := httpURLLiteral(canonical, n, src); ok {
 				if hp, path, ok := hostPathFromURLLiteral(lit); ok {
 					hostSet[hp] = true
 					if method != "" {
@@ -88,6 +88,26 @@ func pythonBodyCaptures(fn *sitter.Node, src []byte, fileRoot *sitter.Node) (hos
 		retry = true
 	}
 	return setToSorted(hostSet), setToSorted(pathSet), setToSorted(methodSet), sortedHTTPCalls(callSet), retry
+}
+
+// httpURLLiteral returns the static URL string literal of a recognized Python
+// HTTP call. For requests.request/httpx.request/session.request the URL is the
+// SECOND positional (the first is the method); for verb-named calls and urlopen
+// it is the first. A url= keyword argument is honored in both cases. Returns
+// ("", false) when the URL is absent or non-literal.
+func httpURLLiteral(canonical string, call *sitter.Node, src []byte) (string, bool) {
+	seg := canonical
+	if i := strings.LastIndexByte(canonical, '.'); i >= 0 {
+		seg = canonical[i+1:]
+	}
+	urlArg := firstPositionalArg(call)
+	if strings.ToLower(seg) == "request" {
+		urlArg = nthPositionalArg(call, 1)
+	}
+	if lit, ok := pythonStringLiteral(urlArg, src); ok {
+		return lit, true
+	}
+	return pythonKwargStringLiteral(call, src, "url")
 }
 
 // httpMethodFromPyCall derives the uppercase HTTP verb of a recognized Python

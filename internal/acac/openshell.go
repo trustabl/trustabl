@@ -280,6 +280,10 @@ func hostBlockedReason(host string) (string, bool) {
 		return "loopback", true
 	case ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast():
 		return "link-local", true
+	case ip.IsUnspecified():
+		// 0.0.0.0 / :: — OpenShell's is_always_blocked_ip rejects these; emit a
+		// review note, never an endpoint or allowed_ips entry.
+		return "unspecified", true
 	case ip.IsPrivate():
 		return "private-range", true
 	}
@@ -394,8 +398,8 @@ func ValidateOpenShellPolicy(p OpenShellPolicy) error {
 			}
 			for _, ip := range ep.AllowedIPs {
 				if parsed := net.ParseIP(ip); parsed != nil {
-					if parsed.IsLoopback() || parsed.IsLinkLocalUnicast() || parsed.IsLinkLocalMulticast() {
-						return fmt.Errorf("openshell policy: allowed_ips entry %q is loopback/link-local and is always blocked", ip)
+					if parsed.IsLoopback() || parsed.IsLinkLocalUnicast() || parsed.IsLinkLocalMulticast() || parsed.IsUnspecified() {
+						return fmt.Errorf("openshell policy: allowed_ips entry %q is loopback/link-local/unspecified and is always blocked", ip)
 					}
 				} else if _, _, err := net.ParseCIDR(ip); err != nil {
 					return fmt.Errorf("openshell policy: allowed_ips entry %q is not a valid IP or CIDR", ip)
@@ -433,9 +437,14 @@ func ValidateOpenShellPolicy(p OpenShellPolicy) error {
 	return nil
 }
 
-// overlyBroadRoot rejects write access to whole system roots. Read-only
-// system roots are the baseline hardening defaults, so the check applies to
-// the writable list and binaries only.
+// overlyBroadRoot rejects write access to whole system roots. This is
+// DELIBERATELY STRICTER than OpenShell, whose own validator only rejects a
+// read_write path that normalizes to "/" — Trustabl additionally refuses
+// writable /etc, /usr, /var, etc. as a hardening posture. Read-only system
+// roots are the baseline hardening defaults, so the check applies to the
+// writable list and binaries only. (Because of this, the overall validator is
+// not a pure mirror of OpenShell's load-time rules for read_write roots; it is
+// a superset.)
 func overlyBroadRoot(path, where string) bool {
 	if where == "read_only" {
 		return false

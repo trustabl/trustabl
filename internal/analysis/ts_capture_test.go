@@ -68,6 +68,47 @@ func TestTSCapture_HTTPCalls(t *testing.T) {
 	}
 }
 
+func TestTSCapture_GotAxiosVerbs(t *testing.T) {
+	// got.delete and axios.head must be recognized (audit: these verbs were
+	// silently dropped, so a DELETE tool exported as read-only).
+	td := discoverOneTSTool(t, `
+		await got.delete("https://api.example.com/x");
+		await axios.head("https://api.example.com/y");
+		return null;`)
+	if want := []string{"DELETE", "HEAD"}; !reflect.DeepEqual(td.HTTPMethods, want) {
+		t.Errorf("HTTPMethods = %v, want %v", td.HTTPMethods, want)
+	}
+}
+
+func TestTSCapture_DynamicMethodNotGET(t *testing.T) {
+	// fetch(url, {method: <var>}) — a present-but-non-literal method must NOT
+	// masquerade as GET (audit finding); it is unprovable, so capture nothing.
+	td := discoverOneTSTool(t, `
+		const verb = q;
+		await fetch("https://api.example.com/x", { method: verb });
+		return null;`)
+	if td.HTTPMethods != nil {
+		t.Errorf("non-literal method must capture no method, got %v", td.HTTPMethods)
+	}
+}
+
+func TestTSCapture_AxiosConfigURL(t *testing.T) {
+	// axios({ url, method }) — the URL under the config object must be captured,
+	// not dropped as dynamic (audit finding).
+	td := discoverOneTSTool(t, `
+		await axios({ url: "https://api.example.com/v2", method: "PUT" });
+		return null;`)
+	if want := []string{"api.example.com:443"}; !reflect.DeepEqual(td.HTTPHosts, want) {
+		t.Errorf("HTTPHosts = %v, want %v", td.HTTPHosts, want)
+	}
+	if want := []string{"PUT"}; !reflect.DeepEqual(td.HTTPMethods, want) {
+		t.Errorf("HTTPMethods = %v, want %v", td.HTTPMethods, want)
+	}
+	if td.Facts["dynamic_url"] == "true" {
+		t.Error("static config url must not set dynamic_url")
+	}
+}
+
 func TestTSCapture_HTTPWithExplicitPort(t *testing.T) {
 	td := discoverOneTSTool(t, `return axios.get("http://localhost:3000/x");`)
 	if want := []string{"localhost:3000"}; !reflect.DeepEqual(td.HTTPHosts, want) {

@@ -56,23 +56,28 @@ func tsHandlerCapture(handler *sitter.Node, src []byte) handlerCapture {
 		text := astutil.NodeText(fn, src)
 		switch text {
 		case "fetch", "axios", "axios.get", "axios.post", "axios.put", "axios.delete",
-			"axios.patch", "axios.request", "got", "got.get", "got.post",
+			"axios.patch", "axios.head", "axios.options", "axios.request",
+			"got", "got.get", "got.post", "got.put", "got.patch", "got.delete", "got.head",
 			"undici.fetch", "undici.request":
 			out.facts["http_call"] = "true"
 			method := tsHTTPMethod(text, n, src)
-			if urlArgIsDynamic(n, src) {
-				out.facts["dynamic_url"] = "true"
-			} else if lit, ok := tsStringLiteral(firstCallArg(n), src); ok {
-				// Stage 2: the non-dynamic branch records the literal URL's
-				// canonical host:port and path. A relative literal has no host
-				// and captures nothing.
-				if hp, path, ok := hostPathFromURLLiteral(lit); ok {
+			// Resolve a static URL literal: the first positional string, else a
+			// `url` key on a config object (axios(config) / got(url, {...})).
+			urlLit, haveURL := tsStringLiteral(firstCallArg(n), src)
+			if !haveURL {
+				urlLit, haveURL = httpCallOptionStringValue(n, src, "url")
+			}
+			if haveURL {
+				if hp, path, ok := hostPathFromURLLiteral(urlLit); ok {
 					hostSet[hp] = true
 					if method != "" {
 						c := models.HTTPCall{HostPort: hp, Method: method, Path: path}
 						callSet[httpCallKey(c)] = c
 					}
 				}
+			} else if urlArgIsDynamic(n, src) {
+				// No static URL anywhere → caller/model-controlled (SSRF signal).
+				out.facts["dynamic_url"] = "true"
 			}
 			if method != "" {
 				methodSet[method] = true
@@ -138,11 +143,17 @@ func tsHTTPMethod(callee string, call *sitter.Node, src []byte) string {
 		seg = callee[i+1:]
 	}
 	switch strings.ToLower(seg) {
-	case "get", "post", "put", "patch", "delete", "head":
+	case "get", "post", "put", "patch", "delete", "head", "options":
 		return strings.ToUpper(seg)
 	}
 	if m, ok := httpCallOptionStringValue(call, src, "method"); ok {
 		return strings.ToUpper(m)
+	}
+	// A present-but-non-literal method (method: someVar) is unprovable — return
+	// "" so it does not masquerade as GET; default to GET only when no method
+	// option is given at all (the fetch/get-style default).
+	if httpCallHasOptionKey(call, src, "method") {
+		return ""
 	}
 	return "GET"
 }

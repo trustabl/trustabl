@@ -70,6 +70,29 @@ def touch():
 	}
 }
 
+func TestPythonCapture_RequestPositionalURL(t *testing.T) {
+	// requests.request("DELETE", url): the URL is the 2nd positional. Host, path,
+	// method, and the HTTPCall must ALL be captured together — regression for the
+	// audit finding that read the 1st positional (the verb) as the URL.
+	td := discoverOnePyTool(t, `from agents import function_tool
+import requests
+
+@function_tool
+def wipe():
+    return requests.request("DELETE", "https://api.example.com/items/5")
+`)
+	if want := []string{"api.example.com:443"}; !reflect.DeepEqual(td.HTTPHosts, want) {
+		t.Errorf("HTTPHosts = %v, want %v", td.HTTPHosts, want)
+	}
+	if want := []string{"DELETE"}; !reflect.DeepEqual(td.HTTPMethods, want) {
+		t.Errorf("HTTPMethods = %v, want %v", td.HTTPMethods, want)
+	}
+	want := []models.HTTPCall{{HostPort: "api.example.com:443", Method: "DELETE", Path: "/items/5"}}
+	if !reflect.DeepEqual(td.HTTPCalls, want) {
+		t.Errorf("HTTPCalls = %+v, want %+v", td.HTTPCalls, want)
+	}
+}
+
 func TestPythonCapture_NoHTTPNoMethods(t *testing.T) {
 	td := discoverOnePyTool(t, `from agents import function_tool
 
