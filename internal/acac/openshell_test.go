@@ -55,10 +55,10 @@ func TestBuildOpenShellPolicy_Derivations(t *testing.T) {
 		t.Errorf("process = %s/%s, want sandbox/sandbox", p.RunAsUser, p.RunAsGroup)
 	}
 
-	// Exactly one network policy: fetch_status. Private/loopback hosts and
-	// dynamic URLs never produce endpoints.
-	if len(p.Network) != 1 {
-		t.Fatalf("network policies = %d, want 1: %+v", len(p.Network), p.Network)
+	// fetch_status (public host) and internal_probe (private IP via allowed_ips)
+	// produce network policies; loopback and dynamic URLs do not.
+	if len(p.Network) != 2 {
+		t.Fatalf("network policies = %d, want 2: %+v", len(p.Network), p.Network)
 	}
 	np := p.Network[0]
 	if np.Key != "fetch_status" || np.Name != "fetch-status" {
@@ -71,9 +71,20 @@ func TestBuildOpenShellPolicy_Derivations(t *testing.T) {
 		t.Errorf("binaries = %v", np.Binaries)
 	}
 
-	// Review notes: relative write path, two blocked hosts, one dynamic URL.
-	if len(p.ReviewNotes) != 4 {
-		t.Errorf("review notes = %d, want 4:\n%s", len(p.ReviewNotes), strings.Join(p.ReviewNotes, "\n"))
+	// internal_probe: the private 10.0.0.5 becomes a host-less allowed_ips
+	// endpoint; localhost (loopback) stays dropped.
+	probe := p.Network[1]
+	if probe.Key != "internal_probe" || len(probe.Endpoints) != 1 {
+		t.Fatalf("internal_probe policy = %+v", probe)
+	}
+	pe := probe.Endpoints[0]
+	if pe.Host != "" || len(pe.AllowedIPs) != 1 || pe.AllowedIPs[0] != "10.0.0.5" || pe.Marker == "" {
+		t.Errorf("internal_probe endpoint = %+v, want host-less allowed_ips [10.0.0.5] with marker", pe)
+	}
+
+	// Review notes: relative write path, loopback host, one dynamic URL.
+	if len(p.ReviewNotes) != 3 {
+		t.Errorf("review notes = %d, want 3:\n%s", len(p.ReviewNotes), strings.Join(p.ReviewNotes, "\n"))
 	}
 
 	if err := ValidateOpenShellPolicy(p); err != nil {
@@ -191,6 +202,12 @@ func TestValidateOpenShellPolicy_RejectsEachConstraint(t *testing.T) {
 		{"second wildcard", func(p *OpenShellPolicy) {
 			p.Network[0].Endpoints[0].Host = "*.sub.*.example.com"
 		}, "leading first-label"},
+		{"tld wildcard", func(p *OpenShellPolicy) {
+			p.Network[0].Endpoints[0].Host = "*.com"
+		}, "TLD wildcard"},
+		{"loopback allowed_ip", func(p *OpenShellPolicy) {
+			p.Network[0].Endpoints[0].AllowedIPs = []string{"127.0.0.1"}
+		}, "loopback/link-local"},
 		{"loopback endpoint", func(p *OpenShellPolicy) {
 			p.Network[0].Endpoints[0].Host = "127.0.0.1"
 		}, "loopback"},

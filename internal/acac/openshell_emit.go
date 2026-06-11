@@ -65,12 +65,21 @@ func EmitOpenShellPolicy(p OpenShellPolicy) ([]byte, error) {
 		)
 		endpoints := seqNode()
 		for _, ep := range np.Endpoints {
-			epNode := mappingNode(
-				keyNode("host"), strNode(ep.Host),
-				keyNode("port"), intNode(ep.Port),
+			epNode := mappingNode()
+			if ep.Host != "" {
+				epNode.Content = append(epNode.Content, keyNode("host"), strNode(ep.Host))
+			}
+			epNode.Content = append(epNode.Content, keyNode("port"), intNode(ep.Port))
+			if len(ep.AllowedIPs) > 0 {
+				epNode.Content = append(epNode.Content, keyNode("allowed_ips"), flowStrings(ep.AllowedIPs))
+			}
+			epNode.Content = append(epNode.Content,
 				keyNode("protocol"), strNode("rest"),
 				keyNode("enforcement"), strNode("enforce"),
 			)
+			if ep.Marker != "" {
+				epNode.HeadComment = MarkerReview + " — " + ep.Marker
+			}
 			if len(ep.Rules) > 0 {
 				// Fine-grained L7 rules (mutually exclusive with access): one
 				// allow:{method, path} entry per captured (method, path).

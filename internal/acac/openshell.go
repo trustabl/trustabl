@@ -78,6 +78,13 @@ type OpenShellEndpoint struct {
 	// captured call to this host has a specific path. Mutually exclusive with
 	// Access.
 	Rules []OpenShellL7Rule
+	// AllowedIPs is the explicit IP/CIDR allowlist for a host-less endpoint
+	// targeting a private (RFC 1918) destination. When set, Host is empty.
+	// Loopback/link-local are never placed here (OpenShell always blocks them).
+	AllowedIPs []string
+	// Marker, when set, is emitted as a trustabl: review comment above the
+	// endpoint (used for the allowed_ips private-destination scaffold).
+	Marker string
 }
 
 // OpenShellL7Rule is one endpoint L7 allow rule (an entry under rules: with a
@@ -156,12 +163,21 @@ func BuildOpenShellPolicy(result models.ScanResult, agent models.AgentDef) OpenS
 			if err != nil {
 				continue
 			}
+			ep := OpenShellEndpoint{Port: port}
 			if reason, blocked := hostBlockedReason(host); blocked {
-				p.ReviewNotes = append(p.ReviewNotes,
-					fmt.Sprintf("tool %s targets %s host %s — not emitted; add an explicit allowed_ips entry if intended", t.Name, reason, hp))
-				continue
+				if reason != "private-range" {
+					// loopback / link-local are always blocked by OpenShell.
+					p.ReviewNotes = append(p.ReviewNotes,
+						fmt.Sprintf("tool %s targets %s host %s — not emitted (OpenShell always blocks it)", t.Name, reason, hp))
+					continue
+				}
+				// A literal private destination becomes a host-less allowed_ips
+				// endpoint scaffold (reaching an internal IP is a deliberate choice).
+				ep.AllowedIPs = []string{host}
+				ep.Marker = "private destination — confirm the sandbox should reach this internal IP"
+			} else {
+				ep.Host = host
 			}
-			ep := OpenShellEndpoint{Host: host, Port: port}
 			if rules := openShellRulesForHost(callsByHost[hp]); len(rules) > 0 {
 				ep.Rules = rules
 			} else {
@@ -365,9 +381,25 @@ func ValidateOpenShellPolicy(p OpenShellPolicy) error {
 				if i != 0 || !strings.HasPrefix(ep.Host, "*.") || strings.Contains(ep.Host[2:], "*") {
 					return fmt.Errorf("openshell policy: endpoint host %q — wildcards are allowed only as a leading first-label \"*.\"", ep.Host)
 				}
+				if !strings.Contains(ep.Host[2:], ".") {
+					return fmt.Errorf("openshell policy: endpoint host %q is a TLD wildcard; use a subdomain wildcard like *.example.com", ep.Host)
+				}
 			}
 			if reason, blocked := hostBlockedReason(ep.Host); blocked {
 				return fmt.Errorf("openshell policy: endpoint host %q is %s and must not be emitted", ep.Host, reason)
+			}
+			// A host-less endpoint is legal only as an allowed_ips allowlist.
+			if ep.Host == "" && len(ep.AllowedIPs) == 0 {
+				return fmt.Errorf("openshell policy: endpoint has neither host nor allowed_ips")
+			}
+			for _, ip := range ep.AllowedIPs {
+				if parsed := net.ParseIP(ip); parsed != nil {
+					if parsed.IsLoopback() || parsed.IsLinkLocalUnicast() || parsed.IsLinkLocalMulticast() {
+						return fmt.Errorf("openshell policy: allowed_ips entry %q is loopback/link-local and is always blocked", ip)
+					}
+				} else if _, _, err := net.ParseCIDR(ip); err != nil {
+					return fmt.Errorf("openshell policy: allowed_ips entry %q is not a valid IP or CIDR", ip)
+				}
 			}
 			if ep.Port < 1 || ep.Port > 65535 {
 				return fmt.Errorf("openshell policy: endpoint %s has out-of-range port %d", ep.Host, ep.Port)
