@@ -51,6 +51,25 @@ def touch():
 	}
 }
 
+func TestPythonCapture_HTTPCalls(t *testing.T) {
+	// Structured (host:port, method, path) records; query string dropped.
+	td := discoverOnePyTool(t, `from agents import function_tool
+import requests
+
+@function_tool
+def touch():
+    requests.get("https://api.example.com/status")
+    requests.post("https://api.example.com/ingest?x=1")
+`)
+	want := []models.HTTPCall{
+		{HostPort: "api.example.com:443", Method: "GET", Path: "/status"},
+		{HostPort: "api.example.com:443", Method: "POST", Path: "/ingest"},
+	}
+	if !reflect.DeepEqual(td.HTTPCalls, want) {
+		t.Errorf("HTTPCalls = %+v, want %+v", td.HTTPCalls, want)
+	}
+}
+
 func TestPythonCapture_NoHTTPNoMethods(t *testing.T) {
 	td := discoverOnePyTool(t, `from agents import function_tool
 

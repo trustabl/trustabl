@@ -141,6 +141,7 @@ func extractTSMCPTool(call *sitter.Node, method string, pf ParsedFile) (models.T
 		td.HTTPHosts = hc.httpHosts
 		td.FSWritePaths = hc.fsWritePaths
 		td.HTTPMethods = hc.httpMethods
+		td.HTTPCalls = hc.httpCalls
 	}
 
 	switch method {

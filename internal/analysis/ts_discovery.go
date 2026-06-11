@@ -99,6 +99,7 @@ func extractTSToolFromCall(call *sitter.Node, pf ParsedFile) (models.ToolDef, bo
 		tool.HTTPHosts = hc.httpHosts
 		tool.FSWritePaths = hc.fsWritePaths
 		tool.HTTPMethods = hc.httpMethods
+		tool.HTTPCalls = hc.httpCalls
 	}
 	// Extras (arg 4) flattened into Config.
 	if len(posArgs) >= 5 && posArgs[4].Type() == "object" {

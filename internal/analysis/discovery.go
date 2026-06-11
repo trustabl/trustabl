@@ -390,7 +390,7 @@ func buildTool(fn *sitter.Node, pf ParsedFile, kind models.ToolKind) models.Tool
 
 	// Stage 2 typed captures: static HTTP hosts, static write-path literals,
 	// retry presence (tenacity/backoff decorators, client retry kwargs).
-	hosts, writePaths, methods, retry := pythonBodyCaptures(fn, pf.Source, fileRoot)
+	hosts, writePaths, methods, httpCalls, retry := pythonBodyCaptures(fn, pf.Source, fileRoot)
 	if retry {
 		facts["retry_present"] = "true"
 	}
@@ -411,6 +411,7 @@ func buildTool(fn *sitter.Node, pf ParsedFile, kind models.ToolKind) models.Tool
 		HTTPHosts:      hosts,
 		FSWritePaths:   writePaths,
 		HTTPMethods:    methods,
+		HTTPCalls:      httpCalls,
 	}
 }
 

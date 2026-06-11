@@ -210,6 +210,19 @@ type ToolDef struct {
 	// option (defaulting to GET). An aggregate set per tool, sorted + deduped.
 	// Drives the OpenShell L7 access preset; absent when no method is provable.
 	HTTPMethods []string `json:"http_methods,omitempty"`
+	// HTTPCalls are the structured (host:port, method, path) records of
+	// recognized HTTP calls whose URL is a static literal AND whose method is
+	// provable. The per-call detail behind the HTTPHosts/HTTPMethods aggregates,
+	// used to emit fine-grained OpenShell L7 method/path rules. Sorted + deduped.
+	HTTPCalls []HTTPCall `json:"http_calls,omitempty"`
+}
+
+// HTTPCall is one recognized HTTP call with a static literal URL and a provable
+// method: the structured record behind ToolDef.HTTPHosts/HTTPMethods.
+type HTTPCall struct {
+	HostPort string `json:"host_port"`     // canonical host:port (same form as HTTPHosts)
+	Method   string `json:"method"`        // uppercase verb
+	Path     string `json:"path,omitempty"` // URL path ("/ingest"); empty when root or absent
 }
 
 // ComponentKind labels the type of an agent component the normalizer found

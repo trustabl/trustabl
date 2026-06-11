@@ -110,6 +110,50 @@ func TestBuildOpenShellPolicy_AccessFromMethods(t *testing.T) {
 	}
 }
 
+func TestBuildOpenShellPolicy_L7Rules(t *testing.T) {
+	// Every call to the host has a specific path → emit rules, omit access.
+	tool := toolWithCaptures("api", "tools.py",
+		[]string{"api.example.com:443"}, nil, map[string]string{"http_call": "true"})
+	tool.HTTPMethods = []string{"GET", "POST"}
+	tool.HTTPCalls = []models.HTTPCall{
+		{HostPort: "api.example.com:443", Method: "GET", Path: "/status"},
+		{HostPort: "api.example.com:443", Method: "POST", Path: "/ingest"},
+	}
+	p := BuildOpenShellPolicy(models.ScanResult{}, agentWiring(&tool))
+	ep := p.Network[0].Endpoints[0]
+	if ep.Access != "" {
+		t.Errorf("rules present → access must be empty, got %q", ep.Access)
+	}
+	if len(ep.Rules) != 2 ||
+		ep.Rules[0] != (OpenShellL7Rule{Method: "GET", Path: "/status"}) ||
+		ep.Rules[1] != (OpenShellL7Rule{Method: "POST", Path: "/ingest"}) {
+		t.Errorf("Rules = %+v", ep.Rules)
+	}
+	if err := ValidateOpenShellPolicy(p); err != nil {
+		t.Errorf("rules policy must validate: %v", err)
+	}
+}
+
+func TestBuildOpenShellPolicy_RulesFallbackToAccess(t *testing.T) {
+	// A call without a specific path (root) means we cannot scope by path, so
+	// the whole host falls back to the coarse access preset.
+	tool := toolWithCaptures("api", "tools.py",
+		[]string{"api.example.com:443"}, nil, map[string]string{"http_call": "true"})
+	tool.HTTPMethods = []string{"GET", "POST"}
+	tool.HTTPCalls = []models.HTTPCall{
+		{HostPort: "api.example.com:443", Method: "POST", Path: "/ingest"},
+		{HostPort: "api.example.com:443", Method: "GET", Path: ""}, // root → unscopable
+	}
+	p := BuildOpenShellPolicy(models.ScanResult{}, agentWiring(&tool))
+	ep := p.Network[0].Endpoints[0]
+	if len(ep.Rules) != 0 {
+		t.Errorf("a path-less call must force access fallback, got rules %+v", ep.Rules)
+	}
+	if ep.Access != "read-write" {
+		t.Errorf("access fallback = %q, want read-write", ep.Access)
+	}
+}
+
 func TestValidateOpenShellPolicy_RejectsEachConstraint(t *testing.T) {
 	valid := func() OpenShellPolicy {
 		return OpenShellPolicy{
@@ -119,7 +163,7 @@ func TestValidateOpenShellPolicy_RejectsEachConstraint(t *testing.T) {
 			RunAsGroup: "sandbox",
 			Network: []OpenShellNetworkPolicy{{
 				Key: "t", Name: "t",
-				Endpoints: []OpenShellEndpoint{{Host: "api.example.com", Port: 443}},
+				Endpoints: []OpenShellEndpoint{{Host: "api.example.com", Port: 443, Access: "read-only"}},
 				Binaries:  []string{"/usr/bin/python3"},
 			}},
 		}

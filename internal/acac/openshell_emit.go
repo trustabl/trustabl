@@ -65,19 +65,35 @@ func EmitOpenShellPolicy(p OpenShellPolicy) ([]byte, error) {
 		)
 		endpoints := seqNode()
 		for _, ep := range np.Endpoints {
-			// access is derived from the tool's observed HTTP verbs (read-only /
-			// read-write / full); default read-only when somehow unset.
-			access := ep.Access
-			if access == "" {
-				access = "read-only"
-			}
-			endpoints.Content = append(endpoints.Content, mappingNode(
+			epNode := mappingNode(
 				keyNode("host"), strNode(ep.Host),
 				keyNode("port"), intNode(ep.Port),
 				keyNode("protocol"), strNode("rest"),
 				keyNode("enforcement"), strNode("enforce"),
-				keyNode("access"), strNode(access),
-			))
+			)
+			if len(ep.Rules) > 0 {
+				// Fine-grained L7 rules (mutually exclusive with access): one
+				// allow:{method, path} entry per captured (method, path).
+				rulesSeq := seqNode()
+				for _, r := range ep.Rules {
+					rulesSeq.Content = append(rulesSeq.Content, mappingNode(
+						keyNode("allow"), mappingNode(
+							keyNode("method"), strNode(r.Method),
+							keyNode("path"), strNode(r.Path),
+						),
+					))
+				}
+				epNode.Content = append(epNode.Content, keyNode("rules"), rulesSeq)
+			} else {
+				// Coarse access preset derived from the tool's HTTP verbs
+				// (read-only / read-write / full); default read-only when unset.
+				access := ep.Access
+				if access == "" {
+					access = "read-only"
+				}
+				epNode.Content = append(epNode.Content, keyNode("access"), strNode(access))
+			}
+			endpoints.Content = append(endpoints.Content, epNode)
 		}
 		entry.Content = append(entry.Content, keyNode("endpoints"), endpoints)
 		if len(np.Binaries) > 0 {

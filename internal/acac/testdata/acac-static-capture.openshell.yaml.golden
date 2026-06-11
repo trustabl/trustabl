@@ -24,6 +24,9 @@ network_policies:
         port: 443
         protocol: rest
         enforcement: enforce
-        access: read-only
+        rules:
+          - allow:
+              method: GET
+              path: /api/v1
     binaries:
       - path: /usr/bin/python3 # trustabl: review — confirm the interpreter path inside the sandbox

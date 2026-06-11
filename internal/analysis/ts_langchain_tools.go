@@ -142,6 +142,7 @@ func buildTSLangChainTool(node, optsObj, funcNode *sitter.Node, pf ParsedFile) (
 		td.HTTPHosts = hc.httpHosts
 		td.FSWritePaths = hc.fsWritePaths
 		td.HTTPMethods = hc.httpMethods
+		td.HTTPCalls = hc.httpCalls
 	}
 	consumed := map[string]bool{"name": true, "description": true, "schema": true, "func": true}
 	cfg := map[string]string{}

@@ -6,16 +6,18 @@ import (
 	sitter "github.com/smacker/go-tree-sitter"
 
 	"github.com/trustabl/trustabl/internal/analysis/astutil"
+	"github.com/trustabl/trustabl/internal/models"
 )
 
 // handlerCapture is everything one walk of a TS/JS handler body extracts:
 // the boolean body facts plus the Stage 2 typed captures (static HTTP hosts,
-// write-path literals, and HTTP method verbs).
+// write-path literals, HTTP method verbs, and structured HTTP call records).
 type handlerCapture struct {
 	facts        map[string]string
 	httpHosts    []string
 	fsWritePaths []string
 	httpMethods  []string
+	httpCalls    []models.HTTPCall
 }
 
 // tsHandlerCapture walks a handler node (arrow_function or function) and
@@ -31,6 +33,7 @@ func tsHandlerCapture(handler *sitter.Node, src []byte) handlerCapture {
 	hostSet := map[string]bool{}
 	pathSet := map[string]bool{}
 	methodSet := map[string]bool{}
+	callSet := map[string]models.HTTPCall{}
 	astutil.Walk(handler, func(n *sitter.Node) bool {
 		// new_expression: `new Function(...)` is NOT a call_expression; its
 		// constructor identifier is at ChildByFieldName("constructor").
@@ -56,18 +59,23 @@ func tsHandlerCapture(handler *sitter.Node, src []byte) handlerCapture {
 			"axios.patch", "axios.request", "got", "got.get", "got.post",
 			"undici.fetch", "undici.request":
 			out.facts["http_call"] = "true"
+			method := tsHTTPMethod(text, n, src)
 			if urlArgIsDynamic(n, src) {
 				out.facts["dynamic_url"] = "true"
 			} else if lit, ok := tsStringLiteral(firstCallArg(n), src); ok {
 				// Stage 2: the non-dynamic branch records the literal URL's
-				// canonical host:port. A relative literal has no host and
-				// captures nothing.
-				if hp, ok := hostFromURLLiteral(lit); ok {
+				// canonical host:port and path. A relative literal has no host
+				// and captures nothing.
+				if hp, path, ok := hostPathFromURLLiteral(lit); ok {
 					hostSet[hp] = true
+					if method != "" {
+						c := models.HTTPCall{HostPort: hp, Method: method, Path: path}
+						callSet[httpCallKey(c)] = c
+					}
 				}
 			}
-			if m := tsHTTPMethod(text, n, src); m != "" {
-				methodSet[m] = true
+			if method != "" {
+				methodSet[method] = true
 			}
 			if !httpCallHasTimeout(n, src) {
 				out.facts["http_no_timeout"] = "true"
@@ -116,6 +124,7 @@ func tsHandlerCapture(handler *sitter.Node, src []byte) handlerCapture {
 	out.httpHosts = setToSorted(hostSet)
 	out.fsWritePaths = setToSorted(pathSet)
 	out.httpMethods = setToSorted(methodSet)
+	out.httpCalls = sortedHTTPCalls(callSet)
 	return out
 }
 

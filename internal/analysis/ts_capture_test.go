@@ -54,6 +54,20 @@ func TestTSCapture_HTTPMethods(t *testing.T) {
 	}
 }
 
+func TestTSCapture_HTTPCalls(t *testing.T) {
+	td := discoverOneTSTool(t, `
+		await axios.get("https://api.example.com/status");
+		await fetch("https://api.example.com/ingest", { method: "POST" });
+		return null;`)
+	want := []models.HTTPCall{
+		{HostPort: "api.example.com:443", Method: "GET", Path: "/status"},
+		{HostPort: "api.example.com:443", Method: "POST", Path: "/ingest"},
+	}
+	if !reflect.DeepEqual(td.HTTPCalls, want) {
+		t.Errorf("HTTPCalls = %+v, want %+v", td.HTTPCalls, want)
+	}
+}
+
 func TestTSCapture_HTTPWithExplicitPort(t *testing.T) {
 	td := discoverOneTSTool(t, `return axios.get("http://localhost:3000/x");`)
 	if want := []string{"localhost:3000"}; !reflect.DeepEqual(td.HTTPHosts, want) {

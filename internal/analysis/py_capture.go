@@ -6,6 +6,7 @@ import (
 	sitter "github.com/smacker/go-tree-sitter"
 
 	"github.com/trustabl/trustabl/internal/analysis/astutil"
+	"github.com/trustabl/trustabl/internal/models"
 )
 
 // pythonBodyCaptures walks a Python tool body and extracts the Stage 2 typed
@@ -13,9 +14,9 @@ import (
 // best-effort retry-presence signal. Static literals only — any interpolation
 // (f-string with substitutions, concatenation, name reference) captures
 // nothing, leaving the existing dynamic-URL behavior untouched.
-func pythonBodyCaptures(fn *sitter.Node, src []byte, fileRoot *sitter.Node) (hosts, writePaths, methods []string, retry bool) {
+func pythonBodyCaptures(fn *sitter.Node, src []byte, fileRoot *sitter.Node) (hosts, writePaths, methods []string, calls []models.HTTPCall, retry bool) {
 	if fn == nil {
-		return nil, nil, nil, false
+		return nil, nil, nil, nil, false
 	}
 	// fileRoot lets HTTP host capture see module import aliases (import requests
 	// as rq) in addition to same-function client aliases (s = requests.Session()).
@@ -23,6 +24,7 @@ func pythonBodyCaptures(fn *sitter.Node, src []byte, fileRoot *sitter.Node) (hos
 	hostSet := map[string]bool{}
 	pathSet := map[string]bool{}
 	methodSet := map[string]bool{}
+	callSet := map[string]models.HTTPCall{}
 
 	astutil.Walk(fn, func(n *sitter.Node) bool {
 		if n.Type() != "call" {
@@ -38,13 +40,18 @@ func pythonBodyCaptures(fn *sitter.Node, src []byte, fileRoot *sitter.Node) (hos
 		// and note retry-configuring kwargs (best-effort: requests/httpx
 		// spell client-level retries as retries=/max_retries=).
 		if canonical, ok := IsHTTPCallNode(n, src, aliases); ok {
+			method := httpMethodFromPyCall(canonical, n, src)
 			if lit, ok := pythonStringLiteral(firstPositionalArg(n), src); ok {
-				if hp, ok := hostFromURLLiteral(lit); ok {
+				if hp, path, ok := hostPathFromURLLiteral(lit); ok {
 					hostSet[hp] = true
+					if method != "" {
+						c := models.HTTPCall{HostPort: hp, Method: method, Path: path}
+						callSet[httpCallKey(c)] = c
+					}
 				}
 			}
-			if m := httpMethodFromPyCall(canonical, n, src); m != "" {
-				methodSet[m] = true
+			if method != "" {
+				methodSet[method] = true
 			}
 			if pythonCallHasKwarg(n, src, "retries") || pythonCallHasKwarg(n, src, "max_retries") {
 				retry = true
@@ -80,7 +87,7 @@ func pythonBodyCaptures(fn *sitter.Node, src []byte, fileRoot *sitter.Node) (hos
 	if pythonHasRetryDecorator(fn, src) {
 		retry = true
 	}
-	return setToSorted(hostSet), setToSorted(pathSet), setToSorted(methodSet), retry
+	return setToSorted(hostSet), setToSorted(pathSet), setToSorted(methodSet), sortedHTTPCalls(callSet), retry
 }
 
 // httpMethodFromPyCall derives the uppercase HTTP verb of a recognized Python

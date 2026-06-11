@@ -70,9 +70,21 @@ type OpenShellNetworkPolicy struct {
 type OpenShellEndpoint struct {
 	Host string
 	Port int
-	// Access is the L7 preset derived from the tool's observed HTTP verbs:
-	// read-only | read-write | full. Always set by the builder.
+	// Access is the coarse L7 preset (read-only | read-write | full) derived
+	// from the tool's HTTP verbs. Set ONLY when Rules is empty: access and rules
+	// are mutually exclusive in the OpenShell schema.
 	Access string
+	// Rules are fine-grained {method, path} L7 allow rules, emitted when every
+	// captured call to this host has a specific path. Mutually exclusive with
+	// Access.
+	Rules []OpenShellL7Rule
+}
+
+// OpenShellL7Rule is one endpoint L7 allow rule (an entry under rules: with a
+// nested allow: {method, path}).
+type OpenShellL7Rule struct {
+	Method string
+	Path   string
 }
 
 // BuildOpenShellPolicy derives a policy from the selected agent's tool graph
@@ -125,11 +137,15 @@ func BuildOpenShellPolicy(result models.ScanResult, agent models.AgentDef) OpenS
 			}
 		}
 
-		// Network: one policy per tool with at least one emittable host. The L7
-		// access preset is derived from the tool's observed HTTP verbs and applied
-		// to every endpoint of the tool (aggregate; per-endpoint method precision
-		// is a follow-up).
+		// Network: one policy per tool with at least one emittable host. Per
+		// endpoint, emit fine-grained {method, path} L7 rules when every captured
+		// call to that host has a specific path; otherwise fall back to the coarse
+		// access preset derived from the tool's HTTP verbs.
 		access := openShellAccessFromMethods(t.HTTPMethods)
+		callsByHost := map[string][]models.HTTPCall{}
+		for _, c := range t.HTTPCalls {
+			callsByHost[c.HostPort] = append(callsByHost[c.HostPort], c)
+		}
 		var endpoints []OpenShellEndpoint
 		for _, hp := range t.HTTPHosts {
 			host, portStr, err := net.SplitHostPort(hp)
@@ -145,7 +161,13 @@ func BuildOpenShellPolicy(result models.ScanResult, agent models.AgentDef) OpenS
 					fmt.Sprintf("tool %s targets %s host %s — not emitted; add an explicit allowed_ips entry if intended", t.Name, reason, hp))
 				continue
 			}
-			endpoints = append(endpoints, OpenShellEndpoint{Host: host, Port: port, Access: access})
+			ep := OpenShellEndpoint{Host: host, Port: port}
+			if rules := openShellRulesForHost(callsByHost[hp]); len(rules) > 0 {
+				ep.Rules = rules
+			} else {
+				ep.Access = access
+			}
+			endpoints = append(endpoints, ep)
 		}
 		if t.Facts["dynamic_url"] == "true" || (t.Facts["http_call"] == "true" && len(endpoints) == 0 && len(t.HTTPHosts) == 0) {
 			p.ReviewNotes = append(p.ReviewNotes,
@@ -191,6 +213,37 @@ func openShellAccessFromMethods(methods []string) string {
 	default:
 		return "read-only"
 	}
+}
+
+// openShellRulesForHost returns the distinct {method, path} L7 allow rules for a
+// host's captured calls — but ONLY when EVERY call to it has a specific path. A
+// call with an empty (root/absent) path means we cannot scope the host by path,
+// so it returns nil and the caller falls back to the coarse access preset.
+// Rules are sorted by (method, path) for determinism.
+func openShellRulesForHost(calls []models.HTTPCall) []OpenShellL7Rule {
+	if len(calls) == 0 {
+		return nil
+	}
+	seen := map[string]bool{}
+	var rules []OpenShellL7Rule
+	for _, c := range calls {
+		if c.Path == "" {
+			return nil
+		}
+		key := c.Method + " " + c.Path
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		rules = append(rules, OpenShellL7Rule{Method: c.Method, Path: c.Path})
+	}
+	sort.Slice(rules, func(i, j int) bool {
+		if rules[i].Method != rules[j].Method {
+			return rules[i].Method < rules[j].Method
+		}
+		return rules[i].Path < rules[j].Path
+	})
+	return rules
 }
 
 // hostBlockedReason lexically classifies hosts that must never be emitted as
@@ -318,6 +371,22 @@ func ValidateOpenShellPolicy(p OpenShellPolicy) error {
 			}
 			if ep.Port < 1 || ep.Port > 65535 {
 				return fmt.Errorf("openshell policy: endpoint %s has out-of-range port %d", ep.Host, ep.Port)
+			}
+			// access and rules are mutually exclusive in the OpenShell schema; a
+			// non-empty protocol (we always emit rest) requires one of them.
+			if ep.Access != "" && len(ep.Rules) > 0 {
+				return fmt.Errorf("openshell policy: endpoint %s sets both access and rules, which are mutually exclusive", ep.Host)
+			}
+			if ep.Access == "" && len(ep.Rules) == 0 {
+				return fmt.Errorf("openshell policy: endpoint %s has neither access nor rules (protocol rest requires one)", ep.Host)
+			}
+			for _, r := range ep.Rules {
+				if r.Method == "" {
+					return fmt.Errorf("openshell policy: endpoint %s has an L7 rule with no method", ep.Host)
+				}
+				if !strings.HasPrefix(r.Path, "/") {
+					return fmt.Errorf("openshell policy: endpoint %s L7 rule path %q must start with '/'", ep.Host, r.Path)
+				}
 			}
 		}
 		for _, b := range np.Binaries {

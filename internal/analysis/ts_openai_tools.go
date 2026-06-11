@@ -102,6 +102,7 @@ func extractTSOpenAITool(call *sitter.Node, pf ParsedFile) (models.ToolDef, bool
 		td.HTTPHosts = hc.httpHosts
 		td.FSWritePaths = hc.fsWritePaths
 		td.HTTPMethods = hc.httpMethods
+		td.HTTPCalls = hc.httpCalls
 	}
 	// Config: flatten every non-consumed kwarg, including nested objects with
 	// dot-joined keys (matching the Claude path's flattenKwargs). The leaf-only
