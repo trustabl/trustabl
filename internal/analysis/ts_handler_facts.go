@@ -1,18 +1,21 @@
 package analysis
 
 import (
+	"strings"
+
 	sitter "github.com/smacker/go-tree-sitter"
 
 	"github.com/trustabl/trustabl/internal/analysis/astutil"
 )
 
 // handlerCapture is everything one walk of a TS/JS handler body extracts:
-// the boolean body facts plus the Stage 2 typed captures (static HTTP hosts
-// and static write-path literals).
+// the boolean body facts plus the Stage 2 typed captures (static HTTP hosts,
+// write-path literals, and HTTP method verbs).
 type handlerCapture struct {
 	facts        map[string]string
 	httpHosts    []string
 	fsWritePaths []string
+	httpMethods  []string
 }
 
 // tsHandlerCapture walks a handler node (arrow_function or function) and
@@ -27,6 +30,7 @@ func tsHandlerCapture(handler *sitter.Node, src []byte) handlerCapture {
 	}
 	hostSet := map[string]bool{}
 	pathSet := map[string]bool{}
+	methodSet := map[string]bool{}
 	astutil.Walk(handler, func(n *sitter.Node) bool {
 		// new_expression: `new Function(...)` is NOT a call_expression; its
 		// constructor identifier is at ChildByFieldName("constructor").
@@ -61,6 +65,9 @@ func tsHandlerCapture(handler *sitter.Node, src []byte) handlerCapture {
 				if hp, ok := hostFromURLLiteral(lit); ok {
 					hostSet[hp] = true
 				}
+			}
+			if m := tsHTTPMethod(text, n, src); m != "" {
+				methodSet[m] = true
 			}
 			if !httpCallHasTimeout(n, src) {
 				out.facts["http_no_timeout"] = "true"
@@ -108,7 +115,66 @@ func tsHandlerCapture(handler *sitter.Node, src []byte) handlerCapture {
 	})
 	out.httpHosts = setToSorted(hostSet)
 	out.fsWritePaths = setToSorted(pathSet)
+	out.httpMethods = setToSorted(methodSet)
 	return out
+}
+
+// tsHTTPMethod derives the uppercase HTTP verb of a recognized TS/JS HTTP call.
+// A verb-named call (axios.post, got.get) carries the verb in its last segment;
+// fetch / axios(config) / axios.request / got / undici.* carry it as a `method:`
+// option, defaulting to GET (the fetch/get-style default) when absent.
+func tsHTTPMethod(callee string, call *sitter.Node, src []byte) string {
+	seg := callee
+	if i := strings.LastIndexByte(callee, '.'); i >= 0 {
+		seg = callee[i+1:]
+	}
+	switch strings.ToLower(seg) {
+	case "get", "post", "put", "patch", "delete", "head":
+		return strings.ToUpper(seg)
+	}
+	if m, ok := httpCallOptionStringValue(call, src, "method"); ok {
+		return strings.ToUpper(m)
+	}
+	return "GET"
+}
+
+// httpCallOptionStringValue returns the static string value of a named
+// top-level key in any options-object argument of the call, or ("", false).
+func httpCallOptionStringValue(call *sitter.Node, src []byte, key string) (string, bool) {
+	args := call.ChildByFieldName("arguments")
+	if args == nil {
+		return "", false
+	}
+	for i := 0; i < int(args.NamedChildCount()); i++ {
+		arg := args.NamedChild(i)
+		if arg == nil || arg.Type() != "object" {
+			continue
+		}
+		for j := 0; j < int(arg.NamedChildCount()); j++ {
+			prop := arg.NamedChild(j)
+			if prop == nil || prop.Type() != "pair" {
+				continue
+			}
+			k := prop.ChildByFieldName("key")
+			if k == nil {
+				continue
+			}
+			var kname string
+			switch k.Type() {
+			case "property_identifier":
+				kname = astutil.NodeText(k, src)
+			case "string":
+				raw := astutil.NodeText(k, src)
+				if len(raw) >= 2 {
+					kname = raw[1 : len(raw)-1]
+				}
+			}
+			if kname == key {
+				return tsStringLiteral(prop.ChildByFieldName("value"), src)
+			}
+		}
+	}
+	return "", false
 }
 
 // firstCallArg returns the first positional argument node of a TS call.

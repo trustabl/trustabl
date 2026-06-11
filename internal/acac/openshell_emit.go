@@ -65,14 +65,18 @@ func EmitOpenShellPolicy(p OpenShellPolicy) ([]byte, error) {
 		)
 		endpoints := seqNode()
 		for _, ep := range np.Endpoints {
-			access := strNode("read-only")
-			access.LineComment = MarkerSuggested + " — method usage is not provable from code"
+			// access is derived from the tool's observed HTTP verbs (read-only /
+			// read-write / full); default read-only when somehow unset.
+			access := ep.Access
+			if access == "" {
+				access = "read-only"
+			}
 			endpoints.Content = append(endpoints.Content, mappingNode(
 				keyNode("host"), strNode(ep.Host),
 				keyNode("port"), intNode(ep.Port),
 				keyNode("protocol"), strNode("rest"),
 				keyNode("enforcement"), strNode("enforce"),
-				keyNode("access"), access,
+				keyNode("access"), strNode(access),
 			))
 		}
 		entry.Content = append(entry.Content, keyNode("endpoints"), endpoints)

@@ -24,6 +24,6 @@ network_policies:
         port: 443
         protocol: rest
         enforcement: enforce
-        access: read-only # trustabl: suggested — confirm — method usage is not provable from code
+        access: read-only
     binaries:
       - path: /usr/bin/python3 # trustabl: review — confirm the interpreter path inside the sandbox

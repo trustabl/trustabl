@@ -34,6 +34,35 @@ def fetch_data():
 	}
 }
 
+func TestPythonCapture_HTTPMethods(t *testing.T) {
+	// Verb-named calls carry the method in the callee; requests.request takes it
+	// as the first positional arg. Aggregate set, sorted + deduped.
+	td := discoverOnePyTool(t, `from agents import function_tool
+import requests
+
+@function_tool
+def touch():
+    requests.get("https://api.example.com/a")
+    requests.post("https://api.example.com/b")
+    return requests.request("DELETE", "https://api.example.com/c")
+`)
+	if want := []string{"DELETE", "GET", "POST"}; !reflect.DeepEqual(td.HTTPMethods, want) {
+		t.Errorf("HTTPMethods = %v, want %v", td.HTTPMethods, want)
+	}
+}
+
+func TestPythonCapture_NoHTTPNoMethods(t *testing.T) {
+	td := discoverOnePyTool(t, `from agents import function_tool
+
+@function_tool
+def add(a: int, b: int) -> int:
+    return a + b
+`)
+	if td.HTTPMethods != nil {
+		t.Errorf("non-HTTP tool must capture no methods, got %v", td.HTTPMethods)
+	}
+}
+
 func TestPythonCapture_HTTPWithExplicitPort(t *testing.T) {
 	td := discoverOnePyTool(t, `from agents import function_tool
 import httpx

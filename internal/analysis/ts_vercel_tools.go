@@ -149,6 +149,7 @@ func buildTSVercelTool(call *sitter.Node, dynamic bool, pf ParsedFile) (models.T
 		}
 		td.HTTPHosts = hc.httpHosts
 		td.FSWritePaths = hc.fsWritePaths
+		td.HTTPMethods = hc.httpMethods
 	}
 	consumed := map[string]bool{
 		"description": true, "inputSchema": true, "parameters": true, "execute": true,

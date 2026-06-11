@@ -70,6 +70,9 @@ type OpenShellNetworkPolicy struct {
 type OpenShellEndpoint struct {
 	Host string
 	Port int
+	// Access is the L7 preset derived from the tool's observed HTTP verbs:
+	// read-only | read-write | full. Always set by the builder.
+	Access string
 }
 
 // BuildOpenShellPolicy derives a policy from the selected agent's tool graph
@@ -122,7 +125,11 @@ func BuildOpenShellPolicy(result models.ScanResult, agent models.AgentDef) OpenS
 			}
 		}
 
-		// Network: one policy per tool with at least one emittable host.
+		// Network: one policy per tool with at least one emittable host. The L7
+		// access preset is derived from the tool's observed HTTP verbs and applied
+		// to every endpoint of the tool (aggregate; per-endpoint method precision
+		// is a follow-up).
+		access := openShellAccessFromMethods(t.HTTPMethods)
 		var endpoints []OpenShellEndpoint
 		for _, hp := range t.HTTPHosts {
 			host, portStr, err := net.SplitHostPort(hp)
@@ -138,7 +145,7 @@ func BuildOpenShellPolicy(result models.ScanResult, agent models.AgentDef) OpenS
 					fmt.Sprintf("tool %s targets %s host %s — not emitted; add an explicit allowed_ips entry if intended", t.Name, reason, hp))
 				continue
 			}
-			endpoints = append(endpoints, OpenShellEndpoint{Host: host, Port: port})
+			endpoints = append(endpoints, OpenShellEndpoint{Host: host, Port: port, Access: access})
 		}
 		if t.Facts["dynamic_url"] == "true" || (t.Facts["http_call"] == "true" && len(endpoints) == 0 && len(t.HTTPHosts) == 0) {
 			p.ReviewNotes = append(p.ReviewNotes,
@@ -159,6 +166,31 @@ func BuildOpenShellPolicy(result models.ScanResult, agent models.AgentDef) OpenS
 	p.ReadWrite = setToSortedKeys(writeSet)
 	sort.Strings(p.ReviewNotes)
 	return p
+}
+
+// openShellAccessFromMethods maps a tool's observed HTTP verbs to an OpenShell
+// L7 access preset: read-only (GET/HEAD/OPTIONS only), read-write (adds
+// POST/PUT/PATCH), or full (adds DELETE). An empty set is conservatively
+// read-only. This is the keystone derivation: the prior constant read-only made
+// OpenShell's prover infer "no write capability" even for tools that POST.
+func openShellAccessFromMethods(methods []string) string {
+	hasWrite, hasDelete := false, false
+	for _, m := range methods {
+		switch strings.ToUpper(m) {
+		case "POST", "PUT", "PATCH":
+			hasWrite = true
+		case "DELETE":
+			hasDelete = true
+		}
+	}
+	switch {
+	case hasDelete:
+		return "full"
+	case hasWrite:
+		return "read-write"
+	default:
+		return "read-only"
+	}
 }
 
 // hostBlockedReason lexically classifies hosts that must never be emitted as

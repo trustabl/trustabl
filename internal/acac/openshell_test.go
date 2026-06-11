@@ -81,6 +81,35 @@ func TestBuildOpenShellPolicy_Derivations(t *testing.T) {
 	}
 }
 
+func TestBuildOpenShellPolicy_AccessFromMethods(t *testing.T) {
+	cases := []struct {
+		methods []string
+		want    string
+	}{
+		{nil, "read-only"},                        // no methods → conservative
+		{[]string{"GET"}, "read-only"},            // read verbs only
+		{[]string{"GET", "HEAD", "OPTIONS"}, "read-only"},
+		{[]string{"GET", "POST"}, "read-write"},   // a write verb
+		{[]string{"PUT"}, "read-write"},
+		{[]string{"PATCH"}, "read-write"},
+		{[]string{"POST", "DELETE"}, "full"},      // delete escalates to full
+		{[]string{"DELETE"}, "full"},
+	}
+	for _, c := range cases {
+		tool := toolWithCaptures("api", "tools.py",
+			[]string{"api.example.com:443"}, nil, map[string]string{"http_call": "true"})
+		tool.HTTPMethods = c.methods
+		agent := agentWiring(&tool)
+		p := BuildOpenShellPolicy(models.ScanResult{}, agent)
+		if len(p.Network) != 1 || len(p.Network[0].Endpoints) != 1 {
+			t.Fatalf("methods %v: want one endpoint, got %+v", c.methods, p.Network)
+		}
+		if got := p.Network[0].Endpoints[0].Access; got != c.want {
+			t.Errorf("methods %v: access = %q, want %q", c.methods, got, c.want)
+		}
+	}
+}
+
 func TestValidateOpenShellPolicy_RejectsEachConstraint(t *testing.T) {
 	valid := func() OpenShellPolicy {
 		return OpenShellPolicy{

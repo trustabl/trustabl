@@ -13,15 +13,16 @@ import (
 // best-effort retry-presence signal. Static literals only — any interpolation
 // (f-string with substitutions, concatenation, name reference) captures
 // nothing, leaving the existing dynamic-URL behavior untouched.
-func pythonBodyCaptures(fn *sitter.Node, src []byte, fileRoot *sitter.Node) (hosts, writePaths []string, retry bool) {
+func pythonBodyCaptures(fn *sitter.Node, src []byte, fileRoot *sitter.Node) (hosts, writePaths, methods []string, retry bool) {
 	if fn == nil {
-		return nil, nil, false
+		return nil, nil, nil, false
 	}
 	// fileRoot lets HTTP host capture see module import aliases (import requests
 	// as rq) in addition to same-function client aliases (s = requests.Session()).
 	aliases := HTTPCallAliases(fileRoot, fn, src)
 	hostSet := map[string]bool{}
 	pathSet := map[string]bool{}
+	methodSet := map[string]bool{}
 
 	astutil.Walk(fn, func(n *sitter.Node) bool {
 		if n.Type() != "call" {
@@ -36,11 +37,14 @@ func pythonBodyCaptures(fn *sitter.Node, src []byte, fileRoot *sitter.Node) (hos
 		// Recognized HTTP call: capture the host of a string-literal URL arg,
 		// and note retry-configuring kwargs (best-effort: requests/httpx
 		// spell client-level retries as retries=/max_retries=).
-		if _, ok := IsHTTPCallNode(n, src, aliases); ok {
+		if canonical, ok := IsHTTPCallNode(n, src, aliases); ok {
 			if lit, ok := pythonStringLiteral(firstPositionalArg(n), src); ok {
 				if hp, ok := hostFromURLLiteral(lit); ok {
 					hostSet[hp] = true
 				}
+			}
+			if m := httpMethodFromPyCall(canonical, n, src); m != "" {
+				methodSet[m] = true
 			}
 			if pythonCallHasKwarg(n, src, "retries") || pythonCallHasKwarg(n, src, "max_retries") {
 				retry = true
@@ -76,7 +80,53 @@ func pythonBodyCaptures(fn *sitter.Node, src []byte, fileRoot *sitter.Node) (hos
 	if pythonHasRetryDecorator(fn, src) {
 		retry = true
 	}
-	return setToSorted(hostSet), setToSorted(pathSet), retry
+	return setToSorted(hostSet), setToSorted(pathSet), setToSorted(methodSet), retry
+}
+
+// httpMethodFromPyCall derives the uppercase HTTP verb of a recognized Python
+// HTTP call from its canonical callee. A verb-named call (requests.post,
+// httpx.get, aiohttp.ClientSession.get) carries the verb in its last segment;
+// requests.request/httpx.request carry it as the first positional string arg
+// or a method= kwarg; urllib's urlopen defaults to GET. Returns "" when the
+// method is not statically provable (e.g. request(method_var, ...)).
+func httpMethodFromPyCall(canonical string, call *sitter.Node, src []byte) string {
+	seg := canonical
+	if i := strings.LastIndexByte(canonical, '.'); i >= 0 {
+		seg = canonical[i+1:]
+	}
+	switch strings.ToLower(seg) {
+	case "get", "post", "put", "patch", "delete", "head", "options":
+		return strings.ToUpper(seg)
+	case "request":
+		if lit, ok := pythonStringLiteral(firstPositionalArg(call), src); ok {
+			return strings.ToUpper(lit)
+		}
+		if lit, ok := pythonKwargStringLiteral(call, src, "method"); ok {
+			return strings.ToUpper(lit)
+		}
+	case "urlopen":
+		return "GET"
+	}
+	return ""
+}
+
+// pythonKwargStringLiteral returns the static string value of a named keyword
+// argument, or ("", false) when absent or non-literal.
+func pythonKwargStringLiteral(call *sitter.Node, src []byte, name string) (string, bool) {
+	args := call.ChildByFieldName("arguments")
+	if args == nil {
+		return "", false
+	}
+	for i := 0; i < int(args.NamedChildCount()); i++ {
+		arg := args.NamedChild(i)
+		if arg == nil || arg.Type() != "keyword_argument" {
+			continue
+		}
+		if k := arg.ChildByFieldName("name"); k != nil && astutil.NodeText(k, src) == name {
+			return pythonStringLiteral(arg.ChildByFieldName("value"), src)
+		}
+	}
+	return "", false
 }
 
 // firstPositionalArg returns a call's first non-keyword argument node.

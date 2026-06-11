@@ -202,7 +202,14 @@ type ToolDef struct {
 	// shapes in the tool body (open with a write mode, pathlib write_*,
 	// shutil copy/move targets; fs.writeFile*/createWriteStream). Recorded
 	// verbatim as written in source. Static literals only; sorted + deduped.
-	FSWritePaths []string `json:"fs_write_paths,omitempty"` // decorator kwargs
+	FSWritePaths []string `json:"fs_write_paths,omitempty"`
+	// HTTPMethods are the uppercase HTTP verbs (GET, POST, PUT, PATCH, DELETE,
+	// HEAD, OPTIONS) of recognized HTTP calls in the tool body — the verb of a
+	// verb-named call (requests.post, axios.get), the first arg of
+	// requests.request("POST", …)/a method= kwarg, or a fetch/axios `method:`
+	// option (defaulting to GET). An aggregate set per tool, sorted + deduped.
+	// Drives the OpenShell L7 access preset; absent when no method is provable.
+	HTTPMethods []string `json:"http_methods,omitempty"`
 }
 
 // ComponentKind labels the type of an agent component the normalizer found

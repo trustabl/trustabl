@@ -41,6 +41,19 @@ func TestTSCapture_StaticHTTPSHost(t *testing.T) {
 	}
 }
 
+func TestTSCapture_HTTPMethods(t *testing.T) {
+	// Verb-named axios calls carry the method; fetch reads a `method:` option,
+	// defaulting to GET. Aggregate set, sorted + deduped.
+	td := discoverOneTSTool(t, `
+		await fetch("https://api.example.com/a", { method: "POST" });
+		await axios.delete("https://api.example.com/b");
+		const r = await fetch("https://api.example.com/c");
+		return r;`)
+	if want := []string{"DELETE", "GET", "POST"}; !reflect.DeepEqual(td.HTTPMethods, want) {
+		t.Errorf("HTTPMethods = %v, want %v", td.HTTPMethods, want)
+	}
+}
+
 func TestTSCapture_HTTPWithExplicitPort(t *testing.T) {
 	td := discoverOneTSTool(t, `return axios.get("http://localhost:3000/x");`)
 	if want := []string{"localhost:3000"}; !reflect.DeepEqual(td.HTTPHosts, want) {
