@@ -55,7 +55,7 @@ func DiscoverSkills(manifest models.ScanManifest) []models.SkillDef {
 			continue
 		}
 		tokens := splitToolsTokens([]string(parsed.AllowedTools))
-		dynExec, urls, markers := parseSkillBody(string(body))
+		dynExec, hasShellExec, urls, markers, hasCredLiteral, hasDynamicArgs, skillRefs := parseSkillBody(string(body))
 		out = append(out, models.SkillDef{
 			Name:                   parsed.Name,
 			Description:            parsed.Description,
@@ -69,8 +69,12 @@ func DiscoverSkills(manifest models.ScanManifest) []models.SkillDef {
 			Agent:                  parsed.Agent,
 			HasHooks:               parsed.Hooks.Kind == yaml.MappingNode && len(parsed.Hooks.Content) > 0,
 			DynamicExecCommands:    dynExec,
+			HasShellExec:           hasShellExec,
 			ExternalURLs:           urls,
 			InjectionMarkers:       markers,
+			HasCredentialLiteral:   hasCredLiteral,
+			HasDynamicArgs:         hasDynamicArgs,
+			ReferencesSkills:       skillRefs,
 			BundledFiles:           bundledFiles(manifest.RepoRoot, p),
 			Location:               models.Location{FilePath: p, Line: startLine, EndLine: endLine},
 		})
@@ -96,6 +100,29 @@ var (
 	// obfuscated injected instructions. The 160-char floor keeps ordinary hashes,
 	// tokens, and short data URIs from tripping this (low-confidence) signal.
 	skillBase64BlobRe = regexp.MustCompile(`[A-Za-z0-9+/]{160,}={0,2}`)
+	// skillShellFenceRe matches an ordinary ```bash or ```sh fenced code block
+	// (model-invocation time shell, distinct from the pre-model ```! exec fence).
+	skillShellFenceRe = regexp.MustCompile("(?m)^```(?:bash|sh)(?:\\s|$)")
+	// skillShellInlineRe matches subshell syntax and common shell-invocation
+	// patterns in non-fenced body text.
+	skillShellInlineRe = regexp.MustCompile(`\$\(|\bsubprocess\b|\bos\.system\b`)
+	// skillCredentialLiteralRe matches hardcoded secret VALUES committed in the
+	// SKILL.md body itself (not bundled scripts). Mirrors bundledSecretLiteralRe
+	// for the body surface.
+	skillCredentialLiteralRe = regexp.MustCompile(
+		`AKIA[0-9A-Z]{16}` + // AWS access key id
+			`|ghp_[0-9A-Za-z]{36}` + // GitHub personal access token (classic)
+			`|github_pat_[0-9A-Za-z_]{82}` + // GitHub fine-grained PAT
+			`|xox[baprs]-[0-9A-Za-z-]{10,72}` + // Slack token
+			`|sk-[A-Za-z0-9]{40,}` + // OpenAI-style secret key
+			`|AIza[0-9A-Za-z_-]{35}` + // Google API key
+			`|-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----`) // private-key block header
+	// skillDynamicArgsRe matches $ARGUMENTS (the Claude Code user-text
+	// placeholder) and common template-interpolation patterns.
+	skillDynamicArgsRe = regexp.MustCompile(`\$ARGUMENTS|\{\{[^}]+\}\}|\$INPUT\b|\$USER_INPUT\b`)
+	// skillChainRefRe matches references to other skill invocations in the body.
+	// Group 1 captures the skill name from /skill <name> or skill: <name>.
+	skillChainRefRe = regexp.MustCompile(`(?i)/skill\s+(\S+)`)
 )
 
 // zeroWidthChars are invisible code points used to smuggle injected instructions
@@ -130,10 +157,10 @@ func hasBidiControl(s string) bool {
 }
 
 // parseSkillBody extracts security-relevant facts from the markdown body of a
-// SKILL.md (everything below the frontmatter). Output is deterministic: commands
-// and URLs are returned in first-seen order with duplicates removed; markers are
-// fixed symbolic tokens. See models.SkillDef for field semantics.
-func parseSkillBody(body string) (dynExec, urls, markers []string) {
+// SKILL.md (everything below the frontmatter). Output is deterministic: commands,
+// URLs, and skill refs are returned in first-seen order with duplicates removed;
+// markers are fixed symbolic tokens. See models.SkillDef for field semantics.
+func parseSkillBody(body string) (dynExec []string, hasShellExec bool, urls []string, markers []string, hasCredLiteral, hasDynamicArgs bool, skillRefs []string) {
 	// Fenced ```! blocks: every non-blank line until the closing fence is a
 	// pre-model shell command. Scanned first, so a multi-line block is captured
 	// ahead of the inline pass.
@@ -155,6 +182,7 @@ func parseSkillBody(body string) (dynExec, urls, markers []string) {
 	for _, m := range skillInlineExecRe.FindAllStringSubmatch(body, -1) {
 		dynExec = append(dynExec, strings.TrimSpace(m[1]))
 	}
+	hasShellExec = skillShellFenceRe.MatchString(body) || skillShellInlineRe.MatchString(body)
 	urls = skillExternalURLRe.FindAllString(body, -1)
 	if skillInjectionPhraseRe.MatchString(body) {
 		markers = append(markers, "instruction-override-phrase")
@@ -171,7 +199,12 @@ func parseSkillBody(body string) (dynExec, urls, markers []string) {
 	if skillBase64BlobRe.MatchString(body) {
 		markers = append(markers, "long-base64-blob")
 	}
-	return dedupeStrings(dynExec), dedupeStrings(urls), markers
+	hasCredLiteral = skillCredentialLiteralRe.MatchString(body)
+	hasDynamicArgs = skillDynamicArgsRe.MatchString(body)
+	for _, m := range skillChainRefRe.FindAllStringSubmatch(body, -1) {
+		skillRefs = append(skillRefs, m[1])
+	}
+	return dedupeStrings(dynExec), hasShellExec, dedupeStrings(urls), markers, hasCredLiteral, hasDynamicArgs, dedupeStrings(skillRefs)
 }
 
 // dedupeStrings returns in with duplicates removed, preserving first-seen order.

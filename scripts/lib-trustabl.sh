@@ -7,8 +7,10 @@
 # stream and must not be polluted.
 
 # Pinned CLI version the plugin targets. The MCP `scan` tool needs >= 0.1.3
-# (0.1.2 has no `mcp` subcommand). Bump on a plugin release to move users on.
-TRUSTABL_VERSION="0.1.3"
+# (0.1.2 has no `mcp` subcommand); 0.1.4 adds dependency vulnerability scanning
+# (the `vuln_scan` tool arg / `--vuln-scan`) and renames a finding's `line` to
+# `start_line`/`end_line`. Bump on a plugin release to move users on.
+TRUSTABL_VERSION="0.1.4"
 TRUSTABL_REPO="trustabl/trustabl"
 TRUSTABL_INSTALL_HINT="install with 'brew install trustabl/tap/trustabl' (macOS/Linux), 'scoop install trustabl' (Windows), or download from https://github.com/${TRUSTABL_REPO}/releases"
 

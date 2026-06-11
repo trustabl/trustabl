@@ -39,9 +39,11 @@ Invoke after you have just written or changed any of these, before committing:
 - Agent guardrails (`@input_guardrail` / `@output_guardrail`) or
   `.claude/settings.json` permission settings.
 
-Languages understood today: Python and TypeScript (`.ts` / `.tsx` / `.mts` /
-`.cts`). JavaScript and Go files are inventoried but not AST-parsed, so no tools
-or agents are extracted from them.
+Languages understood today: Python, TypeScript, and JavaScript (`.ts` / `.tsx` /
+`.mts` / `.cts` / `.js` / `.jsx` / `.mjs` / `.cjs`) for tools and agents, plus
+MCP-server tool discovery in Go, C#, PHP, and Rust. The dependency BOM (and
+`--vuln-scan`) spans all of those package ecosystems — pip, npm, Go modules,
+NuGet, Composer, and Cargo.
 
 ## How to run the scan
 
@@ -52,6 +54,10 @@ the repo you just edited:
 - `mcp__trustabl__scan` with `{"path": "."}` — scan the current repo.
 - Optionally `{"path": ".", "rules_ref": "<branch-or-tag>"}` to pin the
   detection-rules ref.
+- Optionally `{"path": ".", "vuln_scan": true}` to also match the repo's declared
+  dependencies against a pinned OSV database and report known CVEs as findings
+  (plus a structured `vulnerabilities[]` array). Off by default; the first use
+  downloads the OSV snapshot, then reuses the cache.
 
 The tool returns the full scan result as JSON — the same `ScanResult` shape as
 the CLI's `--format json` output, with a `findings` array to reason over. There
@@ -69,6 +75,8 @@ on `PATH`:
 "$TRUSTABL_BIN" scan . --format json          # JSON, same shape the tool returns
 "$TRUSTABL_BIN" scan . --strict               # exit 1 on low+ findings (info/META never fail)
 "$TRUSTABL_BIN" scan . --detectors claude_sdk # narrow to one SDK: claude_sdk|openai_sdk|google_adk|openshell
+"$TRUSTABL_BIN" scan . --vuln-scan            # also match declared deps against OSV → CVE findings
+"$TRUSTABL_BIN" scan . --bom-out bom.json     # write a CycloneDX SBOM (+ VEX vulnerabilities under --vuln-scan)
 ```
 
 In the CLI fallback the exit code is the gate: `0` = no findings of medium
@@ -107,6 +115,13 @@ audit", or "this dep is declared but unused") are honest coverage signals, not
 defects, and never fail the build. Two agents in the same repo can be in very
 different postures, so always fix the agent the finding names, not the repo as a
 whole.
+
+**Dependency vulnerabilities** (only when the scan ran with `--vuln-scan` or the
+`vuln_scan: true` tool arg): each known CVE in a declared, concretely-pinned
+dependency is a finding whose `rule_id` is the advisory id (CVE / GHSA / PYSEC),
+located at the dependency's line in its manifest, with the fixed version in
+`suggested_fix`. They flow through the same severity gate as rule findings — fix
+by upgrading the dependency to the noted version.
 
 ## Remediation loop
 

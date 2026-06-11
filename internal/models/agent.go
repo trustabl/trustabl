@@ -180,9 +180,16 @@ type SubagentDef struct {
 // dynamic-context injection (the inline !`cmd` form and ```! fenced blocks),
 // which Claude Code runs during preprocessing, before the model sees the
 // rendered skill — so model-level prompt-injection defenses never see them.
-// ExternalURLs and InjectionMarkers carry the indirect- and direct-injection
-// signals found in the body. BundledFiles inventories the skill's other shipped
-// files (scripts are the highest-risk bundled surface).
+// HasShellExec flags ordinary shell-code patterns in the body (```bash/sh fences,
+// $() subshell syntax, subprocess/os.system calls) that run at model-invocation
+// time, not preprocessing time. ExternalURLs and InjectionMarkers carry the
+// indirect- and direct-injection signals found in the body.
+// HasCredentialLiteral flags a hardcoded secret VALUE in the body (AWS/GH/Slack
+// tokens, private-key headers). HasDynamicArgs flags $ARGUMENTS or template
+// interpolation ({{...}}) — user-controlled text embedded directly in the skill
+// body. ReferencesSkills lists other skill names the body chains to.
+// BundledFiles inventories the skill's other shipped files (scripts are the
+// highest-risk bundled surface).
 type SkillDef struct {
 	Name                   string        `json:"name"`
 	Description            string        `json:"description,omitempty"`
@@ -196,8 +203,12 @@ type SkillDef struct {
 	Agent                  string        `json:"agent,omitempty"`
 	HasHooks               bool          `json:"has_hooks,omitempty"`
 	DynamicExecCommands    []string      `json:"dynamic_exec_commands,omitempty"`
+	HasShellExec           bool          `json:"has_shell_exec,omitempty"`
 	ExternalURLs           []string      `json:"external_urls,omitempty"`
 	InjectionMarkers       []string      `json:"injection_markers,omitempty"`
+	HasCredentialLiteral   bool          `json:"has_credential_literal,omitempty"`
+	HasDynamicArgs         bool          `json:"has_dynamic_args,omitempty"`
+	ReferencesSkills       []string      `json:"references_skills,omitempty"`
 	BundledFiles           []BundledFile `json:"bundled_files,omitempty"`
 	Location                             // file_path = SKILL.md path
 }
