@@ -4,15 +4,23 @@ import "github.com/trustabl/trustabl/internal/models"
 
 // LangChainHostedToolClasses is the set of LangChain / LangGraph built-in tool
 // classes that represent high-risk capabilities: code execution (PythonREPLTool,
-// PythonAstREPLTool from langchain_experimental), shell (ShellTool), and raw
-// outbound HTTP (the Requests* family) from langchain_community. Benign built-ins
-// are intentionally omitted so a match is always a meaningful security signal.
+// PythonAstREPLTool, and the bare PythonREPL utility from langchain_experimental),
+// shell (ShellTool), and raw outbound HTTP (the Requests* family) from
+// langchain_community. Benign built-ins are intentionally omitted so a match is
+// always a meaningful security signal.
 //
 // They are recognized when they appear in an agent's resolved tools list and
 // emitted as HostedToolDef edges, so agent-scope rules can flag the capability.
+//
+// GAP: the common `Tool(func=PythonREPL().run)` shape wraps the REPL's `.run`
+// method rather than placing the class directly in tools=[...], so it is matched
+// only when the class is instantiated directly in the list. Community/experimental
+// code-interpreter tools (Bearly, E2B, Riza) are deliberately not listed here
+// pending verification of their current class names.
 var LangChainHostedToolClasses = map[string]bool{
 	"PythonREPLTool":     true,
 	"PythonAstREPLTool":  true,
+	"PythonREPL":         true,
 	"ShellTool":          true,
 	"RequestsGetTool":    true,
 	"RequestsPostTool":   true,

@@ -227,8 +227,14 @@ func buildLangChainTool(n *sitter.Node, callee string, pf ParsedFile, funcs map[
 		wrappedName = firstPositionalIdent(n, pf.Source)
 	}
 	if wrappedName == "" && kwargs != nil {
-		if fk := kwargs.Children["func"]; fk != nil && fk.Value != nil && fk.Value.Kind == models.ExprNameRef {
-			wrappedName = fk.Value.Text
+		// func= (sync) or coroutine= (async) — resolve either, so an async tool's
+		// body is scanned for shell / code-exec / SSRF, which is exactly where
+		// those facts live.
+		for _, key := range []string{"func", "coroutine"} {
+			if fk := kwargs.Children[key]; fk != nil && fk.Value != nil && fk.Value.Kind == models.ExprNameRef {
+				wrappedName = fk.Value.Text
+				break
+			}
 		}
 	}
 	var fnDef *sitter.Node
@@ -236,8 +242,11 @@ func buildLangChainTool(n *sitter.Node, callee string, pf ParsedFile, funcs map[
 		fnDef = funcs[wrappedName]
 	}
 
-	// Name: explicit name= kwarg > wrapped function name.
+	// Name: explicit name= kwarg > positional name (from_function) > wrapped fn name.
 	name := kwargStringLiteral(kwargs, "name")
+	if name == "" && strings.HasSuffix(callee, ".from_function") {
+		name = positionalStringLiteral(n, 1, pf.Source)
+	}
 	if name == "" {
 		name = wrappedName
 	}
@@ -245,8 +254,12 @@ func buildLangChainTool(n *sitter.Node, callee string, pf ParsedFile, funcs map[
 		return models.ToolDef{}, false
 	}
 
-	// Description: explicit description= kwarg > wrapped function docstring.
+	// Description: explicit description= kwarg > positional description
+	// (from_function) > wrapped function docstring.
 	description := kwargStringLiteral(kwargs, "description")
+	if description == "" && strings.HasSuffix(callee, ".from_function") {
+		description = positionalStringLiteral(n, 2, pf.Source)
+	}
 	if description == "" && fnDef != nil {
 		description = astutil.FunctionDocstring(fnDef, pf.Source)
 	}
@@ -300,7 +313,7 @@ func buildLangChainTool(n *sitter.Node, callee string, pf ParsedFile, funcs map[
 		cfg := map[string]string{}
 		for k, child := range kwargs.Children {
 			switch k {
-			case "name", "description", "func", "args_schema":
+			case "name", "description", "func", "coroutine", "args_schema":
 				continue
 			}
 			if child.Value != nil {
@@ -334,6 +347,22 @@ func indexTopLevelFunctions(root *sitter.Node, src []byte) map[string]*sitter.No
 		}
 	}
 	return funcs
+}
+
+// positionalStringLiteral returns the unquoted value of the idx-th positional
+// argument when it is a string literal, else "". Used to read the positional
+// name / description of Tool.from_function(func, name, description). Mirrors
+// kwargStringLiteral's classification + quote-strip.
+func positionalStringLiteral(call *sitter.Node, idx int, src []byte) string {
+	node := positionalArgNode(call, idx)
+	if node == nil {
+		return ""
+	}
+	expr := exprFromNode(node, src)
+	if expr == nil || expr.Value == nil || expr.Value.Kind != models.ExprLiteralString {
+		return ""
+	}
+	return strings.Trim(expr.Value.Text, `"'`)
 }
 
 // firstPositionalIdent returns the text of the first positional identifier arg of

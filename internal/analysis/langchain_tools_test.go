@@ -16,6 +16,51 @@ func lcFindTool(tools []models.ToolDef, name string) (models.ToolDef, bool) {
 	return models.ToolDef{}, false
 }
 
+// Tool.from_function(func, name, description) supplies name/description
+// POSITIONALLY. They must be captured so a tool with a real description does not
+// false-fire LC-001 (no-description).
+func TestLangChainTool_FromFunctionPositionalDescription(t *testing.T) {
+	src := `from langchain_core.tools import Tool
+
+def search_web(q):
+    return do_search(q)
+
+lookup = Tool.from_function(search_web, "search", "Search the public web for a query string")
+`
+	pf := parsePyFile(t, "ff.py", src)
+	tools := analysis.DiscoverLangChainTools([]analysis.ParsedFile{pf})
+	td, ok := lcFindTool(tools, "search")
+	if !ok {
+		t.Fatalf("tool 'search' not discovered; got %+v", tools)
+	}
+	if td.Description != "Search the public web for a query string" {
+		t.Errorf("Description: got %q, want the positional description", td.Description)
+	}
+}
+
+// StructuredTool.from_function(coroutine=fn) wraps an async implementation. The
+// wrapped function must resolve so body-scan predicates (shell/code-exec/SSRF)
+// reach the async body — async bodies are exactly where those live.
+func TestLangChainTool_CoroutineResolvesWrappedFunction(t *testing.T) {
+	src := `from langchain_core.tools import StructuredTool
+
+async def do_fetch(url: str):
+    """Fetch a URL."""
+    return await client.get(url)
+
+fetch_tool = StructuredTool.from_function(coroutine=do_fetch, name="fetch")
+`
+	pf := parsePyFile(t, "coro.py", src)
+	tools := analysis.DiscoverLangChainTools([]analysis.ParsedFile{pf})
+	td, ok := lcFindTool(tools, "fetch")
+	if !ok {
+		t.Fatalf("tool 'fetch' not discovered; got %+v", tools)
+	}
+	if td.Description != "Fetch a URL." {
+		t.Errorf("coroutine= wrapped fn not resolved (docstring lost): got Description %q", td.Description)
+	}
+}
+
 // The headline collision test: bare @tool is shared by LangChain and the Claude
 // SDK. A langchain-importing file must route it to LangChain.
 func TestLangChain_ToolDecorator_RoutesToLangChain(t *testing.T) {
