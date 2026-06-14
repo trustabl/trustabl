@@ -141,11 +141,14 @@ func toolsInFile(pf ParsedFile) []models.ToolDef {
 	return out
 }
 
-// kindFromDecorators inspects decorator nodes and decides whether this looks
-// like a Claude Agent SDK tool, an OpenAI Agents SDK tool, an MCP tool, or
-// neither. Conservative: when in doubt, return Unknown — a false negative is
-// fixable by adding a recognizer; a false positive triggers detectors on user
-// code that isn't even a tool.
+// kindFromDecorators inspects decorator nodes and decides which SDK's tool this
+// looks like — Claude Agent SDK, OpenAI Agents SDK, MCP, Pydantic AI, LangChain,
+// or CrewAI — or neither. Conservative: when in doubt, return Unknown — a false
+// negative is fixable by adding a recognizer; a false positive triggers detectors
+// on user code that isn't even a tool. Precedence is order-sensitive: the
+// Pydantic `.tool` / `.tool_plain` attribute shape is handled first (and excludes
+// the MCP-reserved server.tool / mcp.tool), then an import-bound bare `@tool`
+// resolves to its exporting SDK via toolImports, then the dedicated switch arms.
 //
 // Order matters: @function_tool is OpenAI Agents SDK and is checked before
 // the more permissive "@tool" Claude SDK match (which would otherwise swallow

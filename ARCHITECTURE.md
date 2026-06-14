@@ -50,8 +50,9 @@ imports from `@google/adk`). MCP-proper servers authored with
 are discovered in TS via `ts_mcp_proper.go`. LangChain / LangGraph is discovered
 in both Python (the `@tool` decorator — import-routed to disambiguate from the
 Claude SDK's `@tool` — plus `StructuredTool` / `Tool` factories,
-`create_react_agent` / `create_agent` / `AgentExecutor`, and the `PythonREPLTool`
-/ `ShellTool` built-ins) and TypeScript (the `tool(fn, {...})` factory,
+`create_react_agent` / `create_agent` / `AgentExecutor`, the raw `StateGraph` /
+`MessageGraph` graph builder (Class `StateGraph`, import-bound), and the
+`PythonREPLTool` / `ShellTool` built-ins) and TypeScript (the `tool(fn, {...})` factory,
 `DynamicStructuredTool` / `DynamicTool`, and `createReactAgent` / `createAgent` /
 `AgentExecutor`), import-gated to the `@langchain/*` / `langchain` / `langgraph`
 ecosystem. Four further SDKs are wired in Python and TypeScript: CrewAI (Python —
@@ -634,9 +635,12 @@ For each language recon cleared, do the AST work and produce a `RepoInventory`:
   graphs. The imperative `StateGraph(...)` → `.add_node` / `.add_edge` →
   `.compile()` builder is emergent across many call sites, so the single-call
   `create_*_agent` discovery above misses it. This pass anchors on the
-  `StateGraph(...)` constructor (import-gated to langchain / langgraph) and emits
-  one `AgentDef` per graph with Class `StateGraph` (activating the
-  `langchain_state_graph` rule token), capturing the builder `VarName` and
+  `StateGraph(...)` (or legacy `MessageGraph(...)`) constructor, bound to its
+  langgraph import origin (`collectLangChainImports`) so a same-named class from
+  an unrelated package — `networkx.Graph`, a local `StateGraph` — is not matched,
+  and emits one `AgentDef` per graph with Class `StateGraph` (which *reserves*
+  the `langchain_state_graph` rule token — no shipped rule consumes it yet, so
+  discovery alone produces no finding), capturing the builder `VarName` and
   linking the multi-call-site `builder.compile(...)` kwargs (`checkpointer`,
   `interrupt_before` / `interrupt_after`, `store`) back onto the agent. Resolving
   the graph's own `ToolNode` / `bind_tools` tools and shipping the rules are

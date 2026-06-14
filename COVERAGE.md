@@ -175,17 +175,23 @@ imports the langchain ecosystem (`langchain`, `langchain_core`, `langgraph`,
 | Tools (`@tool`) | The `@tool` decorator (shared with the Claude SDK), classified in `kindFromDecorators` by the **import binding** of the `tool` symbol (`collectToolImports`): `tool` bound from a langchain module → `KindLangChainTool`, from `claude_agent_sdk` → Claude, last-binding-wins on shadowing — so it attributes correctly even when a file imports both SDKs. A file-level import-presence check is the fallback for a star-import / locally defined `tool`. Captures name, docstring → Description, typed-params, decorator kwargs (incl. `return_direct`) → Config |
 | Tools (factories) | `StructuredTool(...)` / `StructuredTool.from_function(fn)` / `Tool(...)` / `Tool.from_function(fn)`. Resolves the wrapped function (first positional arg, or `func=`) to a same-file def and points the ToolDef at its body so the shell/code/SSRF predicates scan the implementation; explicit `name=` / `description=` / `args_schema=` override. `class X(BaseTool)` is a documented gap |
 | Agents | `create_react_agent(...)` / `create_agent(...)` / `AgentExecutor(...)` → `AgentDef` with normalized Class `ReactAgent` / `CreateAgent` / `AgentExecutor`. All kwargs captured; the positional `tools` argument (index 1) of the two factories is captured as a synthetic `tools` kwarg so edge + hosted-tool resolution sees it |
-| Dangerous built-ins | `PythonREPLTool`, `PythonAstREPLTool`, `ShellTool`, and the `Requests*` family inside an agent's resolved `tools` list → `HostedToolDef` (SDK `langchain`), consumed by agent rule LC-101 |
+| Dangerous built-ins | `PythonREPLTool`, `PythonAstREPLTool`, `PythonREPL`, `ShellTool` (code/shell — **consumed by agent rule LC-101**), plus the `Requests*` family (raw outbound HTTP — discovered as `HostedToolDef` edges but with **no consuming rule yet**, an unaudited SSRF/egress surface) inside an agent's resolved `tools` list → `HostedToolDef` (SDK `langchain`) |
 
 **Raw `StateGraph` graphs are now discovered** (`langgraph_graph.go`): the
-imperative `StateGraph(...)` → `.add_node` / `.add_edge` → `.compile()` builder,
-emergent across many call sites, is anchored on the `StateGraph(...)` constructor
-and emitted as one `AgentDef` (Class `StateGraph`, SDK `langchain`), with the
+imperative `StateGraph(...)` (or legacy `MessageGraph(...)`) → `.add_node` /
+`.add_edge` → `.compile()` builder, emergent across many call sites, is anchored
+on the constructor — bound to its langgraph import origin so a same-named class
+from an unrelated package (`networkx.Graph`, a local `StateGraph`) is not
+matched — and emitted as one `AgentDef` (Class `StateGraph`, SDK `langchain`), with the
 builder var name and the `.compile()` kwargs (`checkpointer`,
 `interrupt_before` / `interrupt_after`, `store`) linked back onto the agent.
 **Limitation:** discovery-only for now — no `langchain_state_graph` rule ships
-yet (a discovered StateGraph repo gets a `META-004` "detected, unaudited" signal
-until rules land), and the graph's own tools are not resolved: a
+yet. A discovered StateGraph emits no finding of its own; it surfaces as the
+repo-level `META-004` ("audited SDK, no applicable rule") **only when it is the
+sole LangChain entity** — alongside any audited `@tool` / `create_*_agent` /
+`AgentExecutor` in the same repo, `META-004` is suppressed and the StateGraph
+produces no per-graph signal until rules land. Also, the graph's own tools are
+not resolved: a
 `ToolNode([...])` / `llm.bind_tools([...])` list is left unresolved (the `@tool`
 / `StructuredTool` / `Tool` tools elsewhere in the repo are still discovered
 normally). Tool-edge / hosted-tool resolution still requires `tools` to be a
@@ -209,6 +215,20 @@ prefix-matched (`astutil.TSImportAliasesMatch`) so the many subpaths
 class-based tools (`extends StructuredTool`) are documented gaps; the raw
 `StateGraph` graph agent is not modeled in TS yet (Python now is — see the
 Python section above).
+
+**Known low-severity precision gaps (from the LangChain/LangGraph audit), not yet
+fixed:** in TS, a `tool()` schema passed by identifier/member reference sets
+`HasTypedParams=false` (no TS untyped-params rule ships, so no consumer today); a
+non-string-literal `description` (template literal / identifier const) makes
+LC-010 read it as absent; and `new ns.DynamicStructuredTool(...)` namespace-import
+constructors are missed — all three touch the shared TS schema/description/
+namespace helpers (4 SDK passes) and were deferred to avoid a risky late
+shared-code change. In Python, LC-101 only sees hosted tools captured at the
+`tools=` kwarg / positional, so a tools list bound to a variable leaves
+`HostedToolRefs` empty (a known LC-101 false-negative); LC-102's
+`AgentExecutor`-only scope is deliberate — `create_react_agent`/`create_agent`
+loop bounds live in the invoke-site `recursion_limit`, which is not a constructor
+kwarg and so is out of static reach.
 
 ### CrewAI — Python
 

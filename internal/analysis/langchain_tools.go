@@ -40,7 +40,12 @@ var langChainToolFactories = map[string]bool{
 // langchain_experimental, langchain_classic, the langchain-* provider packages,
 // langgraph, and langgraph_* (supervisor / swarm). The dot/underscore boundary
 // keeps an unrelated package that merely shares the prefix text (e.g.
-// "langchainx") from matching, mirroring isGoogleADKModule's discipline.
+// "langchainx") from matching, mirroring isGoogleADKModule's discipline. The
+// langchain_* / langgraph_* prefix match is intentionally OPEN — it admits any
+// third-party langchain_*/langgraph_* package; precision comes from the
+// downstream builder/factory/decorator callee sets, and (for the constructor
+// passes) from collectLangChainImports binding each callee to its imported
+// symbol — not from a closed module list.
 func isLangChainModule(mod string) bool {
 	return mod == "langchain" || strings.HasPrefix(mod, "langchain.") ||
 		strings.HasPrefix(mod, "langchain_") ||
