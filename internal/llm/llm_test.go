@@ -168,7 +168,7 @@ func TestValidateKey(t *testing.T) {
 		{
 			name:     "google valid key",
 			provider: "google",
-			key:      "AIzaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+			key:      "AIzaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
 			wantErr:  false,
 		},
 		{
