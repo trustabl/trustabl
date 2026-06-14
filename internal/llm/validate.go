@@ -7,6 +7,8 @@ import (
 
 var keyPatterns = map[string]*regexp.Regexp{
 	"anthropic": regexp.MustCompile(`^sk-ant-[A-Za-z0-9_-]{20,}$`),
+	"openai":    regexp.MustCompile(`^sk-[A-Za-z0-9_-]{20,}$`),
+	"google":    regexp.MustCompile(`^AIza[A-Za-z0-9_-]{36}$`),
 }
 
 // ValidateKey checks that key matches the expected format for provider.
