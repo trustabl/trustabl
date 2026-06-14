@@ -2243,6 +2243,15 @@ var policyAgentRuleCases = []policyAgentCase{
 	{"LC-101 silent without a dangerous builtin", "LC-101",
 		models.AgentDef{SDK: models.SDKLangChain, Class: "ReactAgent", Language: models.LanguagePython},
 		models.RepoInventory{}, false},
+	{"LC-101 fires on a StateGraph wiring PythonREPLTool", "LC-101",
+		models.AgentDef{
+			SDK: models.SDKLangChain, Class: "StateGraph", Language: models.LanguagePython,
+			HostedToolRefs: []models.HostedToolRef{{Class: "PythonREPLTool"}},
+		},
+		models.RepoInventory{}, true},
+	{"LC-101 silent on a StateGraph with no dangerous builtin", "LC-101",
+		models.AgentDef{SDK: models.SDKLangChain, Class: "StateGraph", Language: models.LanguagePython},
+		models.RepoInventory{}, false},
 
 	{"LC-102 fires when AgentExecutor has no max_iterations", "LC-102",
 		models.AgentDef{SDK: models.SDKLangChain, Class: "AgentExecutor", Language: models.LanguagePython},

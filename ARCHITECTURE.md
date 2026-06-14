@@ -638,13 +638,16 @@ For each language recon cleared, do the AST work and produce a `RepoInventory`:
   `StateGraph(...)` (or legacy `MessageGraph(...)`) constructor, bound to its
   langgraph import origin (`collectLangChainImports`) so a same-named class from
   an unrelated package — `networkx.Graph`, a local `StateGraph` — is not matched,
-  and emits one `AgentDef` per graph with Class `StateGraph` (which *reserves*
-  the `langchain_state_graph` rule token — no shipped rule consumes it yet, so
-  discovery alone produces no finding), capturing the builder `VarName` and
-  linking the multi-call-site `builder.compile(...)` kwargs (`checkpointer`,
-  `interrupt_before` / `interrupt_after`, `store`) back onto the agent. Resolving
-  the graph's own `ToolNode` / `bind_tools` tools and shipping the rules are
-  fast-follows.
+  and emits one `AgentDef` per graph with Class `StateGraph` (matched by the
+  `langchain_state_graph` rule token — agent rule LC-101 fires on it), capturing
+  the builder `VarName` and linking the multi-call-site `builder.compile(...)`
+  kwargs (`checkpointer`, `interrupt_before` / `interrupt_after`, `store`) back
+  onto the agent. The graph's tools are resolved in `ResolveEdges` from its
+  `ToolNode([...])` / `llm.bind_tools([...])` call sites (inline list literals and
+  the same-file `tools = [...]` variable form); the dangerous built-ins among them
+  attach as `HostedToolRefs`, so LC-101 flags a graph that wires a
+  code-exec / shell tool. The TypeScript equivalent and cross-function tool-list
+  resolution are fast-follows.
 - **DiscoverTSLangChainTools / DiscoverTSLangChainAgents** (`ts_langchain_tools.go`,
   `ts_langchain_agents.go`) — TS LangChain. Tools: `tool(fn, {...})` (config at
   arg 1, unlike OpenAI's arg-0), `new DynamicStructuredTool({...})`,

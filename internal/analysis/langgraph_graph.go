@@ -1,6 +1,8 @@
 package analysis
 
 import (
+	"strings"
+
 	sitter "github.com/smacker/go-tree-sitter"
 
 	"github.com/trustabl/trustabl/internal/analysis/astutil"
@@ -53,6 +55,71 @@ func DiscoverLangGraphGraphs(files []ParsedFile) []models.AgentDef {
 		out = append(out, discoverLangGraphGraphsInFile(pf)...)
 	}
 	return out
+}
+
+// collectLangGraphToolItems returns the call-shaped items found inside the tool
+// lists of ToolNode([...]) and <llm>.bind_tools([...]) calls in a file. A raw
+// StateGraph has no tools= kwarg — its tools are wired through these two shapes —
+// so these are the dangerous-built-in surface for the graph agent. Only list
+// literals are read; a tools list passed by variable is left unresolved (a v1
+// limitation). ResolveEdges classifies the dangerous built-ins among the items
+// and attaches them to the file's StateGraph agent(s).
+func collectLangGraphToolItems(pf ParsedFile) []models.Expr {
+	// Index same-file `name = [...]` list assignments so the common
+	// `tools = [...]; ToolNode(tools)` / `bind_tools(tools)` variable form
+	// resolves to its list literal. Cross-function / cross-module aliases are a
+	// v1 limitation.
+	listVars := map[string]*sitter.Node{}
+	astutil.Walk(pf.Tree.RootNode(), func(n *sitter.Node) bool {
+		if n.Type() != "assignment" {
+			return true
+		}
+		l, r := n.ChildByFieldName("left"), n.ChildByFieldName("right")
+		if l != nil && l.Type() == "identifier" && r != nil && r.Type() == "list" {
+			listVars[astutil.NodeText(l, pf.Source)] = r
+		}
+		return true
+	})
+
+	var items []models.Expr
+	addList := func(list *sitter.Node) {
+		for i := 0; i < int(list.NamedChildCount()); i++ {
+			el := list.NamedChild(i)
+			if el.Type() == "comment" {
+				continue
+			}
+			if e := exprFromNode(el, pf.Source); e != nil && e.Value != nil {
+				items = append(items, *e.Value)
+			}
+		}
+	}
+	astutil.Walk(pf.Tree.RootNode(), func(n *sitter.Node) bool {
+		if n.Type() != "call" {
+			return true
+		}
+		callee := astutil.NodeText(n.ChildByFieldName("function"), pf.Source)
+		last := callee
+		if i := strings.LastIndex(callee, "."); i >= 0 {
+			last = callee[i+1:]
+		}
+		if callee != "ToolNode" && last != "bind_tools" {
+			return true
+		}
+		arg := positionalArgNode(n, 0)
+		if arg == nil {
+			return true
+		}
+		switch arg.Type() {
+		case "list":
+			addList(arg)
+		case "identifier":
+			if list := listVars[astutil.NodeText(arg, pf.Source)]; list != nil {
+				addList(list)
+			}
+		}
+		return true
+	})
+	return items
 }
 
 func discoverLangGraphGraphsInFile(pf ParsedFile) []models.AgentDef {

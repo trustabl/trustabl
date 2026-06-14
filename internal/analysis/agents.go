@@ -110,6 +110,15 @@ func ResolveEdges(inv *models.RepoInventory, parsed []ParsedFile) {
 		mcpAliasesByFile[pf.RelPath] = collectWithStatementMCPAliases(pf)
 	}
 
+	// Per-file ToolNode([...]) / bind_tools([...]) tool items, for attaching a
+	// raw LangGraph StateGraph's wired tools (it has no tools= kwarg).
+	graphToolItemsByFile := make(map[string][]models.Expr)
+	for _, pf := range parsed {
+		if fileImportsLangChain(pf) {
+			graphToolItemsByFile[pf.RelPath] = collectLangGraphToolItems(pf)
+		}
+	}
+
 	for i := range inv.Agents {
 		a := &inv.Agents[i]
 		// Opaque agents skip the Python kwarg blocks below (Kwargs can't be
@@ -223,6 +232,27 @@ func ResolveEdges(inv *models.RepoInventory, parsed []ParsedFile) {
 							DefIndex: len(inv.HostedTools) - 1,
 						})
 					}
+				}
+			}
+
+			// Raw LangGraph StateGraph agents carry no tools= kwarg; their tools are
+			// wired through ToolNode([...]) / llm.bind_tools([...]) call sites
+			// elsewhere in the file. Attach the dangerous built-ins among them as
+			// HostedToolRefs so agent-scope rules (LC-101) can flag a graph that
+			// wires a code-exec / shell tool. File-level attribution: every
+			// StateGraph in the file receives the file's graph tools — one graph per
+			// file is the common case; a multi-graph file over-attributes (a v1 limit).
+			if a.SDK == models.SDKLangChain && a.Class == "StateGraph" {
+				for _, item := range graphToolItemsByFile[a.FilePath] {
+					h, isHT := classifyLangChainHostedToolCall(item, a.FilePath)
+					if !isHT {
+						continue
+					}
+					inv.HostedTools = append(inv.HostedTools, h)
+					a.HostedToolRefs = append(a.HostedToolRefs, models.HostedToolRef{
+						Class:    h.Class,
+						DefIndex: len(inv.HostedTools) - 1,
+					})
 				}
 			}
 		}
