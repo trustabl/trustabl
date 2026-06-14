@@ -322,23 +322,23 @@ flowchart TD
     end
 
     subgraph S2["Step 2 — Inventory (per-language AST)"]
-        disc["analysis.DiscoverTools<br/>DiscoverAgents<br/>DiscoverGuardrails<br/>DiscoverSessions<br/>DiscoverSubagents<br/>DiscoverSkills<br/>DiscoverDependencies<br/>DiscoverSlashCommands<br/>DiscoverPlugins<br/>DiscoverClaudeSettings<br/>DiscoverADKAgents<br/>DiscoverADKTools"]
+        disc["analysis.DiscoverTools<br/>DiscoverAgents<br/>DiscoverGuardrails<br/>DiscoverSessions<br/>DiscoverSubagents<br/>DiscoverSkills<br/>DiscoverDependencies<br/>DiscoverSlashCommands<br/>DiscoverPlugins<br/>DiscoverClaudeSettings<br/>DiscoverADKAgents<br/>DiscoverADKTools<br/>DiscoverClaudeAgentOptions<br/>LangChain/CrewAI/AutoGen/PydanticAI (Py)<br/>TS: OpenAI/ADK/LangChain/Vercel/MCP-proper<br/>Go/CSharp/PHP/Rust MCP"]
         edges["analysis.ResolveEdges"]
-        inv[["RepoInventory<br/>Tools · Agents · Guardrails · Sessions<br/>SDKsDetected · HasShellInvocations · UsesDefaultTracing<br/>Dependencies (BOM)"]]
+        inv[["RepoInventory<br/>Tools · Agents · Guardrails · Sessions<br/>SDKsDetected · HasShellInvocations · UsesDefaultTracing<br/>Dependencies (BOM)<br/>MCPServers · Subagents · Skills · SlashCommands<br/>PluginManifests · ClaudeSettings · ClaudeAgentOptions"]]
         disc --> edges --> inv
     end
 
     subgraph S3["Step 3 — Policy selection"]
         loadfor["rules.LoadFor(SDKsDetected)"]
-        meta["scanner.SelectAndEmitMETA<br/>scanner.EmitCoverageMETA"]
-        reg[["Registry + META-001..004"]]
+        meta["scanner.SelectAndEmitMETA<br/>scanner.EmitCoverageMETA<br/>scanner.EmitSkippedRulesMETA"]
+        reg[["Registry + META-001..005"]]
         loadfor --> reg
         meta --> reg
     end
 
     subgraph S4["Step 4 — Analysis"]
         run["Registry.Run"]
-        findings[["Findings<br/>sorted by (RuleID, FilePath, Line)"]]
+        findings[["Findings<br/>META · sorted rules · vuln"]]
         run --> findings
     end
 
@@ -788,7 +788,7 @@ tools. Component kinds:
 | `skill`               | `SKILL.md` at any depth (`.claude/skills/`, plugin `skills/`, nested) |
 | `slash_command`       | `.claude/commands/*.md`, plus `<plugin-root>/commands/*.md` when `<plugin-root>` has a sibling `.claude-plugin/plugin.json` |
 | `plugin_manifest`     | `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json` |
-| `hook_script`         | `hooks/*.{py,ts,js,jsx,mjs}`                                   |
+| `hook_script`         | `hooks/*.{py,ts,tsx,mts,cts,js,jsx,mjs,cjs}`                                   |
 | `sandbox_policy`      | `openshell/*.yaml` / `openshell/*.yml`                         |
 | `system_prompt`       | `prompts/*.md`, `system_prompt.md`, `system_prompt.txt` (root) |
 | `dependency_manifest` | `pyproject.toml`, `requirements.txt`, `Pipfile`, `poetry.lock`, `package.json`, `go.mod` |
@@ -861,7 +861,7 @@ in tree-sitter terms).
 ### Steps 3–4 — Policy selection and analysis ([internal/rules/](internal/rules/) + [internal/analysis/detectors/](internal/analysis/detectors/))
 
 Detection is **YAML-driven**. The `internal/analysis/detectors` package owns
-four typed interfaces and the `Registry` runtime; concrete detectors are
+five typed interfaces and the `Registry` runtime; concrete detectors are
 produced by `internal/rules` from the YAML policy files resolved out of the
 external rules repository (see §2 — Rule resolution).
 
@@ -899,14 +899,24 @@ type SubagentDetector interface {
     Applies(models.SubagentDef) bool
     Detect(models.SubagentDef, models.RepoInventory) []models.Finding
 }
+
+// SkillDetector fires against one SkillDef at a time. Skills are SKILL.md
+// frontmatter + body declarations — no AST — so Detect takes no ParsedFile.
+type SkillDetector interface {
+    RuleID() string
+    Category() models.DetectorCategory
+    Applies(models.SkillDef) bool
+    Detect(models.SkillDef, models.RepoInventory) []models.Finding
+}
 ```
 
-`Registry.Run(profile, inv, parsed, onEntity)` iterates all four slices:
+`Registry.Run(profile, inv, parsed, onEntity)` iterates all five slices:
 ToolDetectors fire per `inv.Tools`, AgentDetectors per `inv.Agents`,
-SubagentDetectors per `inv.Subagents`, RepoDetectors once. The optional
-`onEntity` callback is invoked once per tool/agent/subagent visited (used by
-the CLI to drive the per-entity progress bar); passing `nil` is fine. Findings
-are sorted deterministically by `(RuleID, FilePath, Line)`.
+SubagentDetectors per `inv.Subagents`, SkillDetectors per `inv.Skills`,
+RepoDetectors once. The optional `onEntity` callback is invoked once per
+tool/agent/subagent/skill visited (used by the CLI to drive the per-entity
+progress bar); passing `nil` is fine. Findings are sorted deterministically by
+`(RuleID, FilePath, StartLine, EndLine, ToolName, Title)`.
 
 Pipeline at startup:
 
@@ -916,8 +926,8 @@ Pipeline at startup:
    `.yaml` file, validates required fields / enums / cross-file rule-ID
    uniqueness, then wraps each `RuleDef` whose category matches an SDK in
    `SDKsDetected` as a `ToolRuleDetector`, `AgentRuleDetector`,
-   `RepoRuleDetector`, or `SubagentRuleDetector` based on the rule's `scope:`
-   field. If the pack decodes cleanly but carries **zero rules total**
+   `RepoRuleDetector`, `SubagentRuleDetector`, or `SkillRuleDetector` based on
+   the rule's `scope:` field. If the pack decodes cleanly but carries **zero rules total**
    (unfiltered — an empty or truncated checkout), `LoadFor` returns
    `ErrNoRulesInPack`, which `main` maps to exit 2; the engine never runs
    rule-less. This is distinct from "the repo's SDKs have no matching pack",
@@ -936,8 +946,8 @@ rule that omits them.
 
 The `Registry` supports `Subset(...categories)` for `--detectors` filtering.
 Output is reproducible: detectors run in stable order, findings are sorted by
-the total order `(RuleID, FilePath, Line, ToolName, Title)` and then
-adjacent-deduped, so neither entity-iteration order nor a doubly-reported hit
+the total order `(RuleID, FilePath, StartLine, EndLine, ToolName, Title)` and
+then adjacent-deduped, so neither entity-iteration order nor a doubly-reported hit
 can leak into the byte-stable report.
 
 Shipped rules (one row per YAML rule entry):
@@ -1074,7 +1084,7 @@ Shipped rules (one row per YAML rule entry):
 ### Step 5 — Scoring ([internal/analysis/scoring.go](internal/analysis/scoring.go))
 
 Scoring works per **surface**, where a surface is a single discovered tool,
-agent, or subagent, or the repo as a whole. A surface's identity is
+agent, subagent, or skill, or the repo as a whole. A surface's identity is
 `(Kind, FilePath, Name)` — repos reuse names across modules, and findings carry
 the surface's `FilePath`, so they attribute to the right row. Each finding
 carries its `Scope` (stamped at emit time), which routes it to its surface; all
@@ -1726,9 +1736,9 @@ rules:
 
 ### §5.1 META findings (engine-emitted, not YAML-driven)
 
-The policy-selection step emits up to four engine-level META findings before any rule runs. These
-are not backed by YAML policy files: META-001..003 come from `SelectAndEmitMETA`
-and META-004 from `EmitCoverageMETA`, both in the scanner.
+The policy-selection step emits up to five engine-level META findings before any rule runs. These
+are not backed by YAML policy files: META-001..003 come from `SelectAndEmitMETA`,
+META-004 from `EmitCoverageMETA`, and META-005 from `EmitSkippedRulesMETA`, all in the scanner.
 
 | ID       | Trigger                                                    | Severity | Intent                                               |
 | -------- | ---------------------------------------------------------- | -------- | ---------------------------------------------------- |
@@ -1736,6 +1746,7 @@ and META-004 from `EmitCoverageMETA`, both in the scanner.
 | META-002 | An SDK appears in declared deps (`SDKDeps`) but no code use was observed | info | Dep declared but not used — surfaces drift between manifests and code |
 | META-003 | An `AgentDef` has `Opaque=true` (`Agent(**config)` or `tools=non-literal`) | info | Agent analysis is partial; tool-graph predicates on this agent are unreliable |
 | META-004 | An audited SDK (Claude/OpenAI) was observed but **no loaded rule was applicable** to any discovered tool/agent | info | Distinguishes "could not audit" from "audited, clean" — prevents a false clean bill when discovery extracted nothing a rule targets |
+| META-005 | One or more rules were **skipped** — they need a newer engine (a forward-incompatible scope / `applies_to` / language / predicate) | info | Honest "rules skipped" signal — a forward-compatible pack ran without the rules this build cannot evaluate (emitted by `EmitSkippedRulesMETA`) |
 
 META-004 is emitted by `EmitCoverageMETA` (post-policy-selection, using
 `Registry.ApplicableCategories`) — `Applies()` true means a rule was relevant,
@@ -1799,10 +1810,10 @@ top-level `manifest.yaml`. Tests inject `testdata/rules-fixture/` via
 
 ### Detector interface boundary ([detectors/detector.go](internal/analysis/detectors/detector.go))
 
-The `detectors` package is interface + runtime only. It owns four typed
-interfaces — `ToolDetector`, `AgentDetector`, `RepoDetector`, `SubagentDetector` — and the
-`Registry` type that runs them. `Registry.New(tool, agent, repo, subagent []…)` accepts
-four slices; `Run`, `Subset(cats…)`, `ApplicableCategories`, and `Count`
+The `detectors` package is interface + runtime only. It owns five typed
+interfaces — `ToolDetector`, `AgentDetector`, `RepoDetector`, `SubagentDetector`, `SkillDetector` — and the
+`Registry` type that runs them. `Registry.New(tool, agent, repo, subagent, skill []…)` accepts
+five slices; `Run`, `Subset(cats…)`, `ApplicableCategories`, and `Count`
 operate on the union. There is no single `Detector` interface and no
 `Singleton` flag — scope is now an explicit choice at construction time.
 
@@ -1876,8 +1887,9 @@ Two invariants are load-bearing for the user-facing experience:
 
 1. **Same inputs → same `ScanID`.** Derived from a stable identity label
    (`RemoteURL`, or the local target's basename — not the absolute path), every
-   inventoried file list (Python, TypeScript, JavaScript, YAML, JSON, Markdown —
-   each sorted independently and folded in under a label), and the resolved
+   inventoried file list (Python, TypeScript, JavaScript, Go, C#, PHP, Rust,
+   YAML, JSON, Markdown — each sorted independently and folded in under a label),
+   and the resolved
    rules version, so neither file ordering from the OS walk nor the machine-
    specific mount point leaks into the ID.
    Folding all file lists — not just Python — keeps the ID honest for TS-only
@@ -1885,8 +1897,11 @@ Two invariants are load-bearing for the user-facing experience:
    materially different scans. Because the rules version is folded in, a scan
    run against a different rule pack produces a distinct ID — the ID is honest
    about which rules were applied, not just which code was scanned.
-2. **Same inputs → byte-stable report.** Findings are sorted by
-   `(RuleID, FilePath, Line)`; the inventory slices (`HostedTools`,
+2. **Same inputs → byte-stable report.** The findings slice is assembled in a
+   fixed order — META findings first (in emission order), then the rule findings
+   sorted by `(RuleID, FilePath, StartLine, EndLine, ToolName, Title)`, then
+   (under `--vuln-scan`) the synthesized vulnerability findings appended last;
+   the inventory slices (`HostedTools`,
    `MCPServers`, `Subagents`, `Skills`, `SlashCommands`, `PluginManifests`,
    `ClaudeSettings`) and `Components` (by `(Kind, Path)`) are sorted by
    `FilePath` before marshaling. Ordered fields *within* an entity are sorted
@@ -1909,8 +1924,8 @@ The contract is enforced in
   marshal to byte-identical JSON (catches ordered-field nondeterminism like an
   unsorted `ParamNames`, which `ScanID` alone cannot see).
 - `TestScanID_FoldsAllFileLists` / `TestScanID_StableUnderReordering` — the
-  `ScanID` changes when any inventoried file list (TS/JS/Markdown/JSON/YAML, not
-  just Python) changes, yet is invariant under file-walk reordering.
+  `ScanID` changes when any inventoried file list (TS/JS/Go/C#/PHP/Rust/Markdown/
+  JSON/YAML, not just Python) changes, yet is invariant under file-walk reordering.
 
 A change that violates any of these is a build failure.
 
@@ -1924,13 +1939,17 @@ timestamp, no map iteration order, no goroutine scheduling may influence output.
 ```
 trustabl scan <target> [--detectors=…] [--format=human|json|sarif]
                        [--output=PATH|-o PATH]
-                       [--json-out=FILE] [--sarif-out=FILE]
+                       [--json-out=FILE] [--sarif-out=FILE] [--bom-out=FILE]
                        [--strict] [--no-color] [--no-progress]
-                       [--rules-repo=URL] [--rules-ref=REF] [--no-rules-update]
+                       [--rules-repo=URL] [--rules-ref=REF] [--channel=NAME]
+                       [--no-rules-update] [--vuln-scan]
 trustabl enrich        [-i SCAN_JSON] [-r REPO_ROOT] [-o OUTPUT_FILE]
                        [--diff] [--apply] [--only-enriched] [--rule RULE_ID]
 trustabl mcp           [--rules-repo=URL] [--rules-ref=REF] [--no-rules-update]
 trustabl rules pull    [--rules-repo=URL] [--rules-ref=REF]
+trustabl rules validate [DIR]
+trustabl vulndb pull   [--no-update]
+trustabl llm           list | key set|get|delete | model set | provider set|list
 trustabl capabilities
 trustabl version
 
@@ -1939,8 +1958,14 @@ Global (persistent) flags, valid on every subcommand:
 ```
 
 `--rules-repo` (env `TRUSTABL_RULES_REPO`) overrides the rules repository URL;
-`--rules-ref` selects a branch or tag; `--no-rules-update` skips the network
-fetch and uses the local cache only. `--output`/`-o` writes the report to a
+`--rules-ref` selects a branch or tag; `--channel=NAME` resolves rules from a
+signature-verified release channel instead of the git source (see §2 — Rule
+resolution; `scan` only — the `mcp` and `rules pull` frontends do not expose
+`--channel`); `--no-rules-update` skips the network fetch and uses the local
+cache only (and, with `--vuln-scan`, pins the OSV snapshot to the cache too).
+`--vuln-scan` matches concretely-pinned dependencies against a cached OSV
+snapshot and emits CVE/GHSA findings (see §2 — Vulnerability matching);
+`--bom-out=FILE` writes a CycloneDX BOM. `--output`/`-o` writes the report to a
 file instead of stdout (the report is rendered before the file is opened, so
 it is written even when findings raise a nonzero exit code, which is what lets
 a code-scanning workflow upload the SARIF on `if: always()`).
@@ -1948,14 +1973,21 @@ a code-scanning workflow upload the SARIF on `if: always()`).
 scanning. See §2 — Rule resolution. `trustabl capabilities` prints this
 build's rule-evaluation vocabulary (the scopes, predicates, and `applies_to`
 kinds it understands) as JSON — consumed by the rules-CI gate to detect a pack
-that targets a newer engine than this build supports.
+that targets a newer engine than this build supports. `trustabl rules validate
+[DIR]` strict-loads a local rule-pack directory against this build's schema (the
+`trustabl-rules` CI gate). `trustabl vulndb pull` pre-downloads the OSV snapshot
+for every ecosystem so a later `--vuln-scan` runs offline. `trustabl llm`
+manages the BYOK provider/key/model config consumed by `enrich` (§8.2).
 
 Exit codes:
 
 - `0` — no findings ≥ medium (or no findings at all).
 - `1` — at least one finding ≥ medium, OR `--strict` and any finding present.
-- `2` — scanner / I/O error, OR no usable rules found and none fetchable
-  (run `trustabl rules pull`).
+- `2` — scanner / I/O error; no usable rules found and none fetchable
+  (run `trustabl rules pull`); or, under `--channel`, a signed-rules
+  verification failure (bad signature, untrusted/expired key, channel
+  confusion, an expired or rolled-back statement, or a digest mismatch) —
+  fail-closed, see §2.
 
 The CLI is a thin shell over `scanner.Run`. The same
 `Run(Config) (ScanResult, error)` is what the MCP frontend (§8.1), a future
@@ -1984,10 +2016,13 @@ server be unit-tested against the local rules fixture with no network
 
 Two tools are exposed, kept deliberately minimal and honest:
 
-- `scan` — input `{ "path": string, "rules_ref"?: string }`. Runs the scanner
-  against `path` and returns the `ScanResult` JSON as a text content block. A
-  scan failure is returned as an `isError` tool result (the model sees the
-  message), not a JSON-RPC protocol error.
+- `scan` — input `{ "path": string, "rules_ref"?: string, "vuln_scan"?: bool }`.
+  Runs the scanner against `path` and returns the `ScanResult` JSON as a text
+  content block. A scan failure is returned as an `isError` tool result (the
+  model sees the message), not a JSON-RPC protocol error. The MCP frontend has
+  no `--channel` flag, so it cannot resolve a signed release channel; its only
+  rules-source controls are the command-level `--rules-repo` / `--rules-ref` /
+  `--no-rules-update` and the per-call `rules_ref`.
 - `version` — reports the build version, commit, and date.
 
 **Protocol-stream discipline.** MCP stdio uses **stdout** for the JSON-RPC
@@ -2040,9 +2075,11 @@ replacements appear in the JSON output only.
 
 **Exit codes for enrich:**
 
-- `0` — success (even if some findings could not be enriched)
-- `1` — I/O error or bad input JSON
-- `2` — LLM not configured (no key or non-anthropic provider)
+- `0` — success (even if some findings could not be enriched).
+- `2` — any error: bad input JSON, an I/O failure, the active provider is not
+  `anthropic` / no key is configured, or the enrichment pipeline failed.
+  `enrich` constructs no `exitCodeError`, so every failure path funnels through
+  `main`'s catch-all to exit `2` — there is no distinct exit-`1` bucket.
 
 ---
 

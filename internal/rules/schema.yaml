@@ -30,8 +30,9 @@ policy:
 
   name: Network call hygiene                # REQUIRED. Human title. Reserved for future UX surfaces.
 
-  category: claude_sdk                      # REQUIRED. Allowed: claude_sdk | openai_sdk | google_adk | openshell | mcp.
-                                            # Inherited by every rule in this file.
+  category: claude_sdk                      # REQUIRED. Inherited by every rule in this file. Allowed:
+                                            #   claude_sdk | openai_sdk | openshell | google_adk | mcp |
+                                            #   langchain | crewai | pydantic_ai | vercel_ai | autogen | claude_skill.
 
   description: >                            # REQUIRED. Multi-line ok. Describe the policy's intent.
     Rules that govern outbound network calls made from inside agent tools.
@@ -54,16 +55,18 @@ rules:
                                             # Loader rejects values <= 0 or > 1.
 
     language: python                        # OPTIONAL (default: python). Source language this rule
-                                            # targets. Allowed: python | typescript | javascript | go.
+                                            # targets. Allowed: python | typescript | javascript | go |
+                                            # csharp | php | rust.
                                             # A rule only fires against tools whose Language matches.
                                             # Python and TypeScript discovery are both plumbed in today,
                                             # so python and typescript rules fire. JavaScript shares the
                                             # TypeScript grammar + discovery (the tsx parser parses plain
                                             # JS) and is audited by the typescript rule packs via the
                                             # TS/JS family gate, so a typescript rule fires on .js too (and
-                                            # a javascript rule fires on both). Go has no parser yet, so go
-                                            # rules stay inert until one ships. Non-python rules MUST set
-                                            # this explicitly.
+                                            # a javascript rule fires on both). Go, C#, PHP, and Rust have
+                                            # MCP tool discovery and field-based rules (e.g. MCP-015..022),
+                                            # so go/csharp/php/rust rules fire against discovered MCP tools.
+                                            # Non-python rules MUST set this explicitly.
 
     applies_to:                             # REQUIRED. Non-empty list of kind strings (tool scope shown):
       - claude_sdk_tool                     #   claude_sdk_tool   — @tool / @claude_tool / claude_agent_sdk
@@ -84,13 +87,20 @@ rules:
     scope: tool                             # REQUIRED. One of: tool | agent | subagent | skill | repo.
                                             #   tool  — fires per ToolDef. Input: a ToolDef + ParsedFile.
                                             #           applies_to accepts: claude_sdk_tool, openai_tool,
-                                            #           mcp_tool, adk_function_tool, shell_invocation, unknown.
+                                            #           mcp_tool, adk_function_tool, shell_invocation, unknown,
+                                            #           langchain_tool, crewai_tool, pydantic_ai_tool,
+                                            #           vercel_ai_tool, autogen_tool.
                                             #   agent — fires per AgentDef (Agent/SandboxAgent/AgentDefinition/
                                             #           ADK/query() constructor call). applies_to accepts:
                                             #           openai_agent, openai_sandbox_agent,
                                             #           claude_agent_definition, claude_query_main,
                                             #           adk_llm_agent, adk_sequential_agent, adk_parallel_agent,
-                                            #           adk_loop_agent, adk_langgraph_agent.
+                                            #           adk_loop_agent, adk_langgraph_agent,
+                                            #           langchain_agent, langchain_agent_executor,
+                                            #           langchain_state_graph, crewai_agent, pydantic_ai_agent,
+                                            #           vercel_ai_agent, autogen_conversable_agent,
+                                            #           autogen_user_proxy_agent, autogen_assistant_agent,
+                                            #           autogen_group_chat_manager, autogen_code_executor_agent.
                                             #   subagent — fires per Claude Code subagent. applies_to accepts:
                                             #           claude_subagent.
                                             #   skill — fires per Claude Code skill (SKILL.md). applies_to accepts:
@@ -374,7 +384,9 @@ rules:
 # ━━━ REPO-SCOPE PREDICATES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # (used only in scope: repo rules; match runs once per scan)
 #
-#   repo_has_sdk_in_code: [openai_agents, claude_agent_sdk, openshell, mcp]
+#   repo_has_sdk_in_code: [claude_agent_sdk, openai_agents, google_adk, mcp,
+#                          langchain, crewai, pydantic_ai, vercel_ai, autogen,
+#                          openshell]
 #       Fires when RepoInventory.SDKsDetected contains the given SDK value.
 #       Derived from actually-observed tool/agent kinds in code (not just deps).
 #       Special case: "openshell" is NOT an SDK and never appears in
@@ -384,9 +396,9 @@ rules:
 #   repo_component_present: [mcp_config, hook_script, claude_md, ...]
 #       Fires when any Component in Manifest.Components has the given kind.
 #       Allowed values match models.ComponentKind: mcp_config, claude_md,
-#       agents_md, claude_settings, subagent, slash_command, hook_script,
-#       sandbox_policy, system_prompt, dependency_manifest,
-#       claude_agent_definition.
+#       agents_md, claude_settings, subagent, skill, slash_command,
+#       plugin_manifest, hook_script, sandbox_policy, system_prompt,
+#       dependency_manifest, claude_agent_definition.
 #
 #   repo_uses_default_tracing: true | false
 #       Fires when the scanner's derived UsesDefaultTracing flag matches.
