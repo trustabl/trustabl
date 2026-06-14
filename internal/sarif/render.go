@@ -45,8 +45,8 @@ func securitySeverityForSeverity(s models.Severity) string {
 	}
 }
 
-// tagsForFinding builds the rule-descriptor tag set: category, scope (parsed
-// from the rule ID prefix when applicable), and language (derived from the
+// tagsForFinding builds the rule-descriptor tag set: category, scope (the
+// finding's authoritative Scope field), and language (derived from the
 // finding's file extension, since Trustabl now does first-class TypeScript /
 // JavaScript discovery alongside Python).
 func tagsForFinding(f models.Finding) []string {
@@ -54,13 +54,14 @@ func tagsForFinding(f models.Finding) []string {
 	if f.Category != "" {
 		tags = append(tags, string(f.Category))
 	}
-	// Trustabl's rule IDs encode scope implicitly:
-	//   CSDK-0xx / OAI-0xx → tool scope
-	//   CSDK-1xx / OAI-1xx → agent scope
-	//   OAI-2xx           → repo scope
-	//   META-xxx          → no scope tag
-	if scope := scopeFromRuleID(f.RuleID); scope != "" {
-		tags = append(tags, scope)
+	// Scope is taken straight from the finding's Scope field — the single
+	// authoritative source across all five scopes (tool/agent/subagent/skill/
+	// repo). Deriving it from the rule-ID prefix instead mis-tags the scopes
+	// with no numeric band: subagent (CSDK-1xx) reads as "agent" and skill
+	// (CSKILL-0xx) reads as "tool". META and synthesized vuln findings carry an
+	// empty Scope and so get no scope tag.
+	if f.Scope != "" {
+		tags = append(tags, string(f.Scope))
 	}
 	tags = append(tags, languageTagForPath(f.FilePath))
 	return tags
@@ -81,37 +82,6 @@ func languageTagForPath(path string) string {
 	default:
 		return "python"
 	}
-}
-
-// scopeFromRuleID returns the rule's scope tag based on its numeric prefix, or
-// "" for META rules (no scope).
-func scopeFromRuleID(id string) string {
-	// id format: "<PREFIX>-<NNN>" where PREFIX is CSDK/OAI/META.
-	// Scope buckets: 0xx tool, 1xx agent, 2xx repo.
-	dash := -1
-	for i := 0; i < len(id); i++ {
-		if id[i] == '-' {
-			dash = i
-			break
-		}
-	}
-	if dash < 0 || dash+1 >= len(id) {
-		return ""
-	}
-	prefix := id[:dash]
-	if prefix == "META" {
-		return ""
-	}
-	first := id[dash+1]
-	switch first {
-	case '0':
-		return "tool"
-	case '1':
-		return "agent"
-	case '2':
-		return "repo"
-	}
-	return ""
 }
 
 // ruleFromFinding builds a SARIF reportingDescriptor (rule catalog entry) from
