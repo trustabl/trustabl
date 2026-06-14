@@ -58,6 +58,60 @@ app = builder.compile()
 	}
 }
 
+// A bare `Graph()` call from an unrelated package (networkx / rdflib / graphviz)
+// in a file that merely also imports langgraph must NOT be discovered as a
+// StateGraph agent. The builder callee is bound to its langchain/langgraph
+// import origin, not matched by bare name.
+func TestLangGraph_BareGraphFromUnrelatedPackageExcluded(t *testing.T) {
+	src := `from langgraph.graph import StateGraph
+import networkx as nx
+from networkx import Graph
+
+g = Graph()
+h = nx.Graph()
+`
+	pf := parsePyFile(t, "nx.py", src)
+	agents := analysis.DiscoverLangGraphGraphs([]analysis.ParsedFile{pf})
+	if len(agents) != 0 {
+		t.Errorf("unrelated Graph() must not be discovered; got %+v", agents)
+	}
+}
+
+// A module-qualified constructor (import langgraph.graph as lg; lg.StateGraph)
+// must be discovered — matched on the trailing segment, bound to the langgraph
+// import alias.
+func TestLangGraph_QualifiedStateGraphDiscovered(t *testing.T) {
+	src := `import langgraph.graph as lg
+
+app = lg.StateGraph(AgentState)
+`
+	pf := parsePyFile(t, "qualified.py", src)
+	agents := analysis.DiscoverLangGraphGraphs([]analysis.ParsedFile{pf})
+	if len(agents) != 1 {
+		t.Fatalf("qualified lg.StateGraph not discovered; got %d", len(agents))
+	}
+	if agents[0].Class != "StateGraph" {
+		t.Errorf("Class: got %q, want StateGraph", agents[0].Class)
+	}
+}
+
+// A `StateGraph` imported from an unrelated package, in a file that also imports
+// a langchain provider package, must NOT be discovered — the constructor name is
+// bound to its actual import origin, not the file-level gate.
+func TestLangGraph_StateGraphFromUnrelatedPackageExcluded(t *testing.T) {
+	src := `from langchain_openai import ChatOpenAI
+from mypackage import StateGraph
+
+b = StateGraph(X)
+app = b.compile()
+`
+	pf := parsePyFile(t, "foreign.py", src)
+	agents := analysis.DiscoverLangGraphGraphs([]analysis.ParsedFile{pf})
+	if len(agents) != 0 {
+		t.Errorf("StateGraph from a non-langgraph package must not be discovered; got %+v", agents)
+	}
+}
+
 // The compiled-graph terminus carries the security-relevant kwargs (a
 // human-in-the-loop interrupt, a checkpointer). They must be captured onto the
 // StateGraph AgentDef so rules can read them, even though .compile() is a

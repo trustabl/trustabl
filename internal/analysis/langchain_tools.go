@@ -55,6 +55,86 @@ func fileImportsLangChain(pf ParsedFile) bool {
 	return fileImportsModule(pf, isLangChainModule)
 }
 
+// langChainImports records, per file, how langchain / langgraph symbols are
+// bound, so a bare or module-qualified constructor callee can be tied to its
+// import origin. This prevents a same-named class from an unrelated package
+// (networkx.Graph, a locally-defined StateGraph) from matching by bare name in
+// any file that merely also imports the ecosystem.
+type langChainImports struct {
+	names   map[string]bool // local names imported FROM a langchain/langgraph module
+	aliases map[string]bool // module aliases bound to a langchain/langgraph module
+}
+
+// collectLangChainImports walks pf's import statements and records langchain /
+// langgraph symbol bindings (see langChainImports). The module_name node of a
+// `from X import Y` is skipped by byte offset so the module is not mistaken for
+// an imported name.
+func collectLangChainImports(pf ParsedFile) langChainImports {
+	res := langChainImports{names: map[string]bool{}, aliases: map[string]bool{}}
+	astutil.Walk(pf.Tree.RootNode(), func(n *sitter.Node) bool {
+		switch n.Type() {
+		case "import_from_statement":
+			mod := n.ChildByFieldName("module_name")
+			if mod == nil || !isLangChainModule(astutil.NodeText(mod, pf.Source)) {
+				return true
+			}
+			modStart := mod.StartByte()
+			for i := 0; i < int(n.ChildCount()); i++ {
+				c := n.Child(i)
+				if c.StartByte() == modStart {
+					continue // the module_name itself, not an imported name
+				}
+				switch c.Type() {
+				case "dotted_name", "identifier":
+					res.names[astutil.NodeText(c, pf.Source)] = true
+				case "aliased_import":
+					if alias := astutil.NodeText(c.ChildByFieldName("alias"), pf.Source); alias != "" {
+						res.names[alias] = true
+					}
+				}
+			}
+		case "import_statement":
+			for i := 0; i < int(n.ChildCount()); i++ {
+				c := n.Child(i)
+				switch c.Type() {
+				case "dotted_name":
+					if m := astutil.NodeText(c, pf.Source); isLangChainModule(m) {
+						res.aliases[m] = true
+					}
+				case "aliased_import":
+					m := astutil.NodeText(c.ChildByFieldName("name"), pf.Source)
+					alias := astutil.NodeText(c.ChildByFieldName("alias"), pf.Source)
+					if isLangChainModule(m) && alias != "" {
+						res.aliases[alias] = true
+					}
+				}
+			}
+		}
+		return true
+	})
+	return res
+}
+
+// resolveCallee returns the matched class name when callee (a call's function
+// text) names a member of classNames AND is bound to a langchain / langgraph
+// import: a bare name imported from a langchain module, or a module-qualified
+// `<object>.<Class>` whose `<object>` resolves to a langchain module alias (or
+// is itself a langchain dotted module). Returns "" otherwise, so a same-named
+// class from an unrelated package is never matched.
+func (imp langChainImports) resolveCallee(callee string, classNames map[string]bool) string {
+	if dot := strings.LastIndex(callee, "."); dot >= 0 {
+		object, attr := callee[:dot], callee[dot+1:]
+		if classNames[attr] && (imp.aliases[object] || isLangChainModule(object)) {
+			return attr
+		}
+		return ""
+	}
+	if classNames[callee] && imp.names[callee] {
+		return callee
+	}
+	return ""
+}
+
 // fileImportsClaudeSDK reports whether pf imports the Claude Agent SDK. Used to
 // resolve the @tool decorator collision: an @tool in a file that imports the
 // Claude SDK stays Claude even if the file also imports langchain.

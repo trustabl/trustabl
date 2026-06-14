@@ -29,12 +29,16 @@ import (
 // store). Where the graph is built through a named builder variable, those
 // kwargs are linked back onto the agent so rules can read them.
 
-// langGraphBuilderClasses is the set of raw-graph builder constructors. All
-// normalize to Class "StateGraph": Graph / MessageGraph are the legacy spelling
-// of the same imperative builder and share the rule surface.
+// langGraphBuilderClasses is the set of raw-graph builder constructors. Both
+// normalize to Class "StateGraph": MessageGraph is the legacy spelling of the
+// same imperative builder and shares the rule surface. The bare base class
+// "Graph" is deliberately NOT listed — it is essentially never instantiated
+// directly in user code and collides with rdflib / networkx / graphviz / igraph
+// `Graph(...)`. Each callee is additionally bound to a langgraph import origin
+// (see langChainImports.resolveCallee), so even StateGraph / MessageGraph match
+// only when imported from a langgraph module.
 var langGraphBuilderClasses = map[string]bool{
 	"StateGraph":   true,
-	"Graph":        true,
 	"MessageGraph": true,
 }
 
@@ -56,13 +60,17 @@ func discoverLangGraphGraphsInFile(pf ParsedFile) []models.AgentDef {
 	// byVar maps a builder variable name -> index into out, so the .compile()
 	// pass can attach its kwargs to the right agent.
 	byVar := map[string]int{}
+	imp := collectLangChainImports(pf)
 
 	astutil.Walk(pf.Tree.RootNode(), func(n *sitter.Node) bool {
 		if n.Type() != "call" {
 			return true
 		}
-		callee := astutil.NodeText(n.ChildByFieldName("function"), pf.Source)
-		if !langGraphBuilderClasses[callee] {
+		// Bind the callee to a langgraph import: a bare StateGraph / MessageGraph
+		// imported from a langgraph module, or a qualified `lg.StateGraph` whose
+		// alias resolves to one. A same-named class from another package is
+		// excluded even in a file that also imports langchain.
+		if imp.resolveCallee(astutil.NodeText(n.ChildByFieldName("function"), pf.Source), langGraphBuilderClasses) == "" {
 			return true
 		}
 		a := models.AgentDef{

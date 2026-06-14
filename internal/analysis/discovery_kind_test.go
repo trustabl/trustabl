@@ -7,6 +7,55 @@ import (
 	"github.com/trustabl/trustabl/internal/models"
 )
 
+// A file importing BOTH pydantic_ai and an MCP server SDK must keep @server.tool
+// / @mcp.tool routed to MCP — the Pydantic `.tool` suffix routing must not
+// swallow the MCP-reserved decorator shapes (which have no other discovery path
+// in Python).
+func TestKindFromDecorators_PydanticDoesNotStealMCP(t *testing.T) {
+	src := `from pydantic_ai import Agent
+from mcp.server.fastmcp import FastMCP
+
+server = FastMCP("svc")
+
+@server.tool()
+def srv_tool(x: int) -> int:
+    return x
+`
+	pf := parsePyFile(t, "both.py", src)
+	tools := analysis.DiscoverToolsFromParsed([]analysis.ParsedFile{pf})
+	kind := map[string]models.ToolKind{}
+	for _, td := range tools {
+		kind[td.Name] = td.Kind
+	}
+	if kind["srv_tool"] != models.KindMCPTool {
+		t.Errorf("srv_tool: got kind %q, want %q (pydantic must not steal @server.tool)", kind["srv_tool"], models.KindMCPTool)
+	}
+}
+
+// @agent.tool_plain is Pydantic-only (the Claude SDK has @agent.tool but no
+// tool_plain), so it must route to Pydantic even when the file also imports the
+// Claude SDK — the !claudeImport guard applies only to the colliding `.tool`.
+func TestKindFromDecorators_PydanticToolPlainWithClaudeImport(t *testing.T) {
+	src := `from pydantic_ai import Agent
+from claude_agent_sdk import tool
+
+agent = Agent("openai:gpt-4o")
+
+@agent.tool_plain
+def calc(x: int) -> int:
+    return x
+`
+	pf := parsePyFile(t, "tp.py", src)
+	tools := analysis.DiscoverToolsFromParsed([]analysis.ParsedFile{pf})
+	kind := map[string]models.ToolKind{}
+	for _, td := range tools {
+		kind[td.Name] = td.Kind
+	}
+	if kind["calc"] != models.KindPydanticAITool {
+		t.Errorf("calc: got kind %q, want %q (tool_plain has no Claude collision)", kind["calc"], models.KindPydanticAITool)
+	}
+}
+
 // TestKindFromDecorators_PreciseCalleeMatching guards against the substring-scan
 // false positives: matching "@tool" as a substring classified unrelated user
 // decorators (@tool_registry.register, @toolbar) as Claude-SDK tools, firing

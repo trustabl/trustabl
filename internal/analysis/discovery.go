@@ -168,16 +168,23 @@ func kindFromDecorators(decs []*sitter.Node, src []byte, toolImports map[string]
 		}
 		// Pydantic AI context tools use ATTRIBUTE decorators on the agent var:
 		// `@agent.tool` (takes a leading RunContext) and `@agent.tool_plain` (no
-		// ctx). The callee is dotted (`<agentvar>.tool`), and `tool`/`tool_plain`
-		// as the attribute suffix is Pydantic's shape. This must route to
-		// KindPydanticAITool ONLY when the file imports pydantic_ai and does NOT
-		// import the Claude SDK — the `&& !claudeImport` guard is load-bearing:
-		// the Claude SDK also exposes an `@agent.tool`, so a Claude-only file (and
-		// a file importing BOTH) must fall through to the `callee == "agent.tool"`
-		// switch case below, which keeps it KindClaudeSDKTool (claude wins).
-		if strings.Contains(callee, ".") && (last == "tool" || last == "tool_plain") &&
-			pydanticImport && !claudeImport {
-			return models.KindPydanticAITool
+		// ctx). The callee is dotted (`<agentvar>.tool`/`.tool_plain`). Routing:
+		//   - `tool_plain` is Pydantic-only (the Claude SDK exposes `@agent.tool`
+		//     but no `tool_plain`), so it routes to Pydantic whenever pydantic_ai
+		//     is imported, regardless of Claude.
+		//   - `tool` collides with the Claude SDK's `@agent.tool`, so it routes to
+		//     Pydantic only when Claude is NOT imported; otherwise it falls through
+		//     to the `callee == "agent.tool"` switch case (claude wins).
+		//   - Neither may steal the MCP-reserved `server.tool` / `mcp.tool` shapes,
+		//     which have NO other discovery path in Python and are matched by the
+		//     dedicated MCP arm below — so they are excluded here.
+		if strings.Contains(callee, ".") && callee != "server.tool" && callee != "mcp.tool" && pydanticImport {
+			if last == "tool_plain" {
+				return models.KindPydanticAITool
+			}
+			if last == "tool" && !claudeImport {
+				return models.KindPydanticAITool
+			}
 		}
 		// Precise resolution first: an UNQUALIFIED decorator name that was bound by
 		// an explicit import resolves to that import's SDK. This is the exact

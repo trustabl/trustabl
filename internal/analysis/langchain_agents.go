@@ -1,6 +1,8 @@
 package analysis
 
 import (
+	"strings"
+
 	sitter "github.com/smacker/go-tree-sitter"
 
 	"github.com/trustabl/trustabl/internal/analysis/astutil"
@@ -23,10 +25,35 @@ import (
 // internal/rules): "ReactAgent", "CreateAgent", "AgentExecutor". All discovery
 // is import-gated to the langchain ecosystem.
 var langChainAgentClasses = map[string]string{
-	"create_react_agent":                 "ReactAgent",
-	"create_agent":                       "CreateAgent",
-	"AgentExecutor":                      "AgentExecutor",
-	"AgentExecutor.from_agent_and_tools": "AgentExecutor",
+	"create_react_agent": "ReactAgent",
+	"create_agent":       "CreateAgent",
+	"AgentExecutor":      "AgentExecutor",
+}
+
+// langChainAgentClassNames is the bare-name set used for import-binding
+// resolution (mirrors langChainAgentClasses' keys).
+var langChainAgentClassNames = map[string]bool{
+	"create_react_agent": true, "create_agent": true, "AgentExecutor": true,
+}
+
+// resolveLangChainAgentClass returns the normalized AgentDef.Class when callee
+// names a LangChain agent constructor bound to a langchain / langgraph import: a
+// bare or module-qualified create_react_agent / create_agent / AgentExecutor, or
+// the AgentExecutor.from_agent_and_tools classmethod on a langchain-imported
+// AgentExecutor. Returns "" otherwise, so a locally-defined or unrelated
+// same-named callable (a user `def create_agent`, `module.create_agent` from a
+// non-langchain package) is not discovered.
+func resolveLangChainAgentClass(callee string, imp langChainImports) string {
+	if dot := strings.LastIndex(callee, "."); dot >= 0 {
+		object, attr := callee[:dot], callee[dot+1:]
+		if attr == "from_agent_and_tools" && imp.names[object] {
+			return "AgentExecutor"
+		}
+	}
+	if name := imp.resolveCallee(callee, langChainAgentClassNames); name != "" {
+		return langChainAgentClasses[name]
+	}
+	return ""
 }
 
 // DiscoverLangChainAgents walks each ParsedFile and emits one AgentDef per
@@ -45,13 +72,13 @@ func DiscoverLangChainAgents(files []ParsedFile) []models.AgentDef {
 
 func discoverLangChainAgentsInFile(pf ParsedFile) []models.AgentDef {
 	var out []models.AgentDef
+	imp := collectLangChainImports(pf)
 	astutil.Walk(pf.Tree.RootNode(), func(n *sitter.Node) bool {
 		if n.Type() != "call" {
 			return true
 		}
-		callee := astutil.NodeText(n.ChildByFieldName("function"), pf.Source)
-		class, ok := langChainAgentClasses[callee]
-		if !ok {
+		class := resolveLangChainAgentClass(astutil.NodeText(n.ChildByFieldName("function"), pf.Source), imp)
+		if class == "" {
 			return true
 		}
 		kwargs, opaque := extractCallKwargs(n, pf.Source)
@@ -63,7 +90,7 @@ func discoverLangChainAgentsInFile(pf ParsedFile) []models.AgentDef {
 		// excluded here. Positional capture beyond index 1 is out of scope.
 		if class == "ReactAgent" || class == "CreateAgent" {
 			if kwargs == nil || kwargs.Children["tools"] == nil {
-				if pos := positionalArgNode(n, 1); pos != nil {
+				if pos := positionalArgNode(n, 1); pos != nil && positionalLooksLikeTools(pos) {
 					if kwargs == nil {
 						kwargs = &models.KwargTree{Children: map[string]*models.KwargTree{}}
 					}
@@ -98,6 +125,19 @@ func discoverLangChainAgentsInFile(pf ParsedFile) []models.AgentDef {
 		return true
 	})
 	return out
+}
+
+// positionalLooksLikeTools reports whether a positional arg node could be a
+// tools collection (a list, or an identifier/call/attribute/subscript that may
+// resolve to one) rather than a scalar literal like a prompt string. Guards the
+// synthetic tools-kwarg capture so create_react_agent(model, "be helpful") does
+// not record the prompt string as the agent's tools list.
+func positionalLooksLikeTools(n *sitter.Node) bool {
+	switch n.Type() {
+	case "string", "concatenated_string", "integer", "float", "true", "false", "none":
+		return false
+	}
+	return true
 }
 
 // positionalArgNode returns the index-th positional argument node of a call
