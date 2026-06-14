@@ -630,6 +630,17 @@ For each language recon cleared, do the AST work and produce a `RepoInventory`:
   synthetic kwarg. `langchain_hosted_tools.go` classifies the `PythonREPLTool` /
   `PythonAstREPLTool` / `ShellTool` / `Requests*` built-ins in an agent's tool list
   as `HostedToolDef`s (SDK `langchain`).
+- **DiscoverLangGraphGraphs** (`langgraph_graph.go`) — Python raw LangGraph
+  graphs. The imperative `StateGraph(...)` → `.add_node` / `.add_edge` →
+  `.compile()` builder is emergent across many call sites, so the single-call
+  `create_*_agent` discovery above misses it. This pass anchors on the
+  `StateGraph(...)` constructor (import-gated to langchain / langgraph) and emits
+  one `AgentDef` per graph with Class `StateGraph` (activating the
+  `langchain_state_graph` rule token), capturing the builder `VarName` and
+  linking the multi-call-site `builder.compile(...)` kwargs (`checkpointer`,
+  `interrupt_before` / `interrupt_after`, `store`) back onto the agent. Resolving
+  the graph's own `ToolNode` / `bind_tools` tools and shipping the rules are
+  fast-follows.
 - **DiscoverTSLangChainTools / DiscoverTSLangChainAgents** (`ts_langchain_tools.go`,
   `ts_langchain_agents.go`) — TS LangChain. Tools: `tool(fn, {...})` (config at
   arg 1, unlike OpenAI's arg-0), `new DynamicStructuredTool({...})`,

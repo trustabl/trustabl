@@ -9,9 +9,10 @@ import (
 
 // LangChain / LangGraph Python agent discovery.
 //
-// Three constructor-shaped agent forms are recognized (the raw StateGraph graph
-// agent is a documented gap — it is emergent across many call sites and does not
-// fit the one-call-site = one-agent model):
+// Three constructor-shaped agent forms are recognized here. The raw StateGraph
+// graph agent (emergent across many call sites) does not fit this
+// one-call-site = one-agent model and is discovered separately in
+// langgraph_graph.go:
 //
 //	create_react_agent(model, tools, prompt=...)   # langgraph.prebuilt (and the
 //	                                                 # legacy langchain.agents one)

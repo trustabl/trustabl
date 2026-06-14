@@ -182,6 +182,7 @@ func Run(cfg Config) (models.ScanResult, error) {
 	agents := analysis.DiscoverAgents(parsed)
 	agents = append(agents, analysis.DiscoverADKAgents(parsed)...)
 	agents = append(agents, analysis.DiscoverLangChainAgents(parsed)...)
+	agents = append(agents, analysis.DiscoverLangGraphGraphs(parsed)...)
 	agents = append(agents, analysis.DiscoverCrewAIAgents(parsed)...)
 	agents = append(agents, analysis.DiscoverAutoGenAgents(parsed)...)
 	agents = append(agents, analysis.DiscoverPydanticAIAgents(parsed)...)
