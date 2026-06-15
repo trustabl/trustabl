@@ -29,16 +29,17 @@ func newEnrichCommand() *cobra.Command {
 		Short: "Enrich a scan result with AI-generated explanations and code fixes",
 		Long: `Reads a ScanResult produced by "trustabl scan --format json" (from --input or
 stdin), extracts the enclosing code block around each flagged line, and sends it
-to Claude to generate code-specific explanations and exact line replacements.
+to the configured LLM provider to generate code-specific explanations and exact
+line replacements.
 
-Requires the active LLM provider to be "anthropic". Configure the API key with
-one of:
-  export ANTHROPIC_API_KEY=<key>   # env var — preferred for CI and quick use
-  trustabl llm key set             # store key in ~/.config/trustabl/keys.json
+Requires an LLM provider to be configured. Supported providers:
 
-Optional model override:
-  export TRUSTABL_LLM_MODEL=claude-sonnet-4-6   # env var
-  trustabl llm model set claude-sonnet-4-6      # config file (default: claude-haiku-4-5)`,
+  anthropic   export ANTHROPIC_API_KEY=<key>   or   trustabl llm key set
+  openai      export OPENAI_API_KEY=<key>       or   trustabl llm key set
+  google      export GOOGLE_API_KEY=<key>       or   trustabl llm key set
+
+Switch provider:   trustabl llm provider set openai
+Optional model:    export TRUSTABL_LLM_MODEL=gpt-4.1   or   trustabl llm model set gpt-4.1`,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runEnrich(cmd, f)
@@ -66,9 +67,6 @@ func runEnrich(cmd *cobra.Command, f enrichFlags) error {
 	if err != nil {
 		return fmt.Errorf("enrich: load llm config: %w", err)
 	}
-	if cfg.Active != "anthropic" {
-		return fmt.Errorf("enrich: requires the anthropic provider - run: trustabl llm provider set anthropic")
-	}
 	key := cfg.ActiveProvider().Key
 	if key == "" {
 		return fmt.Errorf("enrich: no LLM key configured — run: trustabl llm key set")
@@ -81,6 +79,7 @@ func runEnrich(cmd *cobra.Command, f enrichFlags) error {
 	}
 
 	pipeline := &enrichment.Pipeline{
+		LLMProvider:  cfg.Active,
 		LLMKey:       key,
 		LLMModel:     model,
 		RepoRoot:     f.repoRoot,

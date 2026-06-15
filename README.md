@@ -253,12 +253,12 @@ The rule schema's `language:` field gates per-language rule sets.
 
 - **LLM enrichment is a separate post-scan step (`trustabl enrich`).** Rule-based
   detection (`trustabl scan`) makes no network call — there is no LLM involved in
-  the scan itself. `trustabl enrich` reads the scan output and calls Anthropic with
-  BYOK (supply `ANTHROPIC_API_KEY` in the environment, or store it permanently
-  via `trustabl llm key set` at `~/.config/trustabl/keys.json`, mode 0600). The Anthropic call carries a request timeout, and `--apply` rewrites
-  a file only when its current contents still match what the model reviewed
-  (writing a `.trustabl.bak` backup first) — a stale scan is skipped, never
-  mis-applied.
+  the scan itself. `trustabl enrich` reads the scan output and calls the configured
+  LLM provider (Anthropic, OpenAI, or Google Gemini) with BYOK (key stored via
+  `trustabl llm key set` at `~/.config/trustabl/keys.json`, mode 0600). Each call
+  carries a request timeout, and `--apply` rewrites a file only when its current
+  contents still match what the model reviewed (writing a `.trustabl.bak` backup
+  first) — a stale scan is skipped, never mis-applied.
 - **Confidence scores are heuristic**, not LLM-judged, and not yet
   calibrated against a labelled real-agent corpus — treat findings as
   signal to investigate.
@@ -620,7 +620,7 @@ trustabl llm model set claude-sonnet-4-6   # change model for active provider
 trustabl llm provider set openai           # switch active provider (auto-creates entry)
 trustabl llm provider list                 # list configured providers
 
-# Enrich a scan result (requires anthropic provider with a key set)
+# Enrich a scan result (requires any configured LLM provider with a key set)
 trustabl scan ./myrepo --format json | trustabl enrich --repo ./myrepo        # pipe scan into enrich (stdout)
 trustabl enrich --input scan.json --repo ./myrepo --output enriched.json      # file in, file out
 trustabl enrich --input scan.json --repo ./myrepo --diff                      # preview proposed fixes as a unified diff (stderr)
