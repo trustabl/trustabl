@@ -18,5 +18,18 @@
     "claude-agent-sdk",
     "google-adk"
   ],
-  "skills": "./skills/"
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Trustabl",
+    "shortDescription": "Static analyzer for AI agent and MCP-server code security and reliability.",
+    "longDescription": "Trustabl audits agent code built with the OpenAI Agents SDK, Claude Agent SDK, Google ADK, MCP, LangChain, CrewAI, and more. Ships two skills: trustabl-scan scans your agent code right after you write or change it — optionally matching declared dependencies against the OSV database for known CVEs — and trustabl-enrich applies the scan findings as targeted code edits directly to your source files.",
+    "developerName": "Trustabl",
+    "category": "security",
+    "capabilities": [
+      "scan",
+      "analyze",
+      "fix"
+    ],
+    "websiteURL": "https://github.com/trustabl/trustabl"
+  }
 }
