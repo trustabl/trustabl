@@ -1,0 +1,6 @@
+{
+  "name": "trustabl",
+  "description": "Self-audit AI agent, tool, and MCP-server code for security and reliability misconfigurations with Trustabl — the static analyzer for the OpenAI Agents SDK, Claude Agent SDK, Google ADK, and MCP.",
+  "version": "0.1.4",
+  "contextFileName": "GEMINI.md"
+}
