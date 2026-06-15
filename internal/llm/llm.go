@@ -102,7 +102,35 @@ func (c *Config) SetActive(provider string) {
 }
 
 // Load reads configuration from disk. Returns defaults when the file does not exist.
+// Priority: env vars (Anthropic > OpenAI > Google) take precedence over file config.
 func Load() (*Config, error) {
+	if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" {
+		cfg := defaults()
+		cfg.SetKey(key)
+		if m := os.Getenv("TRUSTABL_LLM_MODEL"); m != "" {
+			cfg.SetModel(m)
+		}
+		return cfg, nil
+	}
+	if key := os.Getenv("OPENAI_API_KEY"); key != "" {
+		cfg := defaults()
+		cfg.SetActive("openai")
+		cfg.SetKey(key)
+		if m := os.Getenv("TRUSTABL_LLM_MODEL"); m != "" {
+			cfg.SetModel(m)
+		}
+		return cfg, nil
+	}
+	if key := os.Getenv("GOOGLE_API_KEY"); key != "" {
+		cfg := defaults()
+		cfg.SetActive("google")
+		cfg.SetKey(key)
+		if m := os.Getenv("TRUSTABL_LLM_MODEL"); m != "" {
+			cfg.SetModel(m)
+		}
+		return cfg, nil
+	}
+
 	path, err := configPath()
 	if err != nil {
 		return nil, err

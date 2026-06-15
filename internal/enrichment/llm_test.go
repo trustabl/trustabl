@@ -1,6 +1,7 @@
 package enrichment
 
 import (
+	"context"
 	"strings"
 	"testing"
 )
@@ -66,6 +67,16 @@ func TestIndentBlock(t *testing.T) {
 		if !strings.HasPrefix(l, "   ") {
 			t.Errorf("line %q not indented", l)
 		}
+	}
+}
+
+func TestNewLLMClient_UnknownProvider(t *testing.T) {
+	_, err := newLLMClient(context.Background(), "unknown", "key", "model")
+	if err == nil {
+		t.Fatal("newLLMClient with unknown provider: expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "unsupported") {
+		t.Errorf("error %q should contain \"unsupported\"", err.Error())
 	}
 }
 
