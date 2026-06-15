@@ -8,7 +8,8 @@ import (
 	"github.com/trustabl/trustabl/internal/llm"
 )
 
-// setConfigDir overrides the config directory for the duration of the test.
+// setConfigDir overrides the config directory for the duration of the test
+// and clears the env-var key path so tests are isolated from a caller's shell.
 func setConfigDir(t *testing.T, dir string) {
 	t.Helper()
 	old := llm.ConfigDir

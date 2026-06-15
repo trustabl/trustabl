@@ -458,6 +458,57 @@ includes a `checksums.txt` and a build-provenance attestation; verify with:
 gh attestation verify <archive> --repo trustabl/trustabl
 ```
 
+### Claude Code plugin
+
+The plugin installs two skills (`trustabl-scan` and `trustabl-enrich`), a
+`SessionStart` hook, and a bundled MCP server — and auto-downloads the pinned
+CLI binary on first session (no `sudo`, nothing outside Claude Code's plugin
+data directory touched).
+
+Install from within a Claude Code session using the `/plugin` slash command:
+
+```
+/plugin install trustabl@claude-plugins-official
+```
+
+Then reload to activate:
+
+```
+/reload-plugins
+```
+
+After installation, the `mcp__trustabl__scan` tool is available for direct
+calls, the `trustabl-scan` and `trustabl-enrich` skills appear in the skill
+picker, and the hook confirms the binary is ready at session start. Uninstall
+with `/plugin uninstall trustabl`.
+
+### Claude Code agent
+
+A standalone subagent (`trustabl`) runs the full scan → enrich → review →
+apply pipeline interactively. It does not require the plugin — just the
+`trustabl` binary already on your PATH. Copy the agent file into your project
+or home config:
+
+```sh
+# Project-level (scoped to this repo)
+curl -fsSL https://raw.githubusercontent.com/trustabl/trustabl/main/agents/trustabl.md \
+  -o .claude/agents/trustabl.md
+
+# Global (available in every project)
+curl -fsSL https://raw.githubusercontent.com/trustabl/trustabl/main/agents/trustabl.md \
+  -o ~/.claude/agents/trustabl.md
+```
+
+Once installed, invoke it via `@trustabl` in Claude Code or select it from
+the subagent picker. It will ask which directory to scan, run `trustabl scan`
+and `trustabl enrich`, then walk you through each proposed fix as a diff.
+
+The enrich step requires an Anthropic API key. Set it before invoking the agent:
+
+```sh
+export ANTHROPIC_API_KEY=sk-ant-api03-...   # or: trustabl llm key set
+```
+
 ### From source
 
 Requires `CGO_ENABLED=1` because the AST parsers use tree-sitter
@@ -559,8 +610,9 @@ trustabl scan ./repo --debug --format json > out.json   # clean JSON on stdout, 
 trustabl mcp
 
 # Configure LLM provider, then enrich a scan result with AI explanations and fixes
+export ANTHROPIC_API_KEY=sk-ant-api03-...  # preferred: env var (works in CI, no setup)
 trustabl llm list                          # show configured providers with masked keys
-trustabl llm key set                       # prompt securely for an API key
+trustabl llm key set                       # prompt securely for an API key (persistent)
 trustabl llm key set sk-ant-api03-...      # set key non-interactively
 trustabl llm key get                       # show masked key for active provider
 trustabl llm key delete                    # delete key with confirmation prompt
