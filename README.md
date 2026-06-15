@@ -647,6 +647,27 @@ Register it with an MCP client by pointing the client at the binary with the
 claude mcp add trustabl -- trustabl mcp
 ```
 
+For Gemini CLI, add to `~/.gemini/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "trustabl": {
+      "command": "trustabl",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+For OpenAI Codex, add to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.trustabl]
+command = "trustabl"
+args = ["mcp"]
+```
+
 Or configure it directly in a client's MCP config (the `mcpServers` stdio
 shape used by Claude Desktop / Cursor):
 
@@ -699,6 +720,104 @@ run (offline first session, an unsupported platform, or missing `curl`/`tar`) it
 falls back to whatever `trustabl` is on `PATH`; the system-wide install stays a
 consented step inside `trustabl-scan`. The plugin runs no network service of its
 own and modifies nothing outside the scan target.
+
+### Gemini CLI extension (self-audit at generation time)
+
+Trustabl ships a Gemini CLI extension under [`gemini-extension.json`](gemini-extension.json)
+with the same two skills available in the Claude Code plugin.
+
+**Prerequisites.** Install the Trustabl binary first — the extension does not
+auto-install it the way the Claude Code plugin does (Gemini CLI has no private
+plugin data directory):
+
+```bash
+# macOS / Linux
+brew install trustabl/tap/trustabl
+
+# Windows
+scoop bucket add trustabl https://github.com/trustabl/scoop-bucket
+scoop install trustabl
+```
+
+**Install the extension:**
+
+```bash
+gemini extensions install https://github.com/trustabl/trustabl
+```
+
+**Register the MCP server** so Gemini CLI can call `mcp__trustabl__scan`. Add
+to `~/.gemini/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "trustabl": {
+      "command": "trustabl",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+**How it works.** When a Gemini CLI session starts, the extension injects
+[`GEMINI.md`](GEMINI.md) as context, which pulls in the full `trustabl-scan`
+and `trustabl-enrich` skill content via `@` imports. Gemini then treats those
+skills exactly as it would any loaded context: it runs the scan after you write
+or change agent, tool, or MCP-server code, and offers to apply findings via
+`trustabl-enrich`. The MCP tool is named `mcp__trustabl__scan` — the same name
+as in Claude Code.
+
+**Update the extension later:**
+
+```bash
+gemini extensions update trustabl
+```
+
+### OpenAI Codex plugin (self-audit at generation time)
+
+Trustabl ships an OpenAI Codex plugin under [`.codex-plugin/`](.codex-plugin/)
+with the same two skills.
+
+**Prerequisites.** Install the Trustabl binary first:
+
+```bash
+# macOS / Linux
+brew install trustabl/tap/trustabl
+
+# Windows
+scoop bucket add trustabl https://github.com/trustabl/scoop-bucket
+scoop install trustabl
+```
+
+**Install the plugin.** In Codex CLI, open the plugin search interface and
+search for `trustabl`:
+
+```bash
+/plugins
+```
+
+Search for `trustabl` and select **Install Plugin**. In the Codex App, go to
+**Plugins** in the sidebar, find Trustabl under the Security category, and
+click **+**.
+
+**Register the MCP server** so Codex can call `mcp__trustabl__scan`. Add to
+`~/.codex/config.toml`:
+
+```toml
+[mcp_servers.trustabl]
+command = "trustabl"
+args = ["mcp"]
+```
+
+**How it works.** Codex reads [`.codex-plugin/plugin.json`](.codex-plugin/plugin.json),
+which points `"skills": "./skills/"`. Codex loads the `trustabl-scan` and
+`trustabl-enrich` skills from that directory automatically — no explicit
+invocation step required. Skills trigger when you write or modify agent, tool,
+or MCP-server code, and Codex applies findings via `trustabl-enrich`. The MCP
+tool is named `mcp__trustabl__scan` — the same name as in Claude Code and Gemini CLI.
+
+To enable subagent delegation in Codex (used by `trustabl-enrich` for parallel
+file edits), set `multi_agent = true` in `~/.codex/config.toml`.
 
 ### "rules are newer than this Trustabl build"
 

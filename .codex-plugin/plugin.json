@@ -1,0 +1,22 @@
+{
+  "name": "trustabl",
+  "version": "0.1.4",
+  "description": "Self-audit AI agent, tool, and MCP-server code for security and reliability misconfigurations with Trustabl, the static analyzer for the OpenAI Agents SDK, Claude Agent SDK, Google ADK, and MCP. Ships two skills: trustabl-scan scans your agent code with Trustabl (via a bundled MCP server) right after you write or change it, before you commit — optionally matching your declared dependencies against the OSV database for known CVEs — and trustabl-enrich applies the scan findings directly to your source files as targeted code edits.",
+  "author": {
+    "name": "Trustabl",
+    "url": "https://github.com/trustabl"
+  },
+  "homepage": "https://github.com/trustabl/trustabl",
+  "repository": "https://github.com/trustabl/trustabl",
+  "license": "Apache-2.0",
+  "keywords": [
+    "security",
+    "static-analysis",
+    "agents",
+    "mcp",
+    "openai-agents-sdk",
+    "claude-agent-sdk",
+    "google-adk"
+  ],
+  "skills": "./skills/"
+}
