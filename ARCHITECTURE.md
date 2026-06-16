@@ -2034,11 +2034,12 @@ produced by `trustabl scan --format json`, runs each finding through a
 two-layer enrichment pipeline, and writes an `EnrichmentResult` with
 AI-generated explanations, concrete code fixes, and exact line replacements.
 
-**BYOK model.** The Anthropic API key is stored in `~/.config/trustabl/keys.json`
-(managed by `trustabl llm key set`). The active provider must be `anthropic`;
-the command exits with a clear message if it is not. Only a small code snippet
-(~10–30 lines) per finding is sent to Anthropic directly — never via any
-Trustabl service.
+**BYOK model.** The API key is stored in `~/.config/trustabl/keys.json`
+(managed by `trustabl llm key set`). Supported providers: `anthropic`, `openai`,
+and `google`. Switch with `trustabl llm provider set <provider>` or export
+`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GOOGLE_API_KEY` (Anthropic takes
+priority when multiple vars are set). Only a small code snippet (~10–30 lines)
+per finding is sent to the provider directly — never via any Trustabl service.
 
 **Two-layer pipeline.** For each finding:
 
@@ -2071,7 +2072,7 @@ replacements appear in the JSON output only.
 
 - `0` — success (even if some findings could not be enriched)
 - `1` — I/O error or bad input JSON
-- `2` — LLM not configured (no key or non-anthropic provider)
+- `2` — LLM not configured (no key set for the active provider)
 
 ---
 
@@ -2096,7 +2097,7 @@ take it absent a concrete distribution requirement.
   model), `ValidateKey`, and `MaskKey`. A `defaultModels` map supplies
   fast/cheap defaults per known provider (`anthropic → claude-haiku-4-5`,
   `openai → gpt-4.1-nano`, `google → gemini-2.5-flash-lite`).
-  `trustabl enrich` (§8.2) reads this config to call Claude with BYOK.
+  `trustabl enrich` (§8.2) reads this config to call the active LLM provider with BYOK.
   The scan pipeline itself makes no LLM call — rule-based detection is the
   entire scan, with or without a key configured.
 - **No corpus-eval benchmark.** Detection quality measured on a 20–40

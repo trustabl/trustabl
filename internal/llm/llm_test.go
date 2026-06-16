@@ -8,12 +8,16 @@ import (
 	"github.com/trustabl/trustabl/internal/llm"
 )
 
-// setConfigDir overrides the config directory for the duration of the test.
+// setConfigDir overrides the config directory for the duration of the test
+// and clears the env-var key path so tests are isolated from a caller's shell.
 func setConfigDir(t *testing.T, dir string) {
 	t.Helper()
 	old := llm.ConfigDir
 	llm.ConfigDir = dir
 	t.Cleanup(func() { llm.ConfigDir = old })
+	os.Unsetenv("ANTHROPIC_API_KEY")
+	os.Unsetenv("OPENAI_API_KEY")
+	os.Unsetenv("GOOGLE_API_KEY")
 }
 
 func TestLoad_Defaults(t *testing.T) {
@@ -148,14 +152,38 @@ func TestValidateKey(t *testing.T) {
 			wantErr:  true,
 		},
 		{
-			name:     "unknown provider accepts any non-empty key",
+			name:     "openai valid key",
 			provider: "openai",
-			key:      "sk-proj-anything",
+			key:      "sk-proj-AAAAAAAAAAAAAAAAAAAAAA",
 			wantErr:  false,
 		},
 		{
-			name:     "unknown provider rejects empty key",
+			name:     "openai wrong format key",
 			provider: "openai",
+			key:      "not-an-openai-key",
+			wantErr:  true,
+		},
+		{
+			name:     "openai empty key",
+			provider: "openai",
+			key:      "",
+			wantErr:  true,
+		},
+		{
+			name:     "google valid key",
+			provider: "google",
+			key:      "AIzaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+			wantErr:  false,
+		},
+		{
+			name:     "google wrong format key",
+			provider: "google",
+			key:      "not-a-google-key",
+			wantErr:  true,
+		},
+		{
+			name:     "google empty key",
+			provider: "google",
 			key:      "",
 			wantErr:  true,
 		},
@@ -304,5 +332,79 @@ func TestKnownProviders_SortedAndComplete(t *testing.T) {
 		if got[i] != want[i] {
 			t.Errorf("KnownProviders()[%d] = %q, want %q", i, got[i], want[i])
 		}
+	}
+}
+
+func TestLoad_EnvVarKey_Anthropic(t *testing.T) {
+	setConfigDir(t, t.TempDir())
+	t.Setenv("ANTHROPIC_API_KEY", "sk-ant-api03-AAAAAAAAAAAAAAAAAAAA")
+
+	cfg, err := llm.Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.Active != "anthropic" {
+		t.Errorf("Active = %q, want anthropic", cfg.Active)
+	}
+	p := cfg.ActiveProvider()
+	if p.Key != "sk-ant-api03-AAAAAAAAAAAAAAAAAAAA" {
+		t.Errorf("Key = %q, want sk-ant-api03-AAAAAAAAAAAAAAAAAAAA", p.Key)
+	}
+	if p.Model != "claude-haiku-4-5" {
+		t.Errorf("Model = %q, want claude-haiku-4-5", p.Model)
+	}
+}
+
+func TestLoad_EnvVarKey_OpenAI(t *testing.T) {
+	setConfigDir(t, t.TempDir())
+	t.Setenv("OPENAI_API_KEY", "sk-proj-AAAAAAAAAAAAAAAAAAAAAA")
+
+	cfg, err := llm.Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.Active != "openai" {
+		t.Errorf("Active = %q, want openai", cfg.Active)
+	}
+	p := cfg.ActiveProvider()
+	if p.Key != "sk-proj-AAAAAAAAAAAAAAAAAAAAAA" {
+		t.Errorf("Key = %q, want sk-proj-AAAAAAAAAAAAAAAAAAAAAA", p.Key)
+	}
+	if p.Model != "gpt-4.1-nano" {
+		t.Errorf("Model = %q, want gpt-4.1-nano", p.Model)
+	}
+}
+
+func TestLoad_EnvVarKey_Google(t *testing.T) {
+	setConfigDir(t, t.TempDir())
+	t.Setenv("GOOGLE_API_KEY", "AIzaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
+
+	cfg, err := llm.Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.Active != "google" {
+		t.Errorf("Active = %q, want google", cfg.Active)
+	}
+	p := cfg.ActiveProvider()
+	if p.Key != "AIzaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" {
+		t.Errorf("Key = %q, want AIzaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA", p.Key)
+	}
+	if p.Model != "gemini-2.5-flash-lite" {
+		t.Errorf("Model = %q, want gemini-2.5-flash-lite", p.Model)
+	}
+}
+
+func TestLoad_EnvVarKey_AnthropicTakesPriorityOverOpenAI(t *testing.T) {
+	setConfigDir(t, t.TempDir())
+	t.Setenv("ANTHROPIC_API_KEY", "sk-ant-api03-AAAAAAAAAAAAAAAAAAAA")
+	t.Setenv("OPENAI_API_KEY", "sk-proj-AAAAAAAAAAAAAAAAAAAAAA")
+
+	cfg, err := llm.Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.Active != "anthropic" {
+		t.Errorf("Active = %q, want anthropic (Anthropic should win when both set)", cfg.Active)
 	}
 }

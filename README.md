@@ -253,12 +253,12 @@ The rule schema's `language:` field gates per-language rule sets.
 
 - **LLM enrichment is a separate post-scan step (`trustabl enrich`).** Rule-based
   detection (`trustabl scan`) makes no network call — there is no LLM involved in
-  the scan itself. `trustabl enrich` reads the scan output and calls Anthropic with
-  BYOK (key stored via `trustabl llm key set` at `~/.config/trustabl/keys.json`,
-  mode 0600). The Anthropic call carries a request timeout, and `--apply` rewrites
-  a file only when its current contents still match what the model reviewed
-  (writing a `.trustabl.bak` backup first) — a stale scan is skipped, never
-  mis-applied.
+  the scan itself. `trustabl enrich` reads the scan output and calls the configured
+  LLM provider (Anthropic, OpenAI, or Google Gemini) with BYOK (key stored via
+  `trustabl llm key set` at `~/.config/trustabl/keys.json`, mode 0600). Each call
+  carries a request timeout, and `--apply` rewrites a file only when its current
+  contents still match what the model reviewed (writing a `.trustabl.bak` backup
+  first) — a stale scan is skipped, never mis-applied.
 - **Confidence scores are heuristic**, not LLM-judged, and not yet
   calibrated against a labelled real-agent corpus — treat findings as
   signal to investigate.
@@ -458,6 +458,57 @@ includes a `checksums.txt` and a build-provenance attestation; verify with:
 gh attestation verify <archive> --repo trustabl/trustabl
 ```
 
+### Claude Code plugin
+
+The plugin installs two skills (`trustabl-scan` and `trustabl-enrich`), a
+`SessionStart` hook, and a bundled MCP server — and auto-downloads the pinned
+CLI binary on first session (no `sudo`, nothing outside Claude Code's plugin
+data directory touched).
+
+Install from within a Claude Code session using the `/plugin` slash command:
+
+```
+/plugin install trustabl@claude-plugins-official
+```
+
+Then reload to activate:
+
+```
+/reload-plugins
+```
+
+After installation, the `mcp__trustabl__scan` tool is available for direct
+calls, the `trustabl-scan` and `trustabl-enrich` skills appear in the skill
+picker, and the hook confirms the binary is ready at session start. Uninstall
+with `/plugin uninstall trustabl`.
+
+### Claude Code agent
+
+A standalone subagent (`trustabl`) runs the full scan → enrich → review →
+apply pipeline interactively. It does not require the plugin — just the
+`trustabl` binary already on your PATH. Copy the agent file into your project
+or home config:
+
+```sh
+# Project-level (scoped to this repo)
+curl -fsSL https://raw.githubusercontent.com/trustabl/trustabl/main/agents/trustabl.md \
+  -o .claude/agents/trustabl.md
+
+# Global (available in every project)
+curl -fsSL https://raw.githubusercontent.com/trustabl/trustabl/main/agents/trustabl.md \
+  -o ~/.claude/agents/trustabl.md
+```
+
+Once installed, invoke it via `@trustabl` in Claude Code or select it from
+the subagent picker. It will ask which directory to scan, run `trustabl scan`
+and `trustabl enrich`, then walk you through each proposed fix as a diff.
+
+The enrich step requires an Anthropic API key. Set it before invoking the agent:
+
+```sh
+export ANTHROPIC_API_KEY=sk-ant-api03-...   # or: trustabl llm key set
+```
+
 ### From source
 
 Requires `CGO_ENABLED=1` because the AST parsers use tree-sitter
@@ -559,8 +610,9 @@ trustabl scan ./repo --debug --format json > out.json   # clean JSON on stdout, 
 trustabl mcp
 
 # Configure LLM provider, then enrich a scan result with AI explanations and fixes
+export ANTHROPIC_API_KEY=sk-ant-api03-...  # preferred: env var (works in CI, no setup)
 trustabl llm list                          # show configured providers with masked keys
-trustabl llm key set                       # prompt securely for an API key
+trustabl llm key set                       # prompt securely for an API key (persistent)
 trustabl llm key set sk-ant-api03-...      # set key non-interactively
 trustabl llm key get                       # show masked key for active provider
 trustabl llm key delete                    # delete key with confirmation prompt
@@ -568,7 +620,7 @@ trustabl llm model set claude-sonnet-4-6   # change model for active provider
 trustabl llm provider set openai           # switch active provider (auto-creates entry)
 trustabl llm provider list                 # list configured providers
 
-# Enrich a scan result (requires anthropic provider with a key set)
+# Enrich a scan result (requires any configured LLM provider with a key set)
 trustabl scan ./myrepo --format json | trustabl enrich --repo ./myrepo        # pipe scan into enrich (stdout)
 trustabl enrich --input scan.json --repo ./myrepo --output enriched.json      # file in, file out
 trustabl enrich --input scan.json --repo ./myrepo --diff                      # preview proposed fixes as a unified diff (stderr)
@@ -654,6 +706,27 @@ Register it with an MCP client by pointing the client at the binary with the
 claude mcp add trustabl -- trustabl mcp
 ```
 
+For Gemini CLI, add to `~/.gemini/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "trustabl": {
+      "command": "trustabl",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+For OpenAI Codex, add to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.trustabl]
+command = "trustabl"
+args = ["mcp"]
+```
+
 Or configure it directly in a client's MCP config (the `mcpServers` stdio
 shape used by Claude Desktop / Cursor):
 
@@ -706,6 +779,104 @@ run (offline first session, an unsupported platform, or missing `curl`/`tar`) it
 falls back to whatever `trustabl` is on `PATH`; the system-wide install stays a
 consented step inside `trustabl-scan`. The plugin runs no network service of its
 own and modifies nothing outside the scan target.
+
+### Gemini CLI extension (self-audit at generation time)
+
+Trustabl ships a Gemini CLI extension under [`gemini-extension.json`](gemini-extension.json)
+with the same two skills available in the Claude Code plugin.
+
+**Prerequisites.** Install the Trustabl binary first — the extension does not
+auto-install it the way the Claude Code plugin does (Gemini CLI has no private
+plugin data directory):
+
+```bash
+# macOS / Linux
+brew install trustabl/tap/trustabl
+
+# Windows
+scoop bucket add trustabl https://github.com/trustabl/scoop-bucket
+scoop install trustabl
+```
+
+**Install the extension:**
+
+```bash
+gemini extensions install https://github.com/trustabl/trustabl
+```
+
+**Register the MCP server** so Gemini CLI can call `mcp__trustabl__scan`. Add
+to `~/.gemini/settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "trustabl": {
+      "command": "trustabl",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+**How it works.** When a Gemini CLI session starts, the extension injects
+[`GEMINI.md`](GEMINI.md) as context, which pulls in the full `trustabl-scan`
+and `trustabl-enrich` skill content via `@` imports. Gemini then treats those
+skills exactly as it would any loaded context: it runs the scan after you write
+or change agent, tool, or MCP-server code, and offers to apply findings via
+`trustabl-enrich`. The MCP tool is named `mcp__trustabl__scan` — the same name
+as in Claude Code.
+
+**Update the extension later:**
+
+```bash
+gemini extensions update trustabl
+```
+
+### OpenAI Codex plugin (self-audit at generation time)
+
+Trustabl ships an OpenAI Codex plugin under [`.codex-plugin/`](.codex-plugin/)
+with the same two skills.
+
+**Prerequisites.** Install the Trustabl binary first:
+
+```bash
+# macOS / Linux
+brew install trustabl/tap/trustabl
+
+# Windows
+scoop bucket add trustabl https://github.com/trustabl/scoop-bucket
+scoop install trustabl
+```
+
+**Install the plugin.** In Codex CLI, open the plugin search interface and
+search for `trustabl`:
+
+```bash
+/plugins
+```
+
+Search for `trustabl` and select **Install Plugin**. In the Codex App, go to
+**Plugins** in the sidebar, find Trustabl under the Security category, and
+click **+**.
+
+**Register the MCP server** so Codex can call `mcp__trustabl__scan`. Add to
+`~/.codex/config.toml`:
+
+```toml
+[mcp_servers.trustabl]
+command = "trustabl"
+args = ["mcp"]
+```
+
+**How it works.** Codex reads [`.codex-plugin/plugin.json`](.codex-plugin/plugin.json),
+which points `"skills": "./skills/"`. Codex loads the `trustabl-scan` and
+`trustabl-enrich` skills from that directory automatically — no explicit
+invocation step required. Skills trigger when you write or modify agent, tool,
+or MCP-server code, and Codex applies findings via `trustabl-enrich`. The MCP
+tool is named `mcp__trustabl__scan` — the same name as in Claude Code and Gemini CLI.
+
+To enable subagent delegation in Codex (used by `trustabl-enrich` for parallel
+file edits), set `multi_agent = true` in `~/.codex/config.toml`.
 
 ### "rules are newer than this Trustabl build"
 

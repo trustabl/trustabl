@@ -29,12 +29,17 @@ func newEnrichCommand() *cobra.Command {
 		Short: "Enrich a scan result with AI-generated explanations and code fixes",
 		Long: `Reads a ScanResult produced by "trustabl scan --format json" (from --input or
 stdin), extracts the enclosing code block around each flagged line, and sends it
-to Claude (via the key configured with "trustabl llm key set") to generate
-code-specific explanations and exact line replacements.
+to the configured LLM provider to generate code-specific explanations and exact
+line replacements.
 
-Requires the active LLM provider to be "anthropic". Configure with:
-  trustabl llm key set        # store your Anthropic API key
-  trustabl llm model set ...  # optional: change model (default: claude-haiku-4-5)`,
+Requires an LLM provider to be configured. Supported providers:
+
+  anthropic   export ANTHROPIC_API_KEY=<key>   or   trustabl llm key set
+  openai      export OPENAI_API_KEY=<key>       or   trustabl llm key set
+  google      export GOOGLE_API_KEY=<key>       or   trustabl llm key set
+
+Switch provider:   trustabl llm provider set openai
+Optional model:    export TRUSTABL_LLM_MODEL=gpt-4.1   or   trustabl llm model set gpt-4.1`,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runEnrich(cmd, f)
@@ -62,9 +67,6 @@ func runEnrich(cmd *cobra.Command, f enrichFlags) error {
 	if err != nil {
 		return fmt.Errorf("enrich: load llm config: %w", err)
 	}
-	if cfg.Active != "anthropic" {
-		return fmt.Errorf("enrich: requires the anthropic provider - run: trustabl llm provider set anthropic")
-	}
 	key := cfg.ActiveProvider().Key
 	if key == "" {
 		return fmt.Errorf("enrich: no LLM key configured — run: trustabl llm key set")
@@ -77,6 +79,7 @@ func runEnrich(cmd *cobra.Command, f enrichFlags) error {
 	}
 
 	pipeline := &enrichment.Pipeline{
+		LLMProvider:  cfg.Active,
 		LLMKey:       key,
 		LLMModel:     model,
 		RepoRoot:     f.repoRoot,

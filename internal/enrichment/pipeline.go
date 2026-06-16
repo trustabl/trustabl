@@ -20,7 +20,8 @@ func init() {
 
 // Pipeline orchestrates enrichment of a ScanResult.
 type Pipeline struct {
-	LLMKey       string   // Anthropic API key from llm.Load()
+	LLMProvider  string   // "anthropic" | "openai" | "google"
+	LLMKey       string   // API key from llm.Load()
 	LLMModel     string   // model name from llm.Load(), e.g. "claude-haiku-4-5"
 	RepoRoot     string   // root of the scanned repo; source files are read relative to this
 	RuleFilter   []string // if non-empty, only enrich findings whose RuleID is in this list
@@ -54,7 +55,11 @@ func (p *Pipeline) Run(ctx context.Context, result *models.ScanResult) (*models.
 		if p.LLMKey == "" {
 			return nil, fmt.Errorf("enrichment: no LLM key configured — run: trustabl llm key set")
 		}
-		client = newLLMClient(p.LLMKey, p.LLMModel)
+		var clientErr error
+		client, clientErr = newLLMClient(ctx, p.LLMProvider, p.LLMKey, p.LLMModel)
+		if clientErr != nil {
+			return nil, clientErr
+		}
 	}
 
 	// Collect indices of findings to enrich.
