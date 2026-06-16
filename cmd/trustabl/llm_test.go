@@ -8,12 +8,28 @@ import (
 	"github.com/trustabl/trustabl/internal/llm"
 )
 
-// setLLMConfigDir overrides the LLM config directory for the duration of the test.
+// llmEnvVars are the environment variables llm.Load consults before the
+// on-disk config. Tests must neutralize all of them so a key or model in the
+// developer's shell never bleeds into a test (and never leaks into output).
+var llmEnvVars = []string{
+	"ANTHROPIC_API_KEY",
+	"OPENAI_API_KEY",
+	"GOOGLE_API_KEY",
+	"TRUSTABL_LLM_MODEL",
+}
+
+// setLLMConfigDir isolates the LLM config for the duration of the test: it
+// points the key store at an isolated dir and clears the env-var key/model
+// path so no test reads or prints the developer's real API key. t.Setenv
+// auto-restores the values on cleanup, leaving the real environment intact.
 func setLLMConfigDir(t *testing.T, dir string) {
 	t.Helper()
 	old := llm.ConfigDir
 	llm.ConfigDir = dir
 	t.Cleanup(func() { llm.ConfigDir = old })
+	for _, k := range llmEnvVars {
+		t.Setenv(k, "")
+	}
 }
 
 func TestLLMList_NoConfig(t *testing.T) {
