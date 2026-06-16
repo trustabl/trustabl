@@ -30,11 +30,13 @@ var ErrNoRules = errors.New("no rules available: none cached and could not fetch
 // for an unreadable/corrupt manifest.
 var ErrNoCompatibleRules = errors.New("no usable rules manifest")
 
-// ErrNoTrustKeys means a signed channel was requested (--channel) but this
-// engine build embeds no rule-signing trust keys, so no statement can be
-// verified. Distinct from ErrNoRules so the CLI can advise dropping --channel
-// rather than refreshing the cache. Expected until signing keys are published
-// (RUL-2) and baked into a build.
+// ErrNoTrustKeys means a signed channel was requested (--rules-source <channel>)
+// but this engine build embeds no rule-signing trust keys, so no statement can be
+// verified. Distinct from ErrNoRules so the CLI can advise switching to the
+// unsigned git source (--rules-source git) rather than refreshing the cache. In a
+// correctly built release this is unreachable (the embedded keyring is non-empty,
+// enforced by rulesign's TestEmbeddedKeyring_IsPopulated); it now signals a build
+// defect.
 var ErrNoTrustKeys = errors.New("no rule-signing trust keys embedded in this build")
 
 // fatalResolveError wraps a failure that must NOT degrade to cached rules: a

@@ -87,24 +87,29 @@ func ChannelPointer(stateDir, channel string) (digest string, version int64, exp
 	return st.Digest, st.Version, st.Expires, true, nil
 }
 
-// RecordStatement persists s as the new floor for its channel under stateDir,
-// but only if its version advances the existing floor — so a re-resolve of the
-// current pointer is idempotent and a regression can never lower the floor on
-// disk. It returns the floor in effect after the call. Callers should
+// RecordStatement persists s as the channel's offline pointer under stateDir.
+// The anti-rollback floor is monotonic — a statement whose version is BELOW the
+// recorded floor is refused and never written. But a statement at the SAME
+// version (a re-sign that re-points the channel to a different bundle, or extends
+// the freshness window) DOES update the persisted digest/expiry, so the offline
+// pointer always reflects the most recently verified statement rather than going
+// stale. It returns the floor in effect after the call. Callers should
 // VerifyStatement before recording.
 func RecordStatement(stateDir string, s *Statement) (int64, error) {
 	prev, err := ReadLastSeenVersion(stateDir, s.Channel)
 	if err != nil {
 		return 0, err
 	}
-	if s.Version <= prev {
-		return prev, nil
+	if s.Version < prev {
+		return prev, nil // rollback: never lower the floor
 	}
 	path, err := channelStatePath(stateDir, s.Channel)
 	if err != nil {
 		return 0, err
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	// 0o700: the channel state is trust-relevant (the anti-rollback floor); match
+	// the git rules cache's owner-only perms rather than the world-readable 0o755.
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return 0, fmt.Errorf("rulesign: create channel state dir: %w", err)
 	}
 	// expiresRaw is the exact RFC3339 string from the verified statement (empty
@@ -114,12 +119,25 @@ func RecordStatement(stateDir string, s *Statement) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("rulesign: marshal channel state: %w", err)
 	}
-	// Write atomically: a torn write to the rollback floor must not corrupt it.
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	// Write atomically via a UNIQUE temp file then rename: a torn write to the
+	// rollback floor must not corrupt it, and a fixed temp name would let two
+	// concurrent recorders for the same channel truncate each other's in-progress
+	// temp and promote a garbled state. A per-write temp (like cache.go's
+	// writeCurrent) isolates concurrent recorders.
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".tmp-channel-*")
+	if err != nil {
+		return 0, fmt.Errorf("rulesign: create channel state temp: %w", err)
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName) // no-op once the rename succeeds
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
 		return 0, fmt.Errorf("rulesign: write channel state: %w", err)
 	}
-	if err := os.Rename(tmp, path); err != nil {
+	if err := tmp.Close(); err != nil {
+		return 0, fmt.Errorf("rulesign: close channel state temp: %w", err)
+	}
+	if err := os.Rename(tmpName, path); err != nil {
 		return 0, fmt.Errorf("rulesign: commit channel state: %w", err)
 	}
 	return s.Version, nil

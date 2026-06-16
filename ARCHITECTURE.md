@@ -142,7 +142,8 @@ never leaves a partial pack and the recorded SHA always matches the content
 
 Resolution sits behind a `rulesource.Source` interface with two
 implementations. The default `gitSource` is the git path described above.
-`releaseSource` (opt-in via `--channel <name>`) resolves rules from a
+`releaseSource` (opt-in via `--rules-source <name>`, or its deprecated alias
+`--channel <name>`) resolves rules from a
 **signature-verified release channel**: it verifies a signed channel statement
 against an embedded Ed25519 trust keyring (`internal/rulesign`), fetches the
 bundle the statement commits to from GitHub Releases, re-derives the bundle's
@@ -163,8 +164,70 @@ warning). The
 provenance of the rules (`models.RulesOrigin`: signed channel / unsigned
 custom / unsigned default) is surfaced as a report watermark and folded into
 `ScanID`. The default scan is unchanged — `gitSource` stays the default until
-the signed-production cutover. See `internal/rulesource/releasesource.go` and
-`internal/rulesign/`.
+the signed-production cutover. The CLI maps flags to a source in one place:
+`effectiveRules` (`cmd/trustabl/scan.go`) derives BOTH the `rulesource.Config`
+and the `RulesOrigin` from a single decision (default in `defaultRulesSource`),
+so the resolved source and its reported provenance cannot disagree; a
+`--rules-repo`/`--rules-ref` override implies the git path. As a defense against
+trust-on-first-use rollback, `releaseSource` also raises a fresh machine's
+anti-rollback floor to a build-embedded per-channel **genesis floor**
+(`internal/rulesource/genesis.go`), so first contact rejects a validly-signed
+statement older than the floor this build shipped with. See
+`internal/rulesource/releasesource.go` and `internal/rulesign/`.
+
+The **producer side** is a separate `cmd/rulesctl` binary (NOT shipped to
+users — the goreleaser build is pinned to `cmd/trustabl`), backed by
+`internal/rulepub`. It generates signing keypairs (`keygen`), packs a rule-pack
+directory into the canonical `bundle.tar.gz` and prints its digest (`bundle`),
+signs a channel statement (`sign`), and self-verifies a candidate statement
+against the trust keyring + its bundle before promotion (`verify`). Producer and
+verifier share one
+serialization — `rulepub.Bundle`/`SignStatement` call the same
+`rulesign.WriteCanonicalTar` / `CanonicalDigest` / `StatementSigningPayload` the
+engine verifies against — so the digest and signature can never drift. Signing
+code (private-key handling) lives only in `cmd/rulesctl`/`internal/rulepub` and
+never links into the scanner binary, preserving `rulesign`'s verify-only
+guarantee. The CI publish/promote workflow lives in the rules repo
+(`trustabl-rules/.github/workflows/publish.yml`).
+
+**Bundle path contract.** A rule pack's file paths must be portable so the
+on-disk install always equals the verified digest. `rulesign.ValidateBundlePath`
+(applied by both `WriteCanonicalTar` and `untarGz`) rejects backslashes, a colon
+or drive-letter, a trailing dot/space, a leading `~`, reserved device basenames
+(`CON`, `PRN`, `AUX`, `NUL`, `COM1-9`, `LPT1-9`), control characters, and
+case-folding collisions; the empty bundle is rejected on both sides. Path
+component names must also fit USTAR (≤100 bytes, optionally with a ≤155-byte
+directory prefix) — over-long paths fail at bundle time with an explicit message.
+
+**Key rotation & revocation runbook.** The trust root is the keyring embedded in
+the engine build (`internal/rulesign/keyring.json`, public keys only). The
+genesis production key is deliberately **unbounded** (`not_before` only, no
+`not_after`) so it never self-expires mid-fleet; rotation/revocation is a
+deliberate, build-shipped action:
+
+- *Rotate* (overlapping windows): `rulesctl keygen --key-id <new>` for key N+1;
+  add its public entry to `keyring.json` with `not_before=now`; set the OUTGOING
+  key's `not_after` to `now+overlap` (use `rulesctl keygen --not-after` when
+  minting, or edit the entry); ship an engine build embedding BOTH keys; switch
+  the CI signing secret to N+1; drop key N in a later build once its window
+  closes. During the overlap, statements signed by either key verify (locked by
+  `TestKeyring_RotationOverlap`); after N's `not_after`, only N+1 does.
+- *Revoke* a compromised key: remove it from `keyring.json` and ship a new engine
+  build (optionally back-date its `not_after` to expire cached statements). There
+  is no online CRL, so revocation latency equals engine release + adoption
+  latency; short statement TTLs and the anti-rollback floor bound the exposure.
+- *Recover from a bad promote:* a channel statement is anti-rollback-protected, so
+  you cannot re-point to a LOWER version — you recover by rolling **forward**.
+  Re-sign the previous-good bundle digest at a NEW, higher version
+  (`rulesctl sign --channel production --digest <previous-good> --version <higher>`)
+  and promote that. The bad bundle release stays (it is immutable and harmless
+  once the channel no longer points at it).
+- *Statement freshness / renewal:* statements carry a TTL (`expires`); the channel
+  goes stale once it passes. Re-publishing (even with unchanged rules) re-signs
+  the current digest with a fresh window, so a periodic scheduled publish keeps
+  the channel fresh. This is an operational requirement of running the channel,
+  not an engine concern — the engine warns (stale flag) and serves the last
+  verified bundle until a fresh statement is published.
 
 Resolution order:
 
@@ -1504,8 +1567,15 @@ ScanResult {
     Surfaces           []SurfaceReadiness
     OverallScore       float64
     RulesSource        string              // repo the rule pack came from
-    RulesVersion       string              // resolved rules commit SHA (folded into ScanID)
+    RulesVersion       string              // resolved rules SHA / signed-bundle digest (folded into ScanID)
     RulesFromCache     bool                // true if rules came from cache (network skipped/unreachable)
+    RulesStale         bool                // cached signed bundle whose channel statement has expired
+    RulesSchemaVersion int                 // pack manifest schema_version
+    RulesSchemaNewer   bool                // pack targets a newer schema than this build (rules skipped)
+    RulesSkipped       []string            // rule IDs skipped (forward-incompatible)
+    RulesOrigin        RulesOrigin         // provenance: signed channel / unsigned custom / unsigned default
+    // (representative — see internal/models/models.go for the full set, incl.
+    //  Dependencies, Vulnerabilities, ProjectedScores)
 }
 ```
 
@@ -1572,6 +1642,8 @@ Discipline rules:
 ```
 cmd/trustabl/                    CLI entry point (cobra).
 │                                main.go (scan/rules/version) + mcp.go (mcp).
+cmd/rulesctl/                    Rules PUBLISHER tool (keygen/bundle/sign/verify). NOT shipped to users
+│                                (goreleaser builds only cmd/trustabl); used by trustabl-rules CI.
 internal/
 ├── models/                      Cross-boundary types. JSON-tagged. Zero deps.
 ├── ingestion/                   Importer + Normalizer.
@@ -1643,15 +1715,18 @@ internal/
 │   └── rule_detector.go         RuleDetector adapter + LoadRegistry.
 │                                (No embed.go: rules are not embedded — see rulesource.)
 ├── rulesign/                    Trust core (verify-only — no signing in the binary).
-│   ├── digest.go                CanonicalDigest (reproducible sha256 over a normalized tar).
+│   ├── digest.go                CanonicalDigest + WriteCanonicalTar (reproducible sha256 / artifact over a normalized tar; shared by the publisher).
 │   ├── keyring.go               Embedded Ed25519 trust keyring; verify-by-key-ID + validity windows.
-│   ├── keyring.json             Embedded trust keyring (empty until signing keys are published).
+│   ├── keyring.json             Embedded trust keyring (the signing public key[s]; non-empty in a release build).
 │   ├── statement.go             Signed channel statement: parse + VerifyStatement (sig/channel/freshness/anti-rollback/digest).
 │   └── channelstate.go          Per-channel anti-rollback floor + offline pointer in the cache dir.
+├── rulepub/                     Publisher-side counterpart to rulesign (imported only by cmd/rulesctl, never the scanner).
+│   └── rulepub.go               GenerateKeypair / Bundle / SignStatement — share rulesign's digest + signing-payload encoding.
 ├── rulesource/                  External-rules resolution (Source interface: gitSource + releaseSource).
 │   ├── git.go                   resolveRef / cloneInto via go-git (gitSource).
 │   ├── releasesource.go         Signed-channel resolve: verify → fetch → digest-bind → install (releaseSource).
 │   ├── githubtransport.go       GitHub Releases transport (statement + bundle by digest).
+│   ├── genesis.go               Build-embedded per-channel genesis version floor (trust-on-first-use rollback guard).
 │   ├── cache.go                 Cache layout + current-pointer helpers.
 │   ├── manifest.go              manifest.yaml read + schema-compatibility gate.
 │   └── rulesource.go            Source interface; Resolve / Pull; SourceFor; Config; Resolved; DefaultRepoURL.

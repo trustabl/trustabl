@@ -168,7 +168,11 @@ func VerifyStatement(ring *Keyring, s *Statement, p VerifyParams, at time.Time) 
 	if s.Channel != p.Channel {
 		return fmt.Errorf("%w: statement is for %q, requested %q", ErrChannelMismatch, s.Channel, p.Channel)
 	}
-	// 3. Freshness — reject an expired pointer.
+	// 3. Freshness — reject an expired pointer. Intentionally zero-tolerance (no
+	// clock-skew grace): correctness relies on a generous statement TTL and a
+	// not_before set comfortably in the past at publish time, so a few minutes of
+	// local clock skew never rejects a genuinely fresh statement. The key-validity
+	// window (keyring.validAt) takes the same stance.
 	if at.After(s.Expires) {
 		return fmt.Errorf("%w: expired %s", ErrStatementExpired, s.expiresRaw)
 	}

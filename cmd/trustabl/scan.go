@@ -33,7 +33,9 @@ type scanFlags struct {
 	noColor       bool
 	rulesRepo     string
 	rulesRef      string
+	rulesSource   string
 	channel       string
+	requireSigned bool
 	noRulesUpdate bool
 	noProgress    bool
 	jsonOut       string
@@ -112,9 +114,15 @@ Exit codes:
 		"rules repository URL (default: official trustabl-rules; or TRUSTABL_RULES_REPO)")
 	cmd.Flags().StringVar(&f.rulesRef, "rules-ref", "",
 		"rules branch or tag to use (default: the repo's default branch)")
+	cmd.Flags().StringVar(&f.rulesSource, "rules-source", "",
+		"rules source: 'git' for the unsigned git path, or a signed channel name (e.g. production, "+
+			"staging). Default: git. A signed channel is signature-verified; a pre-release channel is "+
+			"watermarked in the report. --rules-repo/--rules-ref imply git.")
 	cmd.Flags().StringVar(&f.channel, "channel", "",
-		"resolve rules from a signed release channel (e.g. production, staging) instead of git; "+
-			"opt-in and signature-verified — a pre-release channel is watermarked in the report")
+		"deprecated alias for --rules-source <channel> (a signed release channel)")
+	cmd.Flags().BoolVar(&f.requireSigned, "require-signed", false,
+		"refuse to scan unless rules resolve from a signed channel (also via TRUSTABL_REQUIRE_SIGNED=1); "+
+			"a hard CI gate against silently scanning with unsigned git rules")
 	cmd.Flags().BoolVar(&f.noRulesUpdate, "no-rules-update", false,
 		"do not fetch rules; use the local cache only")
 	cmd.Flags().BoolVar(&f.noProgress, "no-progress", false,
@@ -301,7 +309,11 @@ func resolveAndScan(cfg *scanner.Config, f scanFlags, rep progress.Reporter) (mo
 	// Resolve makes a network round-trip (and a full clone on a cold cache) with
 	// no internal progress; without a detail line the pre-flight spinner reads as
 	// a blank/frozen screen. Name what it's contacting so the wait is legible.
-	rcfg := rulesConfigFromScan(f)
+	rcfg, origin, rerr := effectiveRules(f)
+	if rerr != nil {
+		rep.Fatal(rerr)
+		return models.ScanResult{}, rerr
+	}
 	rulesRepo := rcfg.RepoURL
 	if rulesRepo == "" {
 		rulesRepo = rulesource.DefaultRepoURL
@@ -345,7 +357,7 @@ func resolveAndScan(cfg *scanner.Config, f scanFlags, rep progress.Reporter) (mo
 	cfg.RulesStale = res.Stale
 	cfg.RulesSchemaVersion = res.SchemaVersion
 	cfg.RulesSchemaNewer = res.SchemaNewer
-	cfg.RulesOrigin = rulesOriginFromScan(f)
+	cfg.RulesOrigin = origin
 	cfg.VulnScan = f.vulnScan
 	cfg.VulnNoUpdate = f.noRulesUpdate // --no-rules-update is the offline switch for both rules and the OSV DB
 	cfg.Progress = rep
@@ -401,10 +413,11 @@ func finishScan(result models.ScanResult, jobErr error, f scanFlags, log *logx.L
 		}
 		if errors.Is(jobErr, rulesource.ErrNoTrustKeys) {
 			fmt.Fprintln(os.Stderr,
-				"This build of Trustabl embeds no rule-signing keys, so signed channels "+
-					"(--channel) cannot be verified yet.")
+				"This build of Trustabl embeds no rule-signing keys, so a signed rules "+
+					"channel cannot be verified.")
 			fmt.Fprintln(os.Stderr,
-				"Omit --channel to use the default rules source.")
+				"Use --rules-source git (or pass --rules-repo / --rules-ref) to resolve "+
+					"rules from the unsigned git source instead.")
 			return exitCodeError{2}
 		}
 		if isRuleSignFailure(jobErr) {
@@ -634,30 +647,98 @@ func exitCode(result models.ScanResult, strict bool) int {
 	return 0
 }
 
-// rulesConfigFromScan builds a rulesource.Config from scan flags, applying the
-// TRUSTABL_RULES_REPO environment override when --rules-repo is not set.
-func rulesConfigFromScan(f scanFlags) rulesource.Config {
+// defaultRulesSource is the rules source used when the operator selects none. It
+// stays "git" (the unsigned clone of the default branch) until the signed-
+// production cutover (ENG-6) flips it to "production". Keeping the default in one
+// place means the cutover is a one-line change, and effectiveRules already routes
+// the git opt-out (--rules-repo / --rules-ref / TRUSTABL_RULES_REPO) to the git
+// path for either default — so after the flip, "git only via --rules-ref/--rules-repo"
+// holds without further wiring.
+const defaultRulesSource = "git"
+
+// effectiveRules resolves the scan's rules source from flags into BOTH a
+// rulesource.Config and a models.RulesOrigin. Deriving them from one decision is
+// the point: the source that actually resolves and the provenance reported in the
+// watermark and folded into ScanID can never disagree. Precedence:
+//
+//   - An explicit --rules-source (or its deprecated alias --channel) wins;
+//     conflicting values are an error.
+//   - With no explicit selection, a git-only override (--rules-repo / --rules-ref
+//     / TRUSTABL_RULES_REPO) implies the git path; otherwise defaultRulesSource.
+//   - "git" is the unsigned official/custom git path; any other token is a signed
+//     channel name. A signed channel keeps --rules-repo (to test a signed fork)
+//     but rejects --rules-ref (a git-only concept).
+func effectiveRules(f scanFlags) (rulesource.Config, models.RulesOrigin, error) {
 	repo := f.rulesRepo
 	if repo == "" {
 		repo = os.Getenv("TRUSTABL_RULES_REPO")
 	}
-	return rulesource.Config{
-		RepoURL:  repo,
-		Ref:      f.rulesRef,
-		Channel:  f.channel,
-		NoUpdate: f.noRulesUpdate,
+
+	src := f.rulesSource
+	if f.channel != "" {
+		if src != "" && src != f.channel {
+			return rulesource.Config{}, models.RulesOrigin{}, fmt.Errorf(
+				"conflicting rules source: --rules-source %q vs --channel %q", src, f.channel)
+		}
+		src = f.channel
 	}
+	if src == "" {
+		// No explicit selection: a git-only override implies git, else the default.
+		if repo != "" || f.rulesRef != "" {
+			src = "git"
+		} else {
+			src = defaultRulesSource
+		}
+	}
+
+	// Hard signed-only gate: when --require-signed (or TRUSTABL_REQUIRE_SIGNED=1) is
+	// set, refuse the unsigned git path entirely rather than silently scanning with
+	// unverified rules — the fail-closed switch a security-conscious CI wants.
+	if (f.requireSigned || os.Getenv("TRUSTABL_REQUIRE_SIGNED") == "1") && src == "git" {
+		return rulesource.Config{}, models.RulesOrigin{}, fmt.Errorf(
+			"signed rules required (--require-signed / TRUSTABL_REQUIRE_SIGNED=1) but the resolved source is the unsigned git path; pass --rules-source <channel>")
+	}
+	if src == "git" {
+		return rulesource.Config{
+			RepoURL:  repo,
+			Ref:      f.rulesRef,
+			NoUpdate: f.noRulesUpdate,
+		}, models.RulesOrigin{Custom: repo != ""}, nil
+	}
+
+	// Signed channel path.
+	if !isValidChannelName(src) {
+		return rulesource.Config{}, models.RulesOrigin{}, fmt.Errorf(
+			"invalid rules channel %q (allowed: lowercase letters, digits, '.', '_', '-')", src)
+	}
+	if f.rulesRef != "" {
+		return rulesource.Config{}, models.RulesOrigin{}, fmt.Errorf(
+			"--rules-ref has no effect on the signed %q channel; use --rules-source git to pin a git ref", src)
+	}
+	return rulesource.Config{
+		RepoURL:  repo, // a non-empty repo here is a signed fork: --rules-source <chan> --rules-repo <fork>
+		Channel:  src,
+		NoUpdate: f.noRulesUpdate,
+		// A signed channel from a non-default repo is signature-verified but not the
+		// official source — mark it Custom so it is watermarked and gets a distinct
+		// ScanID (a fork can replay an old validly-signed statement).
+	}, models.RulesOrigin{Signed: true, Channel: src, Custom: repo != ""}, nil
 }
 
-// rulesOriginFromScan classifies the provenance of the rules for this scan: a
-// signed channel when --channel is set, otherwise the unsigned git path —
-// marked Custom when the operator overrode the default rules repo.
-func rulesOriginFromScan(f scanFlags) models.RulesOrigin {
-	if f.channel != "" {
-		return models.RulesOrigin{Signed: true, Channel: f.channel}
+// isValidChannelName mirrors the engine's channel-name rule (rulesign
+// channelstate.validChannelName) so a bad channel fails early at the CLI with a
+// clear message rather than late, deep in the resolver.
+func isValidChannelName(name string) bool {
+	if name == "" || name == "." || name == ".." {
+		return false
 	}
-	custom := f.rulesRepo != "" || os.Getenv("TRUSTABL_RULES_REPO") != ""
-	return models.RulesOrigin{Custom: custom}
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		if !(c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '.' || c == '_' || c == '-') {
+			return false
+		}
+	}
+	return true
 }
 
 // isRuleSignFailure reports whether err is a signed-channel verification failure

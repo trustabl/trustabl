@@ -1,3 +1,9 @@
 {
-  "keys": []
+  "keys": [
+    {
+      "id": "trustabl-rules-2026-06",
+      "public_key": "xfFjd33NWWg8oH1iGh3mOEm3kooq2GeSXfNdmnJ247I=",
+      "not_before": "2026-06-15T20:02:45Z"
+    }
+  ]
 }

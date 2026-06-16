@@ -23,6 +23,8 @@ import (
 type mcpFlags struct {
 	rulesRepo     string
 	rulesRef      string
+	rulesSource   string
+	channel       string
 	noRulesUpdate bool
 }
 
@@ -61,6 +63,10 @@ func newMCPCommand() *cobra.Command {
 		"rules repository URL (default: official trustabl-rules; or TRUSTABL_RULES_REPO)")
 	cmd.Flags().StringVar(&f.rulesRef, "rules-ref", "",
 		"rules branch or tag to use (default: the repo's default branch)")
+	cmd.Flags().StringVar(&f.rulesSource, "rules-source", "",
+		"rules source: 'git' or a signed channel name (e.g. production) the server resolves")
+	cmd.Flags().StringVar(&f.channel, "channel", "",
+		"deprecated alias for --rules-source <channel>")
 	cmd.Flags().BoolVar(&f.noRulesUpdate, "no-rules-update", false,
 		"do not fetch rules; use the local cache only")
 	return cmd
@@ -90,10 +96,14 @@ func runMCP(ctx context.Context, f mcpFlags, level logx.Level) error {
 			ref = req.RulesRef
 		}
 		log.Debugf("mcp: scan request path=%s rules_ref=%q", req.Path, ref)
-		rcfg := rulesource.Config{
-			RepoURL:  rulesRepoFromFlag(f.rulesRepo),
-			Ref:      ref,
-			NoUpdate: f.noRulesUpdate,
+		// Resolve via the same source-selection as `scan` so the MCP frontend can
+		// use a signed channel and so provenance is derived once and never drifts.
+		rcfg, origin, err := effectiveRules(scanFlags{
+			rulesRepo: f.rulesRepo, rulesRef: ref, rulesSource: f.rulesSource,
+			channel: f.channel, noRulesUpdate: f.noRulesUpdate,
+		})
+		if err != nil {
+			return models.ScanResult{}, err
 		}
 		res, err := rulesource.Resolve(rcfg, rules.SupportedSchemaVersion)
 		if err != nil {
@@ -110,9 +120,16 @@ func runMCP(ctx context.Context, f mcpFlags, level logx.Level) error {
 			RulesSource:    res.RepoURL,
 			RulesVersion:   res.SHA,
 			RulesFromCache: res.FromCache,
-			Progress:       progress.NewNop(),
-			Log:            log,
-			Ctx:            ctx,
+			// Carry the full provenance/freshness signals so an MCP client gets the
+			// same rules_origin, stale flag, and schema-newer signal as the CLI —
+			// these were previously dropped on the MCP path.
+			RulesStale:         res.Stale,
+			RulesSchemaVersion: res.SchemaVersion,
+			RulesSchemaNewer:   res.SchemaNewer,
+			RulesOrigin:        origin,
+			Progress:           progress.NewNop(),
+			Log:                log,
+			Ctx:                ctx,
 			// Opt-in OSV vulnerability matching (mirrors the CLI's --vuln-scan);
 			// the OSV offline switch reuses --no-rules-update, as the CLI does.
 			VulnScan:     req.VulnScan,

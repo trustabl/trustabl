@@ -1,6 +1,7 @@
 package rulesource
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -40,9 +41,11 @@ type releaseSource struct {
 }
 
 // newReleaseSource builds the production releaseSource: the trust keyring
-// embedded in this build plus the GitHub Releases transport. Until signing keys
-// are published (RUL-2) the embedded keyring is empty, so every channel resolve
-// refuses up front — fail-closed by construction.
+// embedded in this build plus the GitHub Releases transport. The embedded keyring
+// now carries the published signing public key, so a channel resolve runs the
+// full verification pipeline; a build that ever ships an empty keyring (guarded
+// by rulesign's TestEmbeddedKeyring_IsPopulated) instead refuses up front with
+// ErrNoTrustKeys — fail-closed by construction.
 func newReleaseSource() *releaseSource {
 	ring, err := rulesign.Embedded()
 	if err != nil {
@@ -121,6 +124,12 @@ func (rs *releaseSource) resolveFromStatement(cfg Config, supported int, raw []b
 	if err != nil {
 		return Resolved{}, err
 	}
+	// Raise the effective floor to this build's embedded genesis floor for the
+	// channel, so a fresh machine (lastSeen == 0) still rejects a validly-signed
+	// statement older than the floor — closing the trust-on-first-use rollback gap.
+	if floor := genesisFloor(cfg.Channel); floor > lastSeen {
+		lastSeen = floor
+	}
 	if err := rulesign.VerifyStatement(rs.keyring, stmt, rulesign.VerifyParams{
 		Channel:         cfg.Channel,
 		LastSeenVersion: lastSeen,
@@ -146,30 +155,98 @@ func (rs *releaseSource) resolveFromStatement(cfg Config, supported int, raw []b
 			return Resolved{}, &fatalResolveError{err}
 		}
 	}
-	// Advance the anti-rollback floor only after a fully verified, installed
-	// bundle — so a failed install can never move the floor forward.
+	// Validate the installed bundle's manifest BEFORE advancing the floor/pointer.
+	// A digest-verified but manifest-invalid bundle must not move the floor or
+	// persist the channel pointer, or every later offline resolve would re-read the
+	// poisoned pointer and re-fail — wedging the channel until a higher good version
+	// ships. (The git path validates before writeCurrent for the same reason.)
+	res, err := rs.usePackDigest(cfg, stmt.Digest, supported, false)
+	if err != nil {
+		return Resolved{}, err
+	}
+	// Advance the anti-rollback floor only after a fully verified, installed, and
+	// manifest-valid bundle — so neither a failed install nor an unusable manifest
+	// can move the floor forward.
 	if _, err := rulesign.RecordStatement(cfg.BundleCacheDir, stmt); err != nil {
 		return Resolved{}, &fatalResolveError{err}
 	}
-	return rs.usePackDigest(cfg, stmt.Digest, supported, false)
+	// Bound the content-addressed bundle cache: drop superseded bundles and any
+	// abandoned temp dirs. Best-effort and never fatal to the resolve.
+	pruneBundles(cfg.BundleCacheDir, stmt.Digest)
+	return res, nil
+}
+
+// pruneBundles bounds the signed-bundle cache, mirroring the git path's
+// pruneCache. It keeps the just-resolved digest, EVERY channel's current bundle
+// (read from the per-channel state under channels/, so pruning one channel never
+// evicts another's active bundle), and the channels/ state dir itself; it removes
+// other <digest>/ dirs and abandoned .tmp-bundle-* dirs. A grace window spares
+// freshly-created entries a concurrent scan may still be reading via os.DirFS
+// (the Windows open-handle hazard cache.go documents). Best-effort: a dir that
+// will not delete is simply left for next time.
+func pruneBundles(bundleRoot, keep string) {
+	entries, err := os.ReadDir(bundleRoot)
+	if err != nil {
+		return
+	}
+	keepSet := map[string]bool{keep: true}
+	chDir := filepath.Join(bundleRoot, "channels")
+	if chEntries, err := os.ReadDir(chDir); err == nil {
+		for _, ce := range chEntries {
+			if ce.IsDir() || !strings.HasSuffix(ce.Name(), ".json") {
+				continue
+			}
+			b, err := os.ReadFile(filepath.Join(chDir, ce.Name()))
+			if err != nil {
+				continue
+			}
+			var st struct {
+				Digest string `json:"digest"`
+			}
+			if json.Unmarshal(b, &st) == nil && st.Digest != "" {
+				keepSet[st.Digest] = true
+			}
+		}
+	}
+	for _, e := range entries {
+		name := e.Name()
+		if !e.IsDir() || name == "channels" || keepSet[name] {
+			continue
+		}
+		if info, err := e.Info(); err == nil && time.Since(info.ModTime()) < pruneGraceWindow {
+			continue
+		}
+		_ = os.Remove(filepath.Join(bundleRoot, name, completeMarker))
+		_ = os.RemoveAll(filepath.Join(bundleRoot, name))
+	}
 }
 
 // fromCache serves the channel's last verified bundle when the network is
 // skipped or unreachable, flagging it Stale if its statement has since expired.
 func (rs *releaseSource) fromCache(cfg Config, supported int) (Resolved, error) {
-	digest, _, expires, found, err := rulesign.ChannelPointer(cfg.BundleCacheDir, cfg.Channel)
+	digest, version, expires, found, err := rulesign.ChannelPointer(cfg.BundleCacheDir, cfg.Channel)
 	if err != nil {
 		return Resolved{}, err
 	}
 	if !found || !bundleExists(cfg.BundleCacheDir, digest) {
 		return Resolved{}, ErrNoRules
 	}
+	// Enforce this build's genesis floor on the offline path too, so a floor bump
+	// shipped to revoke a known-bad version is honored even when serving the cache
+	// (otherwise a build that would reject the cached version online would still
+	// serve it offline — a failure-to-revoke gap).
+	if floor := genesisFloor(cfg.Channel); version < floor {
+		return Resolved{}, fmt.Errorf("%w: cached version %d below genesis floor %d", rulesign.ErrVersionRegression, version, floor)
+	}
 	res, err := rs.usePackDigest(cfg, digest, supported, true)
 	if err != nil {
 		return Resolved{}, err
 	}
 	if expires != "" {
-		if exp, perr := time.Parse(time.RFC3339, expires); perr == nil && rs.now().After(exp) {
+		// Fail closed on the staleness signal: an unparseable cached expiry is
+		// treated as stale (it means the persisted state is corrupt or from a future
+		// format), never silently as fresh.
+		if exp, perr := time.Parse(time.RFC3339, expires); perr != nil || rs.now().After(exp) {
 			res.Stale = true
 		}
 	}
@@ -223,7 +300,7 @@ func bundleExists(bundleRoot, digest string) bool {
 // materializes into a temp dir, marks it complete, then atomically renames it
 // into place, so a concurrent reader never sees a half-written bundle.
 func installBundle(bundleRoot, digest string, fsys fs.FS) error {
-	if err := os.MkdirAll(bundleRoot, 0o755); err != nil {
+	if err := os.MkdirAll(bundleRoot, 0o700); err != nil {
 		return err
 	}
 	tmp, err := os.MkdirTemp(bundleRoot, ".tmp-bundle-*")
@@ -239,12 +316,32 @@ func installBundle(bundleRoot, digest string, fsys fs.FS) error {
 		return err
 	}
 	dest := bundleDir(bundleRoot, digest)
-	// A concurrent resolve may have installed the identical (digest-named)
-	// content first; that is success, not a conflict.
-	if _, err := os.Stat(dest); err == nil {
+	// A concurrent resolve may have installed the identical (digest-named) content
+	// first; that is success, not a conflict. Check for a COMPLETE bundle (dir +
+	// marker), not just dir presence, so a partial install does not look done.
+	if bundleExists(bundleRoot, digest) {
 		return nil
 	}
-	return os.Rename(tmp, dest)
+	// No COMPLETE bundle is present, but a markerless (partial) dir may still sit at
+	// dest — an interrupted older install, a non-atomic rename on a network/overlay
+	// FS, or restored-from-backup debris. Remove it so the rename onto a fresh path
+	// succeeds; otherwise rename-onto-non-empty-dir fails and, wrapped as a
+	// fatalResolveError, wedges the channel on every later resolve with no self-heal.
+	// Safe: only reached when bundleExists is false, so we never delete a complete
+	// bundle. (The git path does the same RemoveAll in cloneInto.)
+	_ = os.RemoveAll(dest)
+	// Rename onto an existing non-empty directory fails (POSIX ENOTEMPTY; Windows
+	// will not replace a directory). A concurrent installer can win the race
+	// between the check above and this rename — if a complete bundle is now present
+	// it is byte-identical (digest-named and digest-verified before install), so
+	// treat the lost race as success rather than a fatal, non-degrading abort.
+	if err := os.Rename(tmp, dest); err != nil {
+		if bundleExists(bundleRoot, digest) {
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 // writeFSTo copies every regular file from fsys into root, recreating the
