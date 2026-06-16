@@ -1,14 +1,11 @@
 <p align="center">
-  <a href="https://github.com/trustabl/trustabl/releases"><img src="https://img.shields.io/github/downloads/trustabl/trustabl/total?label=downloads&color=2ea043" alt="Total downloads"></a>
-</p>
-
-<p align="center">
   <img src="assets/github_banner.jpg" alt="Trustabl" width="100%">
 </p>
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License: Apache-2.0"></a>
   <a href="https://github.com/trustabl/trustabl/releases"><img src="https://img.shields.io/github/v/release/trustabl/trustabl" alt="Latest release"></a>
+  <a href="https://github.com/trustabl/trustabl/releases"><img src="https://img.shields.io/github/downloads/trustabl/trustabl/total?label=downloads&color=2ea043" alt="Total downloads"></a>
   <a href="https://github.com/trustabl/trustabl/actions/workflows/test.yml"><img src="https://img.shields.io/github/actions/workflow/status/trustabl/trustabl/test.yml?branch=main&amp;label=tests" alt="Tests"></a>
   <a href="go.mod"><img src="https://img.shields.io/github/go-mod/go-version/trustabl/trustabl" alt="Go version"></a>
   <br>
