@@ -11,6 +11,8 @@ import (
 	"path"
 	"strings"
 	"testing/fstest"
+
+	"github.com/trustabl/trustabl/internal/rulesign"
 )
 
 // Bundle/statement download caps. A statement is a tiny JSON document; a rules
@@ -110,6 +112,7 @@ func untarGz(raw []byte) (fs.FS, error) {
 
 	tr := tar.NewReader(gz)
 	out := fstest.MapFS{}
+	seenLower := map[string]bool{}
 	var total int64
 	for {
 		hdr, err := tr.Next()
@@ -126,6 +129,18 @@ func untarGz(raw []byte) (fs.FS, error) {
 		if !fs.ValidPath(name) || name == "." {
 			return nil, fmt.Errorf("bundle contains unsafe path %q", hdr.Name)
 		}
+		// Reject names fs.ValidPath accepts but that reinterpret across platforms
+		// (backslash, colon/drive-letter, trailing dot/space, reserved device name,
+		// control char) — the SAME check the producer applies — so the on-disk
+		// install can never diverge from the verified digest.
+		if err := rulesign.ValidateBundlePath(name); err != nil {
+			return nil, fmt.Errorf("bundle contains non-portable path %q: %w", hdr.Name, err)
+		}
+		lc := strings.ToLower(name)
+		if seenLower[lc] {
+			return nil, fmt.Errorf("bundle has case-folding-colliding paths (near %q) that would collapse to one file on a case-insensitive filesystem", hdr.Name)
+		}
+		seenLower[lc] = true
 		if len(out) >= maxBundleEntries {
 			return nil, fmt.Errorf("bundle exceeds %d entries", maxBundleEntries)
 		}

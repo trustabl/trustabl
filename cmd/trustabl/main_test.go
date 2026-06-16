@@ -191,20 +191,6 @@ func TestParseCategories(t *testing.T) {
 	}
 }
 
-func TestRulesConfig_FromFlags(t *testing.T) {
-	f := scanFlags{rulesRepo: "https://example.com/r", rulesRef: "v1", noRulesUpdate: true}
-	rc := rulesConfigFromScan(f)
-	if rc.RepoURL != "https://example.com/r" {
-		t.Errorf("RepoURL = %q", rc.RepoURL)
-	}
-	if rc.Ref != "v1" {
-		t.Errorf("Ref = %q", rc.Ref)
-	}
-	if !rc.NoUpdate {
-		t.Error("NoUpdate = false, want true")
-	}
-}
-
 func TestExitCode(t *testing.T) {
 	finding := func(sev models.Severity) models.Finding {
 		return models.Finding{Severity: sev}

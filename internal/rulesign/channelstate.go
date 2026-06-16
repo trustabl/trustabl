@@ -114,12 +114,25 @@ func RecordStatement(stateDir string, s *Statement) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("rulesign: marshal channel state: %w", err)
 	}
-	// Write atomically: a torn write to the rollback floor must not corrupt it.
-	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	// Write atomically via a UNIQUE temp file then rename: a torn write to the
+	// rollback floor must not corrupt it, and a fixed temp name would let two
+	// concurrent recorders for the same channel truncate each other's in-progress
+	// temp and promote a garbled state. A per-write temp (like cache.go's
+	// writeCurrent) isolates concurrent recorders.
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".tmp-channel-*")
+	if err != nil {
+		return 0, fmt.Errorf("rulesign: create channel state temp: %w", err)
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName) // no-op once the rename succeeds
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
 		return 0, fmt.Errorf("rulesign: write channel state: %w", err)
 	}
-	if err := os.Rename(tmp, path); err != nil {
+	if err := tmp.Close(); err != nil {
+		return 0, fmt.Errorf("rulesign: close channel state temp: %w", err)
+	}
+	if err := os.Rename(tmpName, path); err != nil {
 		return 0, fmt.Errorf("rulesign: commit channel state: %w", err)
 	}
 	return s.Version, nil

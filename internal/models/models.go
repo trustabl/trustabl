@@ -439,6 +439,12 @@ func (o RulesOrigin) Tag() string {
 		if ch == "" {
 			ch = "unknown"
 		}
+		// A signed channel fetched from a non-default repo is still
+		// signature-verified, but it is NOT the official source — distinguish it so
+		// its ScanID never collides with a blessed-source scan of the same channel.
+		if o.Custom {
+			return "signed:" + ch + ":custom"
+		}
 		return "signed:" + ch
 	}
 	if o.Custom {
@@ -448,13 +454,23 @@ func (o RulesOrigin) Tag() string {
 }
 
 // Watermark returns the report banner for a scan that deviated from blessed
-// production rules, or "" for a clean, trusted scan. Signed production is clean;
-// a signed pre-release channel and any unsigned custom source are flagged. The
-// plain unsigned default is not flagged — pre-cutover it is the normal source;
-// after the signed-production cutover (ENG-6) the default becomes signed and the
-// git path is reached only via --rules-repo, which is Custom and so flagged.
+// production rules, or "" for a clean, trusted scan. Signed production from the
+// official source is clean; a signed pre-release channel, a signed channel from a
+// custom repo, and any unsigned custom source are flagged. The plain unsigned
+// default is not flagged — pre-cutover it is the normal source; after the
+// signed-production cutover (ENG-6) the default becomes signed and the git path is
+// reached only via --rules-repo, which is Custom and so flagged.
 func (o RulesOrigin) Watermark() string {
 	switch {
+	case o.Signed && o.Custom:
+		// Signature-verified, but not the official rules repository. The signature
+		// protects integrity; it does NOT certify the source, and a fork can replay
+		// an old validly-signed statement — so flag it as a deviation.
+		ch := o.Channel
+		if ch == "" {
+			ch = "unknown"
+		}
+		return "Signed rules from a custom source (channel: " + ch + ") — not the official rules repository."
 	case o.Signed && o.Channel != "" && o.Channel != "production":
 		return "Rules channel: " + o.Channel + " — pre-release rules, not blessed for production."
 	case !o.Signed && o.Custom:

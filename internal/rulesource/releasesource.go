@@ -121,6 +121,12 @@ func (rs *releaseSource) resolveFromStatement(cfg Config, supported int, raw []b
 	if err != nil {
 		return Resolved{}, err
 	}
+	// Raise the effective floor to this build's embedded genesis floor for the
+	// channel, so a fresh machine (lastSeen == 0) still rejects a validly-signed
+	// statement older than the floor — closing the trust-on-first-use rollback gap.
+	if floor := genesisFloor(cfg.Channel); floor > lastSeen {
+		lastSeen = floor
+	}
 	if err := rulesign.VerifyStatement(rs.keyring, stmt, rulesign.VerifyParams{
 		Channel:         cfg.Channel,
 		LastSeenVersion: lastSeen,
@@ -146,30 +152,50 @@ func (rs *releaseSource) resolveFromStatement(cfg Config, supported int, raw []b
 			return Resolved{}, &fatalResolveError{err}
 		}
 	}
-	// Advance the anti-rollback floor only after a fully verified, installed
-	// bundle — so a failed install can never move the floor forward.
+	// Validate the installed bundle's manifest BEFORE advancing the floor/pointer.
+	// A digest-verified but manifest-invalid bundle must not move the floor or
+	// persist the channel pointer, or every later offline resolve would re-read the
+	// poisoned pointer and re-fail — wedging the channel until a higher good version
+	// ships. (The git path validates before writeCurrent for the same reason.)
+	res, err := rs.usePackDigest(cfg, stmt.Digest, supported, false)
+	if err != nil {
+		return Resolved{}, err
+	}
+	// Advance the anti-rollback floor only after a fully verified, installed, and
+	// manifest-valid bundle — so neither a failed install nor an unusable manifest
+	// can move the floor forward.
 	if _, err := rulesign.RecordStatement(cfg.BundleCacheDir, stmt); err != nil {
 		return Resolved{}, &fatalResolveError{err}
 	}
-	return rs.usePackDigest(cfg, stmt.Digest, supported, false)
+	return res, nil
 }
 
 // fromCache serves the channel's last verified bundle when the network is
 // skipped or unreachable, flagging it Stale if its statement has since expired.
 func (rs *releaseSource) fromCache(cfg Config, supported int) (Resolved, error) {
-	digest, _, expires, found, err := rulesign.ChannelPointer(cfg.BundleCacheDir, cfg.Channel)
+	digest, version, expires, found, err := rulesign.ChannelPointer(cfg.BundleCacheDir, cfg.Channel)
 	if err != nil {
 		return Resolved{}, err
 	}
 	if !found || !bundleExists(cfg.BundleCacheDir, digest) {
 		return Resolved{}, ErrNoRules
 	}
+	// Enforce this build's genesis floor on the offline path too, so a floor bump
+	// shipped to revoke a known-bad version is honored even when serving the cache
+	// (otherwise a build that would reject the cached version online would still
+	// serve it offline — a failure-to-revoke gap).
+	if floor := genesisFloor(cfg.Channel); version < floor {
+		return Resolved{}, fmt.Errorf("%w: cached version %d below genesis floor %d", rulesign.ErrVersionRegression, version, floor)
+	}
 	res, err := rs.usePackDigest(cfg, digest, supported, true)
 	if err != nil {
 		return Resolved{}, err
 	}
 	if expires != "" {
-		if exp, perr := time.Parse(time.RFC3339, expires); perr == nil && rs.now().After(exp) {
+		// Fail closed on the staleness signal: an unparseable cached expiry is
+		// treated as stale (it means the persisted state is corrupt or from a future
+		// format), never silently as fresh.
+		if exp, perr := time.Parse(time.RFC3339, expires); perr != nil || rs.now().After(exp) {
 			res.Stale = true
 		}
 	}
@@ -239,12 +265,32 @@ func installBundle(bundleRoot, digest string, fsys fs.FS) error {
 		return err
 	}
 	dest := bundleDir(bundleRoot, digest)
-	// A concurrent resolve may have installed the identical (digest-named)
-	// content first; that is success, not a conflict.
-	if _, err := os.Stat(dest); err == nil {
+	// A concurrent resolve may have installed the identical (digest-named) content
+	// first; that is success, not a conflict. Check for a COMPLETE bundle (dir +
+	// marker), not just dir presence, so a partial install does not look done.
+	if bundleExists(bundleRoot, digest) {
 		return nil
 	}
-	return os.Rename(tmp, dest)
+	// No COMPLETE bundle is present, but a markerless (partial) dir may still sit at
+	// dest — an interrupted older install, a non-atomic rename on a network/overlay
+	// FS, or restored-from-backup debris. Remove it so the rename onto a fresh path
+	// succeeds; otherwise rename-onto-non-empty-dir fails and, wrapped as a
+	// fatalResolveError, wedges the channel on every later resolve with no self-heal.
+	// Safe: only reached when bundleExists is false, so we never delete a complete
+	// bundle. (The git path does the same RemoveAll in cloneInto.)
+	_ = os.RemoveAll(dest)
+	// Rename onto an existing non-empty directory fails (POSIX ENOTEMPTY; Windows
+	// will not replace a directory). A concurrent installer can win the race
+	// between the check above and this rename — if a complete bundle is now present
+	// it is byte-identical (digest-named and digest-verified before install), so
+	// treat the lost race as success rather than a fatal, non-degrading abort.
+	if err := os.Rename(tmp, dest); err != nil {
+		if bundleExists(bundleRoot, digest) {
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 // writeFSTo copies every regular file from fsys into root, recreating the

@@ -16,6 +16,7 @@ func TestRulesOrigin_Tag(t *testing.T) {
 		{"signed production", models.RulesOrigin{Signed: true, Channel: "production"}, "signed:production"},
 		{"signed staging", models.RulesOrigin{Signed: true, Channel: "staging"}, "signed:staging"},
 		{"signed no channel", models.RulesOrigin{Signed: true}, "signed:unknown"},
+		{"signed production from custom repo", models.RulesOrigin{Signed: true, Channel: "production", Custom: true}, "signed:production:custom"},
 		{"unsigned custom", models.RulesOrigin{Custom: true}, "unsigned:custom"},
 		{"unsigned default", models.RulesOrigin{}, "unsigned:default"},
 	}
@@ -53,5 +54,11 @@ func TestRulesOrigin_Watermark(t *testing.T) {
 	}
 	if wm := (models.RulesOrigin{Custom: true}).Watermark(); !strings.Contains(wm, "UNSIGNED") {
 		t.Errorf("unsigned custom must be watermarked, got %q", wm)
+	}
+	// A signed channel served from a custom (non-official) repo is signature-safe
+	// but not the blessed source, so it must be watermarked even for production —
+	// otherwise a fork replaying an old validly-signed statement reads as official.
+	if wm := (models.RulesOrigin{Signed: true, Channel: "production", Custom: true}).Watermark(); !strings.Contains(wm, "custom") {
+		t.Errorf("signed custom-repo scan must be watermarked, got %q", wm)
 	}
 }

@@ -156,11 +156,13 @@ func ParseKeyring(data []byte) (*Keyring, error) {
 //go:embed keyring.json
 var embeddedKeyringJSON []byte
 
-// Embedded returns the trust keyring compiled into this build. Until signing
-// keys are published (RUL-2) it is intentionally empty: Embedded().Empty() is
-// true, so the signed-rules path refuses rather than trusting anything. Once
-// RUL-2 lands, the engine build replaces keyring.json with the real published
-// keyring and this becomes the live trust root.
+// Embedded returns the trust keyring compiled into this build from keyring.json.
+// It is the live trust root for the signed-rules path: only statements signed by
+// a key in here verify. A build must ship a NON-empty keyring (enforced by
+// TestEmbeddedKeyring_IsPopulated) — an empty one makes releaseSource refuse
+// every signed resolve with ErrNoTrustKeys. Rotation/revocation is expressed by
+// editing keyring.json (overlapping validity windows to rotate; removal to
+// revoke) and shipping a new build.
 func Embedded() (*Keyring, error) {
 	return ParseKeyring(embeddedKeyringJSON)
 }

@@ -160,16 +160,16 @@ func TestParseKeyring(t *testing.T) {
 	})
 }
 
-// TestEmbedded_FailsClosed asserts the build's embedded keyring is empty until
-// real keys are published (RUL-2), so the signed-rules path refuses by default
-// rather than trusting an unsigned or wrongly-signed bundle.
-func TestEmbedded_FailsClosed(t *testing.T) {
-	ring, err := rulesign.Embedded()
-	if err != nil {
-		t.Fatalf("Embedded: %v", err)
-	}
+// TestEmptyKeyring_FailsClosed asserts an empty keyring rejects every key id —
+// the fail-closed property releaseSource relies on when a build embeds no trust
+// keys. It is tested against an explicitly-constructed empty keyring, NOT the
+// embedded one: a release build's embedded keyring must now be NON-empty (the
+// signing key is published — see TestEmbeddedKeyring_IsPopulated in
+// embedded_test.go), so asserting the embedded keyring is empty would be wrong.
+func TestEmptyKeyring_FailsClosed(t *testing.T) {
+	ring := rulesign.NewKeyring()
 	if !ring.Empty() {
-		t.Fatal("embedded keyring must be empty until RUL-2 publishes signing keys")
+		t.Fatal("NewKeyring() with no keys must be Empty()")
 	}
 	if err := ring.Verify("anything", []byte("m"), []byte("s"), fixedNow); !errors.Is(err, rulesign.ErrUnknownKeyID) {
 		t.Fatalf("empty keyring must reject every key id, got %v", err)
