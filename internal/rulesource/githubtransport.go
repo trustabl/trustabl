@@ -19,11 +19,13 @@ import (
 // bundle is a few hundred KiB of YAML. The ceilings bound a hostile or
 // misconfigured endpoint — an unbounded body or a decompression bomb — well
 // above any real artifact.
-const (
-	maxStatementBytes = 1 << 20   // 1 MiB
-	maxBundleBytes    = 64 << 20  // 64 MiB compressed
-	maxBundleUnpacked = 256 << 20 // 256 MiB unpacked
-	maxBundleEntries  = 100_000
+// Vars (not consts) so a test can shrink them to exercise the over-cap branches
+// without allocating hundreds of MiB. Production values are the real ceilings.
+var (
+	maxStatementBytes int64 = 1 << 20   // 1 MiB
+	maxBundleBytes    int64 = 64 << 20  // 64 MiB compressed
+	maxBundleUnpacked int64 = 256 << 20 // 256 MiB unpacked
+	maxBundleEntries        = 100_000
 )
 
 // githubTransport fetches channel artifacts from GitHub Releases.
