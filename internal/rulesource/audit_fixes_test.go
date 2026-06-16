@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/trustabl/trustabl/internal/rulesign"
 )
@@ -116,6 +117,85 @@ func TestInstallBundle_SelfHealsMarkerlessDest(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dest, "stale.yaml")); !os.IsNotExist(err) {
 		t.Error("the stale partial file survived the reinstall")
+	}
+}
+
+// TestPruneBundles_RemovesSupersededKeepsActiveAndChannels locks the bundle-cache
+// pruner: a superseded bundle is removed, the active one is kept, and a bundle a
+// channel still points at is NOT pruned even when superseded by the keep digest.
+func TestPruneBundles_RemovesSupersededKeepsActiveAndChannels(t *testing.T) {
+	root := t.TempDir()
+	a := mkBundle()
+	b := mkBundle()
+	b["extra.yaml"] = &fstest.MapFile{Data: []byte("x: 1\n")}
+	da, _ := rulesign.CanonicalDigest(a)
+	db, _ := rulesign.CanonicalDigest(b)
+	if err := installBundle(root, da, a); err != nil {
+		t.Fatal(err)
+	}
+	if err := installBundle(root, db, b); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-2 * time.Hour) // past the grace window
+	if err := os.Chtimes(bundleDir(root, da), old, old); err != nil {
+		t.Fatal(err)
+	}
+
+	pruneBundles(root, db) // keep B; no channel references A
+	if bundleExists(root, da) {
+		t.Error("superseded bundle A should have been pruned")
+	}
+	if !bundleExists(root, db) {
+		t.Error("active bundle B must be kept")
+	}
+
+	// Reinstall A, backdate it, and point a channel at it: now it must survive.
+	if err := installBundle(root, da, a); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(bundleDir(root, da), old, old); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rulesign.RecordStatement(root, &rulesign.Statement{Channel: "staging", Version: 1, Digest: da}); err != nil {
+		t.Fatal(err)
+	}
+	pruneBundles(root, db)
+	if !bundleExists(root, da) {
+		t.Error("a bundle a channel still points at must not be pruned")
+	}
+}
+
+// TestRecordStatement_EqualVersionRefreshesPointer locks the L15 fix: a re-signed
+// statement at the SAME version but a different digest updates the offline
+// pointer (so it does not go stale), while the anti-rollback floor stays put.
+func TestRecordStatement_EqualVersionRefreshesPointer(t *testing.T) {
+	pub, priv := mkKey(t)
+	ring := mkRing(t, "k", pub)
+	a := mkBundle()
+	b := mkBundle()
+	b["extra.yaml"] = &fstest.MapFile{Data: []byte("y: 2\n")}
+	da, _ := rulesign.CanonicalDigest(a)
+	db, _ := rulesign.CanonicalDigest(b)
+	cache := t.TempDir()
+
+	raw1 := signStatement(t, priv, "k", "production", 7, da, "2026-06-08T00:00:00Z", "2026-06-22T00:00:00Z")
+	if _, err := newRS(ring, &fakeTransport{statement: raw1, bundle: a}, inWindow).Resolve(prodCfg(cache), 9); err != nil {
+		t.Fatalf("first resolve: %v", err)
+	}
+	// Re-sign at the SAME version 7, pointing at a different bundle.
+	raw2 := signStatement(t, priv, "k", "production", 7, db, "2026-06-08T00:00:00Z", "2026-06-25T00:00:00Z")
+	if _, err := newRS(ring, &fakeTransport{statement: raw2, bundle: b}, inWindow).Resolve(prodCfg(cache), 9); err != nil {
+		t.Fatalf("re-sign resolve: %v", err)
+	}
+	digest, version, _, found, err := rulesign.ChannelPointer(bundleRoot(cache), "production")
+	if err != nil || !found {
+		t.Fatalf("pointer: found=%v err=%v", found, err)
+	}
+	if digest != db {
+		t.Errorf("offline pointer digest = %s, want the re-signed %s (stale)", digest, db)
+	}
+	if version != 7 {
+		t.Errorf("anti-rollback floor = %d, want 7 (unchanged)", version)
 	}
 }
 

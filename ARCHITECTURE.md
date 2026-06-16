@@ -189,6 +189,33 @@ never links into the scanner binary, preserving `rulesign`'s verify-only
 guarantee. The CI publish/promote workflow lives in the rules repo
 (`trustabl-rules/.github/workflows/publish.yml`).
 
+**Bundle path contract.** A rule pack's file paths must be portable so the
+on-disk install always equals the verified digest. `rulesign.ValidateBundlePath`
+(applied by both `WriteCanonicalTar` and `untarGz`) rejects backslashes, a colon
+or drive-letter, a trailing dot/space, a leading `~`, reserved device basenames
+(`CON`, `PRN`, `AUX`, `NUL`, `COM1-9`, `LPT1-9`), control characters, and
+case-folding collisions; the empty bundle is rejected on both sides. Path
+component names must also fit USTAR (≤100 bytes, optionally with a ≤155-byte
+directory prefix) — over-long paths fail at bundle time with an explicit message.
+
+**Key rotation & revocation runbook.** The trust root is the keyring embedded in
+the engine build (`internal/rulesign/keyring.json`, public keys only). The
+genesis production key is deliberately **unbounded** (`not_before` only, no
+`not_after`) so it never self-expires mid-fleet; rotation/revocation is a
+deliberate, build-shipped action:
+
+- *Rotate* (overlapping windows): `rulesctl keygen --key-id <new>` for key N+1;
+  add its public entry to `keyring.json` with `not_before=now`; set the OUTGOING
+  key's `not_after` to `now+overlap` (use `rulesctl keygen --not-after` when
+  minting, or edit the entry); ship an engine build embedding BOTH keys; switch
+  the CI signing secret to N+1; drop key N in a later build once its window
+  closes. During the overlap, statements signed by either key verify (locked by
+  `TestKeyring_RotationOverlap`); after N's `not_after`, only N+1 does.
+- *Revoke* a compromised key: remove it from `keyring.json` and ship a new engine
+  build (optionally back-date its `not_after` to expire cached statements). There
+  is no online CRL, so revocation latency equals engine release + adoption
+  latency; short statement TTLs and the anti-rollback floor bound the exposure.
+
 Resolution order:
 
 1. Unless `--no-rules-update` is set, fetch the configured ref and clone it

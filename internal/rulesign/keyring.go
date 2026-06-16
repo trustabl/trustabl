@@ -148,6 +148,11 @@ func ParseKeyring(data []byte) (*Keyring, error) {
 			}
 			k.NotAfter = t
 		}
+		// An always-invalid key (window ends before it begins) is a publishing
+		// mistake; reject it loudly rather than embed a key that can never verify.
+		if !k.NotBefore.IsZero() && !k.NotAfter.IsZero() && k.NotAfter.Before(k.NotBefore) {
+			return nil, fmt.Errorf("rulesign: key %q not_after precedes not_before", e.ID)
+		}
 		keys = append(keys, k)
 	}
 	return NewKeyring(keys...), nil

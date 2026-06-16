@@ -1,6 +1,7 @@
 package rulesource
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -167,7 +168,55 @@ func (rs *releaseSource) resolveFromStatement(cfg Config, supported int, raw []b
 	if _, err := rulesign.RecordStatement(cfg.BundleCacheDir, stmt); err != nil {
 		return Resolved{}, &fatalResolveError{err}
 	}
+	// Bound the content-addressed bundle cache: drop superseded bundles and any
+	// abandoned temp dirs. Best-effort and never fatal to the resolve.
+	pruneBundles(cfg.BundleCacheDir, stmt.Digest)
 	return res, nil
+}
+
+// pruneBundles bounds the signed-bundle cache, mirroring the git path's
+// pruneCache. It keeps the just-resolved digest, EVERY channel's current bundle
+// (read from the per-channel state under channels/, so pruning one channel never
+// evicts another's active bundle), and the channels/ state dir itself; it removes
+// other <digest>/ dirs and abandoned .tmp-bundle-* dirs. A grace window spares
+// freshly-created entries a concurrent scan may still be reading via os.DirFS
+// (the Windows open-handle hazard cache.go documents). Best-effort: a dir that
+// will not delete is simply left for next time.
+func pruneBundles(bundleRoot, keep string) {
+	entries, err := os.ReadDir(bundleRoot)
+	if err != nil {
+		return
+	}
+	keepSet := map[string]bool{keep: true}
+	chDir := filepath.Join(bundleRoot, "channels")
+	if chEntries, err := os.ReadDir(chDir); err == nil {
+		for _, ce := range chEntries {
+			if ce.IsDir() || !strings.HasSuffix(ce.Name(), ".json") {
+				continue
+			}
+			b, err := os.ReadFile(filepath.Join(chDir, ce.Name()))
+			if err != nil {
+				continue
+			}
+			var st struct {
+				Digest string `json:"digest"`
+			}
+			if json.Unmarshal(b, &st) == nil && st.Digest != "" {
+				keepSet[st.Digest] = true
+			}
+		}
+	}
+	for _, e := range entries {
+		name := e.Name()
+		if !e.IsDir() || name == "channels" || keepSet[name] {
+			continue
+		}
+		if info, err := e.Info(); err == nil && time.Since(info.ModTime()) < pruneGraceWindow {
+			continue
+		}
+		_ = os.Remove(filepath.Join(bundleRoot, name, completeMarker))
+		_ = os.RemoveAll(filepath.Join(bundleRoot, name))
+	}
 }
 
 // fromCache serves the channel's last verified bundle when the network is
@@ -249,7 +298,7 @@ func bundleExists(bundleRoot, digest string) bool {
 // materializes into a temp dir, marks it complete, then atomically renames it
 // into place, so a concurrent reader never sees a half-written bundle.
 func installBundle(bundleRoot, digest string, fsys fs.FS) error {
-	if err := os.MkdirAll(bundleRoot, 0o755); err != nil {
+	if err := os.MkdirAll(bundleRoot, 0o700); err != nil {
 		return err
 	}
 	tmp, err := os.MkdirTemp(bundleRoot, ".tmp-bundle-*")

@@ -17,6 +17,7 @@ package main
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -45,7 +46,7 @@ func main() {
 // --- keygen ------------------------------------------------------------------
 
 func newKeygenCommand() *cobra.Command {
-	var keyID, pubOut, seedOut string
+	var keyID, pubOut, seedOut, notAfter string
 	cmd := &cobra.Command{
 		Use:   "keygen",
 		Short: "Generate an Ed25519 signing keypair",
@@ -66,8 +67,22 @@ Run this ONCE, locally, to bootstrap a key — never in CI.`,
 				return err
 			}
 			seedB64 := base64.StdEncoding.EncodeToString(seed)
-			entry := fmt.Sprintf("{\n  \"id\": %q,\n  \"public_key\": %q,\n  \"not_before\": %q\n}\n",
-				keyID, base64.StdEncoding.EncodeToString(pub), time.Now().UTC().Format("2006-01-02T15:04:05Z"))
+			ent := map[string]string{
+				"id":         keyID,
+				"public_key": base64.StdEncoding.EncodeToString(pub),
+				"not_before": time.Now().UTC().Format(time.RFC3339),
+			}
+			if notAfter != "" {
+				if _, perr := time.Parse(time.RFC3339, notAfter); perr != nil {
+					return fmt.Errorf("--not-after must be RFC3339 (e.g. 2027-01-01T00:00:00Z): %w", perr)
+				}
+				ent["not_after"] = notAfter
+			}
+			eb, err := json.MarshalIndent(ent, "", "  ")
+			if err != nil {
+				return err
+			}
+			entry := string(eb) + "\n"
 
 			if pubOut != "" {
 				if err := os.WriteFile(pubOut, []byte(entry), 0o644); err != nil {
@@ -103,6 +118,7 @@ Run this ONCE, locally, to bootstrap a key — never in CI.`,
 	cmd.Flags().StringVar(&keyID, "key-id", "", "stable key id for the keyring entry (e.g. trustabl-rules-2026-06)")
 	cmd.Flags().StringVar(&pubOut, "pub-out", "", "write the public keyring entry to this file (default: stdout)")
 	cmd.Flags().StringVar(&seedOut, "seed-out", "", "write the private seed to this file (default: stderr)")
+	cmd.Flags().StringVar(&notAfter, "not-after", "", "optional RFC3339 expiry for the key (sets not_after; use for a rotation's outgoing key)")
 	return cmd
 }
 

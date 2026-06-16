@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"io"
+	"strings"
 	"testing"
 	"testing/fstest"
 
@@ -127,6 +128,8 @@ func TestValidateBundlePath(t *testing.T) {
 		"COM1.txt",         // reserved COMn
 		"lpt9",             // reserved LPTn (lowercase)
 		"a\x01b.yaml",      // control character
+		"~/secret.yaml",    // tilde component (home-expansion hazard)
+		"~root/x.yaml",     // tilde-prefixed component
 	}
 	for _, name := range bad {
 		if err := rulesign.ValidateBundlePath(name); err == nil {
@@ -146,6 +149,41 @@ func TestValidateBundlePath(t *testing.T) {
 		if err := rulesign.ValidateBundlePath(name); err != nil {
 			t.Errorf("ValidateBundlePath(%q) = %v, want nil", name, err)
 		}
+	}
+}
+
+// TestCanonicalDigest_RejectsEmptyBundle: a tree with no regular files is invalid;
+// the producer must reject it so it agrees with the consumer (untarGz), which
+// already errors on an empty archive.
+func TestCanonicalDigest_RejectsEmptyBundle(t *testing.T) {
+	if _, err := rulesign.CanonicalDigest(fstest.MapFS{}); err == nil {
+		t.Fatal("CanonicalDigest accepted an empty bundle")
+	}
+	var buf bytes.Buffer
+	if err := rulesign.WriteCanonicalTar(&buf, fstest.MapFS{}); err == nil {
+		t.Fatal("WriteCanonicalTar accepted an empty bundle")
+	}
+}
+
+// TestWriteCanonicalTar_RejectsOverlongPath: a single component too long for the
+// USTAR name field (and unsplittable into a ≤155-byte prefix) fails with an
+// explicit, author-facing message rather than a bare archive/tar error.
+func TestWriteCanonicalTar_RejectsOverlongPath(t *testing.T) {
+	long := make([]byte, 120)
+	for i := range long {
+		long[i] = 'a'
+	}
+	src := fstest.MapFS{
+		"manifest.yaml":        {Data: []byte("schema_version: 12\n")},
+		string(long) + ".yaml": {Data: []byte("id: X\n")},
+	}
+	var buf bytes.Buffer
+	err := rulesign.WriteCanonicalTar(&buf, src)
+	if err == nil {
+		t.Fatal("WriteCanonicalTar accepted an over-long path")
+	}
+	if !strings.Contains(err.Error(), "USTAR") {
+		t.Fatalf("error %q should name the USTAR path limit", err)
 	}
 }
 

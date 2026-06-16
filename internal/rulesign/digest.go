@@ -78,6 +78,12 @@ func WriteCanonicalTar(w io.Writer, fsys fs.FS) error {
 	if err := validateBundlePaths(paths); err != nil {
 		return err
 	}
+	// A bundle with no regular files is invalid — the consumer (untarGz) already
+	// rejects an empty archive, so the producer must too, or the two sides
+	// disagree on what a valid bundle is.
+	if len(paths) == 0 {
+		return fmt.Errorf("rulesign: bundle has no regular files")
+	}
 
 	tw := tar.NewWriter(w)
 	for _, p := range paths {
@@ -97,7 +103,10 @@ func WriteCanonicalTar(w io.Writer, fsys fs.FS) error {
 			Format:  tar.FormatUSTAR,
 		}
 		if err := tw.WriteHeader(hdr); err != nil {
-			return err
+			// The most likely cause is a path too long for USTAR (name >100 bytes
+			// with no ≤155-byte prefix split). Make that explicit and author-facing
+			// rather than surfacing a bare archive/tar error.
+			return fmt.Errorf("rulesign: bundle path %q cannot be encoded (USTAR limit: a path component name must be ≤100 bytes, optionally with a ≤155-byte directory prefix): %w", p, err)
 		}
 		if _, err := tw.Write(data); err != nil {
 			return err
@@ -132,6 +141,9 @@ func ValidateBundlePath(name string) error {
 			if r < 0x20 {
 				return fmt.Errorf("rulesign: bundle path %q contains a control character", name)
 			}
+		}
+		if comp[0] == '~' {
+			return fmt.Errorf("rulesign: bundle path component %q begins with '~' (home-expansion hazard)", comp)
 		}
 		if last := comp[len(comp)-1]; last == '.' || last == ' ' {
 			return fmt.Errorf("rulesign: bundle path component %q ends with a dot or space (Windows strips these)", comp)
