@@ -215,6 +215,18 @@ deliberate, build-shipped action:
   build (optionally back-date its `not_after` to expire cached statements). There
   is no online CRL, so revocation latency equals engine release + adoption
   latency; short statement TTLs and the anti-rollback floor bound the exposure.
+- *Recover from a bad promote:* a channel statement is anti-rollback-protected, so
+  you cannot re-point to a LOWER version — you recover by rolling **forward**.
+  Re-sign the previous-good bundle digest at a NEW, higher version
+  (`rulesctl sign --channel production --digest <previous-good> --version <higher>`)
+  and promote that. The bad bundle release stays (it is immutable and harmless
+  once the channel no longer points at it).
+- *Statement freshness / renewal:* statements carry a TTL (`expires`); the channel
+  goes stale once it passes. Re-publishing (even with unchanged rules) re-signs
+  the current digest with a fresh window, so a periodic scheduled publish keeps
+  the channel fresh. This is an operational requirement of running the channel,
+  not an engine concern — the engine warns (stale flag) and serves the last
+  verified bundle until a fresh statement is published.
 
 Resolution order:
 
@@ -1527,8 +1539,15 @@ ScanResult {
     Surfaces           []SurfaceReadiness
     OverallScore       float64
     RulesSource        string              // repo the rule pack came from
-    RulesVersion       string              // resolved rules commit SHA (folded into ScanID)
+    RulesVersion       string              // resolved rules SHA / signed-bundle digest (folded into ScanID)
     RulesFromCache     bool                // true if rules came from cache (network skipped/unreachable)
+    RulesStale         bool                // cached signed bundle whose channel statement has expired
+    RulesSchemaVersion int                 // pack manifest schema_version
+    RulesSchemaNewer   bool                // pack targets a newer schema than this build (rules skipped)
+    RulesSkipped       []string            // rule IDs skipped (forward-incompatible)
+    RulesOrigin        RulesOrigin         // provenance: signed channel / unsigned custom / unsigned default
+    // (representative — see internal/models/models.go for the full set, incl.
+    //  Dependencies, Vulnerabilities, ProjectedScores)
 }
 ```
 

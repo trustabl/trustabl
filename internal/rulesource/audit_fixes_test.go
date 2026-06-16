@@ -238,3 +238,42 @@ func TestFromCache_CorruptExpiryIsStale(t *testing.T) {
 		t.Errorf("FromCache=%v Stale=%v, want true/true for a corrupt cached expiry", res.FromCache, res.Stale)
 	}
 }
+
+// TestReleaseSource_Pull locks the explicit-fetch contract of the SIGNED path:
+// Pull always contacts the remote and NEVER degrades to cache (unlike Resolve),
+// and verification failures propagate.
+func TestReleaseSource_Pull(t *testing.T) {
+	pub, priv := mkKey(t)
+	ring := mkRing(t, "k", pub)
+	bundle := mkBundle()
+	digest, _ := rulesign.CanonicalDigest(bundle)
+	raw := signStatement(t, priv, "k", "production", 7, digest, "2026-06-08T00:00:00Z", "2026-06-22T00:00:00Z")
+
+	t.Run("happy path resolves fresh, not from cache", func(t *testing.T) {
+		res, err := newRS(ring, &fakeTransport{statement: raw, bundle: bundle}, inWindow).Pull(prodCfg(t.TempDir()), 9)
+		if err != nil {
+			t.Fatalf("Pull: %v", err)
+		}
+		if res.FromCache || res.SHA != digest {
+			t.Errorf("FromCache=%v SHA=%q, want false/%s", res.FromCache, res.SHA, digest)
+		}
+	})
+
+	t.Run("fetch error does NOT fall back to cache", func(t *testing.T) {
+		cache := t.TempDir()
+		if _, err := newRS(ring, &fakeTransport{statement: raw, bundle: bundle}, inWindow).Resolve(prodCfg(cache), 9); err != nil {
+			t.Fatalf("prime: %v", err)
+		}
+		// A primed cache exists, but Pull must still error rather than serve it.
+		if _, err := newRS(ring, &fakeTransport{statementErr: errors.New("network down")}, inWindow).Pull(prodCfg(cache), 9); err == nil {
+			t.Fatal("Pull fell back to cache on a fetch error; it must fail loudly")
+		}
+	})
+
+	t.Run("verification failure propagates", func(t *testing.T) {
+		afterExpiry := func() time.Time { return time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC) }
+		if _, err := newRS(ring, &fakeTransport{statement: raw, bundle: bundle}, afterExpiry).Pull(prodCfg(t.TempDir()), 9); !errors.Is(err, rulesign.ErrStatementExpired) {
+			t.Fatalf("want ErrStatementExpired, got %v", err)
+		}
+	})
+}

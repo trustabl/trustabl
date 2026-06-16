@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/trustabl/trustabl/internal/rulesource"
+)
 
 // TestEffectiveRules covers the source-selection precedence that drives BOTH the
 // rulesource.Config and the RulesOrigin, so the resolved source and its reported
@@ -9,6 +13,7 @@ import "testing"
 func TestEffectiveRules(t *testing.T) {
 	// Neutralize any ambient override so cases are hermetic.
 	t.Setenv("TRUSTABL_RULES_REPO", "")
+	t.Setenv("TRUSTABL_REQUIRE_SIGNED", "")
 
 	t.Run("default is unsigned git", func(t *testing.T) {
 		cfg, origin, err := effectiveRules(scanFlags{})
@@ -151,4 +156,43 @@ func TestEffectiveRules(t *testing.T) {
 			t.Error("NoUpdate not propagated")
 		}
 	})
+}
+
+// TestEffectiveRules_RequireSigned locks the signed-only gate: --require-signed
+// (or TRUSTABL_REQUIRE_SIGNED=1) refuses the unsigned git path and allows a
+// signed channel.
+func TestEffectiveRules_RequireSigned(t *testing.T) {
+	t.Setenv("TRUSTABL_RULES_REPO", "")
+	t.Setenv("TRUSTABL_REQUIRE_SIGNED", "")
+
+	if _, _, err := effectiveRules(scanFlags{requireSigned: true}); err == nil {
+		t.Fatal("--require-signed must refuse the unsigned git default")
+	}
+	cfg, origin, err := effectiveRules(scanFlags{requireSigned: true, rulesSource: "production"})
+	if err != nil {
+		t.Fatalf("--require-signed + a signed channel must be allowed: %v", err)
+	}
+	if cfg.Channel != "production" || !origin.Signed {
+		t.Errorf("want signed production, got cfg=%+v origin=%+v", cfg, origin)
+	}
+
+	t.Setenv("TRUSTABL_REQUIRE_SIGNED", "1")
+	if _, _, err := effectiveRules(scanFlags{}); err == nil {
+		t.Fatal("TRUSTABL_REQUIRE_SIGNED=1 must refuse the unsigned git default")
+	}
+}
+
+// TestDefaultRulesSource_CutoverHasGenesisFloor is the cutover guard: the moment
+// the default flips from "git" to a signed channel (ENG-6), that channel MUST
+// ship with a non-zero genesis floor, or first contact has anti-rollback
+// disabled. While the default is still "git" this is a no-op.
+func TestDefaultRulesSource_CutoverHasGenesisFloor(t *testing.T) {
+	if defaultRulesSource == "git" {
+		return // pre-cutover: unsigned git default, nothing to enforce yet
+	}
+	if rulesource.GenesisFloor(defaultRulesSource) <= 0 {
+		t.Fatalf("defaultRulesSource=%q is a signed channel but its genesis floor is unset — "+
+			"the cutover commit must also set genesisFloors[%q] to the first published statement's version",
+			defaultRulesSource, defaultRulesSource)
+	}
 }

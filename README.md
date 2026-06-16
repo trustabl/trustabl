@@ -408,7 +408,7 @@ Exit codes:
 - `1` — at least one finding ≥ medium severity, OR `--strict` with any
   finding present.
 - `2` — scanner / I/O error, OR no usable rules found and none fetchable
-  (run `trustabl rules pull`), OR a signed channel (`--channel`) that failed
+  (run `trustabl rules pull`), OR a signed channel (`--rules-source`) that failed
   verification (bad signature, untrusted/expired key, channel confusion, an
   expired or rolled-back statement, or a digest mismatch) — Trustabl refuses to
   run unverified rules.
@@ -886,7 +886,7 @@ evaluates every rule your build *can* understand and **skips** the rest, warning
 on stderr (and recording the skipped rule IDs on `ScanResult.RulesSkipped`):
 
 ```
-warning: the rules target schema version 9 but this Trustabl build supports up to 8; 2 rule(s) newer than this build were skipped. Upgrade Trustabl to evaluate them.
+warning: the rules target schema version 13 but this Trustabl build supports up to 12; 2 rule(s) newer than this build were skipped. Upgrade Trustabl to evaluate them.
 ```
 
 The same per-rule skip happens for any *individual* rule that references a

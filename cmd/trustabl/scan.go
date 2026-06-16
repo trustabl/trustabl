@@ -35,6 +35,7 @@ type scanFlags struct {
 	rulesRef      string
 	rulesSource   string
 	channel       string
+	requireSigned bool
 	noRulesUpdate bool
 	noProgress    bool
 	jsonOut       string
@@ -119,6 +120,9 @@ Exit codes:
 			"watermarked in the report. --rules-repo/--rules-ref imply git.")
 	cmd.Flags().StringVar(&f.channel, "channel", "",
 		"deprecated alias for --rules-source <channel> (a signed release channel)")
+	cmd.Flags().BoolVar(&f.requireSigned, "require-signed", false,
+		"refuse to scan unless rules resolve from a signed channel (also via TRUSTABL_REQUIRE_SIGNED=1); "+
+			"a hard CI gate against silently scanning with unsigned git rules")
 	cmd.Flags().BoolVar(&f.noRulesUpdate, "no-rules-update", false,
 		"do not fetch rules; use the local cache only")
 	cmd.Flags().BoolVar(&f.noProgress, "no-progress", false,
@@ -687,6 +691,13 @@ func effectiveRules(f scanFlags) (rulesource.Config, models.RulesOrigin, error) 
 		}
 	}
 
+	// Hard signed-only gate: when --require-signed (or TRUSTABL_REQUIRE_SIGNED=1) is
+	// set, refuse the unsigned git path entirely rather than silently scanning with
+	// unverified rules — the fail-closed switch a security-conscious CI wants.
+	if (f.requireSigned || os.Getenv("TRUSTABL_REQUIRE_SIGNED") == "1") && src == "git" {
+		return rulesource.Config{}, models.RulesOrigin{}, fmt.Errorf(
+			"signed rules required (--require-signed / TRUSTABL_REQUIRE_SIGNED=1) but the resolved source is the unsigned git path; pass --rules-source <channel>")
+	}
 	if src == "git" {
 		return rulesource.Config{
 			RepoURL:  repo,

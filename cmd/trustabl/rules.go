@@ -27,38 +27,47 @@ pre-fetch the packs so a later scan can run offline.`,
   trustabl rules pull`,
 	}
 
-	var repo, ref string
+	var repo, ref, rulesSource, channel string
 	pull := &cobra.Command{
 		Use:   "pull",
 		Short: "Download the detection rule packs into the local cache",
 		Long: `Download the detection rule packs into the local cache so later scans can run
 offline. By default this fetches the official trustabl-rules repository's default
 branch; override the source with --rules-repo / --rules-ref, or set the
-TRUSTABL_RULES_REPO environment variable.`,
+TRUSTABL_RULES_REPO environment variable. Pass --rules-source <channel> to instead
+pre-warm a signed channel's bundle cache, so a later signed scan can run offline.`,
 		Example: `  # Pull the official rules (default branch)
   trustabl rules pull
 
   # Pull a specific tag or branch
   trustabl rules pull --rules-ref v1.2.0
 
+  # Pre-warm a signed channel for offline signed scans
+  trustabl rules pull --rules-source production
+
   # Pull from a fork or mirror
   trustabl rules pull --rules-repo https://github.com/me/my-rules`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			log := logx.New(os.Stderr, logLevelFor(cmd), diagColor(false))
-			if repo == "" {
-				repo = os.Getenv("TRUSTABL_RULES_REPO")
+			// Reuse the scan command's source-selection so pull and scan resolve the
+			// SAME source for the same flags — a signed channel routes to the signed
+			// release path, the git default stays git.
+			cfg, _, err := effectiveRules(scanFlags{rulesRepo: repo, rulesRef: ref, rulesSource: rulesSource, channel: channel})
+			if err != nil {
+				return err
 			}
-			src := repo
-			if src == "" {
-				src = rulesource.DefaultRepoURL
+			label := cfg.RepoURL
+			if label == "" {
+				label = rulesource.DefaultRepoURL
 			}
-			log.Verbosef("rules pull: fetching %s @ %s", src, refOrDefault(ref))
+			if cfg.Channel != "" {
+				log.Verbosef("rules pull: signed channel %q from %s", cfg.Channel, label)
+			} else {
+				log.Verbosef("rules pull: fetching %s @ %s", label, refOrDefault(cfg.Ref))
+			}
 			defer log.Timer("rules pull")()
-			res, err := rulesource.Pull(
-				rulesource.Config{RepoURL: repo, Ref: ref},
-				rules.SupportedSchemaVersion,
-			)
+			res, err := rulesource.Pull(cfg, rules.SupportedSchemaVersion)
 			if err != nil {
 				if errors.Is(err, rulesource.ErrNoCompatibleRules) {
 					return fmt.Errorf("the rules at the requested ref are newer than this "+
@@ -69,7 +78,11 @@ TRUSTABL_RULES_REPO environment variable.`,
 				return fmt.Errorf("rules pull: %w", err)
 			}
 			log.Verbosef("rules pull: resolved %s from %s", res.SHA, res.RepoURL)
-			fmt.Printf("Pulled rules from %s at %s\n", res.RepoURL, res.SHA)
+			if cfg.Channel != "" {
+				fmt.Printf("Pulled signed %q channel from %s at %s\n", cfg.Channel, res.RepoURL, res.SHA)
+			} else {
+				fmt.Printf("Pulled rules from %s at %s\n", res.RepoURL, res.SHA)
+			}
 			return nil
 		},
 	}
@@ -77,6 +90,10 @@ TRUSTABL_RULES_REPO environment variable.`,
 		"rules repository URL (default: official trustabl-rules; or TRUSTABL_RULES_REPO)")
 	pull.Flags().StringVar(&ref, "rules-ref", "",
 		"rules branch or tag to pull (default: the repo's default branch)")
+	pull.Flags().StringVar(&rulesSource, "rules-source", "",
+		"rules source: 'git' or a signed channel name (e.g. production) to pre-warm the signed bundle cache")
+	pull.Flags().StringVar(&channel, "channel", "",
+		"deprecated alias for --rules-source <channel>")
 
 	validate := &cobra.Command{
 		Use:   "validate [dir]",

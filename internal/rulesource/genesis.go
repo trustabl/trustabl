@@ -25,3 +25,10 @@ var genesisFloors = map[string]int64{
 func genesisFloor(channel string) int64 {
 	return genesisFloors[channel]
 }
+
+// GenesisFloor is the exported view of genesisFloor, so a cutover guard test can
+// assert that a signed default channel ships with a non-zero floor (see
+// cmd/trustabl). 0 means no floor is set for that channel.
+func GenesisFloor(channel string) int64 {
+	return genesisFloor(channel)
+}

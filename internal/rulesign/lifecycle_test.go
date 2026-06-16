@@ -89,3 +89,25 @@ func TestParseKeyring_Windows(t *testing.T) {
 		t.Fatal("ParseKeyring accepted a key whose not_after precedes not_before")
 	}
 }
+
+// TestVerifyStatement_FreshnessBoundary pins the inclusive expiry boundary:
+// a statement is fresh AT exactly its expiry instant and stale one tick later.
+// Locks the `at.After(Expires)` semantics against an off-by-one flip.
+func TestVerifyStatement_FreshnessBoundary(t *testing.T) {
+	pub, priv := mkPair(t)
+	ring := rulesign.NewKeyring(rulesign.Key{ID: "k", PublicKey: pub})
+	const expires = "2026-06-22T00:00:00Z"
+	raw := signStatement(t, priv, "k", "production", 7, testDigest, "2026-06-08T00:00:00Z", expires)
+	stmt, err := rulesign.ParseStatement(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	exp, _ := time.Parse(time.RFC3339, expires)
+	p := rulesign.VerifyParams{Channel: "production", ExpectedDigest: testDigest}
+	if err := rulesign.VerifyStatement(ring, stmt, p, exp); err != nil {
+		t.Fatalf("at exactly Expires must be fresh: %v", err)
+	}
+	if err := rulesign.VerifyStatement(ring, stmt, p, exp.Add(time.Nanosecond)); !errors.Is(err, rulesign.ErrStatementExpired) {
+		t.Fatalf("one tick past Expires must be ErrStatementExpired, got %v", err)
+	}
+}

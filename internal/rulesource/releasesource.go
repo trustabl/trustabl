@@ -41,9 +41,11 @@ type releaseSource struct {
 }
 
 // newReleaseSource builds the production releaseSource: the trust keyring
-// embedded in this build plus the GitHub Releases transport. Until signing keys
-// are published (RUL-2) the embedded keyring is empty, so every channel resolve
-// refuses up front — fail-closed by construction.
+// embedded in this build plus the GitHub Releases transport. The embedded keyring
+// now carries the published signing public key, so a channel resolve runs the
+// full verification pipeline; a build that ever ships an empty keyring (guarded
+// by rulesign's TestEmbeddedKeyring_IsPopulated) instead refuses up front with
+// ErrNoTrustKeys — fail-closed by construction.
 func newReleaseSource() *releaseSource {
 	ring, err := rulesign.Embedded()
 	if err != nil {
