@@ -1,4 +1,8 @@
 <p align="center">
+  <a href="https://github.com/trustabl/trustabl/releases"><img src="https://img.shields.io/github/downloads/trustabl/trustabl/total?label=downloads&color=2ea043" alt="Total downloads"></a>
+</p>
+
+<p align="center">
   <img src="assets/github_banner.jpg" alt="Trustabl" width="100%">
 </p>
 
