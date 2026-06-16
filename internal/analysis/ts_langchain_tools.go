@@ -27,9 +27,10 @@ import (
 // isTSLangChainModule reports whether a TS import specifier belongs to the
 // LangChain / LangGraph ecosystem. Prefix-based because real code imports from
 // many subpaths (@langchain/core/tools, @langchain/langgraph/prebuilt, …).
+// Unlike Python, there is no bare `langgraph` npm package — LangGraph.js ships as
+// `@langchain/langgraph` and is covered by the `@langchain/` prefix.
 func isTSLangChainModule(mod string) bool {
 	return mod == "langchain" || strings.HasPrefix(mod, "langchain/") ||
-		mod == "langgraph" || strings.HasPrefix(mod, "langgraph/") ||
 		strings.HasPrefix(mod, "@langchain/")
 }
 

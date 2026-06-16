@@ -40,7 +40,12 @@ var langChainToolFactories = map[string]bool{
 // langchain_experimental, langchain_classic, the langchain-* provider packages,
 // langgraph, and langgraph_* (supervisor / swarm). The dot/underscore boundary
 // keeps an unrelated package that merely shares the prefix text (e.g.
-// "langchainx") from matching, mirroring isGoogleADKModule's discipline.
+// "langchainx") from matching, mirroring isGoogleADKModule's discipline. The
+// langchain_* / langgraph_* prefix match is intentionally OPEN — it admits any
+// third-party langchain_*/langgraph_* package; precision comes from the
+// downstream builder/factory/decorator callee sets, and (for the constructor
+// passes) from collectLangChainImports binding each callee to its imported
+// symbol — not from a closed module list.
 func isLangChainModule(mod string) bool {
 	return mod == "langchain" || strings.HasPrefix(mod, "langchain.") ||
 		strings.HasPrefix(mod, "langchain_") ||
@@ -53,6 +58,86 @@ func isLangChainModule(mod string) bool {
 // comment that merely mentions langchain must not trip the gate).
 func fileImportsLangChain(pf ParsedFile) bool {
 	return fileImportsModule(pf, isLangChainModule)
+}
+
+// langChainImports records, per file, how langchain / langgraph symbols are
+// bound, so a bare or module-qualified constructor callee can be tied to its
+// import origin. This prevents a same-named class from an unrelated package
+// (networkx.Graph, a locally-defined StateGraph) from matching by bare name in
+// any file that merely also imports the ecosystem.
+type langChainImports struct {
+	names   map[string]bool // local names imported FROM a langchain/langgraph module
+	aliases map[string]bool // module aliases bound to a langchain/langgraph module
+}
+
+// collectLangChainImports walks pf's import statements and records langchain /
+// langgraph symbol bindings (see langChainImports). The module_name node of a
+// `from X import Y` is skipped by byte offset so the module is not mistaken for
+// an imported name.
+func collectLangChainImports(pf ParsedFile) langChainImports {
+	res := langChainImports{names: map[string]bool{}, aliases: map[string]bool{}}
+	astutil.Walk(pf.Tree.RootNode(), func(n *sitter.Node) bool {
+		switch n.Type() {
+		case "import_from_statement":
+			mod := n.ChildByFieldName("module_name")
+			if mod == nil || !isLangChainModule(astutil.NodeText(mod, pf.Source)) {
+				return true
+			}
+			modStart := mod.StartByte()
+			for i := 0; i < int(n.ChildCount()); i++ {
+				c := n.Child(i)
+				if c.StartByte() == modStart {
+					continue // the module_name itself, not an imported name
+				}
+				switch c.Type() {
+				case "dotted_name", "identifier":
+					res.names[astutil.NodeText(c, pf.Source)] = true
+				case "aliased_import":
+					if alias := astutil.NodeText(c.ChildByFieldName("alias"), pf.Source); alias != "" {
+						res.names[alias] = true
+					}
+				}
+			}
+		case "import_statement":
+			for i := 0; i < int(n.ChildCount()); i++ {
+				c := n.Child(i)
+				switch c.Type() {
+				case "dotted_name":
+					if m := astutil.NodeText(c, pf.Source); isLangChainModule(m) {
+						res.aliases[m] = true
+					}
+				case "aliased_import":
+					m := astutil.NodeText(c.ChildByFieldName("name"), pf.Source)
+					alias := astutil.NodeText(c.ChildByFieldName("alias"), pf.Source)
+					if isLangChainModule(m) && alias != "" {
+						res.aliases[alias] = true
+					}
+				}
+			}
+		}
+		return true
+	})
+	return res
+}
+
+// resolveCallee returns the matched class name when callee (a call's function
+// text) names a member of classNames AND is bound to a langchain / langgraph
+// import: a bare name imported from a langchain module, or a module-qualified
+// `<object>.<Class>` whose `<object>` resolves to a langchain module alias (or
+// is itself a langchain dotted module). Returns "" otherwise, so a same-named
+// class from an unrelated package is never matched.
+func (imp langChainImports) resolveCallee(callee string, classNames map[string]bool) string {
+	if dot := strings.LastIndex(callee, "."); dot >= 0 {
+		object, attr := callee[:dot], callee[dot+1:]
+		if classNames[attr] && (imp.aliases[object] || isLangChainModule(object)) {
+			return attr
+		}
+		return ""
+	}
+	if classNames[callee] && imp.names[callee] {
+		return callee
+	}
+	return ""
 }
 
 // fileImportsClaudeSDK reports whether pf imports the Claude Agent SDK. Used to
@@ -147,8 +232,14 @@ func buildLangChainTool(n *sitter.Node, callee string, pf ParsedFile, funcs map[
 		wrappedName = firstPositionalIdent(n, pf.Source)
 	}
 	if wrappedName == "" && kwargs != nil {
-		if fk := kwargs.Children["func"]; fk != nil && fk.Value != nil && fk.Value.Kind == models.ExprNameRef {
-			wrappedName = fk.Value.Text
+		// func= (sync) or coroutine= (async) — resolve either, so an async tool's
+		// body is scanned for shell / code-exec / SSRF, which is exactly where
+		// those facts live.
+		for _, key := range []string{"func", "coroutine"} {
+			if fk := kwargs.Children[key]; fk != nil && fk.Value != nil && fk.Value.Kind == models.ExprNameRef {
+				wrappedName = fk.Value.Text
+				break
+			}
 		}
 	}
 	var fnDef *sitter.Node
@@ -156,8 +247,11 @@ func buildLangChainTool(n *sitter.Node, callee string, pf ParsedFile, funcs map[
 		fnDef = funcs[wrappedName]
 	}
 
-	// Name: explicit name= kwarg > wrapped function name.
+	// Name: explicit name= kwarg > positional name (from_function) > wrapped fn name.
 	name := kwargStringLiteral(kwargs, "name")
+	if name == "" && strings.HasSuffix(callee, ".from_function") {
+		name = positionalStringLiteral(n, 1, pf.Source)
+	}
 	if name == "" {
 		name = wrappedName
 	}
@@ -165,8 +259,12 @@ func buildLangChainTool(n *sitter.Node, callee string, pf ParsedFile, funcs map[
 		return models.ToolDef{}, false
 	}
 
-	// Description: explicit description= kwarg > wrapped function docstring.
+	// Description: explicit description= kwarg > positional description
+	// (from_function) > wrapped function docstring.
 	description := kwargStringLiteral(kwargs, "description")
+	if description == "" && strings.HasSuffix(callee, ".from_function") {
+		description = positionalStringLiteral(n, 2, pf.Source)
+	}
 	if description == "" && fnDef != nil {
 		description = astutil.FunctionDocstring(fnDef, pf.Source)
 	}
@@ -220,7 +318,7 @@ func buildLangChainTool(n *sitter.Node, callee string, pf ParsedFile, funcs map[
 		cfg := map[string]string{}
 		for k, child := range kwargs.Children {
 			switch k {
-			case "name", "description", "func", "args_schema":
+			case "name", "description", "func", "coroutine", "args_schema":
 				continue
 			}
 			if child.Value != nil {
@@ -254,6 +352,22 @@ func indexTopLevelFunctions(root *sitter.Node, src []byte) map[string]*sitter.No
 		}
 	}
 	return funcs
+}
+
+// positionalStringLiteral returns the unquoted value of the idx-th positional
+// argument when it is a string literal, else "". Used to read the positional
+// name / description of Tool.from_function(func, name, description). Mirrors
+// kwargStringLiteral's classification + quote-strip.
+func positionalStringLiteral(call *sitter.Node, idx int, src []byte) string {
+	node := positionalArgNode(call, idx)
+	if node == nil {
+		return ""
+	}
+	expr := exprFromNode(node, src)
+	if expr == nil || expr.Value == nil || expr.Value.Kind != models.ExprLiteralString {
+		return ""
+	}
+	return strings.Trim(expr.Value.Text, `"'`)
 }
 
 // firstPositionalIdent returns the text of the first positional identifier arg of

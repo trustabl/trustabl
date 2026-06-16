@@ -33,6 +33,7 @@ func fixtureResult() models.ScanResult {
 		Findings: []models.Finding{
 			{
 				RuleID: "OAI-005", Category: models.CategoryOpenAISDK,
+				Scope:    models.ScopeTool,
 				Severity: models.SeverityHigh,
 				ToolName: "fetch_url", FilePath: "agents/web.py", StartLine: 42, EndLine: 42,
 				Title:        "Network call has no timeout",
@@ -42,6 +43,7 @@ func fixtureResult() models.ScanResult {
 			},
 			{
 				RuleID:      "OAI-201",
+				Scope:       models.ScopeRepo,
 				Severity:    models.SeverityMedium,
 				Title:       "OpenAI Agents SDK present but no custom tracing",
 				Explanation: "Tracing runs with the default processor only.",

@@ -39,10 +39,12 @@ func TestSecuritySeverityForSeverity(t *testing.T) {
 }
 
 func TestTagsForFinding(t *testing.T) {
-	// Category, Scope (derived from RuleID), Language ("python" default).
+	// Category and Language ("python" default); scope coverage lives in
+	// TestTagsForFinding_ScopeUsesAuthoritativeField.
 	f := models.Finding{
 		RuleID:   "OAI-101",
 		Category: models.CategoryOpenAISDK,
+		Scope:    models.ScopeAgent,
 	}
 	tags := tagsForFinding(f)
 	wantContains := []string{"openai_sdk", "python"}
@@ -56,6 +58,56 @@ func TestTagsForFinding(t *testing.T) {
 		if !found {
 			t.Errorf("tagsForFinding missing %q in %v", w, tags)
 		}
+	}
+}
+
+func TestTagsForFinding_ScopeUsesAuthoritativeField(t *testing.T) {
+	// The SARIF scope tag must come from the finding's authoritative Scope
+	// field, not be reverse-engineered from the rule-ID's numeric prefix. The
+	// numeric heuristic coincidentally works for tool/agent/repo but has no
+	// band for subagent (CSDK-1xx → would read "agent") or skill (CSKILL-0xx →
+	// would read "tool"). META and vuln findings carry an empty Scope and must
+	// get no scope tag.
+	cases := []struct {
+		name      string
+		ruleID    string
+		scope     models.Scope
+		wantTag   string // expected scope tag; "" means no scope tag at all
+		bannedTag string // tag the stale rule-ID heuristic would wrongly emit
+	}{
+		{"tool", "CSDK-001", models.ScopeTool, "tool", ""},
+		{"agent", "CSDK-101", models.ScopeAgent, "agent", ""},
+		{"repo", "CSDK-201", models.ScopeRepo, "repo", ""},
+		{"subagent", "CSDK-110", models.ScopeSubagent, "subagent", "agent"},
+		{"skill", "CSKILL-001", models.ScopeSkill, "skill", "tool"},
+		{"meta", "META-001", "", "", ""},
+		{"vuln", "CVE-2021-12345", "", "", "repo"},
+	}
+	has := func(tags []string, x string) bool {
+		for _, tg := range tags {
+			if tg == x {
+				return true
+			}
+		}
+		return false
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tags := tagsForFinding(models.Finding{RuleID: tc.ruleID, Scope: tc.scope})
+			if tc.wantTag != "" && !has(tags, tc.wantTag) {
+				t.Errorf("scope %q: want tag %q in %v", tc.scope, tc.wantTag, tags)
+			}
+			if tc.bannedTag != "" && has(tags, tc.bannedTag) {
+				t.Errorf("scope %q: stale rule-ID heuristic tag %q must not appear in %v", tc.scope, tc.bannedTag, tags)
+			}
+			if tc.scope == "" {
+				for _, s := range models.AllScopes {
+					if has(tags, string(s)) {
+						t.Errorf("empty-scope finding %q must have no scope tag, got %v", tc.ruleID, tags)
+					}
+				}
+			}
+		})
 	}
 }
 

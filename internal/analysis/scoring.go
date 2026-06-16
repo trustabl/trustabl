@@ -29,11 +29,11 @@ type surfaceKey struct {
 
 // Score returns per-surface readiness and the overall score.
 //
-// A surface is created for every discovered tool, agent, and subagent (seeded at
+// A surface is created for every discovered tool, agent, subagent, and skill (seeded at
 // 1.0), plus one repo surface IFF at least one repo-scoped finding exists (the
 // repo is not a discovered entity, so it gets no row when clean). Findings route
 // to their surface by (Scope, FilePath, ToolName); all repo-scoped findings pool
-// into the single repo surface. Findings whose Scope is not one of the four real
+// into the single repo surface. Findings whose Scope is not one of the five real
 // scopes — META findings carry an empty Scope — are ignored, so info-meta signals
 // never move the score.
 //

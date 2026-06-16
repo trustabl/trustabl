@@ -86,6 +86,71 @@ x = create_agent(model="m")
 	}
 }
 
+// A scalar positional (a prompt string) at index 1 must NOT be captured as the
+// synthetic tools kwarg — only list/identifier/call shapes that could be a tools
+// collection.
+func TestLangChainAgent_PositionalPromptNotCapturedAsTools(t *testing.T) {
+	src := `from langgraph.prebuilt import create_react_agent
+
+agent = create_react_agent(model, "Be a helpful assistant.")
+`
+	pf := parsePyFile(t, "promptpos.py", src)
+	agents := analysis.DiscoverLangChainAgents([]analysis.ParsedFile{pf})
+	if len(agents) != 1 {
+		t.Fatalf("want 1 agent, got %d", len(agents))
+	}
+	if agents[0].Kwargs != nil && agents[0].Kwargs.Children["tools"] != nil {
+		t.Errorf("positional prompt string must not be captured as tools: %+v", agents[0].Kwargs)
+	}
+}
+
+// A module-qualified / aliased agent constructor (import langchain.agents as la;
+// la.AgentExecutor(...)) must be discovered — matched on the trailing segment,
+// bound to the langchain import alias.
+func TestLangChainAgent_QualifiedExecutorDiscovered(t *testing.T) {
+	src := `import langchain.agents as la
+
+ex = la.AgentExecutor(agent=a, tools=[search], max_iterations=5)
+`
+	pf := parsePyFile(t, "qual.py", src)
+	agents := analysis.DiscoverLangChainAgents([]analysis.ParsedFile{pf})
+	if len(agents) != 1 || agents[0].Class != "AgentExecutor" {
+		t.Fatalf("qualified la.AgentExecutor not discovered as AgentExecutor; got %+v", agents)
+	}
+}
+
+// A locally-defined create_agent in a file that also imports a langchain provider
+// package must NOT be discovered — the constructor name is bound to its import
+// origin, and a local def is not an import.
+func TestLangChainAgent_LocalShadowExcluded(t *testing.T) {
+	src := `from langchain_openai import ChatOpenAI
+
+def create_agent(**kw):
+    return kw
+
+x = create_agent(model="m")
+`
+	pf := parsePyFile(t, "shadow.py", src)
+	agents := analysis.DiscoverLangChainAgents([]analysis.ParsedFile{pf})
+	if len(agents) != 0 {
+		t.Errorf("locally-defined create_agent must not be discovered; got %+v", agents)
+	}
+}
+
+// The AgentExecutor.from_agent_and_tools classmethod must still resolve to
+// AgentExecutor after the import-binding refactor.
+func TestLangChainAgent_FromAgentAndToolsClassmethod(t *testing.T) {
+	src := `from langchain.agents import AgentExecutor
+
+ex = AgentExecutor.from_agent_and_tools(agent=a, tools=[search])
+`
+	pf := parsePyFile(t, "fromagent.py", src)
+	agents := analysis.DiscoverLangChainAgents([]analysis.ParsedFile{pf})
+	if len(agents) != 1 || agents[0].Class != "AgentExecutor" {
+		t.Fatalf("AgentExecutor.from_agent_and_tools not discovered; got %+v", agents)
+	}
+}
+
 // A dangerous built-in (PythonREPLTool) passed positionally to create_react_agent
 // must resolve to a HostedToolDef edge with SDK=langchain (not fall through to
 // the OpenAI classifier or to an External ToolRef).

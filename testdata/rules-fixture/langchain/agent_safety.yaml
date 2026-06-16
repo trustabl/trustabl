@@ -4,7 +4,7 @@ policy:
   category: langchain
   description: >
     Agent-scope safety and reliability rules for LangChain / LangGraph agents
-    (create_react_agent, create_agent, AgentExecutor).
+    (create_react_agent, create_agent, AgentExecutor, and raw StateGraph graphs).
 
 rules:
   - id: LC-101
@@ -15,6 +15,7 @@ rules:
     applies_to:
       - langchain_agent
       - langchain_agent_executor
+      - langchain_state_graph
     scope: agent
     match:
       agent_uses_hosted_tool_class:
