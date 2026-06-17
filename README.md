@@ -491,11 +491,11 @@ or home config:
 
 ```sh
 # Project-level (scoped to this repo)
-curl -fsSL https://raw.githubusercontent.com/trustabl/trustabl/main/agents/trustabl.md \
+curl -fsSL https://raw.githubusercontent.com/trustabl/trustabl/main/agents/_trustabl.md \
   -o .claude/agents/trustabl.md
 
 # Global (available in every project)
-curl -fsSL https://raw.githubusercontent.com/trustabl/trustabl/main/agents/trustabl.md \
+curl -fsSL https://raw.githubusercontent.com/trustabl/trustabl/main/agents/_trustabl.md \
   -o ~/.claude/agents/trustabl.md
 ```
 
