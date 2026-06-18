@@ -1,0 +1,89 @@
+name: Download history
+
+# Weekly snapshot of trustabl/trustabl cumulative release-asset downloads.
+# GitHub exposes only the CURRENT total (download_count) with no history, so we
+# record one dated point per run and commit it -> a JSON time series to graph.
+# Same-day reruns overwrite that day's point (no duplicates).
+
+on:
+  schedule:
+    - cron: '0 5 * * 1'       # weekly, Mondays 05:00 UTC
+  workflow_dispatch:           # run on demand to add a point now
+
+permissions:
+  contents: write              # commit the updated history JSON
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Record cumulative downloads
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET_REPO: trustabl/trustabl
+          HISTORY_FILE: .github/stats/download-history.json
+        run: |
+          python - <<'PY'
+          import json, os, urllib.request, datetime
+
+          repo  = os.environ["TARGET_REPO"]
+          path  = os.environ["HISTORY_FILE"]
+          token = os.environ.get("GITHUB_TOKEN", "")
+
+          def api(url):
+              req = urllib.request.Request(url)
+              req.add_header("Accept", "application/vnd.github+json")
+              req.add_header("X-GitHub-Api-Version", "2022-11-28")
+              req.add_header("User-Agent", "trustabl-download-history")
+              if token:
+                  req.add_header("Authorization", "Bearer " + token)
+              with urllib.request.urlopen(req, timeout=30) as r:
+                  return json.load(r)
+
+          # Sum download_count across every release asset (paginated, future-proof).
+          total, page = 0, 1
+          while True:
+              rels = api("https://api.github.com/repos/%s/releases?per_page=100&page=%d" % (repo, page))
+              if not rels:
+                  break
+              for rel in rels:
+                  for a in rel.get("assets", []):
+                      total += a.get("download_count", 0)
+              if len(rels) < 100:
+                  break
+              page += 1
+
+          day = datetime.date.today().isoformat()   # YYYY-MM-DD (UTC on the runner)
+
+          if os.path.exists(path):
+              with open(path) as f:
+                  data = json.load(f)
+          else:
+              data = {"repo": repo, "unit": "cumulative_release_downloads", "history": []}
+
+          hist = {p["date"]: p for p in data.get("history", [])}
+          hist[day] = {"date": day, "downloads": total}   # upsert today's snapshot
+          data["repo"] = repo
+          data["unit"] = "cumulative_release_downloads"
+          data["history"] = [hist[d] for d in sorted(hist)]
+
+          os.makedirs(os.path.dirname(path), exist_ok=True)
+          with open(path, "w") as f:
+              json.dump(data, f, indent=2)
+              f.write("\n")
+          print("%s: %s = %d cumulative downloads" % (day, repo, total))
+          PY
+
+      - name: Commit if changed
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/stats/download-history.json
+          if git diff --cached --quiet; then
+            echo "No change this run."
+          else
+            git commit -m "chore: record weekly download snapshot"
+            git push
+          fi
