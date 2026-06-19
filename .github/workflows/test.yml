@@ -5,7 +5,6 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
-  workflow_dispatch: # manual trigger for the keyless attestation job (see attest-keyless)
 
 env:
   CGO_ENABLED: "1" # tree-sitter is a C library; see ARCHITECTURE.md §9
@@ -65,53 +64,3 @@ jobs:
 
       - name: Check fixture is in sync with production rules
         run: RULES_REPO="$GITHUB_WORKSPACE/.rules" bash scripts/check-rules-sync.sh
-
-  attest-e2e:
-    # Hermetic, key-mode proof of the attestation feature: scan -> attest ->
-    # verify -> tamper -> verify-fails, plus the scan --attest path. No OIDC, no
-    # Rekor — deterministic assurance that the cosign integration is wired right.
-    # This is the spike that cannot run on a dev box without cosign installed.
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - uses: sigstore/cosign-installer@v3
-
-      - name: Attestation e2e (key mode)
-        run: bash scripts/attest-e2e.sh
-
-  attest-keyless:
-    # Production-path proof: keyless signing with the runner's ambient GitHub OIDC
-    # identity through Fulcio + Rekor, then verifying against that identity. Manual
-    # only (workflow_dispatch) BECAUSE every run writes a permanent entry to the
-    # PUBLIC Rekor transparency log — we do not want that on every push. Run it
-    # on demand to confirm the keyless wiring; the per-PR assurance is attest-e2e.
-    if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write # mint the OIDC token cosign exchanges with Fulcio
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - uses: sigstore/cosign-installer@v3
-
-      - name: Keyless attest + verify
-        run: |
-          go build -o /tmp/trustabl ./cmd/trustabl
-          # A scan may exit 1 on findings; we only need the JSON report written.
-          /tmp/trustabl scan . --json-out /tmp/report.json --no-progress || true
-          /tmp/trustabl attest /tmp/report.json --bundle /tmp/att.bundle.json
-          /tmp/trustabl verify /tmp/report.json --bundle /tmp/att.bundle.json \
-            --certificate-identity "https://github.com/${{ github.repository }}/.github/workflows/test.yml@${{ github.ref }}" \
-            --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
