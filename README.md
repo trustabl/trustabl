@@ -458,6 +458,26 @@ includes a `checksums.txt` and a build-provenance attestation; verify with:
 ```sh
 gh attestation verify <archive> --repo trustabl/trustabl
 ```
+## Attestation
+### Test Usage Example
+#### **Prerequisite and setup:**
+Install cosign **2.4.x** version
+
+##### Add to target folder path:
+`export PATH="<folder_path>:$PATH"`
+
+##### Export and Generate Key Pair:
+`export COSIGN_PASSWORD="" `
+skip the passphrase prompt (omit for a real key)
+
+`cosign generate-key-pair`
+writes cosign.key (private) + cosign.pub (public)
+
+##### Trustabl Scan and Attest:
+`./trustabl.exe scan https://github.com/google/adk-samples --json-out report.json --attest --attest-key cosign.key --attest-bundle att.bundle.json --attest-no-tlog`
+
+##### VERIFICATION
+`./trustabl.exe verify report.json --key cosign.pub --bundle att.bundle.json --no-tlog`
 
 ### cosign (optional — only for scan attestation)
 
