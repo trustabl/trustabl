@@ -67,8 +67,11 @@ func TestBuildOpenShellPolicy_Derivations(t *testing.T) {
 	if len(np.Endpoints) != 1 || np.Endpoints[0].Host != "status.example.com" || np.Endpoints[0].Port != 443 {
 		t.Errorf("endpoints = %+v", np.Endpoints)
 	}
-	if len(np.Binaries) != 1 || np.Binaries[0] != "/usr/bin/python3" {
-		t.Errorf("binaries = %v", np.Binaries)
+	// The agent entrypoint (main.py) is derivable, so binaries reflect the real
+	// requesting script mapped into the sandbox app root — not the interpreter
+	// guess — and carry no review marker.
+	if len(np.Binaries) != 1 || np.Binaries[0].Path != "/app/main.py" || !np.Binaries[0].Derived {
+		t.Errorf("binaries = %+v, want one derived /app/main.py", np.Binaries)
 	}
 
 	// internal_probe: the private 10.0.0.5 becomes a host-less allowed_ips
@@ -89,6 +92,69 @@ func TestBuildOpenShellPolicy_Derivations(t *testing.T) {
 
 	if err := ValidateOpenShellPolicy(p); err != nil {
 		t.Errorf("built policy must validate: %v", err)
+	}
+}
+
+func TestBuildOpenShellPolicy_EntrypointFallbackToGuess(t *testing.T) {
+	fetch := toolWithCaptures("fetch_status", "tools.py",
+		[]string{"status.example.com:443"}, nil, map[string]string{"http_call": "true"})
+	agent := agentWiring(&fetch)
+	agent.FilePath = "" // entrypoint not derivable → fall back to the guess
+
+	p := BuildOpenShellPolicy(models.ScanResult{}, agent)
+	if len(p.Network) != 1 {
+		t.Fatalf("network policies = %d, want 1", len(p.Network))
+	}
+	bins := p.Network[0].Binaries
+	if len(bins) != 1 || bins[0].Path != "/usr/bin/python3" || bins[0].Derived {
+		t.Errorf("binaries = %+v, want the non-derived interpreter guess /usr/bin/python3", bins)
+	}
+	if err := ValidateOpenShellPolicy(p); err != nil {
+		t.Errorf("policy must validate: %v", err)
+	}
+}
+
+func TestNormalizeEntrypointPath(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"main.py", "main.py"},
+		{"./main.py", "main.py"},
+		{"/abs/main.py", "abs/main.py"},
+		{"src\\agent\\main.py", "src/agent/main.py"},
+		{"pkg/../etc/passwd", ""}, // escapes the app root → not derivable
+		{"", ""},
+	}
+	for _, c := range cases {
+		if got := normalizeEntrypointPath(c.in); got != c.want {
+			t.Errorf("normalizeEntrypointPath(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+func TestEmitOpenShell_BinaryMarkerOnlyWhenGuessed(t *testing.T) {
+	emit := func(b OpenShellBinary) string {
+		p := OpenShellPolicy{
+			ReadOnly:   []string{"/usr"},
+			ReadWrite:  []string{"/sandbox"},
+			RunAsUser:  "sandbox",
+			RunAsGroup: "sandbox",
+			Network: []OpenShellNetworkPolicy{{
+				Key: "t", Name: "t",
+				Endpoints: []OpenShellEndpoint{{Host: "api.example.com", Port: 443, Access: "read-only"}},
+				Binaries:  []OpenShellBinary{b},
+			}},
+		}
+		out, err := EmitOpenShellPolicy(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(out)
+	}
+	const marker = "confirm the interpreter path"
+	if got := emit(OpenShellBinary{Path: "/app/main.py", Derived: true}); strings.Contains(got, marker) {
+		t.Errorf("derived binary must not carry the interpreter marker:\n%s", got)
+	}
+	if got := emit(OpenShellBinary{Path: "/usr/bin/python3", Derived: false}); !strings.Contains(got, marker) {
+		t.Errorf("guessed binary must carry the interpreter marker:\n%s", got)
 	}
 }
 
@@ -195,7 +261,7 @@ func TestValidateOpenShellPolicy_RejectsEachConstraint(t *testing.T) {
 			Network: []OpenShellNetworkPolicy{{
 				Key: "t", Name: "t",
 				Endpoints: []OpenShellEndpoint{{Host: "api.example.com", Port: 443, Access: "read-only"}},
-				Binaries:  []string{"/usr/bin/python3"},
+				Binaries:  []OpenShellBinary{{Path: "/usr/bin/python3"}},
 			}},
 		}
 	}
@@ -244,7 +310,7 @@ func TestValidateOpenShellPolicy_RejectsEachConstraint(t *testing.T) {
 			p.Network[0].Endpoints[0].Port = 0
 		}, "out-of-range port"},
 		{"relative binary", func(p *OpenShellPolicy) {
-			p.Network[0].Binaries = []string{"python3"}
+			p.Network[0].Binaries = []OpenShellBinary{{Path: "python3"}}
 		}, "not absolute"},
 		{"path-count cap", func(p *OpenShellPolicy) {
 			for i := 0; i < 300; i++ {
