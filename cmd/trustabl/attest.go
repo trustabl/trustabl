@@ -131,5 +131,9 @@ func cosignMissingError() error {
 	fmt.Fprintln(os.Stderr,
 		"Trustabl shells out to the cosign CLI for signing and verification; install it:")
 	fmt.Fprintln(os.Stderr, "  https://docs.sigstore.dev/cosign/system_config/installation/")
+	fmt.Fprintln(os.Stderr,
+		"If cosign is already downloaded, add its folder to PATH — a binary sitting in")
+	fmt.Fprintln(os.Stderr,
+		"the current directory is not enough, and each new shell needs PATH set again.")
 	return exitCodeError{2}
 }
