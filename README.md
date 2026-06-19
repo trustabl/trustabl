@@ -474,15 +474,56 @@ scoop install cosign
 ```
 
 In CI you do not install it by hand — the Trustabl GitHub Action and GitLab
-component add `sigstore/cosign-installer` for you. A quick local check (key mode:
-fully offline, no transparency log):
+component add `sigstore/cosign-installer` for you.
+
+#### Scan with attestation — step by step (key mode, offline)
+
+Key mode signs with a local key pair and skips the public transparency log — no
+browser, no network, ideal for a laptop or air-gapped run.
+
+> **cosign version:** the `--no-tlog` flag needs cosign **2.4.x**. cosign 2.5+
+> removed the underlying `--tlog-upload` flag, so the command errors there — pin
+> 2.4.3 if you hit that. On a PATH install the command is `trustabl`; for a local
+> Windows build it is `.\trustabl.exe`.
+
+**Step 0 — install cosign** (see the commands above for your OS).
+
+**Step 1 — generate a signing key pair:**
 
 ```sh
-cosign generate-key-pair                 # set COSIGN_PASSWORD="" to skip the prompt
-trustabl scan . --json-out report.json
-trustabl attest report.json --key cosign.key --no-tlog
-trustabl verify report.json --key cosign.pub --no-tlog   # exit 0 = verified
+export COSIGN_PASSWORD=""        # skip the passphrase prompt (omit for a real key)
+cosign generate-key-pair         # writes cosign.key (private) + cosign.pub (public)
 ```
+
+**Step 2 — scan and sign in one step:**
+
+```sh
+trustabl scan https://github.com/google/adk-samples \
+  --json-out report.json \
+  --attest --attest-key cosign.key --attest-bundle att.bundle.json --attest-no-tlog
+```
+
+Writes `report.json` (the scan result), `trustabl-predicate.json`, and the signed
+`att.bundle.json`. Exit 1 only means findings were present — the bundle is still
+written (it signs the verdict, pass or fail).
+
+**Step 3 — verify (consumer side):**
+
+```sh
+trustabl verify report.json --key cosign.pub --bundle att.bundle.json --no-tlog
+```
+
+`Verified OK`, exit 0 — the report is authentic and unmodified.
+
+**Step 4 — (optional) prove tamper detection:**
+
+```sh
+echo '{"tampered":true}' >> report.json
+trustabl verify report.json --key cosign.pub --bundle att.bundle.json --no-tlog
+```
+
+Verification now FAILS (exit 1): the signature is bound to the exact report bytes,
+so any edit is caught.
 
 Keyless signing (no private key to manage) is the default in CI, where an ambient
 OIDC identity exists; it also records the signature in the public Rekor
