@@ -108,8 +108,12 @@ func EmitOpenShellPolicy(p OpenShellPolicy) ([]byte, error) {
 		if len(np.Binaries) > 0 {
 			bins := seqNode()
 			for _, b := range np.Binaries {
-				pathVal := strNode(b)
-				pathVal.LineComment = MarkerReview + " — confirm the interpreter path inside the sandbox"
+				pathVal := strNode(b.Path)
+				// A derived entrypoint comes from a discovered fact and needs no
+				// confirmation; only the interpreter-path guess keeps the marker.
+				if !b.Derived {
+					pathVal.LineComment = MarkerReview + " — confirm the interpreter path inside the sandbox"
+				}
 				bins.Content = append(bins.Content, mappingNode(keyNode("path"), pathVal))
 			}
 			entry.Content = append(entry.Content, keyNode("binaries"), bins)

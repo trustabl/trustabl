@@ -63,7 +63,21 @@ type OpenShellNetworkPolicy struct {
 	Key       string // YAML key (identifier-sanitized tool name)
 	Name      string // policy name (slug)
 	Endpoints []OpenShellEndpoint
-	Binaries  []string // interpreter-path guesses (review marker)
+	// Binaries are the requesting-binary identities OpenShell matches egress
+	// against (/proc/<pid>/exe, ancestors, cmdline). A Derived entry comes from
+	// the agent's real entrypoint script (TR-312) and is emitted as-is; a
+	// non-derived entry is a language interpreter-path guess that still carries
+	// the "confirm the interpreter path" review marker.
+	Binaries []OpenShellBinary
+}
+
+// OpenShellBinary is one entry under a network policy's binaries: list. Path is
+// the absolute (or glob) identity matched against the requesting process;
+// Derived distinguishes a real entrypoint (from a discovered fact, no marker)
+// from an interpreter-path guess (marker retained until a human confirms it).
+type OpenShellBinary struct {
+	Path    string
+	Derived bool
 }
 
 // OpenShellEndpoint is one allowed endpoint, conservative by default.
@@ -130,6 +144,11 @@ func BuildOpenShellPolicy(result models.ScanResult, agent models.AgentDef) OpenS
 	for _, rw := range p.ReadWrite {
 		writeSet[rw] = true
 	}
+	// The requesting binary is the agent's process, shared by every tool it
+	// invokes, so the entrypoint identity is derived once from the agent and
+	// applied to all its network policies. When it is not derivable, each tool
+	// falls back to the per-language interpreter guess.
+	entrypoint := openShellEntrypointBinaries(agent)
 	aliases := newAliasSet()
 	for _, t := range tools {
 		// Filesystem: captured absolute write paths extend read_write; a
@@ -192,11 +211,15 @@ func BuildOpenShellPolicy(result models.ScanResult, agent models.AgentDef) OpenS
 		if len(endpoints) == 0 {
 			continue
 		}
+		bins := entrypoint
+		if len(bins) == 0 {
+			bins = guessedBinaries(t.Language)
+		}
 		np := OpenShellNetworkPolicy{
 			Key:       aliases.claim(t.Name),
 			Name:      dnsName(t.Name),
 			Endpoints: endpoints,
-			Binaries:  interpreterGuess(t.Language),
+			Binaries:  bins,
 		}
 		p.Network = append(p.Network, np)
 	}
@@ -315,6 +338,60 @@ func dnsName(name string) string {
 	return s
 }
 
+// openShellAppRoot is the conventional sandbox mount for application code:
+// OpenShell's restrictive_default_policy() ships /app as a read-only root, so a
+// repo-relative entrypoint script resolves to /app/<path> inside the sandbox.
+// A deployment that mounts its code elsewhere must adjust this.
+const openShellAppRoot = "/app"
+
+// openShellEntrypointBinaries derives the agent's real requesting-binary
+// identity (TR-312) from its entrypoint source file, mapped into the sandbox
+// app root. This is the cmdline/script identity OpenShell matches egress
+// against — emitted without a review marker because it comes from a discovered
+// fact rather than a language guess. Returns nil when the entrypoint is not
+// safely derivable (no file, or a path that escapes the app root), so the
+// caller falls back to the interpreter guess.
+func openShellEntrypointBinaries(agent models.AgentDef) []OpenShellBinary {
+	rel := normalizeEntrypointPath(agent.FilePath)
+	if rel == "" {
+		return nil
+	}
+	return []OpenShellBinary{{Path: openShellAppRoot + "/" + rel, Derived: true}}
+}
+
+// normalizeEntrypointPath turns a discovered repo-relative source path into a
+// clean sandbox-relative path: forward slashes, no leading "./" or "/". Returns
+// "" when the path is empty or contains a ".." segment (cannot be safely mapped
+// under the app root — such an entrypoint is treated as not derivable).
+func normalizeEntrypointPath(p string) string {
+	p = strings.ReplaceAll(p, "\\", "/")
+	p = strings.TrimPrefix(p, "./")
+	p = strings.TrimLeft(p, "/")
+	if p == "" {
+		return ""
+	}
+	for _, seg := range strings.Split(p, "/") {
+		if seg == ".." {
+			return ""
+		}
+	}
+	return p
+}
+
+// guessedBinaries wraps the per-language interpreter guess as non-derived
+// binaries (each keeps the review marker at emit time).
+func guessedBinaries(lang models.Language) []OpenShellBinary {
+	guesses := interpreterGuess(lang)
+	if len(guesses) == 0 {
+		return nil
+	}
+	out := make([]OpenShellBinary, 0, len(guesses))
+	for _, p := range guesses {
+		out = append(out, OpenShellBinary{Path: p, Derived: false})
+	}
+	return out
+}
+
 // interpreterGuess maps a tool's language to the conventional interpreter
 // path inside the sandbox. A guess by design — emitted with a review marker.
 func interpreterGuess(lang models.Language) []string {
@@ -426,7 +503,7 @@ func ValidateOpenShellPolicy(p OpenShellPolicy) error {
 			}
 		}
 		for _, b := range np.Binaries {
-			if err := checkPath(b, "binaries"); err != nil {
+			if err := checkPath(b.Path, "binaries"); err != nil {
 				return err
 			}
 		}
