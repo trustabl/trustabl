@@ -141,10 +141,11 @@ never leaves a partial pack and the recorded SHA always matches the content
 (see `internal/rulesource/git.go`).
 
 Resolution sits behind a `rulesource.Source` interface with two
-implementations. The default `gitSource` is the git path described above.
-`releaseSource` (opt-in via `--rules-source <name>`, or its deprecated alias
-`--channel <name>`) resolves rules from a
-**signature-verified release channel**: it verifies a signed channel statement
+implementations. `gitSource` is the unsigned git path described above (after the
+cutover it is the explicit opt-out, reached via `--rules-source git` or a
+`--rules-repo` / `--rules-ref` override). `releaseSource` (the **default**, and
+any `--rules-source <name>` / deprecated alias `--channel <name>`) resolves rules
+from a **signature-verified release channel**: it verifies a signed channel statement
 against an embedded Ed25519 trust keyring (`internal/rulesign`), fetches the
 bundle the statement commits to from GitHub Releases, re-derives the bundle's
 canonical digest and matches it to the statement, then installs it to a
@@ -163,8 +164,9 @@ on `ScanResult.RulesStale` and as a louder "rules may be out of date" stderr
 warning). The
 provenance of the rules (`models.RulesOrigin`: signed channel / unsigned
 custom / unsigned default) is surfaced as a report watermark and folded into
-`ScanID`. The default scan is unchanged — `gitSource` stays the default until
-the signed-production cutover. The CLI maps flags to a source in one place:
+`ScanID`. After the signed-production cutover, the `production` channel via `releaseSource`
+is the default; `gitSource` is the explicit opt-out (`--rules-source git`, or any
+`--rules-repo` / `--rules-ref`). The CLI maps flags to a source in one place:
 `effectiveRules` (`cmd/trustabl/scan.go`) derives BOTH the `rulesource.Config`
 and the `RulesOrigin` from a single decision (default in `defaultRulesSource`),
 so the resolved source and its reported provenance cannot disagree; a

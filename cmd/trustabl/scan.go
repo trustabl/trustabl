@@ -401,7 +401,8 @@ func finishScan(result models.ScanResult, jobErr error, f scanFlags, log *logx.L
 			fmt.Fprintln(os.Stderr,
 				"No usable rules found: none cached locally and none could be fetched.")
 			fmt.Fprintln(os.Stderr,
-				`Run "trustabl rules pull" to download the rule packs.`)
+				`Run "trustabl rules pull" to pre-warm the signed channel cache for offline use, `+
+					`or pass --rules-source git to resolve from the unsigned git source.`)
 			return exitCodeError{2}
 		}
 		if errors.Is(jobErr, rules.ErrNoRulesInPack) {
@@ -413,11 +414,12 @@ func finishScan(result models.ScanResult, jobErr error, f scanFlags, log *logx.L
 		}
 		if errors.Is(jobErr, rulesource.ErrNoTrustKeys) {
 			fmt.Fprintln(os.Stderr,
-				"This build of Trustabl embeds no rule-signing keys, so a signed rules "+
-					"channel cannot be verified.")
+				"This build of Trustabl embeds no rule-signing keys, so the signed rules "+
+					"channel cannot be verified. A released binary always embeds them, so an "+
+					"empty keyring indicates a broken or custom build.")
 			fmt.Fprintln(os.Stderr,
-				"Use --rules-source git (or pass --rules-repo / --rules-ref) to resolve "+
-					"rules from the unsigned git source instead.")
+				"As a workaround, use --rules-source git (or pass --rules-repo / --rules-ref) "+
+					"to resolve rules from the unsigned git source instead.")
 			return exitCodeError{2}
 		}
 		if isRuleSignFailure(jobErr) {
@@ -647,14 +649,15 @@ func exitCode(result models.ScanResult, strict bool) int {
 	return 0
 }
 
-// defaultRulesSource is the rules source used when the operator selects none. It
-// stays "git" (the unsigned clone of the default branch) until the signed-
-// production cutover (ENG-6) flips it to "production". Keeping the default in one
-// place means the cutover is a one-line change, and effectiveRules already routes
-// the git opt-out (--rules-repo / --rules-ref / TRUSTABL_RULES_REPO) to the git
-// path for either default — so after the flip, "git only via --rules-ref/--rules-repo"
-// holds without further wiring.
-const defaultRulesSource = "git"
+// defaultRulesSource is the rules source used when the operator selects none.
+// The signed-production cutover (ENG-6) flipped it from "git" to "production": a
+// plain `trustabl scan` now resolves the signature-verified production channel,
+// and the unsigned git path is the explicit opt-out (--rules-source git, or any
+// --rules-repo / --rules-ref / TRUSTABL_RULES_REPO, which effectiveRules already
+// routes to git). The flip is safe only because the embedded keyring is populated
+// and channel-production has a published, floor-pinned statement — the
+// TestDefaultRulesSource_CutoverHasGenesisFloor guard fails the build otherwise.
+const defaultRulesSource = "production"
 
 // effectiveRules resolves the scan's rules source from flags into BOTH a
 // rulesource.Config and a models.RulesOrigin. Deriving them from one decision is
