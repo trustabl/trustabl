@@ -14,10 +14,15 @@ package rulesource
 // build-time constant on purpose: it is only as fresh as the engine binary, the
 // same trade-off as the embedded trust keyring.
 var genesisFloors = map[string]int64{
-	// "production": 1750000000,  // set to the first production statement's EXACT
-	// `version` field — an epoch-seconds integer under rulesctl's default scheme,
-	// NOT an ordinal. A wrong unit silently disarms (too low) or over-arms (too
-	// high) anti-rollback, so copy the published statement's version verbatim.
+	// The EXACT `version` of the first production statement published to
+	// channel-production (2026-06-16T19:56:20Z) — an epoch-seconds integer under
+	// rulesctl's default scheme, NOT an ordinal, copied verbatim from the signed
+	// statement. A fresh machine rejects any production statement older than this
+	// on first contact; later publishes have a larger epoch-seconds version and
+	// advance the per-machine recorded floor from here. Bump this on a deliberate
+	// cadence as the channel ages. A wrong unit silently disarms (too low) or
+	// over-arms (too high) anti-rollback.
+	"production": 1781639780,
 }
 
 // genesisFloor returns the embedded minimum trusted version for channel, or 0
