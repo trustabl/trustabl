@@ -18,6 +18,17 @@ to follow Semantic Versioning once it reaches 1.0.
 
 ### Added
 
+- **Scan attestation (opt-in).** New `internal/attest` package plus `trustabl
+  attest` / `trustabl verify` subcommands and a `scan --attest` flag. Trustabl
+  renders a deterministic in-toto predicate (type
+  `https://trustabl.dev/attestation/scan/v1`) from a `ScanResult` and shells out
+  to the **cosign** CLI to sign the JSON report (the attestation subject) and to
+  verify it. Signing is **keyless by default** (ambient CI OIDC; the event is
+  logged to the public Rekor transparency log) with a `--key` escape hatch for
+  offline/private signing (`--no-tlog`). Verification is consumer-side and pins
+  the signer identity + OIDC issuer. Requires the cosign CLI on PATH; a plain
+  `scan` is unchanged and free of any new dependency. The predicate is **not**
+  folded into `ScanID`.
 - **Signed rules distribution — trust core (opt-in).** New `internal/rulesign`
   package: a reproducible bundle digest (sha256 over a normalized tar), an
   embedded Ed25519 trust keyring (verify-by-key-ID with validity windows,

@@ -1242,6 +1242,26 @@ schema validator, which rejects a `fixes[]` entry lacking `artifactChanges`. Lik
 JSON, SARIF is a pure function of `ScanResult`: no clocks, no map-iteration
 leakage, byte-stable per `ScanID`.
 
+### Scan attestation (`internal/attest`)
+
+`internal/attest` turns a `ScanResult` into a signed, verifiable claim about the
+**scanned repo** (not the Trustabl binary — that is attested separately by the
+release workflow's build-provenance). It holds **no keys and no crypto of its
+own**: `BuildPredicate` renders a deterministic in-toto predicate (predicateType
+`https://trustabl.dev/attestation/scan/v1`) derived only from `ScanResult` — so it
+is byte-stable and is **not** folded into `ScanID` — and the package shells out to
+the **cosign** CLI (`attest-blob` / `verify-blob-attestation`) for all signing and
+verification. The attestation **subject** is the canonical JSON report itself
+(cosign signs its sha256); a repo has no single artifact digest, and the report
+already pins the scanned state, so signing the report is simpler and more
+reproducible than signing a source archive. Signing is **keyless by default**
+(ambient CI OIDC via Fulcio/Rekor) with a `--key` escape hatch for offline/private
+signing; the **signer is whoever runs the scan**, never trustabl.dev. `cmd/trustabl`
+exposes it two ways sharing one `doAttest` core — a standalone `trustabl attest
+<report.json>` and a `scan --attest` flag — while `trustabl verify` is a separate
+consumer-side command that pins the signer identity and OIDC issuer. cosign is an
+**optional runtime dependency**: a plain `scan` never touches it.
+
 **Report destination (`--output` / `-o`).** `cmd/trustabl` renders the chosen
 format to bytes (`renderReport`) and then writes them either to stdout or, when
 `--output <path>` is set, to that file (`writeReport`). Rendering is decoupled

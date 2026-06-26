@@ -42,6 +42,10 @@ type scanFlags struct {
 	sarifOut      string
 	bomOut        string
 	vulnScan      bool
+	attest        bool
+	attestKey     string
+	attestBundle  string
+	attestNoTLog  bool
 }
 
 func newScanCommand() *cobra.Command {
@@ -135,6 +139,14 @@ Exit codes:
 		"also write a CycloneDX BOM of the repo's declared dependencies to this file")
 	cmd.Flags().BoolVar(&f.vulnScan, "vuln-scan", false,
 		"match dependencies against a pinned OSV snapshot and report known CVEs (off by default; fetches the OSV database on first use, then caches it)")
+	cmd.Flags().BoolVar(&f.attest, "attest", false,
+		"after the scan, sign the JSON report into a cosign attestation (requires cosign on PATH; keyless by default — see 'trustabl attest')")
+	cmd.Flags().StringVar(&f.attestKey, "attest-key", "",
+		"cosign private-key reference for --attest; omit for keyless signing")
+	cmd.Flags().StringVar(&f.attestBundle, "attest-bundle", defaultAttestBundle,
+		"output path for the --attest signed bundle")
+	cmd.Flags().BoolVar(&f.attestNoTLog, "attest-no-tlog", false,
+		"with --attest, do not upload the signature to the public Rekor transparency log")
 	return cmd
 }
 
@@ -523,6 +535,34 @@ func finishScan(result models.ScanResult, jobErr error, f scanFlags, log *logx.L
 	}
 	if f.sarifOut != "" {
 		log.Verbosef("output: wrote SARIF to %s", f.sarifOut)
+	}
+
+	// --attest signs the JSON report into a cosign attestation. The subject must be
+	// a persisted file (cosign signs bytes on disk and a verifier re-supplies the
+	// same file), so reuse --json-out when set, else write the canonical report to a
+	// default path with the identical bytes (jsonBytes). A signing failure here is
+	// its own exit path — it must not masquerade as a findings exit, so we return it
+	// before computing the findings exit code below.
+	if f.attest {
+		reportPath := f.jsonOut
+		if reportPath == "" {
+			reportPath = "trustabl-report.json"
+			b, err := jsonBytes(result)
+			if err != nil {
+				return err
+			}
+			if err := os.WriteFile(reportPath, b, 0o644); err != nil {
+				return fmt.Errorf("write %s for --attest: %w", reportPath, err)
+			}
+		}
+		if err := doAttest(result, reportPath, attestFlags{
+			keyRef:       f.attestKey,
+			bundleOut:    f.attestBundle,
+			predicateOut: defaultAttestPredicate,
+			noTLog:       f.attestNoTLog,
+		}, log); err != nil {
+			return err
+		}
 	}
 
 	code := exitCode(result, f.strict)
