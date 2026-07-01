@@ -98,6 +98,7 @@ type MatchExpr struct {
 	SkillBundledScriptReadsSecrets          *bool    `yaml:"skill_bundled_script_reads_secrets,omitempty"`
 	SkillBundledFileHasHardcodedSecret      *bool    `yaml:"skill_bundled_file_has_hardcoded_secret,omitempty"`
 	SkillDescriptionToolMismatch            *bool    `yaml:"skill_description_tool_mismatch,omitempty"`
+	SkillIsAgentSpecific                    *bool    `yaml:"skill_is_agent_specific,omitempty"`
 
 	// Repo-scope predicates
 	RepoHasSDKInCode                  []string `yaml:"repo_has_sdk_in_code,omitempty"`

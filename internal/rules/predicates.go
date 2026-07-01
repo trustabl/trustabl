@@ -945,6 +945,13 @@ func PredSkillDescriptionToolMismatch(s models.SkillDef) bool {
 	return PredSkillAllowsUnrestrictedShell(s) || PredSkillAllowsTool(s, sideEffectingSkillTools)
 }
 
+// PredSkillIsAgentSpecific reports whether the skill is bound to one
+// specific agent (context: fork) rather than being agent-agnostic and
+// reusable.
+func PredSkillIsAgentSpecific(s models.SkillDef) bool {
+	return strings.TrimSpace(s.Agent) != ""
+}
+
 // ─── repo predicates ──────────────────────────────────────────────────────────
 
 func PredRepoHasSDKInCode(sdks []string, inv models.RepoInventory) bool {

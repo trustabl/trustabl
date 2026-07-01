@@ -2229,6 +2229,13 @@ var policySkillRuleCases = []policySkillCase{
 		models.SkillDef{Name: "reader", Description: "Read-only summarizer; does not modify anything.",
 			Location:   models.Location{FilePath: ".claude/skills/reader/SKILL.md"},
 			ToolGrants: []models.ToolGrant{{Tool: "Read"}, {Tool: "Grep"}}}, models.RepoInventory{}, false},
+
+	{"CSKILL-071 fires when skill is bound to a specific agent", "CSKILL-071",
+		models.SkillDef{Name: "bound-skill", Agent: "reviewer",
+			Location: models.Location{FilePath: ".claude/skills/bound-skill/SKILL.md"}}, models.RepoInventory{}, true},
+	{"CSKILL-071 silent when skill is agent-agnostic", "CSKILL-071",
+		models.SkillDef{Name: "generic-skill",
+			Location: models.Location{FilePath: ".claude/skills/generic-skill/SKILL.md"}}, models.RepoInventory{}, false},
 }
 
 // policyAgentRuleCases covers agent-scoped rules.

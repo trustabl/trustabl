@@ -228,3 +228,25 @@ rules:
       Make the description match the grants: either narrow allowed-tools to the
       read-only set the description promises (Read, Grep, Glob), or correct the
       description to disclose the side-effecting tools the skill actually uses.
+
+  - id: CSKILL-071
+    title: Skill is bound to a single agent, reducing portability
+    severity: low
+    confidence: 0.6
+    applies_to:
+      - claude_skill
+    scope: skill
+    match:
+      skill_is_agent_specific: true
+    explanation: >
+      This skill's frontmatter binds it to one specific agent (context: fork /
+      agent: <name>) rather than leaving it agent-agnostic. An agent-bound skill
+      inherits that agent's trust and guardrail assumptions implicitly, which
+      makes the skill harder to reuse safely with a different agent and harder
+      to review independently of the agent it's coupled to.
+    fix: >
+      Only bind a skill to a specific agent when that coupling is intentional
+      and documented in the skill's description. Otherwise, leave the skill
+      agent-agnostic so it can be reused across agents and reviewed on its own
+      tool grants rather than inheriting assumptions from one agent's
+      configuration.

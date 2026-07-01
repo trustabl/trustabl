@@ -380,6 +380,13 @@ rules:
 #       (Bash / Write / Edit / WebFetch / NotebookEdit, or unrestricted shell) —
 #       a metadata-vs-capability mismatch. Heuristic, low confidence. Bool.
 #
+#   skill_is_agent_specific: true
+#       Fires when the skill's frontmatter binds it to one specific agent
+#       (context: fork / agent: <name>) rather than being agent-agnostic.
+#       An agent-bound skill inherits that agent's trust and guardrail
+#       assumptions and is harder to reuse or review independently of it.
+#       Bool predicate.
+#
 #
 # ━━━ REPO-SCOPE PREDICATES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # (used only in scope: repo rules; match runs once per scan)
