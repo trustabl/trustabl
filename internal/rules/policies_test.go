@@ -2229,6 +2229,14 @@ var policySkillRuleCases = []policySkillCase{
 		models.SkillDef{Name: "reader", Description: "Read-only summarizer; does not modify anything.",
 			Location:   models.Location{FilePath: ".claude/skills/reader/SKILL.md"},
 			ToolGrants: []models.ToolGrant{{Tool: "Read"}, {Tool: "Grep"}}}, models.RepoInventory{}, false},
+	{"CSKILL-070 fires on skill with empty description", "CSKILL-070",
+		models.SkillDef{Name: "helper", Location: models.Location{FilePath: ".claude/skills/helper/SKILL.md"},
+			Description: ""},
+		models.RepoInventory{}, true},
+	{"CSKILL-070 silent when description is present", "CSKILL-070",
+		models.SkillDef{Name: "helper", Location: models.Location{FilePath: ".claude/skills/helper/SKILL.md"},
+			Description: "Runs git diff and summarises changes."},
+		models.RepoInventory{}, false},
 }
 
 // policyAgentRuleCases covers agent-scoped rules.

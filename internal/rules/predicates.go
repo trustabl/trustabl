@@ -945,6 +945,10 @@ func PredSkillDescriptionToolMismatch(s models.SkillDef) bool {
 	return PredSkillAllowsUnrestrictedShell(s) || PredSkillAllowsTool(s, sideEffectingSkillTools)
 }
 
+func PredSkillHasDescription(s models.SkillDef) bool {
+	return strings.TrimSpace(s.Description) != ""
+}
+
 // ─── repo predicates ──────────────────────────────────────────────────────────
 
 func PredRepoHasSDKInCode(sdks []string, inv models.RepoInventory) bool {
