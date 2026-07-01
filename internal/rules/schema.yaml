@@ -380,6 +380,11 @@ rules:
 #       (Bash / Write / Edit / WebFetch / NotebookEdit, or unrestricted shell) —
 #       a metadata-vs-capability mismatch. Heuristic, low confidence. Bool.
 #
+#   skill_has_description: true
+#       Fires when SkillDef.Description is non-empty (after trimming
+#       whitespace). Use skill_has_description: false to flag skills
+#       with a missing or blank description. Bool predicate.
+#
 #
 # ━━━ REPO-SCOPE PREDICATES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # (used only in scope: repo rules; match runs once per scan)
