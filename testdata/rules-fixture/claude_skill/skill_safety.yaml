@@ -228,3 +228,26 @@ rules:
       Make the description match the grants: either narrow allowed-tools to the
       read-only set the description promises (Read, Grep, Glob), or correct the
       description to disclose the side-effecting tools the skill actually uses.
+
+  - id: CSKILL-070
+    title: Skill is missing a description
+    severity: low
+    confidence: 0.9
+    applies_to:
+      - claude_skill
+    scope: skill
+    match:
+      skill_has_description: false
+    explanation: >
+      This skill has no description. The description is the primary signal a
+      user and the model rely on to understand what a skill does and when to
+      invoke it. A missing description means the model has no context for
+      choosing the skill safely, and a user has no basis for deciding whether
+      to install it. Even a one-sentence summary is enough to enable informed
+      trust decisions.
+    fix: >
+      Add a description: field to the skill's SKILL.md frontmatter that names
+      what the skill does, what tools it uses, and any side effects it may
+      have. One to two sentences is enough — for example: "Summarises the
+      current git diff and posts a draft PR description. Uses Bash (read-only
+      git commands) and WebFetch."
