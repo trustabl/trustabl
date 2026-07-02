@@ -33,6 +33,10 @@ type AttestOptions struct {
 	Bundle    string // output path for the signed sigstore bundle
 	KeyRef    string // cosign private-key reference; empty selects keyless (ambient OIDC)
 	NoTLog    bool   // do not upload the signature to the public Rekor transparency log
+	// SigningConfig is the path to a no-Rekor signing config. It is set internally
+	// by Attest on cosign v3+ (which removed --tlog-upload) to realize NoTLog; when
+	// empty and NoTLog is set, the pre-v3 --tlog-upload=false flag is used instead.
+	SigningConfig string
 }
 
 // attestArgs builds the cosign argv (without the binary name). Pure and
@@ -49,7 +53,13 @@ func attestArgs(o AttestOptions) []string {
 		args = append(args, "--key", o.KeyRef)
 	}
 	if o.NoTLog {
-		args = append(args, "--tlog-upload=false")
+		if o.SigningConfig != "" {
+			// cosign v3+: sign against a no-Rekor signing config (no transparency log).
+			args = append(args, "--signing-config", o.SigningConfig)
+		} else {
+			// cosign v2: the direct flag (removed in v3).
+			args = append(args, "--tlog-upload=false")
+		}
 	}
 	// The subject blob is the trailing positional argument.
 	return append(args, o.Blob)
@@ -61,11 +71,50 @@ func attestArgs(o AttestOptions) []string {
 // ErrCosignNotFound when cosign is absent, or a wrapped error when cosign runs
 // but fails (e.g. keyless with no OIDC identity available).
 func Attest(ctx context.Context, o AttestOptions) error {
+	if o.NoTLog {
+		// cosign v3 removed --tlog-upload (it defaults --use-signing-config=true, a
+		// Rekor-bearing config, so the old flag conflicts). Realize NoTLog on v3+ via
+		// an explicit no-Rekor signing config; pre-v3 keeps --tlog-upload=false. If the
+		// version can't be determined, fall back to the pre-v3 flag (best effort).
+		if major, verr := cosignMajor(ctx); verr == nil && major >= 3 {
+			cfg, cleanup, cerr := writeNoTLogSigningConfig(ctx)
+			if cerr != nil {
+				return cerr
+			}
+			defer cleanup()
+			o.SigningConfig = cfg
+		}
+	}
 	err := run(ctx, attestArgs(o))
 	if err == nil || errors.Is(err, ErrCosignNotFound) {
 		return err
 	}
 	return fmt.Errorf("attest: cosign signing failed: %w", err)
+}
+
+// writeNoTLogSigningConfig generates a Sigstore signing config with no Rekor, TSA,
+// OIDC, or Fulcio services — i.e. one that signs without contacting or recording
+// to any transparency log. cosign v3 needs this for offline signing because it
+// defaults --use-signing-config=true. Returns the temp-file path and a cleanup
+// func the caller must defer.
+func writeNoTLogSigningConfig(ctx context.Context) (path string, cleanup func(), err error) {
+	f, err := os.CreateTemp("", "trustabl-signingconfig-*.json")
+	if err != nil {
+		return "", func() {}, err
+	}
+	name := f.Name()
+	f.Close()
+	cleanup = func() { os.Remove(name) }
+	if e := run(ctx, []string{
+		"signing-config", "create",
+		"--no-default-rekor", "--no-default-tsa",
+		"--no-default-oidc", "--no-default-fulcio",
+		"--out", name,
+	}); e != nil {
+		cleanup()
+		return "", func() {}, fmt.Errorf("attest: building no-tlog signing config: %w", e)
+	}
+	return name, cleanup, nil
 }
 
 // VerifyOptions configures a single `cosign verify-blob-attestation` invocation.

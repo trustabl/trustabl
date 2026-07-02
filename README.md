@@ -461,7 +461,7 @@ gh attestation verify <archive> --repo trustabl/trustabl
 ## Attestation
 ### Test Usage Example
 #### **Prerequisite and setup:**
-Install cosign **2.4.x** version
+Install cosign (any **2.x or 3.x** — Trustabl adapts to the installed version)
 
 ##### Add to target folder path:
 `export PATH="<folder_path>:$PATH"`
@@ -501,10 +501,15 @@ component add `sigstore/cosign-installer` for you.
 Key mode signs with a local key pair and skips the public transparency log — no
 browser, no network, ideal for a laptop or air-gapped run.
 
-> **cosign version:** the `--no-tlog` flag needs cosign **2.4.x**. cosign 2.5+
-> removed the underlying `--tlog-upload` flag, so the command errors there — pin
-> 2.4.3 if you hit that. On a PATH install the command is `trustabl`; for a local
+> **cosign version:** works with cosign **2.x and 3.x** — Trustabl selects the
+> right no-transparency-log mechanism per version automatically
+> (`--tlog-upload=false` on v2; a no-Rekor `--signing-config` on v3+, which
+> removed that flag). On a PATH install the command is `trustabl`; for a local
 > Windows build it is `.\trustabl.exe`.
+
+> **Attestation tiers:** this is the **free-tier basic attestation** — it signs
+> scan *provenance* (scan ID, rules version, reliability score, verdict, severity
+> counts). Behavioral and policy-aware attestations are on the paid roadmap.
 
 **Step 0 — install cosign** (see the commands above for your OS).
 

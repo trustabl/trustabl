@@ -16,6 +16,16 @@ to follow Semantic Versioning once it reaches 1.0.
   is now part of a scan's identity by design; baselines pinned to old IDs must
   be re-captured once.
 
+### Fixed
+
+- **Attestation now works with cosign v3.** cosign v3 removed the
+  `--tlog-upload` flag (it defaults `--use-signing-config=true`), which broke the
+  offline `--no-tlog` signing path (`--tlog-upload=false is not supported with
+  --signing-config`). Trustabl now detects the cosign major version and, on v3+,
+  signs against a generated no-Rekor `--signing-config`; v2 keeps
+  `--tlog-upload=false`. Verification is unchanged. CI runs the attestation e2e
+  against both cosign v2 and v3 so this cannot regress.
+
 ### Added
 
 - **Scan attestation (opt-in).** New `internal/attest` package plus `trustabl

@@ -18,6 +18,14 @@ jobs:
     # verify -> tamper -> verify-fails, plus the scan --attest path. No OIDC, no
     # Rekor — deterministic assurance that the cosign integration is wired right.
     # This is the spike that cannot run on a dev box without cosign installed.
+    #
+    # Run against BOTH cosign majors: v2 (the --tlog-upload=false no-tlog path) and
+    # v3 (which removed that flag — no-tlog goes through a no-Rekor --signing-config).
+    # A single pinned version silently missed the v3 breakage.
+    strategy:
+      fail-fast: false
+      matrix:
+        cosign: ["v2.4.3", "v3.1.1"]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -28,8 +36,10 @@ jobs:
           cache: true
 
       - uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: ${{ matrix.cosign }}
 
-      - name: Attestation e2e (key mode)
+      - name: Attestation e2e (key mode, cosign ${{ matrix.cosign }})
         run: bash scripts/attest-e2e.sh
 
   attest-keyless:
