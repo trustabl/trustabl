@@ -2229,6 +2229,15 @@ var policySkillRuleCases = []policySkillCase{
 		models.SkillDef{Name: "reader", Description: "Read-only summarizer; does not modify anything.",
 			Location:   models.Location{FilePath: ".claude/skills/reader/SKILL.md"},
 			ToolGrants: []models.ToolGrant{{Tool: "Read"}, {Tool: "Grep"}}}, models.RepoInventory{}, false},
+
+	{"CSKILL-061 fires when allowed-tools has a duplicate entry", "CSKILL-061",
+		models.SkillDef{Name: "dup-tools",
+			Location:     models.Location{FilePath: ".claude/skills/dup-tools/SKILL.md"},
+			AllowedTools: []string{"Bash", "bash"}}, models.RepoInventory{}, true},
+	{"CSKILL-061 silent when allowed-tools has no duplicates", "CSKILL-061",
+		models.SkillDef{Name: "clean-tools",
+			Location:     models.Location{FilePath: ".claude/skills/clean-tools/SKILL.md"},
+			AllowedTools: []string{"Bash", "Read", "Grep"}}, models.RepoInventory{}, false},
 }
 
 // policyAgentRuleCases covers agent-scoped rules.

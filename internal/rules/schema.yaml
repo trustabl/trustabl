@@ -380,6 +380,12 @@ rules:
 #       (Bash / Write / Edit / WebFetch / NotebookEdit, or unrestricted shell) —
 #       a metadata-vs-capability mismatch. Heuristic, low confidence. Bool.
 #
+#   skill_has_duplicate_tool_refs: true
+#       Fires when SkillDef.AllowedTools contains duplicate entries
+#       (case-insensitive, whitespace-trimmed) — the same tool referenced
+#       more than once unnecessarily. Configuration-quality signal, not a
+#       security bug on its own. Bool predicate.
+#
 #
 # ━━━ REPO-SCOPE PREDICATES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # (used only in scope: repo rules; match runs once per scan)

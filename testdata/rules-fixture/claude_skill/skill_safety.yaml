@@ -228,3 +228,23 @@ rules:
       Make the description match the grants: either narrow allowed-tools to the
       read-only set the description promises (Read, Grep, Glob), or correct the
       description to disclose the side-effecting tools the skill actually uses.
+
+  - id: CSKILL-061
+    title: Skill allowed-tools list has duplicate tool references
+    severity: low
+    confidence: 0.7
+    applies_to:
+      - claude_skill
+    scope: skill
+    match:
+      skill_has_duplicate_tool_refs: true
+    explanation: >
+      This skill's allowed-tools list references the same tool more than once
+      (case-insensitive, whitespace-trimmed). Duplicate grants are redundant —
+      they don't widen the skill's actual capability — but they add noise to
+      the allowed-tools list and can mask intent when reviewing what a skill
+      is really authorized to do.
+    fix: >
+      Remove the duplicate entry so each tool appears once in allowed-tools.
+      If the duplicates use different patterns (e.g. "Bash" and "Bash(git *)"),
+      consolidate to the single broadest pattern actually needed.
