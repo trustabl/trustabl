@@ -479,6 +479,24 @@ writes cosign.key (private) + cosign.pub (public)
 ##### VERIFICATION
 `./trustabl.exe verify report.json --key cosign.pub --bundle att.bundle.json --no-tlog`
 
+#### Keyless (CI / no key to manage)
+
+Keyless signs with your ambient **OIDC identity** instead of a key pair — nothing
+to generate or store. In CI (GitHub Actions) the runner's identity is used
+automatically; **on a laptop it opens a browser to log in**. Either way the
+signing event is recorded in the **public Rekor transparency log** — so use key
+mode above if that visibility is unacceptable. No `--no-tlog` here (keyless *is*
+the transparency-log path), so the cosign v2/v3 difference does not apply.
+
+##### Scan and Attest (keyless):
+`./trustabl.exe scan https://github.com/google/adk-python --json-out report.json --attest --attest-bundle att.bundle.json`
+
+##### VERIFICATION (keyless — you must pin who signed and the issuer):
+`./trustabl.exe verify report.json --bundle att.bundle.json --certificate-identity "<signer-identity>" --certificate-oidc-issuer "https://token.actions.githubusercontent.com"`
+
+In GitHub Actions the identity is the workflow ref, e.g.
+`https://github.com/OWNER/REPO/.github/workflows/scan.yml@refs/heads/main`.
+
 ### cosign (optional — only for scan attestation)
 
 Trustabl's `attest` / `verify` commands and `scan --attest` shell out to the
