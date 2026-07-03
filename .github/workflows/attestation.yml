@@ -35,9 +35,17 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - uses: sigstore/cosign-installer@v3
-        with:
-          cosign-release: ${{ matrix.cosign }}
+      # Install the exact cosign under test by downloading the release binary
+      # directly. We do NOT use sigstore/cosign-installer here: its signature-
+      # verification step 404s on cosign v3 (v3 releases dropped the detached
+      # `.sig` asset that installer expects). This job is a functional e2e, not a
+      # cosign-provenance gate, so a direct download is the right tradeoff; the
+      # keyless job below still uses the installer.
+      - name: Install cosign ${{ matrix.cosign }}
+        run: |
+          sudo curl -sSfL "https://github.com/sigstore/cosign/releases/download/${{ matrix.cosign }}/cosign-linux-amd64" -o /usr/local/bin/cosign
+          sudo chmod +x /usr/local/bin/cosign
+          cosign version
 
       - name: Attestation e2e (key mode, cosign ${{ matrix.cosign }})
         run: bash scripts/attest-e2e.sh
