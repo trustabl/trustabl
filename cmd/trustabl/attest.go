@@ -60,6 +60,9 @@ signer is whoever runs this command, never trustabl.dev.`,
   trustabl attest report.json --key cosign.key --no-tlog`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if tel != nil {
+				tel.Track("command.run", map[string]any{"command": "attest"})
+			}
 			return runAttest(args[0], f, logLevelFor(cmd))
 		},
 	}

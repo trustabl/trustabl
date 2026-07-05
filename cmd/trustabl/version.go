@@ -18,6 +18,9 @@ released binaries carry real values injected at build time.`,
 		Example: "  trustabl version",
 		Args:    cobra.NoArgs,
 		Run: func(cmd *cobra.Command, _ []string) {
+			if tel != nil {
+				tel.Track("command.run", map[string]any{"command": "version"})
+			}
 			fmt.Fprintf(cmd.OutOrStdout(), "Trustabl %s\ncommit: %s\nbuilt:  %s\n",
 				version, commit, date)
 		},

@@ -57,6 +57,9 @@ func newMCPCommand(tel *telemetry.Client) *cobra.Command {
   #   }`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if tel != nil {
+				tel.Track("command.run", map[string]any{"command": "mcp"})
+			}
 			return runMCP(cmd.Context(), f, logLevelFor(cmd))
 		},
 	}

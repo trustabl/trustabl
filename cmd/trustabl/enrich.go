@@ -43,6 +43,9 @@ Switch provider:   trustabl llm provider set openai
 Optional model:    export TRUSTABL_LLM_MODEL=gpt-4.1   or   trustabl llm model set gpt-4.1`,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if tel != nil {
+				tel.Track("command.run", map[string]any{"command": "enrich"})
+			}
 			return runEnrich(cmd, f)
 		},
 	}

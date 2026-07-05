@@ -30,16 +30,16 @@ today, with or without a key configured.`,
   trustabl llm key set
   trustabl llm list`,
 	}
-	cmd.AddCommand(newLLMListCommand())
-	cmd.AddCommand(newLLMKeyCommand())
-	cmd.AddCommand(newLLMModelCommand())
-	cmd.AddCommand(newLLMProviderCommand())
+	cmd.AddCommand(newLLMListCommand(tel))
+	cmd.AddCommand(newLLMKeyCommand(tel))
+	cmd.AddCommand(newLLMModelCommand(tel))
+	cmd.AddCommand(newLLMProviderCommand(tel))
 	return cmd
 }
 
 // ── list ─────────────────────────────────────────────────────────────────────
 
-func newLLMListCommand() *cobra.Command {
+func newLLMListCommand(tel *telemetry.Client) *cobra.Command {
 	return &cobra.Command{
 		Use:   "list",
 		Short: "Show current LLM configuration",
@@ -48,6 +48,9 @@ provider is marked with an asterisk (*).`,
 		Example: "  trustabl llm list",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if tel != nil {
+				tel.Track("command.run", map[string]any{"command": "llm.list"})
+			}
 			return runLLMList(cmd)
 		},
 	}
@@ -83,7 +86,7 @@ func runLLMList(cmd *cobra.Command) error {
 
 // ── key ──────────────────────────────────────────────────────────────────────
 
-func newLLMKeyCommand() *cobra.Command {
+func newLLMKeyCommand(tel *telemetry.Client) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "key",
 		Short: "Manage the API key for the active provider",
@@ -93,13 +96,13 @@ your user config directory with 0600 permissions and are shown masked.`,
   trustabl llm key get
   trustabl llm key delete`,
 	}
-	cmd.AddCommand(newLLMKeySetCommand())
-	cmd.AddCommand(newLLMKeyGetCommand())
-	cmd.AddCommand(newLLMKeyDeleteCommand())
+	cmd.AddCommand(newLLMKeySetCommand(tel))
+	cmd.AddCommand(newLLMKeyGetCommand(tel))
+	cmd.AddCommand(newLLMKeyDeleteCommand(tel))
 	return cmd
 }
 
-func newLLMKeySetCommand() *cobra.Command {
+func newLLMKeySetCommand(tel *telemetry.Client) *cobra.Command {
 	return &cobra.Command{
 		Use:   "set [key]",
 		Short: "Store the API key for the active provider",
@@ -113,6 +116,9 @@ validated against the active provider's expected format before it is saved.`,
   trustabl llm key set sk-ant-...`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if tel != nil {
+				tel.Track("command.run", map[string]any{"command": "llm.key.set"})
+			}
 			return runLLMKeySet(cmd, args)
 		},
 	}
@@ -149,7 +155,7 @@ func runLLMKeySet(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func newLLMKeyGetCommand() *cobra.Command {
+func newLLMKeyGetCommand(tel *telemetry.Client) *cobra.Command {
 	return &cobra.Command{
 		Use:     "get",
 		Short:   "Show the stored API key (masked)",
@@ -157,6 +163,9 @@ func newLLMKeyGetCommand() *cobra.Command {
 		Example: "  trustabl llm key get",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if tel != nil {
+				tel.Track("command.run", map[string]any{"command": "llm.key.get"})
+			}
 			return runLLMKeyGet(cmd)
 		},
 	}
@@ -176,7 +185,7 @@ func runLLMKeyGet(cmd *cobra.Command) error {
 	return nil
 }
 
-func newLLMKeyDeleteCommand() *cobra.Command {
+func newLLMKeyDeleteCommand(tel *telemetry.Client) *cobra.Command {
 	return &cobra.Command{
 		Use:     "delete",
 		Short:   "Delete the stored API key for the active provider",
@@ -184,6 +193,9 @@ func newLLMKeyDeleteCommand() *cobra.Command {
 		Example: "  trustabl llm key delete",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if tel != nil {
+				tel.Track("command.run", map[string]any{"command": "llm.key.delete"})
+			}
 			return runLLMKeyDelete(cmd)
 		},
 	}
@@ -216,18 +228,18 @@ func runLLMKeyDelete(cmd *cobra.Command) error {
 
 // ── model ─────────────────────────────────────────────────────────────────────
 
-func newLLMModelCommand() *cobra.Command {
+func newLLMModelCommand(tel *telemetry.Client) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "model",
 		Short:   "Manage the model for the active provider",
 		Long:    "Manage the model used for the active provider.",
 		Example: "  trustabl llm model set claude-sonnet-4",
 	}
-	cmd.AddCommand(newLLMModelSetCommand())
+	cmd.AddCommand(newLLMModelSetCommand(tel))
 	return cmd
 }
 
-func newLLMModelSetCommand() *cobra.Command {
+func newLLMModelSetCommand(tel *telemetry.Client) *cobra.Command {
 	return &cobra.Command{
 		Use:     "set <model>",
 		Short:   "Set the model for the active provider",
@@ -235,6 +247,9 @@ func newLLMModelSetCommand() *cobra.Command {
 		Example: "  trustabl llm model set claude-sonnet-4",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if tel != nil {
+				tel.Track("command.run", map[string]any{"command": "llm.model.set"})
+			}
 			return runLLMModelSet(cmd, args[0])
 		},
 	}
@@ -255,7 +270,7 @@ func runLLMModelSet(cmd *cobra.Command, model string) error {
 
 // ── provider ──────────────────────────────────────────────────────────────────
 
-func newLLMProviderCommand() *cobra.Command {
+func newLLMProviderCommand(tel *telemetry.Client) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "provider",
 		Short: "Manage LLM providers",
@@ -264,12 +279,12 @@ Setting a provider that has no key yet prompts you to run "trustabl llm key set"
 		Example: `  trustabl llm provider list
   trustabl llm provider set anthropic`,
 	}
-	cmd.AddCommand(newLLMProviderSetCommand())
-	cmd.AddCommand(newLLMProviderListCommand())
+	cmd.AddCommand(newLLMProviderSetCommand(tel))
+	cmd.AddCommand(newLLMProviderListCommand(tel))
 	return cmd
 }
 
-func newLLMProviderSetCommand() *cobra.Command {
+func newLLMProviderSetCommand(tel *telemetry.Client) *cobra.Command {
 	return &cobra.Command{
 		Use:   "set <provider>",
 		Short: "Set the active LLM provider",
@@ -279,6 +294,9 @@ has no API key yet, you are reminded to run "trustabl llm key set".`,
 		Example: "  trustabl llm provider set anthropic",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if tel != nil {
+				tel.Track("command.run", map[string]any{"command": "llm.provider.set"})
+			}
 			return runLLMProviderSet(cmd, args[0])
 		},
 	}
@@ -306,7 +324,7 @@ func runLLMProviderSet(cmd *cobra.Command, provider string) error {
 	return nil
 }
 
-func newLLMProviderListCommand() *cobra.Command {
+func newLLMProviderListCommand(tel *telemetry.Client) *cobra.Command {
 	return &cobra.Command{
 		Use:     "list",
 		Short:   "List configured LLM providers",
@@ -314,6 +332,9 @@ func newLLMProviderListCommand() *cobra.Command {
 		Example: "  trustabl llm provider list",
 		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if tel != nil {
+				tel.Track("command.run", map[string]any{"command": "llm.provider.list"})
+			}
 			return runLLMProviderList(cmd)
 		},
 	}

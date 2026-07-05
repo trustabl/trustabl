@@ -39,6 +39,9 @@ release asset.`,
   trustabl capabilities > capabilities.json`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if tel != nil {
+				tel.Track("command.run", map[string]any{"command": "capabilities"})
+			}
 			b, err := json.MarshalIndent(rules.Describe(), "", "  ")
 			if err != nil {
 				return err

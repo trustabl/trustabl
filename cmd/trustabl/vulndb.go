@@ -38,6 +38,9 @@ pulled from osv.dev — this can be a sizable download.`,
   trustabl vulndb pull`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if tel != nil {
+				tel.Track("command.run", map[string]any{"command": "vulndb"})
+			}
 			log := logx.New(os.Stderr, logLevelFor(cmd), diagColor(false))
 			log.Verbosef("vulndb pull: fetching OSV databases for all supported ecosystems")
 			defer log.Timer("vulndb pull")()

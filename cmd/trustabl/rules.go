@@ -50,6 +50,9 @@ pre-warm a signed channel's bundle cache, so a later signed scan can run offline
   trustabl rules pull --rules-repo https://github.com/me/my-rules`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if tel != nil {
+				tel.Track("command.run", map[string]any{"command": "rules.pull"})
+			}
 			log := logx.New(os.Stderr, logLevelFor(cmd), diagColor(false))
 			// Reuse the scan command's source-selection so pull and scan resolve the
 			// SAME source for the same flags — a signed channel routes to the signed
@@ -116,6 +119,9 @@ the engine ships the predicate before the rules repo ships rules that use it.`,
   trustabl rules validate ./trustabl-rules`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if tel != nil {
+				tel.Track("command.run", map[string]any{"command": "rules.validate"})
+			}
 			dir := "."
 			if len(args) == 1 {
 				dir = args[0]

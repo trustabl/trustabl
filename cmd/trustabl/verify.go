@@ -52,6 +52,9 @@ missing.`,
   trustabl verify report.json --key cosign.pub --no-tlog`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if tel != nil {
+				tel.Track("command.run", map[string]any{"command": "verify"})
+			}
 			return runVerify(args[0], f, logLevelFor(cmd))
 		},
 	}
