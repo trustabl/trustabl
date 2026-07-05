@@ -16,6 +16,7 @@ require (
 	github.com/muesli/termenv v0.15.2
 	github.com/openai/openai-go v1.12.0
 	github.com/pelletier/go-toml/v2 v2.3.1
+	github.com/posthog/posthog-go v1.17.5
 	github.com/smacker/go-tree-sitter v0.0.0-20240422154435-0628b34cbf9c
 	github.com/spf13/cobra v1.8.0
 	golang.org/x/term v0.33.0
@@ -61,7 +62,6 @@ require (
 	github.com/muesli/ansi v0.0.0-20211018074035-2e021307bc4b // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/pjbgf/sha1cd v0.3.0 // indirect
-	github.com/posthog/posthog-go v1.17.5 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/sergi/go-diff v1.3.2-0.20230802210424-5b0b94c5c0d3 // indirect
 	github.com/skeema/knownhosts v1.2.2 // indirect
