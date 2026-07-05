@@ -106,3 +106,86 @@ func TestRepoIDHash_emptyWhenNoCI(t *testing.T) {
 		t.Errorf("want empty hash when no CI repo env var, got %s", got)
 	}
 }
+
+func TestClient_disabledByEnvVar(t *testing.T) {
+	t.Setenv("TRUSTABL_TELEMETRY", "0")
+	path := filepath.Join(t.TempDir(), "telemetry.json")
+	c := telemetry.New("", "0.0.0", path, nil)
+	if c.IsEnabled() {
+		t.Error("want disabled when TRUSTABL_TELEMETRY=0")
+	}
+}
+
+func TestClient_enabledByEnvVar(t *testing.T) {
+	t.Setenv("TRUSTABL_TELEMETRY", "1")
+	path := filepath.Join(t.TempDir(), "telemetry.json")
+	// save a config with enabled=false to confirm env var wins
+	_ = telemetry.SaveConfig(path, telemetry.Config{Enabled: false, AnonymousID: "x"})
+	c := telemetry.New("", "0.0.0", path, nil)
+	if !c.IsEnabled() {
+		t.Error("want enabled when TRUSTABL_TELEMETRY=1, even if config says false")
+	}
+}
+
+func TestClient_disabledByConfig(t *testing.T) {
+	t.Setenv("TRUSTABL_TELEMETRY", "") // clear env var
+	path := filepath.Join(t.TempDir(), "telemetry.json")
+	_ = telemetry.SaveConfig(path, telemetry.Config{Enabled: false, AnonymousID: "x"})
+	c := telemetry.New("", "0.0.0", path, nil)
+	if c.IsEnabled() {
+		t.Error("want disabled when config has enabled=false")
+	}
+}
+
+func TestClient_defaultEnabled(t *testing.T) {
+	t.Setenv("TRUSTABL_TELEMETRY", "")
+	path := filepath.Join(t.TempDir(), "telemetry.json") // does not exist
+	c := telemetry.New("", "0.0.0", path, nil)
+	if !c.IsEnabled() {
+		t.Error("want enabled by default when no env var and no config file")
+	}
+}
+
+func TestClient_isNewInstall_trueWhenNoConfig(t *testing.T) {
+	t.Setenv("TRUSTABL_TELEMETRY", "")
+	path := filepath.Join(t.TempDir(), "telemetry.json")
+	c := telemetry.New("", "0.0.0", path, nil)
+	if !c.IsNewInstall() {
+		t.Error("want IsNewInstall=true when config did not exist")
+	}
+}
+
+func TestClient_isNewInstall_falseWhenConfigExists(t *testing.T) {
+	t.Setenv("TRUSTABL_TELEMETRY", "")
+	path := filepath.Join(t.TempDir(), "telemetry.json")
+	_ = telemetry.SaveConfig(path, telemetry.Config{Enabled: true, AnonymousID: "x"})
+	c := telemetry.New("", "0.0.0", path, nil)
+	if c.IsNewInstall() {
+		t.Error("want IsNewInstall=false when config already existed")
+	}
+}
+
+func TestClient_trackRoutesToSink(t *testing.T) {
+	t.Setenv("TRUSTABL_TELEMETRY", "1")
+	path := filepath.Join(t.TempDir(), "telemetry.json")
+	rec := telemetry.NewRecordingSink()
+	c := telemetry.NewWithSink(rec, "0.0.0", path)
+	c.Track("scan.started", map[string]any{"format": "human"})
+	if len(rec.Events) != 1 {
+		t.Fatalf("want 1 event, got %d", len(rec.Events))
+	}
+	if rec.Events[0].Name != "scan.started" {
+		t.Errorf("want scan.started, got %s", rec.Events[0].Name)
+	}
+}
+
+func TestClient_trackDroppedWhenDisabled(t *testing.T) {
+	t.Setenv("TRUSTABL_TELEMETRY", "0")
+	path := filepath.Join(t.TempDir(), "telemetry.json")
+	rec := telemetry.NewRecordingSink()
+	c := telemetry.NewWithSink(rec, "0.0.0", path)
+	c.Track("scan.started", map[string]any{})
+	if len(rec.Events) != 0 {
+		t.Errorf("want 0 events when disabled, got %d", len(rec.Events))
+	}
+}
