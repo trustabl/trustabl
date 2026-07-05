@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
 	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/trustabl/trustabl/internal/cyclonedx"
 	"github.com/trustabl/trustabl/internal/logx"
@@ -47,6 +49,7 @@ type scanFlags struct {
 	attestKey     string
 	attestBundle  string
 	attestNoTLog  bool
+	flagsUsed     []string
 }
 
 func newScanCommand(tel *telemetry.Client) *cobra.Command {
@@ -102,6 +105,11 @@ Exit codes:
   trustabl scan . --no-rules-update`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			var flagsUsed []string
+			cmd.Flags().Visit(func(fl *pflag.Flag) {
+				flagsUsed = append(flagsUsed, fl.Name)
+			})
+			f.flagsUsed = flagsUsed
 			return runScan(args[0], f, logLevelFor(cmd), tel)
 		},
 	}
@@ -162,6 +170,22 @@ func runScan(target string, f scanFlags, level logx.Level, tel *telemetry.Client
 	log.Debugf("scan: flags format=%s strict=%v no-color=%v no-progress=%v output=%q json-out=%q sarif-out=%q bom-out=%q detectors=%q",
 		f.format, f.strict, f.noColor, f.noProgress, f.output, f.jsonOut, f.sarifOut, f.bomOut, f.detectors)
 
+	startTime := time.Now()
+	targetType := "local"
+	if strings.HasPrefix(target, "https://") || strings.HasPrefix(target, "http://") {
+		targetType = "remote"
+	}
+	tel.Track("scan.started", map[string]any{
+		"os":             runtime.GOOS,
+		"arch":           runtime.GOARCH,
+		"target_type":    targetType,
+		"format":         f.format,
+		"strict_mode":    f.strict,
+		"flags_used":     f.flagsUsed,
+		"ci_provider":    telemetry.DetectCIProvider(),
+		"is_new_install": tel.IsNewInstall(),
+	})
+
 	cfg := scanner.Config{Target: target, Log: log}
 	if f.detectors != "" {
 		cats, err := parseCategories(f.detectors)
@@ -182,7 +206,7 @@ func runScan(target string, f scanFlags, level logx.Level, tel *telemetry.Client
 		if mode == progress.ModePlain {
 			rep = progress.NewPlain(os.Stderr)
 		}
-		return runScanSync(f, cfg, rep)
+		return runScanSync(f, cfg, rep, tel, startTime)
 	}
 
 	// TTY path: render on the main goroutine, do the job in a goroutine. The
@@ -234,7 +258,7 @@ func runScan(target string, f scanFlags, level logx.Level, tel *telemetry.Client
 		return err
 	}
 	out := <-done
-	return finishScan(out.result, out.err, f, log)
+	return finishScan(out.result, out.err, f, log, tel, startTime)
 }
 
 // validateOutputFlags rejects output destinations that collide. --output writes
@@ -309,9 +333,9 @@ func modeName(m progress.Mode) string {
 }
 
 // runScanSync runs resolution + scan + render inline (plain/nop modes).
-func runScanSync(f scanFlags, cfg scanner.Config, rep progress.Reporter) error {
+func runScanSync(f scanFlags, cfg scanner.Config, rep progress.Reporter, tel *telemetry.Client, startTime time.Time) error {
 	result, err := resolveAndScan(&cfg, f, rep)
-	return finishScan(result, err, f, cfg.Log)
+	return finishScan(result, err, f, cfg.Log, tel, startTime)
 }
 
 // resolveAndScan resolves rules (reporting a "rules" phase) and runs the scan
@@ -384,7 +408,69 @@ func resolveAndScan(cfg *scanner.Config, f scanFlags, rep progress.Reporter) (mo
 }
 
 // finishScan turns a job outcome into output + the process exit code.
-func finishScan(result models.ScanResult, jobErr error, f scanFlags, log *logx.Logger) error {
+func finishScan(result models.ScanResult, jobErr error, f scanFlags, log *logx.Logger, tel *telemetry.Client, startTime time.Time) error {
+	durationMs := time.Since(startTime).Milliseconds()
+
+	if tel != nil && jobErr != nil {
+		tel.Track("scan.failed", map[string]any{
+			"error_category": categorizeScanError(jobErr),
+			"duration_ms":    durationMs,
+		})
+	} else if tel != nil {
+		// Aggregate findings.
+		bySeverity := map[string]int{}
+		ruleIDsFired := map[string]int{}
+		for _, finding := range result.Findings {
+			bySeverity[string(finding.Severity)]++
+			ruleIDsFired[finding.RuleID]++
+		}
+
+		// Convert SDK and language slices to []string.
+		sdks := make([]string, len(result.SDKs))
+		for i, s := range result.SDKs {
+			sdks[i] = string(s)
+		}
+		langs := make([]string, len(result.Languages))
+		for i, l := range result.Languages {
+			langs[i] = string(l)
+		}
+
+		// Determine exit code.
+		exitCode := 0
+		if len(result.Findings) > 0 {
+			for _, finding := range result.Findings {
+				if models.SeverityWeight(finding.Severity) >= models.SeverityWeight(models.SeverityMedium) {
+					exitCode = 1
+					break
+				}
+			}
+			if f.strict {
+				for _, finding := range result.Findings {
+					if models.SeverityWeight(finding.Severity) >= models.SeverityWeight(models.SeverityLow) {
+						exitCode = 1
+						break
+					}
+				}
+			}
+		}
+
+		tel.Track("scan.completed", map[string]any{
+			"duration_ms":          durationMs,
+			"repo_size_bucket":     repoSizeBucket(result.Manifest),
+			"sdks_detected":        sdks,
+			"languages_detected":   langs,
+			"tools_count":          len(result.Tools),
+			"agents_count":         len(result.Agents),
+			"findings_by_severity": bySeverity,
+			"rule_ids_fired":       ruleIDsFired,
+			"rules_sha":            result.RulesVersion,
+			"schema_version":       result.RulesSchemaVersion,
+			"exit_code":            exitCode,
+			"features_used":        scanFeaturesUsed(f),
+			"repo_id_hash":         telemetry.RepoIDHash(),
+		})
+	}
+
 	if jobErr != nil {
 		if errors.Is(jobErr, rules.ErrAllRulesIncompatible) {
 			fmt.Fprintf(os.Stderr,
@@ -797,6 +883,91 @@ func isRuleSignFailure(err error) bool {
 		errors.Is(err, rulesign.ErrVersionRegression) ||
 		errors.Is(err, rulesign.ErrDigestMismatch) ||
 		errors.Is(err, rulesign.ErrStatementMalformed)
+}
+
+// repoSizeBucket classifies a repo's file count into a coarse bucket.
+// Thresholds: small < 20, medium < 200, large >= 200.
+func repoSizeBucket(m models.ScanManifest) string {
+	total := len(m.PythonFiles) + len(m.TypeScriptFiles) + len(m.JavaScriptFiles) +
+		len(m.GoFiles) + len(m.YAMLFiles) + len(m.JSONFiles) + len(m.MarkdownFiles) +
+		len(m.CSharpFiles) + len(m.PHPFiles) + len(m.RustFiles)
+	switch {
+	case total < 20:
+		return "small"
+	case total < 200:
+		return "medium"
+	default:
+		return "large"
+	}
+}
+
+// scanFeaturesUsed returns a list of optional feature names that were activated
+// by the given flags. Only features the user explicitly enabled are listed.
+func scanFeaturesUsed(f scanFlags) []string {
+	var features []string
+	if f.attest {
+		features = append(features, "attest")
+	}
+	if f.vulnScan {
+		features = append(features, "vuln_scan")
+	}
+	if f.sarifOut != "" {
+		features = append(features, "sarif_out")
+	}
+	if f.jsonOut != "" {
+		features = append(features, "json_out")
+	}
+	if f.bomOut != "" {
+		features = append(features, "bom_out")
+	}
+	if f.noRulesUpdate {
+		features = append(features, "no_rules_update")
+	}
+	return features
+}
+
+// categorizeScanError maps a scan error to the closed error_category enum.
+// Never use err.Error() — Go error strings routinely embed file paths.
+func categorizeScanError(err error) string {
+	if err == nil {
+		return ""
+	}
+	msg := err.Error()
+	switch {
+	case isRulesFetchError(err, msg):
+		return "rules_fetch_failed"
+	case isCloneError(err, msg):
+		return "clone_failed"
+	case isNoRulesError(err, msg):
+		return "no_rules"
+	default:
+		return "unknown"
+	}
+}
+
+func isRulesFetchError(_ error, msg string) bool {
+	// rulesource errors mention "fetch", "resolve", or "clone" in the context
+	// of the rules repo — check for the rulesource package sentinel strings.
+	return containsAny(msg, "fetch rules", "resolve rules", "rulesource")
+}
+
+func isCloneError(_ error, msg string) bool {
+	return containsAny(msg, "clone", "git clone", "cloning")
+}
+
+func isNoRulesError(_ error, msg string) bool {
+	return containsAny(msg, "no rules", "no usable rules", "no compatible rules",
+		"no rules in pack", "all rules incompatible")
+}
+
+func containsAny(s string, needles ...string) bool {
+	sl := strings.ToLower(s)
+	for _, n := range needles {
+		if strings.Contains(sl, strings.ToLower(n)) {
+			return true
+		}
+	}
+	return false
 }
 
 func parseCategories(s string) ([]models.DetectorCategory, error) {

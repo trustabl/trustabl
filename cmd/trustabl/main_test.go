@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/trustabl/trustabl/internal/models"
 	"github.com/trustabl/trustabl/internal/progress"
@@ -22,8 +23,8 @@ func TestFinishScan_GenericErrorNotDoublePrinted(t *testing.T) {
 	genErr := errors.New("boom")
 
 	// Plain mode (human format, non-tty in tests): reporter already showed it.
-	// A nil logger is passed deliberately — finishScan must be nil-safe.
-	errPlain := finishScan(models.ScanResult{}, genErr, scanFlags{format: "human"}, nil)
+	// A nil logger and nil tel are passed deliberately — finishScan must be nil-safe.
+	errPlain := finishScan(models.ScanResult{}, genErr, scanFlags{format: "human"}, nil, nil, time.Time{})
 	var ec exitCodeError
 	if !errors.As(errPlain, &ec) {
 		t.Errorf("plain mode: got %v, want silent exitCodeError", errPlain)
@@ -31,7 +32,7 @@ func TestFinishScan_GenericErrorNotDoublePrinted(t *testing.T) {
 
 	// Off mode (json format forces progress off): main must print it, so the
 	// raw error propagates.
-	errOff := finishScan(models.ScanResult{}, genErr, scanFlags{format: "json"}, nil)
+	errOff := finishScan(models.ScanResult{}, genErr, scanFlags{format: "json"}, nil, nil, time.Time{})
 	if !errors.Is(errOff, genErr) {
 		t.Errorf("off mode: got %v, want the raw error to propagate", errOff)
 	}
