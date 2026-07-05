@@ -66,3 +66,43 @@ func TestSaveAndLoadConfig_roundtrip(t *testing.T) {
 		t.Errorf("want AnonymousID=test-uuid-123, got %s", loaded.AnonymousID)
 	}
 }
+
+func TestDetectCIProvider_githubActions(t *testing.T) {
+	t.Setenv("GITHUB_ACTIONS", "true")
+	if got := telemetry.DetectCIProvider(); got != "github_actions" {
+		t.Errorf("want github_actions, got %s", got)
+	}
+}
+
+func TestDetectCIProvider_notCI(t *testing.T) {
+	// clear known CI vars so the test is hermetic
+	vars := []string{"GITHUB_ACTIONS", "GITLAB_CI", "CIRCLECI", "JENKINS_URL", "CI"}
+	for _, v := range vars {
+		t.Setenv(v, "")
+	}
+	if got := telemetry.DetectCIProvider(); got != "" {
+		t.Errorf("want empty string for non-CI, got %s", got)
+	}
+}
+
+func TestRepoIDHash_consistent(t *testing.T) {
+	t.Setenv("GITHUB_REPOSITORY", "owner/repo")
+	h1 := telemetry.RepoIDHash()
+	h2 := telemetry.RepoIDHash()
+	if h1 == "" {
+		t.Fatal("want non-empty hash")
+	}
+	if h1 != h2 {
+		t.Errorf("want stable hash, got %s and %s", h1, h2)
+	}
+}
+
+func TestRepoIDHash_emptyWhenNoCI(t *testing.T) {
+	vars := []string{"GITHUB_REPOSITORY", "CI_PROJECT_PATH", "CIRCLE_PROJECT_REPONAME"}
+	for _, v := range vars {
+		t.Setenv(v, "")
+	}
+	if got := telemetry.RepoIDHash(); got != "" {
+		t.Errorf("want empty hash when no CI repo env var, got %s", got)
+	}
+}
