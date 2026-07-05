@@ -1,6 +1,7 @@
 package telemetry_test
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/trustabl/trustabl/internal/telemetry"
@@ -25,5 +26,43 @@ func TestRecordingSink_capturesEvents(t *testing.T) {
 	}
 	if s.Events[1].Props["exit_code"] != 0 {
 		t.Errorf("want exit_code=0, got %v", s.Events[1].Props["exit_code"])
+	}
+}
+
+func TestLoadConfig_missingFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "telemetry.json")
+	cfg, existed, err := telemetry.LoadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if existed {
+		t.Error("want existed=false for missing file")
+	}
+	if !cfg.Enabled {
+		t.Error("want default Enabled=true")
+	}
+	if cfg.AnonymousID == "" {
+		t.Error("want non-empty AnonymousID generated for new config")
+	}
+}
+
+func TestSaveAndLoadConfig_roundtrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "telemetry.json")
+	original := telemetry.Config{Enabled: false, AnonymousID: "test-uuid-123"}
+	if err := telemetry.SaveConfig(path, original); err != nil {
+		t.Fatal(err)
+	}
+	loaded, existed, err := telemetry.LoadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !existed {
+		t.Error("want existed=true after save")
+	}
+	if loaded.Enabled != false {
+		t.Error("want Enabled=false")
+	}
+	if loaded.AnonymousID != "test-uuid-123" {
+		t.Errorf("want AnonymousID=test-uuid-123, got %s", loaded.AnonymousID)
 	}
 }
