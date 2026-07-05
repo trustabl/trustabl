@@ -175,16 +175,18 @@ func runScan(target string, f scanFlags, level logx.Level, tel *telemetry.Client
 	if strings.HasPrefix(target, "https://") || strings.HasPrefix(target, "http://") {
 		targetType = "remote"
 	}
-	tel.Track("scan.started", map[string]any{
-		"os":             runtime.GOOS,
-		"arch":           runtime.GOARCH,
-		"target_type":    targetType,
-		"format":         f.format,
-		"strict_mode":    f.strict,
-		"flags_used":     f.flagsUsed,
-		"ci_provider":    telemetry.DetectCIProvider(),
-		"is_new_install": tel.IsNewInstall(),
-	})
+	if tel != nil {
+		tel.Track("scan.started", map[string]any{
+			"os":             runtime.GOOS,
+			"arch":           runtime.GOARCH,
+			"target_type":    targetType,
+			"format":         f.format,
+			"strict_mode":    f.strict,
+			"flags_used":     f.flagsUsed,
+			"ci_provider":    telemetry.DetectCIProvider(),
+			"is_new_install": tel.IsNewInstall(),
+		})
+	}
 
 	cfg := scanner.Config{Target: target, Log: log}
 	if f.detectors != "" {
@@ -410,6 +412,10 @@ func resolveAndScan(cfg *scanner.Config, f scanFlags, rep progress.Reporter) (mo
 // finishScan turns a job outcome into output + the process exit code.
 func finishScan(result models.ScanResult, jobErr error, f scanFlags, log *logx.Logger, tel *telemetry.Client, startTime time.Time) error {
 	durationMs := time.Since(startTime).Milliseconds()
+	// Compute exit code once; reused by the telemetry Track call and the return
+	// path below. When jobErr != nil these paths return early and the value is
+	// unused, but computing it unconditionally keeps the logic in one place.
+	scanExitCode := exitCode(result, f.strict)
 
 	if tel != nil && jobErr != nil {
 		tel.Track("scan.failed", map[string]any{
@@ -435,25 +441,6 @@ func finishScan(result models.ScanResult, jobErr error, f scanFlags, log *logx.L
 			langs[i] = string(l)
 		}
 
-		// Determine exit code.
-		exitCode := 0
-		if len(result.Findings) > 0 {
-			for _, finding := range result.Findings {
-				if models.SeverityWeight(finding.Severity) >= models.SeverityWeight(models.SeverityMedium) {
-					exitCode = 1
-					break
-				}
-			}
-			if f.strict {
-				for _, finding := range result.Findings {
-					if models.SeverityWeight(finding.Severity) >= models.SeverityWeight(models.SeverityLow) {
-						exitCode = 1
-						break
-					}
-				}
-			}
-		}
-
 		tel.Track("scan.completed", map[string]any{
 			"duration_ms":          durationMs,
 			"repo_size_bucket":     repoSizeBucket(result.Manifest),
@@ -465,7 +452,7 @@ func finishScan(result models.ScanResult, jobErr error, f scanFlags, log *logx.L
 			"rule_ids_fired":       ruleIDsFired,
 			"rules_sha":            result.RulesVersion,
 			"schema_version":       result.RulesSchemaVersion,
-			"exit_code":            exitCode,
+			"exit_code":            scanExitCode,
 			"features_used":        scanFeaturesUsed(f),
 			"repo_id_hash":         telemetry.RepoIDHash(),
 		})
@@ -652,7 +639,7 @@ func finishScan(result models.ScanResult, jobErr error, f scanFlags, log *logx.L
 		}
 	}
 
-	code := exitCode(result, f.strict)
+	code := scanExitCode
 	log.Verbosef("result: scan_id %s · overall %.0f%% · %d findings (%s) · exit %d",
 		result.ScanID, result.OverallScore*100, len(result.Findings), severitySummary(result.Findings), code)
 	if code != 0 {
@@ -940,6 +927,8 @@ func categorizeScanError(err error) string {
 		return "clone_failed"
 	case isNoRulesError(err, msg):
 		return "no_rules"
+	case isParseError(err, msg):
+		return "parse_error"
 	default:
 		return "unknown"
 	}
@@ -958,6 +947,10 @@ func isCloneError(_ error, msg string) bool {
 func isNoRulesError(_ error, msg string) bool {
 	return containsAny(msg, "no rules", "no usable rules", "no compatible rules",
 		"no rules in pack", "all rules incompatible")
+}
+
+func isParseError(_ error, msg string) bool {
+	return containsAny(msg, "parse error", "ast error", "tree-sitter", "syntax error", "failed to parse")
 }
 
 func containsAny(s string, needles ...string) bool {
