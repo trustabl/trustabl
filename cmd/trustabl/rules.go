@@ -10,9 +10,10 @@ import (
 	"github.com/trustabl/trustabl/internal/logx"
 	"github.com/trustabl/trustabl/internal/rules"
 	"github.com/trustabl/trustabl/internal/rulesource"
+	"github.com/trustabl/trustabl/internal/telemetry"
 )
 
-func newRulesCommand() *cobra.Command {
+func newRulesCommand(tel *telemetry.Client) *cobra.Command {
 	rulesCmd := &cobra.Command{
 		Use:   "rules",
 		Short: "Manage Trustabl's detection rules",

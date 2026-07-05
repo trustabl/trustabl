@@ -10,6 +10,7 @@ import (
 	"github.com/trustabl/trustabl/internal/enrichment"
 	"github.com/trustabl/trustabl/internal/llm"
 	"github.com/trustabl/trustabl/internal/models"
+	"github.com/trustabl/trustabl/internal/telemetry"
 )
 
 type enrichFlags struct {
@@ -22,7 +23,7 @@ type enrichFlags struct {
 	rules        []string
 }
 
-func newEnrichCommand() *cobra.Command {
+func newEnrichCommand(tel *telemetry.Client) *cobra.Command {
 	var f enrichFlags
 	cmd := &cobra.Command{
 		Use:   "enrich",

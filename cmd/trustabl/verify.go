@@ -10,6 +10,7 @@ import (
 
 	"github.com/trustabl/trustabl/internal/attest"
 	"github.com/trustabl/trustabl/internal/logx"
+	"github.com/trustabl/trustabl/internal/telemetry"
 )
 
 type verifyFlags struct {
@@ -20,7 +21,7 @@ type verifyFlags struct {
 	noTLog       bool
 }
 
-func newVerifyCommand() *cobra.Command {
+func newVerifyCommand(tel *telemetry.Client) *cobra.Command {
 	var f verifyFlags
 	cmd := &cobra.Command{
 		Use:   "verify <report.json>",

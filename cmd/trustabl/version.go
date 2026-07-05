@@ -4,9 +4,11 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
+
+	"github.com/trustabl/trustabl/internal/telemetry"
 )
 
-func newVersionCommand() *cobra.Command {
+func newVersionCommand(tel *telemetry.Client) *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
 		Short: "Print version, commit, and build date",

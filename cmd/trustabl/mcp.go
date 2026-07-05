@@ -14,6 +14,7 @@ import (
 	"github.com/trustabl/trustabl/internal/rules"
 	"github.com/trustabl/trustabl/internal/rulesource"
 	"github.com/trustabl/trustabl/internal/scanner"
+	"github.com/trustabl/trustabl/internal/telemetry"
 )
 
 // mcpFlags configure the `trustabl mcp` server. They mirror the rules-source
@@ -33,7 +34,7 @@ type mcpFlags struct {
 // frontend over the same scanner core as `scan` — it reuses rule resolution and
 // scanner.Run, and serializes the deterministic ScanResult onto the protocol
 // stream itself.
-func newMCPCommand() *cobra.Command {
+func newMCPCommand(tel *telemetry.Client) *cobra.Command {
 	var f mcpFlags
 	cmd := &cobra.Command{
 		Use:   "mcp",

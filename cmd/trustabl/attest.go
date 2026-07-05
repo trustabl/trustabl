@@ -11,6 +11,7 @@ import (
 	"github.com/trustabl/trustabl/internal/attest"
 	"github.com/trustabl/trustabl/internal/logx"
 	"github.com/trustabl/trustabl/internal/models"
+	"github.com/trustabl/trustabl/internal/telemetry"
 )
 
 // Default output paths shared by the `attest` subcommand and the `scan --attest`
@@ -30,7 +31,7 @@ type attestFlags struct {
 	noTLog       bool
 }
 
-func newAttestCommand() *cobra.Command {
+func newAttestCommand(tel *telemetry.Client) *cobra.Command {
 	var f attestFlags
 	cmd := &cobra.Command{
 		Use:   "attest <report.json>",

@@ -11,9 +11,10 @@ import (
 	"golang.org/x/term"
 
 	"github.com/trustabl/trustabl/internal/llm"
+	"github.com/trustabl/trustabl/internal/telemetry"
 )
 
-func newLLMCommand() *cobra.Command {
+func newLLMCommand(tel *telemetry.Client) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "llm",
 		Short: "Manage LLM provider configuration",

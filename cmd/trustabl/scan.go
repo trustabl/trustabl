@@ -23,6 +23,7 @@ import (
 	"github.com/trustabl/trustabl/internal/rulesource"
 	"github.com/trustabl/trustabl/internal/sarif"
 	"github.com/trustabl/trustabl/internal/scanner"
+	"github.com/trustabl/trustabl/internal/telemetry"
 )
 
 type scanFlags struct {
@@ -48,7 +49,7 @@ type scanFlags struct {
 	attestNoTLog  bool
 }
 
-func newScanCommand() *cobra.Command {
+func newScanCommand(tel *telemetry.Client) *cobra.Command {
 	var f scanFlags
 	cmd := &cobra.Command{
 		Use:   "scan <target>",
@@ -101,7 +102,7 @@ Exit codes:
   trustabl scan . --no-rules-update`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runScan(args[0], f, logLevelFor(cmd))
+			return runScan(args[0], f, logLevelFor(cmd), tel)
 		},
 	}
 	cmd.Flags().StringVar(&f.detectors, "detectors", "",
@@ -150,7 +151,7 @@ Exit codes:
 	return cmd
 }
 
-func runScan(target string, f scanFlags, level logx.Level) error {
+func runScan(target string, f scanFlags, level logx.Level, tel *telemetry.Client) error {
 	if err := validateOutputFlags(f); err != nil {
 		return err
 	}

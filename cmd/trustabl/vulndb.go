@@ -7,10 +7,11 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/trustabl/trustabl/internal/logx"
+	"github.com/trustabl/trustabl/internal/telemetry"
 	"github.com/trustabl/trustabl/internal/vulndb"
 )
 
-func newVulnDBCommand() *cobra.Command {
+func newVulnDBCommand(tel *telemetry.Client) *cobra.Command {
 	vulnCmd := &cobra.Command{
 		Use:   "vulndb",
 		Short: "Manage the OSV vulnerability database snapshot",

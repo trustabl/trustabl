@@ -93,7 +93,7 @@ func TestVersionCommandOutput(t *testing.T) {
 
 	version, commit, date = "1.2.3", "abc1234", "2026-05-26"
 
-	cmd := newVersionCommand()
+	cmd := newVersionCommand(nil)
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
 	cmd.SetErr(&buf)
