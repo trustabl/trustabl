@@ -1066,6 +1066,18 @@ corpus is the detection-quality target (see
 the current tests are regression coverage, not detection-quality
 measurement.
 
+## Privacy & telemetry
+
+Trustabl collects anonymous usage data — which SDKs are scanned, scan duration, which rules fire — to guide product direction. **No source code, file paths, repo names, or finding details are ever sent.** Telemetry is on by default and opt-out.
+
+```sh
+trustabl telemetry off          # persist opt-out to config file
+export TRUSTABL_TELEMETRY=0     # or disable for the current shell session
+trustabl telemetry status       # show current state
+```
+
+The full event schema — every event name and every property, verbatim — is at [TELEMETRY.md](TELEMETRY.md) (and at [trustabl.dev/telemetry](https://trustabl.dev/telemetry) once the site is live). That page is kept in sync with the code; stale docs are treated as a defect.
+
 ## Community
 
 Join the [Trustabl Discord](https://discord.gg/maQ7QMPsB) to ask questions, share feedback, and follow development.
