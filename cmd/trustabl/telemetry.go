@@ -31,8 +31,8 @@ func newTelemetryOnCommand() *cobra.Command {
 		Use:   "on",
 		Short: "Enable anonymous telemetry",
 		Args:  cobra.NoArgs,
-		RunE: func(_ *cobra.Command, _ []string) error {
-			return setTelemetry(true)
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return setTelemetry(cmd, true)
 		},
 	}
 }
@@ -42,8 +42,8 @@ func newTelemetryOffCommand() *cobra.Command {
 		Use:   "off",
 		Short: "Disable anonymous telemetry",
 		Args:  cobra.NoArgs,
-		RunE: func(_ *cobra.Command, _ []string) error {
-			return setTelemetry(false)
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return setTelemetry(cmd, false)
 		},
 	}
 }
@@ -85,7 +85,7 @@ func newTelemetryStatusCommand() *cobra.Command {
 	}
 }
 
-func setTelemetry(enabled bool) error {
+func setTelemetry(cmd *cobra.Command, enabled bool) error {
 	path, err := telemetry.DefaultConfigPath()
 	if err != nil {
 		return err
@@ -99,9 +99,9 @@ func setTelemetry(enabled bool) error {
 		return err
 	}
 	if enabled {
-		fmt.Println("Telemetry enabled.")
+		fmt.Fprintln(cmd.OutOrStdout(), "Telemetry enabled.")
 	} else {
-		fmt.Println("Telemetry disabled.")
+		fmt.Fprintln(cmd.OutOrStdout(), "Telemetry disabled.")
 	}
 	return nil
 }

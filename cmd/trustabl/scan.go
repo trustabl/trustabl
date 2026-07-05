@@ -175,6 +175,16 @@ func runScan(target string, f scanFlags, level logx.Level, tel *telemetry.Client
 	if strings.HasPrefix(target, "https://") || strings.HasPrefix(target, "http://") {
 		targetType = "remote"
 	}
+
+	cfg := scanner.Config{Target: target, Log: log}
+	if f.detectors != "" {
+		cats, err := parseCategories(f.detectors)
+		if err != nil {
+			return err
+		}
+		cfg.Categories = cats
+	}
+
 	if tel != nil {
 		tel.Track("scan.started", map[string]any{
 			"os":             runtime.GOOS,
@@ -186,15 +196,6 @@ func runScan(target string, f scanFlags, level logx.Level, tel *telemetry.Client
 			"ci_provider":    telemetry.DetectCIProvider(),
 			"is_new_install": tel.IsNewInstall(),
 		})
-	}
-
-	cfg := scanner.Config{Target: target, Log: log}
-	if f.detectors != "" {
-		cats, err := parseCategories(f.detectors)
-		if err != nil {
-			return err
-		}
-		cfg.Categories = cats
 	}
 
 	mode := pickScanMode(f, log)
@@ -914,7 +915,8 @@ func scanFeaturesUsed(f scanFlags) []string {
 }
 
 // categorizeScanError maps a scan error to the closed error_category enum.
-// Never use err.Error() — Go error strings routinely embed file paths.
+// err.Error() is used internally for pattern matching only — the raw string
+// never reaches PostHog; only the closed label is forwarded.
 func categorizeScanError(err error) string {
 	if err == nil {
 		return ""

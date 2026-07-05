@@ -86,7 +86,8 @@ func NewWithSink(sink Sink, version, configPath string) *Client {
 	if err != nil {
 		// Unreadable/corrupt config → default to enabled so the contract
 		// "telemetry is on unless opted out" is upheld.
-		cfg = Config{Enabled: true}
+		id, _ := newUUID()
+		cfg = Config{Enabled: true, AnonymousID: id}
 		existed = false
 	}
 	enabled := cfg.Enabled

@@ -113,9 +113,11 @@ with --strict), 2 = scanner error or no usable rules.`,
 	if err := rootCmd.Execute(); err != nil {
 		var ec exitCodeError
 		if errors.As(err, &ec) {
+			tel.Flush()
 			os.Exit(ec.code) // findings-based exit; message already printed
 		}
 		fmt.Fprintln(os.Stderr, "Error:", err)
+		tel.Flush()
 		os.Exit(2)
 	}
 }
