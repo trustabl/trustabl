@@ -20,6 +20,7 @@ builds:
       - -X main.version={{.Version}}
       - -X main.commit={{.FullCommit}}
       - -X main.date={{.CommitDate}}
+      - -X main.posthogAPIKey={{ .Env.POSTHOG_API_KEY }}
     # CGO (tree-sitter) cross-compiled from one macOS runner:
     #   - darwin: native clang against the runner's SDK (SDK_PATH from xcrun)
     #   - linux:  zig cc/c++ targeting musl (produces static binaries)
