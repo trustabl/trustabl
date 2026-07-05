@@ -89,8 +89,11 @@ with --strict), 2 = scanner error or no usable rules.`,
   # Pre-download the rule packs for offline use
   trustabl rules pull`,
 		SilenceUsage:  true,
-		SilenceErrors: true,
+		SilenceErrors: true, // we handle error printing ourselves below
 	}
+	// Persistent (global) diagnostics flags, inherited by every subcommand. All
+	// diagnostics go to stderr only, so they never perturb the byte-stable report
+	// on stdout. --debug implies --verbose (see logLevelFor).
 	rootCmd.PersistentFlags().BoolP("verbose", "v", false,
 		"verbose diagnostics on stderr: rule provenance, discovery counts, phase summaries")
 	rootCmd.PersistentFlags().Bool("debug", false,
@@ -110,7 +113,7 @@ with --strict), 2 = scanner error or no usable rules.`,
 	if err := rootCmd.Execute(); err != nil {
 		var ec exitCodeError
 		if errors.As(err, &ec) {
-			os.Exit(ec.code)
+			os.Exit(ec.code) // findings-based exit; message already printed
 		}
 		fmt.Fprintln(os.Stderr, "Error:", err)
 		os.Exit(2)
