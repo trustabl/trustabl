@@ -1,6 +1,8 @@
 package telemetry_test
 
 import (
+	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -187,5 +189,15 @@ func TestClient_trackDroppedWhenDisabled(t *testing.T) {
 	c.Track("scan.started", map[string]any{})
 	if len(rec.Events) != 0 {
 		t.Errorf("want 0 events when disabled, got %d", len(rec.Events))
+	}
+}
+
+func TestClient_ciEphemeralIDNotPersisted(t *testing.T) {
+	t.Setenv("CI", "true")
+	t.Setenv("TRUSTABL_TELEMETRY", "")
+	path := filepath.Join(t.TempDir(), "telemetry.json")
+	telemetry.New("", "0.0.0", path, nil)
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Error("config file must not be written in CI")
 	}
 }

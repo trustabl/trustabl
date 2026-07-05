@@ -31,7 +31,11 @@ func New(apiKey, version, configPath string, stderr *os.File) *Client {
 		existed = false
 	}
 
-	// Opt-out precedence: env var > config > default
+	// Opt-out precedence: env var > config > default.
+	// Spec note: config is read before the TRUSTABL_TELEMETRY=0 fast-path so
+	// that we always have an AnonymousID available (for a stable per-machine
+	// identity even when telemetry is disabled). The enabled flag from config
+	// is overridden below, so no telemetry is sent when envVal=="0".
 	enabled := cfg.Enabled
 	switch envVal {
 	case "0":
@@ -49,7 +53,8 @@ func New(apiKey, version, configPath string, stderr *os.File) *Client {
 	}
 
 	// Persist config on first run so subsequent runs are stable.
-	if !existed && envVal != "0" {
+	// CI environments use ephemeral IDs (not stored) — skip the write there.
+	if !existed && !isCI && envVal != "0" {
 		_ = SaveConfig(configPath, Config{Enabled: true, AnonymousID: cfg.AnonymousID})
 	}
 
@@ -77,7 +82,13 @@ func New(apiKey, version, configPath string, stderr *os.File) *Client {
 // NewWithSink constructs a Client with an explicit sink (for tests).
 func NewWithSink(sink Sink, version, configPath string) *Client {
 	envVal := os.Getenv("TRUSTABL_TELEMETRY")
-	cfg, existed, _ := LoadConfig(configPath)
+	cfg, existed, err := LoadConfig(configPath)
+	if err != nil {
+		// Unreadable/corrupt config → default to enabled so the contract
+		// "telemetry is on unless opted out" is upheld.
+		cfg = Config{Enabled: true}
+		existed = false
+	}
 	enabled := cfg.Enabled
 	switch envVal {
 	case "0":
