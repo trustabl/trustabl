@@ -412,6 +412,30 @@ func TestScan_GoogleADKDemoFiresExpectedRules(t *testing.T) {
 	}
 }
 
+func TestScan_SkillDuplicateToolRefs(t *testing.T) {
+	_, thisFile, _, _ := runtime.Caller(0)
+	target := filepath.Join(filepath.Dir(thisFile), "..", "..", "testdata", "corpus", "skill-duplicate-tool-refs")
+	res, err := scanner.Run(scanner.Config{Target: target, RulesFS: rulesFixture(t)})
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+
+	var otherCSKILL []string
+	fired := map[string]bool{}
+	for _, f := range res.Findings {
+		fired[f.RuleID] = true
+		if f.RuleID != "CSKILL-061" && strings.HasPrefix(f.RuleID, "CSKILL-") {
+			otherCSKILL = append(otherCSKILL, f.RuleID)
+		}
+	}
+	if !fired["CSKILL-061"] {
+		t.Errorf("expected CSKILL-061 to fire on skill-duplicate-tool-refs; fired set: %v", fired)
+	}
+	if len(otherCSKILL) > 0 {
+		t.Errorf("expected only CSKILL-061 to fire, but other CSKILL rules also fired: %v", otherCSKILL)
+	}
+}
+
 func TestScan_LangChainDemoFiresExpectedRules(t *testing.T) {
 	_, thisFile, _, _ := runtime.Caller(0)
 	target := filepath.Join(filepath.Dir(thisFile), "..", "..", "testdata", "corpus", "langchain-demo")
