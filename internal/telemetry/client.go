@@ -138,6 +138,6 @@ func printFirstRunNotice(w *os.File) {
 	const notice = "\nTrustabl collects anonymous usage data to help improve the product.\n" +
 		"No source code, file paths, repo names, or finding details are ever sent.\n" +
 		"Run `trustabl telemetry off` or set TRUSTABL_TELEMETRY=0 to disable.\n" +
-		"Learn more: https://trustabl.dev/telemetry\n\n"
+		"Learn more: https://trustabl.ai/telemetry\n\n"
 	_, _ = w.WriteString(notice)
 }

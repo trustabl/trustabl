@@ -170,7 +170,7 @@ On the first run in an interactive terminal (TTY), before any scan output, Trust
 Trustabl collects anonymous usage data to help improve the product.
 No source code, file paths, repo names, or finding details are ever sent.
 Run `trustabl telemetry off` or set TRUSTABL_TELEMETRY=0 to disable.
-Learn more: https://trustabl.dev/telemetry
+Learn more: https://trustabl.ai/telemetry
 ```
 
 This notice is shown once, on TTY only. It is never shown in CI or when output is piped.

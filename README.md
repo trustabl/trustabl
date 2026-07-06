@@ -1076,7 +1076,7 @@ export TRUSTABL_TELEMETRY=0     # or disable for the current shell session
 trustabl telemetry status       # show current state
 ```
 
-The full event schema — every event name and every property, verbatim — is at [TELEMETRY.md](TELEMETRY.md) (and at [trustabl.dev/telemetry](https://trustabl.dev/telemetry) once the site is live). That page is kept in sync with the code; stale docs are treated as a defect.
+The full event schema — every event name and every property, verbatim — is at [TELEMETRY.md](TELEMETRY.md) (and at [trustabl.dev/telemetry](https://trustabl.ai/telemetry) once the site is live). That page is kept in sync with the code; stale docs are treated as a defect.
 
 ## Community
 

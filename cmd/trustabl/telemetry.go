@@ -18,7 +18,7 @@ func newTelemetryCommand() *cobra.Command {
 
 Trustabl collects anonymous data (CLI version, OS, SDKs detected, scan
 duration) to improve the product. No source code, file paths, or repo
-names are ever sent. See https://trustabl.dev/telemetry for the full list.`,
+names are ever sent. See https://trustabl.ai/telemetry for the full list.`,
 	}
 	cmd.AddCommand(newTelemetryOnCommand())
 	cmd.AddCommand(newTelemetryOffCommand())
