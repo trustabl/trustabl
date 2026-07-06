@@ -444,6 +444,31 @@ func TestScan_LangChainDemoFiresExpectedRules(t *testing.T) {
 	}
 }
 
+func TestScan_SkillMissingDescription(t *testing.T) {
+	_, thisFile, _, _ := runtime.Caller(0)
+	target := filepath.Join(filepath.Dir(thisFile), "..", "..", "testdata", "corpus", "skill-missing-description")
+	res, err := scanner.Run(scanner.Config{Target: target, RulesFS: rulesFixture(t)})
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+
+	fired := map[string]bool{}
+	for _, f := range res.Findings {
+		fired[f.RuleID] = true
+	}
+	if !fired["CSKILL-070"] {
+		t.Errorf("expected CSKILL-070 to fire on skill-missing-description; fired set: %v", fired)
+	}
+
+	// The fixture is deliberately clean of every other skill-scope trigger, so
+	// no other CSKILL-* rule should fire alongside it.
+	for _, f := range res.Findings {
+		if strings.HasPrefix(f.RuleID, "CSKILL-") && f.RuleID != "CSKILL-070" {
+			t.Errorf("unexpected skill finding %s fired on skill-missing-description", f.RuleID)
+		}
+	}
+}
+
 func TestScan_SurfacesNewInventoryFields(t *testing.T) {
 	_, thisFile, _, _ := runtime.Caller(0)
 	target := filepath.Join(filepath.Dir(thisFile), "..", "..", "testdata", "corpus", "financial_research_agent")
