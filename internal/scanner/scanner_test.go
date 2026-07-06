@@ -412,6 +412,33 @@ func TestScan_GoogleADKDemoFiresExpectedRules(t *testing.T) {
 	}
 }
 
+func TestScan_SkillAgentSpecific(t *testing.T) {
+	_, thisFile, _, _ := runtime.Caller(0)
+	target := filepath.Join(filepath.Dir(thisFile), "..", "..", "testdata", "corpus", "skill-agent-specific")
+	res, err := scanner.Run(scanner.Config{Target: target, RulesFS: rulesFixture(t)})
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+
+	var cskill071Count int
+	unexpected := map[string]bool{}
+	for _, f := range res.Findings {
+		if f.RuleID == "CSKILL-071" {
+			cskill071Count++
+			continue
+		}
+		if strings.HasPrefix(f.RuleID, "CSKILL-") {
+			unexpected[f.RuleID] = true
+		}
+	}
+	if cskill071Count != 1 {
+		t.Errorf("CSKILL-071 fired %d times on skill-agent-specific, want exactly 1 (findings: %+v)", cskill071Count, res.Findings)
+	}
+	if len(unexpected) > 0 {
+		t.Errorf("unexpected CSKILL-* rules fired on skill-agent-specific: %v", unexpected)
+	}
+}
+
 func TestScan_LangChainDemoFiresExpectedRules(t *testing.T) {
 	_, thisFile, _, _ := runtime.Caller(0)
 	target := filepath.Join(filepath.Dir(thisFile), "..", "..", "testdata", "corpus", "langchain-demo")
