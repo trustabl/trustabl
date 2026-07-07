@@ -3,6 +3,7 @@ package llm_test
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/trustabl/trustabl/internal/llm"
@@ -81,6 +82,12 @@ func TestLoad_RoundTrip(t *testing.T) {
 }
 
 func TestSave_FilePermissions(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// os.Chmod on Windows only toggles the read-only attribute;
+		// Mode().Perm() reports 0666 for any writable file, so the 0600
+		// assertion below can never hold there.
+		t.Skip("POSIX file permissions are not enforceable on Windows")
+	}
 	dir := t.TempDir()
 	setConfigDir(t, dir)
 
