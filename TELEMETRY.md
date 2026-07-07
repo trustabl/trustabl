@@ -110,7 +110,7 @@ Fired for every non-scan subcommand invocation.
 
 | Property | Type | Example | Notes |
 |---|---|---|---|
-| `command` | string | `"mcp"` | Dotted command name. Possible values: `version`, `mcp`, `enrich`, `attest`, `verify`, `capabilities`, `rules.pull`, `rules.validate`, `vulndb.pull`, `llm.list`, `llm.key.set`, `llm.key.get`, `llm.key.delete`, `llm.model.set`, `llm.provider.set`, `llm.provider.list`. |
+| `command` | string | `"mcp"` | Dotted command name. Possible values: `version`, `mcp`, `enrich`, `attest`, `verify`, `capabilities`, `rules.pull`, `rules.validate`, `vulndb.pull`. |
 
 ---
 

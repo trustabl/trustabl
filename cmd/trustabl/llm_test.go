@@ -35,7 +35,7 @@ func setLLMConfigDir(t *testing.T, dir string) {
 func TestLLMList_NoConfig(t *testing.T) {
 	setLLMConfigDir(t, t.TempDir())
 
-	cmd := newLLMListCommand(nil)
+	cmd := newLLMListCommand()
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
 	cmd.SetErr(&buf)
@@ -56,7 +56,7 @@ func TestLLMList_WithConfig(t *testing.T) {
 		t.Fatalf("setup Save() error: %v", err)
 	}
 
-	cmd := newLLMListCommand(nil)
+	cmd := newLLMListCommand()
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
 	cmd.SetErr(&buf)
@@ -75,7 +75,7 @@ func TestLLMList_WithConfig(t *testing.T) {
 func TestLLMKeyGet_NoKey(t *testing.T) {
 	setLLMConfigDir(t, t.TempDir())
 
-	cmd := newLLMKeyGetCommand(nil)
+	cmd := newLLMKeyGetCommand()
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
 	cmd.SetErr(&buf)
@@ -96,7 +96,7 @@ func TestLLMKeyGet_WithKey(t *testing.T) {
 		t.Fatalf("setup Save() error: %v", err)
 	}
 
-	cmd := newLLMKeyGetCommand(nil)
+	cmd := newLLMKeyGetCommand()
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
 	cmd.SetErr(&buf)
@@ -118,7 +118,7 @@ func TestLLMList_ActiveMarker(t *testing.T) {
 		t.Fatalf("setup Save() error: %v", err)
 	}
 
-	cmd := newLLMListCommand(nil)
+	cmd := newLLMListCommand()
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
 	cmd.SetErr(&buf)
@@ -134,7 +134,7 @@ func TestLLMList_ActiveMarker(t *testing.T) {
 func TestLLMKeySet_ValidArg(t *testing.T) {
 	setLLMConfigDir(t, t.TempDir())
 
-	cmd := newLLMKeySetCommand(nil)
+	cmd := newLLMKeySetCommand()
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
 	cmd.SetErr(&buf)
@@ -168,7 +168,7 @@ func TestLLMKeySet_InvalidKey(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			setLLMConfigDir(t, t.TempDir())
 
-			cmd := newLLMKeySetCommand(nil)
+			cmd := newLLMKeySetCommand()
 			var buf bytes.Buffer
 			cmd.SetOut(&buf)
 			cmd.SetErr(&buf)
@@ -189,7 +189,7 @@ func TestLLMKeySet_NonInteractive(t *testing.T) {
 	// the command must return an actionable error rather than hanging.
 	setLLMConfigDir(t, t.TempDir())
 
-	cmd := newLLMKeySetCommand(nil)
+	cmd := newLLMKeySetCommand()
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
 	cmd.SetErr(&buf)
@@ -211,7 +211,7 @@ func TestLLMKeyDelete_Confirm(t *testing.T) {
 		t.Fatalf("setup Save() error: %v", err)
 	}
 
-	cmd := newLLMKeyDeleteCommand(nil)
+	cmd := newLLMKeyDeleteCommand()
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
 	cmd.SetErr(&buf)
@@ -243,7 +243,7 @@ func TestLLMKeyDelete_Abort(t *testing.T) {
 
 	for _, input := range []string{"N\n", "n\n", "\n"} {
 		t.Run("input="+strings.TrimSpace(input), func(t *testing.T) {
-			cmd := newLLMKeyDeleteCommand(nil)
+			cmd := newLLMKeyDeleteCommand()
 			var buf bytes.Buffer
 			cmd.SetOut(&buf)
 			cmd.SetErr(&buf)
@@ -269,7 +269,7 @@ func TestLLMKeyDelete_Abort(t *testing.T) {
 func TestLLMKeyDelete_NoKey(t *testing.T) {
 	setLLMConfigDir(t, t.TempDir())
 
-	cmd := newLLMKeyDeleteCommand(nil)
+	cmd := newLLMKeyDeleteCommand()
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
 	cmd.SetErr(&buf)
@@ -284,7 +284,7 @@ func TestLLMKeyDelete_NoKey(t *testing.T) {
 func TestLLMModelSet(t *testing.T) {
 	setLLMConfigDir(t, t.TempDir())
 
-	cmd := newLLMModelSetCommand(nil)
+	cmd := newLLMModelSetCommand()
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
 	cmd.SetErr(&buf)
@@ -308,7 +308,7 @@ func TestLLMModelSet(t *testing.T) {
 func TestLLMProviderSet_New(t *testing.T) {
 	setLLMConfigDir(t, t.TempDir())
 
-	cmd := newLLMProviderSetCommand(nil)
+	cmd := newLLMProviderSetCommand()
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
 	cmd.SetErr(&buf)
@@ -347,7 +347,7 @@ func TestLLMProviderSet_Existing(t *testing.T) {
 	}
 
 	// Switch back to anthropic (already exists).
-	cmd := newLLMProviderSetCommand(nil)
+	cmd := newLLMProviderSetCommand()
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
 	cmd.SetErr(&buf)
@@ -367,7 +367,7 @@ func TestLLMProviderSet_Existing(t *testing.T) {
 func TestLLMProviderList_NoConfig(t *testing.T) {
 	setLLMConfigDir(t, t.TempDir())
 
-	cmd := newLLMProviderListCommand(nil)
+	cmd := newLLMProviderListCommand()
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
 	cmd.SetErr(&buf)
@@ -390,7 +390,7 @@ func TestLLMProviderList_WithConfig(t *testing.T) {
 		t.Fatalf("setup Save() error: %v", err)
 	}
 
-	cmd := newLLMProviderListCommand(nil)
+	cmd := newLLMProviderListCommand()
 	var buf bytes.Buffer
 	cmd.SetOut(&buf)
 	cmd.SetErr(&buf)
