@@ -11,8 +11,8 @@ policy:
 rules:
   - id: CSKILL-001
     title: Skill auto-approves unrestricted shell
-    severity: critical
-    confidence: 0.95
+    severity: high
+    confidence: 0.9
     applies_to:
       - claude_skill
     scope: skill
@@ -21,14 +21,23 @@ rules:
     explanation: >
       This skill's allowed-tools pre-approves unrestricted shell — a bare `Bash`
       grant or `Bash(*)`. In Claude Code allowed-tools is an auto-approval list,
-      not a sandbox: while the skill is active Claude runs any shell command it
-      lists WITHOUT prompting you. Combined with a skill's ability to run bundled
-      scripts and dynamic-context commands, this is effectively arbitrary local
-      code execution on activation.
+      not a sandbox: while the skill is active, any shell command Claude issues
+      runs without a per-command approval prompt. The grant is bounded — it
+      applies only while this skill is active, only after the workspace or
+      plugin is trusted, and a skill cannot change permission modes — but
+      activation is not only manual: unless disable-model-invocation is set,
+      Claude can load the skill itself when it judges it relevant. During that
+      window, a prompt-injected instruction (from a file the skill reads, a
+      tool result, or fetched content) can run arbitrary commands with no
+      approval gate, and a bare grant auto-approves far more than the commands
+      the skill actually needs.
     fix: >
-      Replace the wildcard with the specific commands the skill needs, e.g.
-      `allowed-tools: Bash(git status *) Bash(git diff *)`. Never grant `Bash(*)`
-      or a bare `Bash` in a skill checked into a shared repository.
+      Replace the wildcard with the specific command prefixes the skill needs,
+      e.g. `allowed-tools: Bash(git status *) Bash(git diff *)` — the skill
+      keeps working, but only its own commands are pre-approved. For
+      side-effecting workflows, also set `disable-model-invocation: true` so
+      only the user can activate the skill (see CSKILL-050). Never grant
+      `Bash(*)` or a bare `Bash` in a skill checked into a shared repository.
 
   - id: CSKILL-002
     title: Skill runs shell during load (dynamic-context execution)
