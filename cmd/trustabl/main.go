@@ -105,7 +105,7 @@ with --strict), 2 = scanner error or no usable rules.`,
 	rootCmd.AddCommand(newRulesCommand(tel))
 	rootCmd.AddCommand(newVulnDBCommand(tel))
 	rootCmd.AddCommand(newMCPCommand(tel))
-	rootCmd.AddCommand(newLLMCommand(tel))
+	rootCmd.AddCommand(newLLMCommand())
 	rootCmd.AddCommand(newEnrichCommand(tel))
 	rootCmd.AddCommand(newCapabilitiesCommand(tel))
 	rootCmd.AddCommand(newTelemetryCommand())

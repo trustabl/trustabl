@@ -13,7 +13,7 @@ import (
 	"github.com/trustabl/trustabl/internal/llm"
 )
 
-func newLLMCommand(_ interface{}) *cobra.Command {
+func newLLMCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "llm",
 		Short: "Manage LLM provider configuration",
