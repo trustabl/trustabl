@@ -672,6 +672,25 @@ def get_invoice(id: str) -> dict:
     return s.get("https://api.example.com/invoice/" + id).json()
 `,
 		toolConfig: nil, wantFires: true},
+	// The alias resolver canonicalizes an aiohttp session variable to
+	// aiohttp.ClientSession.<method>, which the callee list carries — this
+	// guards the aliased-aiohttp path end-to-end.
+	{name: "CSDK-003 fires on aliased aiohttp session get without timeout", ruleID: "CSDK-003", kind: models.KindClaudeSDKTool, src: `
+import aiohttp
+def fetch_status(url: str) -> str:
+    """Fetch a status page."""
+    sess = aiohttp.ClientSession()
+    return sess.get(url)
+`,
+		toolConfig: nil, wantFires: true},
+	// Bare urlopen (the from-import form) is in the callee list.
+	{name: "CSDK-003 fires on bare urlopen without timeout", ruleID: "CSDK-003", kind: models.KindClaudeSDKTool, src: `
+from urllib.request import urlopen
+def fetch_page(url: str) -> str:
+    """Fetch a page."""
+    return urlopen(url).read().decode()
+`,
+		toolConfig: nil, wantFires: true},
 
 	// ─── CSDK-004 unsafe path ───────────────────────────────────────────────
 	{name: "CSDK-004 fires on path in open()", ruleID: "CSDK-004", kind: models.KindClaudeSDKTool, src: `
@@ -865,6 +884,14 @@ def get_weather(city):
 def get_weather(city: str) -> str:
     """Look up the weather."""
     return "sunny"
+`,
+		toolConfig: nil, wantFires: false},
+	// A zero-param tool has nothing to annotate — the has_params guard keeps
+	// the rule from flagging it (it used to fire, a false positive).
+	{name: "ADK-002 silent on a zero-param tool", ruleID: "ADK-002", kind: models.KindADKFunctionTool, src: `
+def refresh_cache() -> str:
+    """Refresh the cache."""
+    return "ok"
 `,
 		toolConfig: nil, wantFires: false},
 
@@ -1435,6 +1462,24 @@ def echo(x: str) -> str:
     return x
 `,
 		toolConfig: nil, wantFires: false},
+	// Explicit needs_approval=False is exactly as un-gated as omitting the
+	// kwarg — presence alone must not silence the rule.
+	{name: "OAI-014 fires when needs_approval=False explicitly", ruleID: "OAI-014", kind: models.KindOpenAITool, src: `
+import subprocess
+def run(cmd: str) -> str:
+    """Run."""
+    return subprocess.run([cmd], capture_output=True).stdout.decode()
+`,
+		toolConfig: map[string]string{"needs_approval": "False"}, wantFires: true},
+	// A per-call approval callable is the SDK's documented HITL form — it is a
+	// gate, so the rule stays silent.
+	{name: "OAI-014 silent when needs_approval is a callable", ruleID: "OAI-014", kind: models.KindOpenAITool, src: `
+import subprocess
+def run(cmd: str) -> str:
+    """Run."""
+    return subprocess.run([cmd], capture_output=True).stdout.decode()
+`,
+		toolConfig: map[string]string{"needs_approval": "my_checker"}, wantFires: false},
 
 	// ─── OAI-015 failure_error_function=None ─────────────────────────────────
 	{name: "OAI-015 fires when failure_error_function=None", ruleID: "OAI-015", kind: models.KindOpenAITool, src: `
@@ -2065,6 +2110,13 @@ var policyRepoRuleCases = []policyRepoCase{
 		models.RepoProfile{Languages: []models.Language{models.LanguagePython}},
 		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKClaudeAgentSDK}},
 		true},
+	// The hygiene rule is language-ungated: a TypeScript-only Claude SDK repo
+	// needs the agent-guidance doc just as much (it used to be silently
+	// skipped by a language: python gate).
+	{"CSDK-203 fires on a TypeScript-only Claude SDK repo", "CSDK-203",
+		models.RepoProfile{Languages: []models.Language{models.LanguageTypeScript}},
+		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKClaudeAgentSDK}},
+		true},
 	{"CSDK-203 silent when CLAUDE.md present", "CSDK-203",
 		models.RepoProfile{
 			Languages: []models.Language{models.LanguagePython},
@@ -2453,6 +2505,33 @@ var policyAgentRuleCases = []policyAgentCase{
 			}}},
 		models.RepoInventory{}, false},
 
+	// code_execution_config=False is the explicit-disable form the fix text of
+	// these very rules recommends — it must NOT fire them. agent_kwarg_present
+	// alone treats it as "set", which was a false positive before the
+	// not-value-False guard.
+	{"AG2-002 silent when code_execution_config=False despite NEVER", "AG2-002",
+		models.AgentDef{
+			SDK: models.SDKAutoGen, Class: "UserProxyAgent", Language: models.LanguagePython,
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"human_input_mode":      {Value: &models.Expr{Kind: models.ExprLiteralString, Text: `"NEVER"`}},
+				"code_execution_config": {Value: &models.Expr{Kind: models.ExprLiteralBool, Text: "False"}},
+			}}},
+		models.RepoInventory{}, false},
+	{"AG2-005 silent when AssistantAgent disables code exec explicitly", "AG2-005",
+		models.AgentDef{
+			SDK: models.SDKAutoGen, Class: "AssistantAgent", Language: models.LanguagePython,
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"code_execution_config": {Value: &models.Expr{Kind: models.ExprLiteralBool, Text: "False"}},
+			}}},
+		models.RepoInventory{}, false},
+	{"AG2-006 silent when code_execution_config=False", "AG2-006",
+		models.AgentDef{
+			SDK: models.SDKAutoGen, Class: "UserProxyAgent", Language: models.LanguagePython,
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"code_execution_config": {Value: &models.Expr{Kind: models.ExprLiteralBool, Text: "False"}},
+			}}},
+		models.RepoInventory{}, false},
+
 	// ─── OAI-101 no input_guardrails + shell tools ────────────────────────────
 	{"OAI-101 fires when no guardrails and has shell tool", "OAI-101",
 		models.AgentDef{
@@ -2585,6 +2664,18 @@ var policyAgentRuleCases = []policyAgentCase{
 				"input_guardrails": {Value: &models.Expr{Kind: models.ExprList, List: []models.Expr{
 					{Kind: models.ExprNameRef, Text: "my_guard"},
 				}}},
+			}},
+		},
+		models.RepoInventory{},
+		false},
+	// mcp_servers=[] wires no MCP tools; presence alone must not fire.
+	{"OAI-106 silent when mcp_servers is an empty list", "OAI-106",
+		models.AgentDef{
+			SDK:      models.SDKOpenAIAgents,
+			Class:    "Agent",
+			Language: models.LanguagePython,
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"mcp_servers": {Value: &models.Expr{Kind: models.ExprList, List: []models.Expr{}}},
 			}},
 		},
 		models.RepoInventory{},
@@ -2734,6 +2825,46 @@ var policyAgentRuleCases = []policyAgentCase{
 		models.RepoInventory{},
 		true},
 
+	// ─── ADK-102/103 also match the current class name ExecuteBashTool ───────
+	// google-adk renamed the shell tool (src/google/adk/tools/bash_tool.py
+	// defines ExecuteBashTool; no BashTool class exists upstream today), so the
+	// rules must fire on both names.
+	{"ADK-102 fires with ExecuteBashTool (current class name)", "ADK-102",
+		models.AgentDef{
+			SDK:            models.SDKGoogleADK,
+			Class:          "LlmAgent",
+			Language:       models.LanguagePython,
+			Name:           "root",
+			HostedToolRefs: []models.HostedToolRef{{Class: "ExecuteBashTool"}},
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"name": {Value: &models.Expr{Kind: models.ExprLiteralString, Text: `"root"`}},
+			}},
+		},
+		models.RepoInventory{},
+		true},
+	{"ADK-103 fires on sub-agent with ExecuteBashTool", "ADK-103",
+		models.AgentDef{
+			SDK:            models.SDKGoogleADK,
+			Class:          "LlmAgent",
+			Language:       models.LanguagePython,
+			Location:       models.Location{FilePath: "main.py"},
+			Name:           "child",
+			HostedToolRefs: []models.HostedToolRef{{Class: "ExecuteBashTool"}},
+		},
+		models.RepoInventory{Agents: []models.AgentDef{
+			{
+				SDK:      models.SDKGoogleADK,
+				Class:    "SequentialAgent",
+				Language: models.LanguagePython,
+				Location: models.Location{FilePath: "main.py"},
+				Name:     "parent",
+				HandoffRefs: []models.AgentRef{
+					{Name: "child", Resolved: &models.AgentDef{Name: "child", Location: models.Location{FilePath: "main.py"}, Language: models.LanguagePython}},
+				},
+			},
+		}},
+		true},
+
 	// ─── CSDK-102 Claude subagent granted WebSearch ──────────────────────────
 	// Claude AgentDefinition tools are string literals → ToolRefs (Name carries
 	// the quoted token), NOT HostedToolRefs. The rule uses agent_grants_builtin_tool.
@@ -2750,6 +2881,92 @@ var policyAgentRuleCases = []policyAgentCase{
 		},
 		models.RepoInventory{},
 		true},
+
+	// ─── CSDK-121..124: TypeScript AgentDefinition tool grants ────────────────
+	// TS discovery emits Class "AgentDefinition" with Language typescript for
+	// typed-const definitions and inline options.agents entries. Before these
+	// rules existed, a TS AgentDefinition granting "Bash" produced zero
+	// findings (CSDK-101..105 are language: python).
+	{"CSDK-121 fires when TS AgentDefinition grants Bash", "CSDK-121",
+		models.AgentDef{
+			SDK:      models.SDKClaudeAgentSDK,
+			Class:    "AgentDefinition",
+			Language: models.LanguageTypeScript,
+			Name:     "opsAgent",
+			ToolRefs: []models.ToolRef{{Name: `"Bash"`, External: true}},
+		},
+		models.RepoInventory{},
+		true},
+	{"CSDK-121 silent when TS AgentDefinition grants only read tools", "CSDK-121",
+		models.AgentDef{
+			SDK:      models.SDKClaudeAgentSDK,
+			Class:    "AgentDefinition",
+			Language: models.LanguageTypeScript,
+			Name:     "reader",
+			ToolRefs: []models.ToolRef{{Name: `"Read"`, External: true}, {Name: `"Grep"`, External: true}},
+		},
+		models.RepoInventory{},
+		false},
+	{"CSDK-122 fires when TS AgentDefinition grants WebSearch", "CSDK-122",
+		models.AgentDef{
+			SDK:      models.SDKClaudeAgentSDK,
+			Class:    "AgentDefinition",
+			Language: models.LanguageTypeScript,
+			Name:     "researcher",
+			ToolRefs: []models.ToolRef{{Name: `"WebSearch"`, External: true}},
+		},
+		models.RepoInventory{},
+		true},
+	{"CSDK-122 silent without WebSearch", "CSDK-122",
+		models.AgentDef{
+			SDK:      models.SDKClaudeAgentSDK,
+			Class:    "AgentDefinition",
+			Language: models.LanguageTypeScript,
+			Name:     "researcher",
+			ToolRefs: []models.ToolRef{{Name: `"Read"`, External: true}},
+		},
+		models.RepoInventory{},
+		false},
+	{"CSDK-123 fires when TS AgentDefinition grants Write", "CSDK-123",
+		models.AgentDef{
+			SDK:      models.SDKClaudeAgentSDK,
+			Class:    "AgentDefinition",
+			Language: models.LanguageTypeScript,
+			Name:     "editor",
+			ToolRefs: []models.ToolRef{{Name: `"Write"`, External: true}},
+		},
+		models.RepoInventory{},
+		true},
+	{"CSDK-123 silent without write built-ins", "CSDK-123",
+		models.AgentDef{
+			SDK:      models.SDKClaudeAgentSDK,
+			Class:    "AgentDefinition",
+			Language: models.LanguageTypeScript,
+			Name:     "editor",
+			ToolRefs: []models.ToolRef{{Name: `"Read"`, External: true}},
+		},
+		models.RepoInventory{},
+		false},
+	{"CSDK-124 fires when TS AgentDefinition grants WebFetch", "CSDK-124",
+		models.AgentDef{
+			SDK:      models.SDKClaudeAgentSDK,
+			Class:    "AgentDefinition",
+			Language: models.LanguageTypeScript,
+			Name:     "fetcher",
+			ToolRefs: []models.ToolRef{{Name: `"WebFetch"`, External: true}},
+		},
+		models.RepoInventory{},
+		true},
+	{"CSDK-124 silent without WebFetch", "CSDK-124",
+		models.AgentDef{
+			SDK:      models.SDKClaudeAgentSDK,
+			Class:    "AgentDefinition",
+			Language: models.LanguageTypeScript,
+			Name:     "fetcher",
+			ToolRefs: []models.ToolRef{{Name: `"Read"`, External: true}},
+		},
+		models.RepoInventory{},
+		false},
 	{"CSDK-102 silent when no WebSearch granted", "CSDK-102",
 		models.AgentDef{
 			SDK:      models.SDKClaudeAgentSDK,
@@ -3096,8 +3313,58 @@ var policyAgentRuleCases = []policyAgentCase{
 		},
 		models.RepoInventory{},
 		false},
+	// The idiomatic wiring is the url_context INSTANCE (google.adk.tools
+	// exports url_context, not a UrlContextTool construction), which lands in
+	// ToolRefs as a bare name ref — covered by the agent_grants_builtin_tool
+	// branch, not the hosted-class one.
+	{"ADK-110 fires with the url_context instance form", "ADK-110",
+		models.AgentDef{
+			SDK:      models.SDKGoogleADK,
+			Class:    "LlmAgent",
+			Language: models.LanguagePython,
+			Name:     "root",
+			ToolRefs: []models.ToolRef{{Name: "url_context"}},
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"name": {Value: &models.Expr{Kind: models.ExprLiteralString, Text: `"root"`}},
+			}},
+		},
+		models.RepoInventory{},
+		true},
 
-	// ─── ADK-008 BashTool without a restrictive policy (E1 hosted-kwarg) ─────
+	// ─── ADK-008 bash tool without a restrictive policy (E1 hosted-kwarg) ────
+	{"ADK-008 fires when ExecuteBashTool has no policy", "ADK-008",
+		models.AgentDef{
+			SDK:      models.SDKGoogleADK,
+			Class:    "LlmAgent",
+			Language: models.LanguagePython,
+			Name:     "ops",
+			HostedToolRefs: []models.HostedToolRef{
+				{Class: "ExecuteBashTool", Resolved: &models.HostedToolDef{Class: "ExecuteBashTool"}},
+			},
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"name": {Value: &models.Expr{Kind: models.ExprLiteralString, Text: `"ops"`}},
+			}},
+		},
+		models.RepoInventory{},
+		true},
+	{"ADK-008 silent when ExecuteBashTool has a policy", "ADK-008",
+		models.AgentDef{
+			SDK:      models.SDKGoogleADK,
+			Class:    "LlmAgent",
+			Language: models.LanguagePython,
+			Name:     "ops",
+			HostedToolRefs: []models.HostedToolRef{
+				{Class: "ExecuteBashTool", Resolved: &models.HostedToolDef{Class: "ExecuteBashTool",
+					Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+						"policy": {Value: &models.Expr{Kind: models.ExprNameRef, Text: "my_policy"}},
+					}}}},
+			},
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"name": {Value: &models.Expr{Kind: models.ExprLiteralString, Text: `"ops"`}},
+			}},
+		},
+		models.RepoInventory{},
+		false},
 	{"ADK-008 fires when BashTool has no policy", "ADK-008",
 		models.AgentDef{
 			SDK:      models.SDKGoogleADK,
@@ -3180,6 +3447,37 @@ var policyAgentRuleCases = []policyAgentCase{
 		},
 		models.RepoInventory{},
 		false},
+	// needs_approval accepts a per-call approval callable — that is a gate, so
+	// the rule must stay silent (it used to fire on any non-"True" value).
+	{"OAI-111 silent when ShellTool needs_approval is a callable", "OAI-111",
+		models.AgentDef{
+			SDK:      models.SDKOpenAIAgents,
+			Class:    "Agent",
+			Language: models.LanguagePython,
+			HostedToolRefs: []models.HostedToolRef{
+				{Class: "ShellTool", Resolved: &models.HostedToolDef{Class: "ShellTool",
+					Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+						"needs_approval": {Value: &models.Expr{Kind: models.ExprNameRef, Text: "approve_shell"}},
+					}}}},
+			},
+		},
+		models.RepoInventory{},
+		false},
+	// Explicit needs_approval=False is as un-gated as omitting it.
+	{"OAI-111 fires when ShellTool sets needs_approval=False", "OAI-111",
+		models.AgentDef{
+			SDK:      models.SDKOpenAIAgents,
+			Class:    "Agent",
+			Language: models.LanguagePython,
+			HostedToolRefs: []models.HostedToolRef{
+				{Class: "ShellTool", Resolved: &models.HostedToolDef{Class: "ShellTool",
+					Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+						"needs_approval": {Value: &models.Expr{Kind: models.ExprLiteralBool, Text: "False"}},
+					}}}},
+			},
+		},
+		models.RepoInventory{},
+		true},
 
 	// ─── OAI-110 content-fetching tool without output_guardrails ─────────────
 	{"OAI-110 fires with WebSearchTool and empty output_guardrails", "OAI-110",

@@ -24,11 +24,19 @@ rules:
           - requests.delete
           - requests.patch
           - requests.head
+          - requests.request
+          - requests.Session.get
+          - requests.Session.post
           - httpx.get
           - httpx.post
           - httpx.put
           - httpx.delete
           - httpx.patch
+          - httpx.head
+          - httpx.request
+          # Aliased aiohttp sessions canonicalize to aiohttp.ClientSession.<m>.
+          - aiohttp.ClientSession.get
+          - aiohttp.ClientSession.post
         missing: timeout
     explanation: >
       An OpenAI Agents SDK tool that makes a network request without a

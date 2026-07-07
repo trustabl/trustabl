@@ -32,6 +32,14 @@ rules:
           - httpx.patch
           - httpx.head
           - httpx.request
+          - requests.Session.get
+          - requests.Session.post
+          - urllib.request.urlopen
+          # Bare `urlopen` covers the from-import form.
+          - urlopen
+          # Aliased aiohttp sessions canonicalize to aiohttp.ClientSession.<m>.
+          - aiohttp.ClientSession.get
+          - aiohttp.ClientSession.post
         missing: timeout
     explanation: >
       This Pydantic AI tool makes a network request without a timeout, so it will

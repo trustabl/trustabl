@@ -27,7 +27,12 @@ func adkFunctionToolArg(text string) (string, bool) {
 // recognized by discovery. Source of truth: google/adk-python's
 // src/google/adk/tools/ directory.
 var ADKHostedToolClasses = map[string]bool{
+	// The shell tool: current google-adk names it ExecuteBashTool
+	// (src/google/adk/tools/bash_tool.py). BashTool is kept for code written
+	// against the earlier class name. Both map to shell_invocation in
+	// rules.hostedClassToKind — keep the two sets in sync.
 	"BashTool":                  true,
+	"ExecuteBashTool":           true,
 	"GoogleSearchTool":          true,
 	"VertexAiSearchTool":        true,
 	"LangchainTool":             true,

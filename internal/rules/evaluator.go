@@ -423,8 +423,8 @@ func (e MatchExpr) setPredicateNames() []string {
 	add(e.SkillBodyHasInjectionMarker != nil, "skill_body_has_injection_marker")
 	add(e.SkillBundledScriptNetworkEgress != nil, "skill_bundled_script_network_egress")
 	add(e.SkillBundledScriptReadsSecrets != nil, "skill_bundled_script_reads_secrets")
-	add(e.SkillDescriptionToolMismatch != nil, "skill_description_tool_mismatch")
 	add(e.SkillBundledFileHasHardcodedSecret != nil, "skill_bundled_file_has_hardcoded_secret")
+	add(e.SkillDescriptionToolMismatch != nil, "skill_description_tool_mismatch")
 	// Repo scope
 	add(len(e.RepoHasSDKInCode) > 0, "repo_has_sdk_in_code")
 	add(len(e.RepoComponentPresent) > 0, "repo_component_present")

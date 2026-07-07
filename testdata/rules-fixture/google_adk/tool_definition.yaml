@@ -38,7 +38,9 @@ rules:
       - adk_function_tool
     scope: tool
     match:
-      has_typed_params: false
+      all:
+        - has_params: true
+        - has_typed_params: false
     explanation: >
       Google ADK derives the JSON schema for a FunctionTool's parameters
       from the wrapped function's type annotations. A function with

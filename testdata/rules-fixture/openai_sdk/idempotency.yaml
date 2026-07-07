@@ -57,14 +57,14 @@ rules:
     match:
       all:
         - name_has_prefix:
-            - create_
-            - send_
-            - delete_
-            - post_
-            - update_
-            - refund_
-            - charge_
-            - issue_
+            - create
+            - send
+            - delete
+            - post
+            - update
+            - refund
+            - charge
+            - issue
         - not:
             has_body_text:
               - idempot
@@ -76,16 +76,15 @@ rules:
               - correlationId
     explanation: >
       An OpenAI Agents SDK tool authored in TypeScript whose name implies a
-      side effect (create_/send_/delete_/refund_/...) has no idempotency token
+      side effect (create/send/delete/refund/...) has no idempotency token
       visible in its body. The SDK does not retry tool calls for you by default,
       but retries still happen — the model re-invokes the tool whenever a result
       reads as inconclusive, and an orchestrator, your own retry policy, or a
       lost response (at-least-once delivery) can re-issue the call; without a key
       threaded through to the backing API the same action fires twice, producing
-      duplicate tickets, payments, emails, or deletions. Provisional: this rule
-      loads and
-      validates today but will not fire until the engine's TypeScript tool
-      parser ships.
+      duplicate tickets, payments, emails, or deletions. The prefix set matches
+      both `create_charge` and `createCharge` naming, so it fires on idiomatic
+      TypeScript tool names.
     fix: >
       Add an `idempotencyKey: string` parameter to the tool's zod schema and
       forward it to the underlying API (Stripe `Idempotency-Key` header,

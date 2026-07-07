@@ -198,8 +198,10 @@ rules:
 #       contains the needle, e.g. "print(" matches "pprint("). Prefer a
 #       structured AST predicate (has_shell_call, has_code_exec_call,
 #       has_print_call, call_without_kwarg, …); add a new Pred* if none fits.
-#       No shipped rule uses this today. Reserved for a known constant that
-#       has no structural signature.
+#       Shipped use is deliberately rare: OAI-019 (TypeScript idempotency)
+#       uses it to spot idempotency-token constants in a tool body span.
+#       Reserve new uses for a known constant that has no structural
+#       signature.
 #
 #
 # ━━━ NESTED STRUCT PREDICATES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
