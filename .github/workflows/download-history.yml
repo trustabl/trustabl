@@ -11,7 +11,8 @@ on:
   workflow_dispatch:           # run on demand to add a point now
 
 permissions:
-  contents: write              # commit the updated history JSON
+  contents: write              # push the snapshot branch the PR is built from
+  pull-requests: write         # open/update the snapshot PR (main requires PRs)
 
 jobs:
   snapshot:
@@ -76,14 +77,23 @@ jobs:
           print("%s: %s = %d cumulative downloads" % (day, repo, total))
           PY
 
-      - name: Commit if changed
-        run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .github/stats/download-history.json
-          if git diff --cached --quiet; then
-            echo "No change this run."
-          else
-            git commit -m "chore: record weekly download snapshot"
-            git push
-          fi
+      # main is protection-gated: a direct push is rejected with GH013
+      # ("changes must be made through a pull request"). So the snapshot lands via
+      # a PR instead. create-pull-request reuses ONE rolling branch/PR and updates
+      # it each run — a single PR that accumulates snapshots until merged, not one
+      # per week — and no-ops when the JSON is unchanged.
+      - name: Open or update the snapshot PR
+        uses: peter-evans/create-pull-request@v7
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          add-paths: .github/stats/download-history.json
+          branch: chore/download-history
+          base: main
+          commit-message: "chore: record weekly download snapshot"
+          title: "chore: weekly download-history snapshot"
+          body: |
+            Automated weekly snapshot of cumulative release-asset downloads.
+            Updates `.github/stats/download-history.json` — safe to merge.
+          author: "github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>"
+          committer: "github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>"
+          delete-branch: false

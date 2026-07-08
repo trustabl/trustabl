@@ -458,6 +458,96 @@ includes a `checksums.txt` and a build-provenance attestation; verify with:
 ```sh
 gh attestation verify <archive> --repo trustabl/trustabl
 ```
+## Attestation
+### Test Usage Example
+#### **Prerequisite and setup:**
+Install cosign **2.4.x** version
+
+##### Add to target folder path:
+`export PATH="<folder_path>:$PATH"`
+
+##### Export and Generate Key Pair:
+`export COSIGN_PASSWORD="" `
+skip the passphrase prompt (omit for a real key)
+
+`cosign generate-key-pair`
+writes cosign.key (private) + cosign.pub (public)
+
+##### Trustabl Scan and Attest:
+`./trustabl.exe scan https://github.com/google/adk-samples --json-out report.json --attest --attest-key cosign.key --attest-bundle att.bundle.json --attest-no-tlog`
+
+##### VERIFICATION
+`./trustabl.exe verify report.json --key cosign.pub --bundle att.bundle.json --no-tlog`
+
+### cosign (optional — only for scan attestation)
+
+Trustabl's `attest` / `verify` commands and `scan --attest` shell out to the
+[cosign](https://docs.sigstore.dev/cosign/system_config/installation/) CLI —
+cosign does the signing and verification, and Trustabl ships no keys of its own.
+It is needed **only** if you use attestation; a plain `scan` never touches it.
+
+```sh
+# macOS / Linux
+brew install cosign
+# Windows
+scoop install cosign
+```
+
+In CI you do not install it by hand — the Trustabl GitHub Action and GitLab
+component add `sigstore/cosign-installer` for you.
+
+#### Scan with attestation — step by step (key mode, offline)
+
+Key mode signs with a local key pair and skips the public transparency log — no
+browser, no network, ideal for a laptop or air-gapped run.
+
+> **cosign version:** the `--no-tlog` flag needs cosign **2.4.x**. cosign 2.5+
+> removed the underlying `--tlog-upload` flag, so the command errors there — pin
+> 2.4.3 if you hit that. On a PATH install the command is `trustabl`; for a local
+> Windows build it is `.\trustabl.exe`.
+
+**Step 0 — install cosign** (see the commands above for your OS).
+
+**Step 1 — generate a signing key pair:**
+
+```sh
+export COSIGN_PASSWORD=""        # skip the passphrase prompt (omit for a real key)
+cosign generate-key-pair         # writes cosign.key (private) + cosign.pub (public)
+```
+
+**Step 2 — scan and sign in one step:**
+
+```sh
+trustabl scan https://github.com/google/adk-samples \
+  --json-out report.json \
+  --attest --attest-key cosign.key --attest-bundle att.bundle.json --attest-no-tlog
+```
+
+Writes `report.json` (the scan result), `trustabl-predicate.json`, and the signed
+`att.bundle.json`. Exit 1 only means findings were present — the bundle is still
+written (it signs the verdict, pass or fail).
+
+**Step 3 — verify (consumer side):**
+
+```sh
+trustabl verify report.json --key cosign.pub --bundle att.bundle.json --no-tlog
+```
+
+`Verified OK`, exit 0 — the report is authentic and unmodified.
+
+**Step 4 — (optional) prove tamper detection:**
+
+```sh
+echo '{"tampered":true}' >> report.json
+trustabl verify report.json --key cosign.pub --bundle att.bundle.json --no-tlog
+```
+
+Verification now FAILS (exit 1): the signature is bound to the exact report bytes,
+so any edit is caught.
+
+Keyless signing (no private key to manage) is the default in CI, where an ambient
+OIDC identity exists; it also records the signature in the public Rekor
+transparency log. See [Use](#use) for the full command surface.
 
 ### Claude Code plugin
 
@@ -581,6 +671,20 @@ trustabl scan ./repo --json-out trustabl.json --sarif-out trustabl.sarif
 
 # Exit 1 on any finding regardless of severity
 trustabl scan ./repo --strict
+
+# --- Attestation (opt-in; requires the cosign CLI on PATH) -------------------
+# Sign the JSON report into a cosign attestation of the SCANNED repo's result.
+# Keyless by default: in CI it uses the runner's ambient OIDC identity (no keys
+# to manage) and logs the signing event to the PUBLIC Rekor transparency log.
+trustabl scan ./repo --json-out trustabl.json --attest
+trustabl attest trustabl.json                       # same, as a separate step
+# Offline / private signing with a key (no public transparency log):
+trustabl attest trustabl.json --key cosign.key --no-tlog
+# Verify (run where you CONSUME the attestation). Keyless pins who signed + issuer:
+trustabl verify trustabl.json \
+  --certificate-identity https://github.com/OWNER/REPO/.github/workflows/scan.yml@refs/heads/main \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+trustabl verify trustabl.json --key cosign.pub --no-tlog   # key-mode, offline
 
 # Download / refresh the detection rule packs into the local cache
 trustabl rules pull
@@ -964,7 +1068,7 @@ measurement.
 
 ## Community
 
-Join the [Trustabl Discord](https://discord.gg/maQ7QMPsB) to ask questions, share feedback, and follow development.
+Join the [Trustabl Discord](https://discord.gg/G6gM8nKxPg) to ask questions, share feedback, and follow development.
 
 ## License
 
