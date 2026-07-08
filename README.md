@@ -1068,7 +1068,7 @@ measurement.
 
 ## Community
 
-Join the [Trustabl Discord](https://discord.gg/maQ7QMPsB) to ask questions, share feedback, and follow development.
+Join the [Trustabl Discord](https://discord.gg/G6gM8nKxPg) to ask questions, share feedback, and follow development.
 
 ## License
 
