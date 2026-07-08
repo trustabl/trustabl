@@ -259,7 +259,13 @@ The rule schema's `language:` field gates per-language rule sets.
   `trustabl llm key set` at `~/.config/trustabl/keys.json`, mode 0600). Each call
   carries a request timeout, and `--apply` rewrites a file only when its current
   contents still match what the model reviewed (writing a `.trustabl.bak` backup
-  first) — a stale scan is skipped, never mis-applied.
+  first) — a stale scan is skipped, never mis-applied. With `--langsmith`
+  (opt-in, requires `LANGSMITH_API_KEY`), tool-scope findings are additionally
+  grounded in runtime trace evidence sampled from a LangSmith project: error
+  rate, latency, and recent error messages for each flagged tool, carried on
+  the output as `trace_evidence` and fed to the LLM alongside the static code
+  snippet; tools with no trace history degrade per finding to plain static
+  enrichment.
 - **Confidence scores are heuristic**, not LLM-judged, and not yet
   calibrated against a labelled real-agent corpus — treat findings as
   signal to investigate.
@@ -733,6 +739,12 @@ trustabl enrich --input scan.json --repo ./myrepo --diff --apply              # 
 trustabl enrich --input scan.json --repo ./myrepo --apply                     # apply fixes without previewing
 trustabl enrich --input scan.json --repo ./myrepo --rule CSDK-010             # focus on one rule
 trustabl enrich --input scan.json --repo ./myrepo --only-enriched             # CI: only enriched findings
+
+# Ground tool findings in LangSmith runtime traces (opt-in; error rates, latency,
+# recent errors are fetched per flagged tool and fed to the LLM as evidence)
+export LANGSMITH_API_KEY=lsv2_...          # BYOK; LANGSMITH_ENDPOINT overrides for self-hosted
+trustabl enrich --input scan.json --repo ./myrepo --langsmith                  # project: $LANGSMITH_PROJECT or "default"
+trustabl enrich --input scan.json --repo ./myrepo --langsmith --langsmith-project prod
 ```
 
 Rules are cached under your OS cache dir (`os.UserCacheDir()`, e.g.

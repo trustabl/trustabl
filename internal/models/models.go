@@ -528,6 +528,24 @@ type EnrichedFinding struct {
 	FalsePositive bool   `json:"false_positive,omitempty"`
 	Enriched      bool   `json:"enriched"`
 	Applied       bool   `json:"applied,omitempty"`
+	// TraceEvidence is a human-readable summary of recent runtime executions of
+	// the flagged tool, fetched from a trace backend (LangSmith) when
+	// `trustabl enrich --langsmith` is set. Set independently of the LLM call,
+	// present even when LLM enrichment for the finding failed. Empty when trace
+	// enrichment is off, the finding is not tool-scoped, or no traces exist.
+	TraceEvidence string `json:"trace_evidence,omitempty"`
+}
+
+// ToolTraceStats summarizes recent runtime executions of one tool, sampled from
+// a trace backend (LangSmith). Produced by internal/langsmith, consumed by the
+// enrichment pipeline as grounding evidence for tool-scope findings.
+type ToolTraceStats struct {
+	ToolName     string   `json:"tool_name"`
+	Project      string   `json:"project"`                  // trace project the sample came from
+	Runs         int      `json:"runs"`                     // runs sampled (most recent first, capped)
+	Errors       int      `json:"errors"`                   // runs with status "error"
+	AvgLatencyMS int64    `json:"avg_latency_ms,omitempty"` // mean wall-clock latency; 0 if timestamps unavailable
+	RecentErrors []string `json:"recent_errors,omitempty"`  // up to 3 distinct recent error messages, truncated
 }
 
 // EnrichmentResult is the top-level output of trustabl enrich.
