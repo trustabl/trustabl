@@ -3,6 +3,8 @@
 // Subcommands:
 //
 //	trustabl scan <target> [flags]   primary command: scan a repo
+//	trustabl attest <report.json>    sign a scan report into an attestation (cosign)
+//	trustabl verify <report.json>    verify a scan attestation (consumer side)
 //	trustabl enrich [flags]          enrich a scan result with AI fixes
 //	trustabl mcp [flags]             run a stdio MCP server exposing the scan
 //	trustabl rules pull [flags]      pre-fetch the detection rule packs
@@ -17,9 +19,9 @@
 //	2  scanner / I/O error, or no usable rules (none resolved, incompatible
 //	   schema, or a resolved pack that contains zero rules)
 //
-// Each subcommand lives in its own file (scan.go, version.go, rules.go, mcp.go,
-// llm.go). This file owns the root command wiring, the build metadata, and the
-// shared exit-code error type.
+// Each subcommand lives in its own file (scan.go, attest.go, verify.go,
+// version.go, rules.go, mcp.go, llm.go). This file owns the root command wiring,
+// the build metadata, and the shared exit-code error type.
 package main
 
 import (
@@ -91,6 +93,8 @@ with --strict), 2 = scanner error or no usable rules.`,
 	rootCmd.PersistentFlags().Bool("debug", false,
 		"debug diagnostics on stderr: everything --verbose shows plus per-phase timing and per-entity/per-finding detail (implies --verbose)")
 	rootCmd.AddCommand(newScanCommand())
+	rootCmd.AddCommand(newAttestCommand())
+	rootCmd.AddCommand(newVerifyCommand())
 	rootCmd.AddCommand(newVersionCommand())
 	rootCmd.AddCommand(newRulesCommand())
 	rootCmd.AddCommand(newVulnDBCommand())
