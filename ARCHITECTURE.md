@@ -2058,6 +2058,7 @@ trustabl scan <target> [--detectors=…] [--format=human|json|sarif]
                        [--no-rules-update] [--vuln-scan]
 trustabl enrich        [-i SCAN_JSON] [-r REPO_ROOT] [-o OUTPUT_FILE]
                        [--diff] [--apply] [--only-enriched] [--rule RULE_ID]
+                       [--langsmith] [--langsmith-project NAME]
 trustabl mcp           [--rules-repo=URL] [--rules-ref=REF] [--no-rules-update]
 trustabl rules pull    [--rules-repo=URL] [--rules-ref=REF]
 trustabl rules validate [DIR]
@@ -2174,6 +2175,31 @@ All findings in one file are batched into a single LLM call
 The LLM client calls the active provider's model (from `llm.Load()`) and parses
 a JSON array response — one `enrichResult` per finding. A `salvagePartialJSON`
 fallback recovers partial objects if the response is truncated.
+
+**Optional runtime trace grounding (`--langsmith`,
+[internal/langsmith/](internal/langsmith/)).** With `--langsmith`, tool-scope
+findings gain a third context layer: recent executions of each flagged tool are
+sampled from a LangSmith project (up to 25 most-recent `run_type: tool` runs
+matching the tool's name) and aggregated into a `models.ToolTraceStats`: run
+count, error count, mean latency, and up to 3 distinct recent error messages.
+The summary is carried on the output as `EnrichedFinding.TraceEvidence` and fed
+to the LLM prompt as `Runtime trace evidence:` so explanations cite observed
+behavior instead of speculating. Gating is a double gate: the flag is the
+explicit opt-in and `LANGSMITH_API_KEY` is the BYOK credential; the flag
+without the key is a hard error (silently emitting output the user believes is
+trace-informed would be worse), while everything past that degrades per
+finding: a trace API error or a tool with no run history logs a warning and
+falls back to plain static enrichment, never failing the run. The project is
+resolved `--langsmith-project` → `$LANGSMITH_PROJECT` → `"default"`
+(`$LANGSMITH_ENDPOINT` overrides the API host for self-hosted deployments).
+The client caches per tool name for the invocation: repeat findings on one
+tool cost one fetch, and the pipeline consumes it through the
+`enrichment.TraceSource` seam, so tests inject a fake exactly as they do for
+the LLM client. Only tool *names* are sent to LangSmith; trace content flows
+in, never out. Nothing in the scan pipeline imports `internal/langsmith`; the
+scan's no-network and determinism contracts are untouched. Trace evidence is
+attached before the LLM call, so it survives an LLM failure
+(`Enriched=false` findings still carry their `trace_evidence`).
 
 The `--diff` flag renders a unified diff of all proposed replacements to **stderr**
 (in finding order, after all workers finish) so users can preview exactly what

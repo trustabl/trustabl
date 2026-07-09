@@ -29,7 +29,20 @@ type Pipeline struct {
 	OnlyEnriched bool     // drop findings that could not be enriched from output
 	Diff         bool     // write unified diff of proposed replacements to stderr
 
+	// Traces optionally supplies runtime trace evidence for tool-scope findings
+	// (wired to a langsmith.Client by `trustabl enrich --langsmith`). nil = trace
+	// enrichment off. Failures and tools with no trace history degrade to the
+	// nil behavior per finding; they never fail the enrich run.
+	Traces TraceSource
+
 	llm llmEnricher // injected in tests; nil = create real client from LLMKey/LLMModel
+}
+
+// TraceSource samples recent runtime executions of one tool from a trace
+// backend. (nil, nil) means "no traces for this tool", an expected outcome,
+// distinct from a lookup error.
+type TraceSource interface {
+	ToolStats(ctx context.Context, toolName string) (*models.ToolTraceStats, error)
 }
 
 func (p *Pipeline) shouldEnrich(f models.Finding) bool {
@@ -53,7 +66,7 @@ func (p *Pipeline) Run(ctx context.Context, result *models.ScanResult) (*models.
 	client := p.llm
 	if client == nil {
 		if p.LLMKey == "" {
-			return nil, fmt.Errorf("enrichment: no LLM key configured — run: trustabl llm key set")
+			return nil, fmt.Errorf("enrichment: no LLM key configured, run: trustabl llm key set")
 		}
 		var clientErr error
 		client, clientErr = newLLMClient(ctx, p.LLMProvider, p.LLMKey, p.LLMModel)
@@ -159,15 +172,19 @@ func (p *Pipeline) enrichFile(ctx context.Context, client llmEnricher, filePath 
 	issues := make([]issueContext, len(findings))
 	for i, f := range findings {
 		issues[i] = issueContext{
-			ruleID:      f.RuleID,
-			title:       f.Title,
-			severity:    string(f.Severity),
-			ruleScope:   string(f.Scope),
-			line:        f.StartLine,
-			explanation: f.Explanation,
-			fixTemplate: f.SuggestedFix,
-			codeBlock:   extractScope(string(fileContent), f.StartLine, 5),
+			ruleID:        f.RuleID,
+			title:         f.Title,
+			severity:      string(f.Severity),
+			ruleScope:     string(f.Scope),
+			line:          f.StartLine,
+			explanation:   f.Explanation,
+			fixTemplate:   f.SuggestedFix,
+			codeBlock:     extractScope(string(fileContent), f.StartLine, 5),
+			traceEvidence: p.traceEvidenceFor(ctx, f),
 		}
+		// Trace evidence is observed data, independent of the LLM: attach it to
+		// the output finding now so it survives an LLM error below.
+		out[i].TraceEvidence = issues[i].traceEvidence
 	}
 
 	results, enrichErr := client.enrichFile(ctx, filePath, issues)
@@ -258,6 +275,46 @@ func (p *Pipeline) enrichFile(ctx context.Context, client llmEnricher, filePath 
 	}
 
 	return out
+}
+
+// traceEvidenceFor returns a one-paragraph summary of the flagged tool's recent
+// runtime behavior, or "" when trace enrichment is off, the finding is not a
+// tool-scope finding with a tool name, or no evidence could be fetched. A
+// lookup error is logged and degrades to "": runtime evidence is a bonus
+// signal, never a reason to fail the enrich run.
+func (p *Pipeline) traceEvidenceFor(ctx context.Context, f models.Finding) string {
+	if p.Traces == nil || f.Scope != models.ScopeTool || f.ToolName == "" {
+		return ""
+	}
+	stats, err := p.Traces.ToolStats(ctx, f.ToolName)
+	if err != nil {
+		log.Printf("warn: trace lookup for tool %q: %v (continuing without trace evidence)", f.ToolName, err)
+		return ""
+	}
+	if stats == nil {
+		return "" // no traces recorded for this tool, nothing to say
+	}
+	return formatTraceEvidence(stats)
+}
+
+// formatTraceEvidence renders ToolTraceStats as the prose block fed to the LLM
+// prompt and carried on EnrichedFinding.TraceEvidence.
+func formatTraceEvidence(s *models.ToolTraceStats) string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "LangSmith project %q, last %d run(s) of tool %q: %d error(s)",
+		s.Project, s.Runs, s.ToolName, s.Errors)
+	if s.Runs > 0 {
+		fmt.Fprintf(&sb, " (%d%% error rate)", (s.Errors*100)/s.Runs)
+	}
+	if s.AvgLatencyMS > 0 {
+		fmt.Fprintf(&sb, ", avg latency %dms", s.AvgLatencyMS)
+	}
+	sb.WriteString(".")
+	if len(s.RecentErrors) > 0 {
+		sb.WriteString(" Recent errors: ")
+		sb.WriteString(strings.Join(s.RecentErrors, " | "))
+	}
+	return sb.String()
 }
 
 // patchAnchorMatches is the --apply content anchor: it reports whether the
