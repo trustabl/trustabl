@@ -350,12 +350,13 @@ When changing a rule (add / remove / edit severity, confidence, match, text):
 6. Commit and push the rules repo **and** the rulebook (the user pushes engine
    commits manually; confirm before pushing any of the three).
 
-> **Rulebook status (2026-07-07):** the fixture carries **187** rules across ten
+> **Rulebook status (2026-07-11):** the fixture carries **190** rules across ten
 > SDK categories (`autogen`, `claude_sdk`, `claude_skill`, `crewai`,
-> `google_adk`, `langchain`, `mcp`, `openai_sdk`, `pydantic_ai`, `vercel_ai`);
-> production ships 183 until the 2026-07-07 audit corrections (new
-> CSDK-121..124) merge to trustabl-rules. The rulebook carries a rationale doc
-> for every shipped rule (`check_rulebook.py` enforces the pairing in CI).
+> `google_adk`, `langchain`, `mcp`, `openai_sdk`, `pydantic_ai`, `vercel_ai`),
+> matching the 2026-07-11 audit follow-up in trustabl-rules (new CSDK-112 /
+> CREW-109 / VAI-009 alongside the 2026-07-07 corrections). The rulebook
+> carries a rationale doc for every shipped rule (`check_rulebook.py` enforces
+> the pairing in CI).
 
 The rule-authoring contract (required fields, ID conventions, per-scope
 `applies_to` values, framing discipline) lives in

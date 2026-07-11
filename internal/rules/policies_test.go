@@ -2198,9 +2198,19 @@ var policySubagentRuleCases = []policySubagentCase{
 	{"CSDK-111 fires when subagent grants WebFetch", "CSDK-111",
 		models.SubagentDef{Name: "fetcher", Location: models.Location{FilePath: ".claude/agents/fetcher.md"},
 			Tools: []string{"Read", "WebFetch"}}, models.RepoInventory{}, true},
+	{"CSDK-111 fires when subagent grants MultiEdit", "CSDK-111",
+		models.SubagentDef{Name: "bulk-editor", Location: models.Location{FilePath: ".claude/agents/bulk-editor.md"},
+			Tools: []string{"Read", "MultiEdit"}}, models.RepoInventory{}, true},
 	{"CSDK-111 silent on read-only tool set", "CSDK-111",
 		models.SubagentDef{Name: "reader", Location: models.Location{FilePath: ".claude/agents/reader2.md"},
 			Tools: []string{"Read", "Grep", "Glob"}}, models.RepoInventory{}, false},
+
+	{"CSDK-112 fires when subagent grants WebSearch", "CSDK-112",
+		models.SubagentDef{Name: "researcher", Location: models.Location{FilePath: ".claude/agents/researcher.md"},
+			Tools: []string{"Read", "WebSearch"}}, models.RepoInventory{}, true},
+	{"CSDK-112 silent without WebSearch", "CSDK-112",
+		models.SubagentDef{Name: "summarizer", Location: models.Location{FilePath: ".claude/agents/summarizer.md"},
+			Tools: []string{"Read", "Grep"}}, models.RepoInventory{}, false},
 }
 
 // policySkillRuleCases covers skill-scoped rules (CSKILL-*).
@@ -2409,6 +2419,19 @@ var policyAgentRuleCases = []policyAgentCase{
 		models.AgentDef{SDK: models.SDKCrewAI, Class: "Agent", Language: models.LanguagePython},
 		models.RepoInventory{}, false},
 
+	{"CREW-109 fires when agent wires FileWriterTool", "CREW-109",
+		models.AgentDef{
+			SDK: models.SDKCrewAI, Class: "Agent", Language: models.LanguagePython,
+			HostedToolRefs: []models.HostedToolRef{{Class: "FileWriterTool"}},
+		},
+		models.RepoInventory{}, true},
+	{"CREW-109 silent without a file-writing builtin", "CREW-109",
+		models.AgentDef{
+			SDK: models.SDKCrewAI, Class: "Agent", Language: models.LanguagePython,
+			HostedToolRefs: []models.HostedToolRef{{Class: "FileReadTool"}},
+		},
+		models.RepoInventory{}, false},
+
 	// ─── AutoGen agent rules (AG2-*) ────────────────────────────────────────
 	// AG2-001: code_execution_config={"use_docker": False} — nested kwarg path.
 	{"AG2-001 fires when use_docker=False", "AG2-001",
@@ -2452,12 +2475,19 @@ var policyAgentRuleCases = []policyAgentCase{
 			}}},
 		models.RepoInventory{}, false},
 
-	// AG2-004: GroupChatManager / GroupChat with no max_round.
-	{"AG2-004 fires when GroupChatManager has no max_round", "AG2-004",
+	// AG2-004: GroupChat with no max_round. The rule anchors on GroupChat —
+	// max_round is a GroupChat-only constructor param, so a GroupChatManager
+	// (which cannot accept it) must never fire.
+	{"AG2-004 fires when GroupChat has no max_round", "AG2-004",
+		models.AgentDef{
+			SDK: models.SDKAutoGen, Class: "GroupChat", Language: models.LanguagePython,
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{}}},
+		models.RepoInventory{}, true},
+	{"AG2-004 silent on GroupChatManager wrapping a bounded GroupChat", "AG2-004",
 		models.AgentDef{
 			SDK: models.SDKAutoGen, Class: "GroupChatManager", Language: models.LanguagePython,
 			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{}}},
-		models.RepoInventory{}, true},
+		models.RepoInventory{}, false},
 	{"AG2-004 silent when max_round is set", "AG2-004",
 		models.AgentDef{
 			SDK: models.SDKAutoGen, Class: "GroupChat", Language: models.LanguagePython,
@@ -3625,6 +3655,12 @@ var policyAgentRuleCases = []policyAgentCase{
 			HostedToolRefs: []models.HostedToolRef{{Class: "WebFetchTool"}},
 		},
 		models.RepoInventory{}, true},
+	{"PYD-103 fires when agent wires WebSearchTool", "PYD-103",
+		models.AgentDef{
+			SDK: models.SDKPydanticAI, Class: "PydanticAgent", Language: models.LanguagePython,
+			HostedToolRefs: []models.HostedToolRef{{Class: "WebSearchTool"}},
+		},
+		models.RepoInventory{}, true},
 	{"PYD-103 silent without a URL-fetching native tool", "PYD-103",
 		models.AgentDef{SDK: models.SDKPydanticAI, Class: "PydanticAgent", Language: models.LanguagePython},
 		models.RepoInventory{}, false},
@@ -3660,6 +3696,12 @@ var policyAgentRuleCases = []policyAgentCase{
 			"const a = new Agent({ model: openai(\"gpt-5\"), tools: { ci: openai.tools.codeInterpreter() } });\n"),
 		models.RepoInventory{},
 		true},
+	{"VAI-006 fires when agent wires anthropic textEditor tool", "VAI-006",
+		parseTSVercelAgentInline("import { generateText } from \"ai\";\n" +
+			"import { anthropic } from \"@ai-sdk/anthropic\";\n" +
+			"const r = await generateText({ model: anthropic(\"claude-sonnet-4\"), tools: { ed: anthropic.tools.textEditor_20250124() } });\n"),
+		models.RepoInventory{},
+		true},
 	{"VAI-006 silent when agent wires only a named user tool", "VAI-006",
 		parseTSVercelAgentInline("import { generateText } from \"ai\";\n" +
 			"import { openai } from \"@ai-sdk/openai\";\n" +
@@ -3690,6 +3732,25 @@ var policyAgentRuleCases = []policyAgentCase{
 		parseTSVercelAgentInline("import { generateText } from \"ai\";\n" +
 			"import { anthropic } from \"@ai-sdk/anthropic\";\n" +
 			"const r = await generateText({ model: anthropic(\"claude-sonnet-4\"), toolChoice: \"auto\", tools: { bash: anthropic.tools.bash_20250124() } });\n"),
+		models.RepoInventory{},
+		false},
+
+	{"VAI-009 fires when agent wires anthropic webSearch tool", "VAI-009",
+		parseTSVercelAgentInline("import { generateText } from \"ai\";\n" +
+			"import { anthropic } from \"@ai-sdk/anthropic\";\n" +
+			"const r = await generateText({ model: anthropic(\"claude-sonnet-4\"), tools: { search: anthropic.tools.webSearch_20250305() } });\n"),
+		models.RepoInventory{},
+		true},
+	{"VAI-009 fires when agent wires google urlContext tool", "VAI-009",
+		parseTSVercelAgentInline("import { generateText } from \"ai\";\n" +
+			"import { google } from \"@ai-sdk/google\";\n" +
+			"const r = await generateText({ model: google(\"gemini-2.5-pro\"), tools: { ctx: google.tools.urlContext() } });\n"),
+		models.RepoInventory{},
+		true},
+	{"VAI-009 silent when agent wires only an execution tool", "VAI-009",
+		parseTSVercelAgentInline("import { generateText } from \"ai\";\n" +
+			"import { anthropic } from \"@ai-sdk/anthropic\";\n" +
+			"const r = await generateText({ model: anthropic(\"claude-sonnet-4\"), tools: { bash: anthropic.tools.bash_20250124() } });\n"),
 		models.RepoInventory{},
 		false},
 }

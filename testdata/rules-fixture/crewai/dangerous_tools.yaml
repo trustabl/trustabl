@@ -4,9 +4,9 @@ policy:
   category: crewai
   description: >
     Flags CrewAI agents wired with high-risk crewai_tools built-ins: an
-    unconstrained file reader, and the web-fetching / RAG tools that retrieve
-    model-chosen URLs. Both are vectors in CrewAI's published file-read and SSRF
-    advisories.
+    unconstrained file reader, the file-writing tools, and the web-fetching /
+    RAG tools that retrieve model-chosen URLs. The reader and fetchers are
+    vectors in CrewAI's published file-read and SSRF advisories.
 
 rules:
   - id: CREW-106
@@ -71,3 +71,33 @@ rules:
       raw model-supplied URLs. Treat any retrieved content as untrusted input —
       keep it out of the system prompt and do not let it silently expand the agent's
       tool permissions.
+
+  - id: CREW-109
+    title: CrewAI agent wires a model-driven file-writing tool
+    severity: high
+    confidence: 0.75
+    language: python
+    applies_to:
+      - crewai_agent
+    scope: agent
+    match:
+      agent_uses_hosted_tool_class:
+        - FileWriterTool
+        - FileWriteTool
+    explanation: >
+      This agent wires a crewai_tools file-writing built-in (FileWriterTool /
+      FileWriteTool). Both the target path and the content are supplied by the
+      model at call time, so a prompt injection can write attacker-chosen bytes
+      to any path the agent process can reach: overwrite application source or
+      config, drop a malicious script where something else will execute it
+      (cron, CI, an imported module), or plant credentials files. Write access
+      is strictly more dangerous than the unconstrained read this pack already
+      flags (CREW-106) — a write turns injected text into persistent state and,
+      transitively, into code execution.
+    fix: >
+      Remove the file-writing tool unless the workflow genuinely produces files.
+      If it must write, wrap it in a custom tool that pins the output directory,
+      validates the filename against an allow-list, resolves symlinks, rejects
+      any path escaping the intended root, and never writes to locations that
+      are executed or imported. Run the agent with least-privilege filesystem
+      permissions so even a successful injection cannot touch source or config.
