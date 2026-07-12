@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/trustabl/trustabl/internal/telemetry"
@@ -109,7 +110,7 @@ func TestRepoIDHash_emptyWhenNoCI(t *testing.T) {
 func TestClient_disabledByEnvVar(t *testing.T) {
 	t.Setenv("TRUSTABL_TELEMETRY", "0")
 	path := filepath.Join(t.TempDir(), "telemetry.json")
-	c := telemetry.New("", "0.0.0", path, nil)
+	c := telemetry.New("", "0.0.0", path, nil, nil)
 	if c.IsEnabled() {
 		t.Error("want disabled when TRUSTABL_TELEMETRY=0")
 	}
@@ -118,7 +119,7 @@ func TestClient_disabledByEnvVar(t *testing.T) {
 func TestClient_disabledByEnvVarWord(t *testing.T) {
 	t.Setenv("TRUSTABL_TELEMETRY", "disabled")
 	path := filepath.Join(t.TempDir(), "telemetry.json")
-	c := telemetry.New("", "0.0.0", path, nil)
+	c := telemetry.New("", "0.0.0", path, nil, nil)
 	if c.IsEnabled() {
 		t.Error("want disabled when TRUSTABL_TELEMETRY=disabled")
 	}
@@ -128,7 +129,7 @@ func TestClient_enabledByEnvVar(t *testing.T) {
 	t.Setenv("TRUSTABL_TELEMETRY", "1")
 	path := filepath.Join(t.TempDir(), "telemetry.json")
 	_ = telemetry.SaveConfig(path, telemetry.Config{Mode: "disabled", AnonymousID: "x"})
-	c := telemetry.New("", "0.0.0", path, nil)
+	c := telemetry.New("", "0.0.0", path, nil, nil)
 	if !c.IsEnabled() {
 		t.Error("want enabled when TRUSTABL_TELEMETRY=1 even if config says disabled")
 	}
@@ -137,7 +138,7 @@ func TestClient_enabledByEnvVar(t *testing.T) {
 func TestClient_minimalByEnvVar(t *testing.T) {
 	t.Setenv("TRUSTABL_TELEMETRY", "minimal")
 	path := filepath.Join(t.TempDir(), "telemetry.json")
-	c := telemetry.New("", "0.0.0", path, nil)
+	c := telemetry.New("", "0.0.0", path, nil, nil)
 	if c.Mode() != "minimal" {
 		t.Errorf("want mode=minimal, got %s", c.Mode())
 	}
@@ -147,7 +148,7 @@ func TestClient_disabledByConfig(t *testing.T) {
 	t.Setenv("TRUSTABL_TELEMETRY", "")
 	path := filepath.Join(t.TempDir(), "telemetry.json")
 	_ = telemetry.SaveConfig(path, telemetry.Config{Mode: "disabled", AnonymousID: "x"})
-	c := telemetry.New("", "0.0.0", path, nil)
+	c := telemetry.New("", "0.0.0", path, nil, nil)
 	if c.IsEnabled() {
 		t.Error("want disabled when config has mode=disabled")
 	}
@@ -156,7 +157,7 @@ func TestClient_disabledByConfig(t *testing.T) {
 func TestClient_defaultDisabled(t *testing.T) {
 	t.Setenv("TRUSTABL_TELEMETRY", "")
 	path := filepath.Join(t.TempDir(), "telemetry.json") // does not exist
-	c := telemetry.New("", "0.0.0", path, nil)
+	c := telemetry.New("", "0.0.0", path, nil, nil)
 	if c.IsEnabled() {
 		t.Error("want disabled by default when no env var and no config file")
 	}
@@ -166,7 +167,7 @@ func TestClient_CI_defaultDisabled(t *testing.T) {
 	t.Setenv("CI", "true")
 	t.Setenv("TRUSTABL_TELEMETRY", "")
 	path := filepath.Join(t.TempDir(), "telemetry.json")
-	c := telemetry.New("", "0.0.0", path, nil)
+	c := telemetry.New("", "0.0.0", path, nil, nil)
 	if c.IsEnabled() {
 		t.Error("want disabled in CI when TRUSTABL_TELEMETRY not set")
 	}
@@ -175,7 +176,7 @@ func TestClient_CI_defaultDisabled(t *testing.T) {
 func TestClient_isNewInstall_trueWhenNoConfig(t *testing.T) {
 	t.Setenv("TRUSTABL_TELEMETRY", "")
 	path := filepath.Join(t.TempDir(), "telemetry.json")
-	c := telemetry.New("", "0.0.0", path, nil)
+	c := telemetry.New("", "0.0.0", path, nil, nil)
 	if !c.IsNewInstall() {
 		t.Error("want IsNewInstall=true when config did not exist")
 	}
@@ -185,7 +186,7 @@ func TestClient_isNewInstall_falseWhenConfigExists(t *testing.T) {
 	t.Setenv("TRUSTABL_TELEMETRY", "")
 	path := filepath.Join(t.TempDir(), "telemetry.json")
 	_ = telemetry.SaveConfig(path, telemetry.Config{Mode: "full", AnonymousID: "x"})
-	c := telemetry.New("", "0.0.0", path, nil)
+	c := telemetry.New("", "0.0.0", path, nil, nil)
 	if c.IsNewInstall() {
 		t.Error("want IsNewInstall=false when config already existed")
 	}
@@ -220,7 +221,7 @@ func TestClient_ciEphemeralIDNotPersisted(t *testing.T) {
 	t.Setenv("CI", "true")
 	t.Setenv("TRUSTABL_TELEMETRY", "")
 	path := filepath.Join(t.TempDir(), "telemetry.json")
-	telemetry.New("", "0.0.0", path, nil)
+	telemetry.New("", "0.0.0", path, nil, nil)
 	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
 		t.Error("config file must not be written in CI")
 	}
@@ -328,5 +329,65 @@ func TestClient_minimal_injectsIsNewInstall(t *testing.T) {
 	}
 	if got, ok := rec.Events[0].Props["is_new_install"]; !ok || got != true {
 		t.Errorf("want is_new_install=true, got %v (ok=%v)", got, ok)
+	}
+}
+
+func TestPromptMode_choice1_disabled(t *testing.T) {
+	r, w, _ := os.Pipe()
+	defer r.Close()
+	got := telemetry.PromptMode(w, strings.NewReader("1\n"))
+	w.Close()
+	if got != "disabled" {
+		t.Errorf("want disabled for input '1', got %q", got)
+	}
+}
+
+func TestPromptMode_choice2_minimal(t *testing.T) {
+	r, w, _ := os.Pipe()
+	defer r.Close()
+	got := telemetry.PromptMode(w, strings.NewReader("2\n"))
+	w.Close()
+	if got != "minimal" {
+		t.Errorf("want minimal for input '2', got %q", got)
+	}
+}
+
+func TestPromptMode_choice3_full(t *testing.T) {
+	r, w, _ := os.Pipe()
+	defer r.Close()
+	got := telemetry.PromptMode(w, strings.NewReader("3\n"))
+	w.Close()
+	if got != "full" {
+		t.Errorf("want full for input '3', got %q", got)
+	}
+}
+
+func TestPromptMode_emptyInput_disabled(t *testing.T) {
+	r, w, _ := os.Pipe()
+	defer r.Close()
+	got := telemetry.PromptMode(w, strings.NewReader("\n"))
+	w.Close()
+	if got != "disabled" {
+		t.Errorf("want disabled for empty input, got %q", got)
+	}
+}
+
+func TestPromptMode_invalidThenDefault(t *testing.T) {
+	r, w, _ := os.Pipe()
+	defer r.Close()
+	got := telemetry.PromptMode(w, strings.NewReader("9\n\n"))
+	w.Close()
+	if got != "disabled" {
+		t.Errorf("want disabled after invalid then empty, got %q", got)
+	}
+}
+
+func TestPromptMode_eofDefault(t *testing.T) {
+	r, w, _ := os.Pipe()
+	defer r.Close()
+	got := telemetry.PromptMode(w, strings.NewReader(""))
+	w.Close()
+	if got != "disabled" {
+		t.Errorf("want disabled on EOF, got %q", got)
 	}
 }

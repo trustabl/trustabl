@@ -53,7 +53,7 @@ func (e exitCodeError) Error() string { return "" }
 
 func main() {
 	configPath, _ := telemetry.DefaultConfigPath()
-	tel := telemetry.New(posthogAPIKey, version, configPath, os.Stderr)
+	tel := telemetry.New(posthogAPIKey, version, configPath, os.Stderr, os.Stdin)
 	defer tel.Flush()
 
 	rootCmd := &cobra.Command{

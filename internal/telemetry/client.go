@@ -2,7 +2,12 @@
 package telemetry
 
 import (
+	"bufio"
+	"io"
 	"os"
+	"strings"
+
+	"github.com/mattn/go-isatty"
 )
 
 // Client resolves opt-in mode, manages the anonymous ID, and forwards Track
@@ -19,7 +24,8 @@ type Client struct {
 // New constructs a Client for production use. apiKey is the PostHog project
 // key (empty = NullSink). configPath is the path to telemetry.json.
 // stderr is reserved for the first-run prompt (Task 3); pass nil to suppress.
-func New(apiKey, version, configPath string, stderr *os.File) *Client {
+// stdin is used for the first-run prompt; pass nil to suppress interactive mode.
+func New(apiKey, version, configPath string, stderr *os.File, stdin io.Reader) *Client {
 	envVal := os.Getenv("TRUSTABL_TELEMETRY")
 
 	cfg, existed, err := LoadConfig(configPath)
@@ -31,13 +37,20 @@ func New(apiKey, version, configPath string, stderr *os.File) *Client {
 
 	mode := resolveMode(cfg.Mode, envVal)
 
-	isCI := os.Getenv("CI") != "" || DetectCIProvider() != ""
+	ciProvider := DetectCIProvider()
+	isCI := os.Getenv("CI") != "" || ciProvider != ""
 	if isCI && mode == "" {
 		mode = "disabled"
 	}
+
+	// First-run prompt: mode unset, interactive TTY, not CI, stdin provided.
+	if mode == "" && !isCI && stderr != nil && isatty.IsTerminal(stderr.Fd()) && stdin != nil {
+		mode = PromptMode(stderr, stdin)
+		_ = SaveConfig(configPath, Config{Mode: mode, AnonymousID: cfg.AnonymousID})
+	}
+
+	// Non-TTY or non-interactive: default to disabled without saving.
 	if mode == "" {
-		// No config, no env var, not CI: default to disabled.
-		// Task 3 replaces this with an interactive prompt on TTY.
 		mode = "disabled"
 	}
 
@@ -58,7 +71,7 @@ func New(apiKey, version, configPath string, stderr *os.File) *Client {
 		sink:         sink,
 		anonymousID:  anonymousID,
 		mode:         mode,
-		ciProvider:   DetectCIProvider(),
+		ciProvider:   ciProvider,
 		isNewInstall: !existed,
 		version:      version,
 	}
@@ -149,3 +162,37 @@ func (c *Client) Mode() string { return c.mode }
 
 // IsNewInstall reports whether the config file did not exist before this run.
 func (c *Client) IsNewInstall() bool { return c.isNewInstall }
+
+// PromptMode writes the telemetry choice prompt to w, reads a response from r,
+// and returns the chosen mode. Re-prompts once on invalid input; defaults to
+// "disabled" on empty input, second invalid input, or EOF.
+func PromptMode(w io.Writer, r io.Reader) string {
+	const intro = "\nTrustabl collects anonymous data to help improve the product.\n" +
+		"No source code, file paths, repo names, or finding details are ever sent.\n" +
+		"Learn more: https://trustabl.ai/telemetry\n\n" +
+		"Choose a telemetry level:\n" +
+		"  1. Disabled - No data\n" +
+		"  2. Minimal  - Version and outcome\n" +
+		"  3. Full     - Usage stats\n\n" +
+		"Enter 1, 2, or 3 [default: 1]: "
+	_, _ = io.WriteString(w, intro)
+
+	scanner := bufio.NewScanner(r)
+	for attempt := 0; attempt < 2; attempt++ {
+		if !scanner.Scan() {
+			return "disabled"
+		}
+		switch strings.TrimSpace(scanner.Text()) {
+		case "", "1":
+			return "disabled"
+		case "2":
+			return "minimal"
+		case "3":
+			return "full"
+		}
+		if attempt == 0 {
+			_, _ = io.WriteString(w, "Please enter 1, 2, or 3 [default: 1]: ")
+		}
+	}
+	return "disabled"
+}
