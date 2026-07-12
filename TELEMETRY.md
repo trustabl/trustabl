@@ -100,7 +100,10 @@ Fired when the scan exits with code 2 (a scanner or I/O error, not a findings-ba
 | Property | Type | Example | Notes |
 |---|---|---|---|
 | `error_category` | string | `"rules_fetch_failed"` | Closed enum — the raw error string is **never sent**. Values: `"rules_fetch_failed"`, `"clone_failed"`, `"parse_error"`, `"no_rules"`, `"unknown"`. |
+| `phase` | string | `"rules"` | Pipeline phase where the failure occurred. Derived from `error_category` — no additional data collected. Values: `"rules"`, `"clone"`, `"inventory"`, `"unknown"`. |
 | `duration_ms` | int | `800` | Wall-clock milliseconds until failure |
+| `rules_sha` | string | `"abc1234"` | Resolved rules SHA at time of failure. Empty string if the failure occurred before rules were resolved. |
+| `schema_version` | int | `4` | Rule schema version at time of failure. `0` if not yet resolved. |
 
 ---
 

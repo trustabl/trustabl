@@ -419,9 +419,13 @@ func finishScan(result models.ScanResult, jobErr error, f scanFlags, log *logx.L
 	scanExitCode := exitCode(result, f.strict)
 
 	if tel != nil && jobErr != nil {
+		errCategory := categorizeScanError(jobErr)
 		tel.Track("scan.failed", map[string]any{
-			"error_category": categorizeScanError(jobErr),
+			"error_category": errCategory,
+			"phase":          failurePhase(errCategory),
 			"duration_ms":    durationMs,
+			"rules_sha":      result.RulesVersion,
+			"schema_version": result.RulesSchemaVersion,
 		})
 	} else if tel != nil {
 		// Aggregate findings.
@@ -912,6 +916,20 @@ func scanFeaturesUsed(f scanFlags) []string {
 		features = append(features, "no_rules_update")
 	}
 	return features
+}
+
+// failurePhase maps an error_category to the pipeline phase where it occurred.
+func failurePhase(category string) string {
+	switch category {
+	case "rules_fetch_failed", "no_rules":
+		return "rules"
+	case "clone_failed":
+		return "clone"
+	case "parse_error":
+		return "inventory"
+	default:
+		return "unknown"
+	}
 }
 
 // categorizeScanError maps a scan error to the closed error_category enum.
