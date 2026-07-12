@@ -11,8 +11,8 @@ import (
 
 func TestNullSink_noop(t *testing.T) {
 	s := telemetry.NewNullSink()
-	s.Track("any.event", map[string]any{"key": "value"}) // must not panic
-	s.Flush()                                             // must not panic
+	s.Track("any.event", map[string]any{"key": "value"})
+	s.Flush()
 }
 
 func TestRecordingSink_capturesEvents(t *testing.T) {
@@ -40,8 +40,8 @@ func TestLoadConfig_missingFile(t *testing.T) {
 	if existed {
 		t.Error("want existed=false for missing file")
 	}
-	if !cfg.Enabled {
-		t.Error("want default Enabled=true")
+	if cfg.Mode != "" {
+		t.Errorf("want Mode empty string for unset config, got %q", cfg.Mode)
 	}
 	if cfg.AnonymousID == "" {
 		t.Error("want non-empty AnonymousID generated for new config")
@@ -50,7 +50,7 @@ func TestLoadConfig_missingFile(t *testing.T) {
 
 func TestSaveAndLoadConfig_roundtrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "telemetry.json")
-	original := telemetry.Config{Enabled: false, AnonymousID: "test-uuid-123"}
+	original := telemetry.Config{Mode: "disabled", AnonymousID: "test-uuid-123"}
 	if err := telemetry.SaveConfig(path, original); err != nil {
 		t.Fatal(err)
 	}
@@ -61,8 +61,8 @@ func TestSaveAndLoadConfig_roundtrip(t *testing.T) {
 	if !existed {
 		t.Error("want existed=true after save")
 	}
-	if loaded.Enabled != false {
-		t.Error("want Enabled=false")
+	if loaded.Mode != "disabled" {
+		t.Errorf("want Mode=disabled, got %s", loaded.Mode)
 	}
 	if loaded.AnonymousID != "test-uuid-123" {
 		t.Errorf("want AnonymousID=test-uuid-123, got %s", loaded.AnonymousID)
@@ -77,9 +77,7 @@ func TestDetectCIProvider_githubActions(t *testing.T) {
 }
 
 func TestDetectCIProvider_notCI(t *testing.T) {
-	// clear known CI vars so the test is hermetic
-	vars := []string{"GITHUB_ACTIONS", "GITLAB_CI", "CIRCLECI", "JENKINS_URL", "CI"}
-	for _, v := range vars {
+	for _, v := range []string{"GITHUB_ACTIONS", "GITLAB_CI", "CIRCLECI", "JENKINS_URL", "CI"} {
 		t.Setenv(v, "")
 	}
 	if got := telemetry.DetectCIProvider(); got != "" {
@@ -100,8 +98,7 @@ func TestRepoIDHash_consistent(t *testing.T) {
 }
 
 func TestRepoIDHash_emptyWhenNoCI(t *testing.T) {
-	vars := []string{"GITHUB_REPOSITORY", "CI_PROJECT_PATH", "CIRCLE_PROJECT_REPONAME"}
-	for _, v := range vars {
+	for _, v := range []string{"GITHUB_REPOSITORY", "CI_PROJECT_PATH", "CIRCLE_PROJECT_REPONAME"} {
 		t.Setenv(v, "")
 	}
 	if got := telemetry.RepoIDHash(); got != "" {
@@ -118,33 +115,60 @@ func TestClient_disabledByEnvVar(t *testing.T) {
 	}
 }
 
+func TestClient_disabledByEnvVarWord(t *testing.T) {
+	t.Setenv("TRUSTABL_TELEMETRY", "disabled")
+	path := filepath.Join(t.TempDir(), "telemetry.json")
+	c := telemetry.New("", "0.0.0", path, nil)
+	if c.IsEnabled() {
+		t.Error("want disabled when TRUSTABL_TELEMETRY=disabled")
+	}
+}
+
 func TestClient_enabledByEnvVar(t *testing.T) {
 	t.Setenv("TRUSTABL_TELEMETRY", "1")
 	path := filepath.Join(t.TempDir(), "telemetry.json")
-	// save a config with enabled=false to confirm env var wins
-	_ = telemetry.SaveConfig(path, telemetry.Config{Enabled: false, AnonymousID: "x"})
+	_ = telemetry.SaveConfig(path, telemetry.Config{Mode: "disabled", AnonymousID: "x"})
 	c := telemetry.New("", "0.0.0", path, nil)
 	if !c.IsEnabled() {
-		t.Error("want enabled when TRUSTABL_TELEMETRY=1, even if config says false")
+		t.Error("want enabled when TRUSTABL_TELEMETRY=1 even if config says disabled")
+	}
+}
+
+func TestClient_minimalByEnvVar(t *testing.T) {
+	t.Setenv("TRUSTABL_TELEMETRY", "minimal")
+	path := filepath.Join(t.TempDir(), "telemetry.json")
+	c := telemetry.New("", "0.0.0", path, nil)
+	if c.Mode() != "minimal" {
+		t.Errorf("want mode=minimal, got %s", c.Mode())
 	}
 }
 
 func TestClient_disabledByConfig(t *testing.T) {
-	t.Setenv("TRUSTABL_TELEMETRY", "") // clear env var
+	t.Setenv("TRUSTABL_TELEMETRY", "")
 	path := filepath.Join(t.TempDir(), "telemetry.json")
-	_ = telemetry.SaveConfig(path, telemetry.Config{Enabled: false, AnonymousID: "x"})
+	_ = telemetry.SaveConfig(path, telemetry.Config{Mode: "disabled", AnonymousID: "x"})
 	c := telemetry.New("", "0.0.0", path, nil)
 	if c.IsEnabled() {
-		t.Error("want disabled when config has enabled=false")
+		t.Error("want disabled when config has mode=disabled")
 	}
 }
 
-func TestClient_defaultEnabled(t *testing.T) {
+func TestClient_defaultDisabled(t *testing.T) {
 	t.Setenv("TRUSTABL_TELEMETRY", "")
 	path := filepath.Join(t.TempDir(), "telemetry.json") // does not exist
 	c := telemetry.New("", "0.0.0", path, nil)
-	if !c.IsEnabled() {
-		t.Error("want enabled by default when no env var and no config file")
+	if c.IsEnabled() {
+		t.Error("want disabled by default when no env var and no config file")
+	}
+}
+
+func TestClient_CI_defaultDisabled(t *testing.T) {
+	t.Setenv("CI", "true")
+	t.Setenv("TRUSTABL_TELEMETRY", "")
+	path := filepath.Join(t.TempDir(), "telemetry.json")
+	c := telemetry.New("", "0.0.0", path, nil)
+	if c.IsEnabled() {
+		t.Error("want disabled in CI when TRUSTABL_TELEMETRY not set")
 	}
 }
 
@@ -160,7 +184,7 @@ func TestClient_isNewInstall_trueWhenNoConfig(t *testing.T) {
 func TestClient_isNewInstall_falseWhenConfigExists(t *testing.T) {
 	t.Setenv("TRUSTABL_TELEMETRY", "")
 	path := filepath.Join(t.TempDir(), "telemetry.json")
-	_ = telemetry.SaveConfig(path, telemetry.Config{Enabled: true, AnonymousID: "x"})
+	_ = telemetry.SaveConfig(path, telemetry.Config{Mode: "full", AnonymousID: "x"})
 	c := telemetry.New("", "0.0.0", path, nil)
 	if c.IsNewInstall() {
 		t.Error("want IsNewInstall=false when config already existed")

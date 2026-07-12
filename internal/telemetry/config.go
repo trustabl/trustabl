@@ -10,8 +10,10 @@ import (
 )
 
 // Config is the persisted telemetry preference.
+// Mode is a closed enum: "disabled", "minimal", "full".
+// An empty Mode means the user has not yet been prompted.
 type Config struct {
-	Enabled     bool   `json:"enabled"`
+	Mode        string `json:"mode"`
 	AnonymousID string `json:"anonymous_id"`
 }
 
@@ -25,7 +27,7 @@ func DefaultConfigPath() (string, error) {
 }
 
 // LoadConfig reads the config at path. If the file does not exist, it returns
-// a default config (Enabled: true, fresh UUID) and existed=false.
+// a default config (Mode: "", fresh UUID) and existed=false.
 // A corrupt file returns an error.
 func LoadConfig(path string) (Config, bool, error) {
 	data, err := os.ReadFile(path)
@@ -35,7 +37,7 @@ func LoadConfig(path string) (Config, bool, error) {
 			if genErr != nil {
 				return Config{}, false, genErr
 			}
-			return Config{Enabled: true, AnonymousID: id}, false, nil
+			return Config{Mode: "", AnonymousID: id}, false, nil
 		}
 		return Config{}, false, fmt.Errorf("telemetry: read config: %w", err)
 	}

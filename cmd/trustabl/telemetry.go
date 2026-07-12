@@ -56,11 +56,14 @@ func newTelemetryStatusCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			envVal := os.Getenv("TRUSTABL_TELEMETRY")
 			switch envVal {
-			case "0":
-				fmt.Fprintln(cmd.OutOrStdout(), "telemetry: disabled (TRUSTABL_TELEMETRY=0)")
+			case "0", "disabled":
+				fmt.Fprintln(cmd.OutOrStdout(), "telemetry: disabled (TRUSTABL_TELEMETRY set to disabled)")
 				return nil
-			case "1":
-				fmt.Fprintln(cmd.OutOrStdout(), "telemetry: enabled (TRUSTABL_TELEMETRY=1)")
+			case "1", "full":
+				fmt.Fprintln(cmd.OutOrStdout(), "telemetry: enabled (TRUSTABL_TELEMETRY set to full)")
+				return nil
+			case "minimal":
+				fmt.Fprintln(cmd.OutOrStdout(), "telemetry: minimal (TRUSTABL_TELEMETRY=minimal)")
 				return nil
 			}
 			path, err := telemetry.DefaultConfigPath()
@@ -72,13 +75,13 @@ func newTelemetryStatusCommand() *cobra.Command {
 				return err
 			}
 			if !existed {
-				fmt.Fprintln(cmd.OutOrStdout(), "telemetry: enabled (default — no config file)")
+				fmt.Fprintln(cmd.OutOrStdout(), "telemetry: disabled (default — no config file)")
 				return nil
 			}
-			if cfg.Enabled {
-				fmt.Fprintln(cmd.OutOrStdout(), "telemetry: enabled (config file)")
-			} else {
+			if cfg.Mode == "disabled" {
 				fmt.Fprintln(cmd.OutOrStdout(), "telemetry: disabled (config file)")
+			} else {
+				fmt.Fprintf(cmd.OutOrStdout(), "telemetry: %s (config file)\n", cfg.Mode)
 			}
 			return nil
 		},
@@ -94,7 +97,11 @@ func setTelemetry(cmd *cobra.Command, enabled bool) error {
 	if err != nil {
 		return err
 	}
-	cfg.Enabled = enabled
+	if enabled {
+		cfg.Mode = "full"
+	} else {
+		cfg.Mode = "disabled"
+	}
 	if err := telemetry.SaveConfig(path, cfg); err != nil {
 		return err
 	}
