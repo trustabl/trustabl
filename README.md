@@ -1080,15 +1080,22 @@ measurement.
 
 ## Privacy & telemetry
 
-Trustabl collects anonymous usage data — which SDKs are scanned, scan duration, which rules fire — to guide product direction. **No source code, file paths, repo names, or finding details are ever sent.** Telemetry is on by default and opt-out.
+Trustabl optionally collects anonymous usage data — which SDKs are scanned, scan duration, which rules fire — to guide product direction. **No source code, file paths, repo names, or finding details are ever sent.** Telemetry is **off by default**; on your first interactive scan, Trustabl asks you to choose a level.
+
+Three levels are available:
+- **Disabled** — no data sent (default)
+- **Minimal** — CLI version and scan outcome only
+- **Full** — anonymous usage stats
 
 ```sh
-trustabl telemetry off          # persist opt-out to config file
+trustabl telemetry off          # disable
+trustabl telemetry minimal      # version and outcome only
+trustabl telemetry full         # full anonymous usage stats
 export TRUSTABL_TELEMETRY=0     # or disable for the current shell session
-trustabl telemetry status       # show current state
+trustabl telemetry status       # show current level and its source
 ```
 
-The full event schema — every event name and every property, verbatim — is at [TELEMETRY.md](TELEMETRY.md) (and at [trustabl.dev/telemetry](https://trustabl.ai/telemetry) once the site is live). That page is kept in sync with the code; stale docs are treated as a defect.
+The full event schema — every event name and every property, verbatim — is at [TELEMETRY.md](TELEMETRY.md) (and at [trustabl.ai/telemetry](https://trustabl.ai/telemetry) once the site is live). That page is kept in sync with the code; stale docs are treated as a defect.
 
 ## Community
 

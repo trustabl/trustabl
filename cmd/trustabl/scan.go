@@ -426,6 +426,7 @@ func finishScan(result models.ScanResult, jobErr error, f scanFlags, log *logx.L
 			"duration_ms":    durationMs,
 			"rules_sha":      result.RulesVersion,
 			"schema_version": result.RulesSchemaVersion,
+			"exit_code":      2,
 		})
 	} else if tel != nil {
 		// Aggregate findings.
