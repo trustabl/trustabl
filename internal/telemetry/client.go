@@ -11,6 +11,7 @@ type Client struct {
 	sink         Sink
 	anonymousID  string
 	mode         string
+	ciProvider   string
 	isNewInstall bool
 	version      string
 }
@@ -57,6 +58,7 @@ func New(apiKey, version, configPath string, stderr *os.File) *Client {
 		sink:         sink,
 		anonymousID:  anonymousID,
 		mode:         mode,
+		ciProvider:   DetectCIProvider(),
 		isNewInstall: !existed,
 		version:      version,
 	}
@@ -82,6 +84,7 @@ func NewWithSink(sink Sink, version, configPath string) *Client {
 		sink:         sink,
 		anonymousID:  cfg.AnonymousID,
 		mode:         mode,
+		ciProvider:   DetectCIProvider(),
 		isNewInstall: !existed,
 		version:      version,
 	}
@@ -101,12 +104,31 @@ func resolveMode(cfgMode, envVal string) string {
 	return cfgMode
 }
 
-// Track sends an event to the sink. Props are merged with base properties
-// (anonymous_id, cli_version). No-op when disabled.
+// Track sends an event to the sink. In "minimal" mode only scan.completed
+// and scan.failed fire, with exactly 5 properties. In "full" mode all events
+// and properties are forwarded. No-op when disabled.
 func (c *Client) Track(event string, props map[string]any) {
 	if c.mode == "disabled" {
 		return
 	}
+
+	if c.mode == "minimal" {
+		if event != "scan.completed" && event != "scan.failed" {
+			return
+		}
+		minimal := map[string]any{
+			"anonymous_id":  c.anonymousID,
+			"cli_version":   c.version,
+			"ci_provider":   c.ciProvider,
+			"is_new_install": c.isNewInstall,
+		}
+		if v, ok := props["exit_code"]; ok {
+			minimal["exit_code"] = v
+		}
+		c.sink.Track(event, minimal)
+		return
+	}
+
 	merged := make(map[string]any, len(props)+2)
 	for k, v := range props {
 		merged[k] = v
