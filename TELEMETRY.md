@@ -131,7 +131,7 @@ Fired for every non-scan subcommand invocation.
 
 ## Manage telemetry
 
-Four mechanisms, evaluated in this order:
+Three mechanisms for explicit control, evaluated in this order (the first-run prompt handles the initial choice):
 
 **1. Environment variable (highest priority)**
 
@@ -166,7 +166,7 @@ Valid values for `mode`: `"disabled"`, `"minimal"`, `"full"`.
 
 | File | Contents |
 |---|---|
-| `~/.config/trustabl/telemetry.json` | `enabled` flag and the stable anonymous UUID. Created on first run, mode `0600`. Never created in CI environments. |
+| `~/.config/trustabl/telemetry.json` | `mode` setting and the stable anonymous UUID. Created when a telemetry level is chosen (first-run prompt or CLI command), mode `0600`. Never created in CI environments. |
 
 The config file is created with directory permissions `0700` and file permissions `0600`. It is never created in CI (where `CI=true` or a recognized CI provider env var is set).
 
