@@ -16,34 +16,58 @@ func newTelemetryCommand() *cobra.Command {
 		Short: "Manage anonymous usage telemetry",
 		Long: `Manage Trustabl's anonymous usage telemetry.
 
-Trustabl collects anonymous data (CLI version, OS, SDKs detected, scan
-duration) to improve the product. No source code, file paths, or repo
-names are ever sent. See https://trustabl.ai/telemetry for the full list.`,
+Trustabl optionally collects anonymous data (CLI version, scan outcome) to
+improve the product. No source code, file paths, or repo names are ever sent.
+See https://trustabl.ai/telemetry for the full list.`,
 	}
-	cmd.AddCommand(newTelemetryOnCommand())
 	cmd.AddCommand(newTelemetryOffCommand())
+	cmd.AddCommand(newTelemetryMinimalCommand())
+	cmd.AddCommand(newTelemetryFullCommand())
+	cmd.AddCommand(newTelemetryOnCommand())
 	cmd.AddCommand(newTelemetryStatusCommand())
 	return cmd
-}
-
-func newTelemetryOnCommand() *cobra.Command {
-	return &cobra.Command{
-		Use:   "on",
-		Short: "Enable anonymous telemetry",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			return setTelemetry(cmd, true)
-		},
-	}
 }
 
 func newTelemetryOffCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "off",
-		Short: "Disable anonymous telemetry",
+		Short: "Disable telemetry — no data sent",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return setTelemetry(cmd, false)
+			return setTelemetryMode(cmd, "disabled")
+		},
+	}
+}
+
+func newTelemetryMinimalCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "minimal",
+		Short: "Enable minimal telemetry — version and outcome only",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return setTelemetryMode(cmd, "minimal")
+		},
+	}
+}
+
+func newTelemetryFullCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "full",
+		Short: "Enable full anonymous usage telemetry",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return setTelemetryMode(cmd, "full")
+		},
+	}
+}
+
+func newTelemetryOnCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "on",
+		Short: "Enable full telemetry (alias for 'full')",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return setTelemetryMode(cmd, "full")
 		},
 	}
 }
@@ -57,10 +81,10 @@ func newTelemetryStatusCommand() *cobra.Command {
 			envVal := os.Getenv("TRUSTABL_TELEMETRY")
 			switch envVal {
 			case "0", "disabled":
-				fmt.Fprintln(cmd.OutOrStdout(), "telemetry: disabled (TRUSTABL_TELEMETRY set to disabled)")
+				fmt.Fprintf(cmd.OutOrStdout(), "telemetry: disabled (TRUSTABL_TELEMETRY=%s)\n", envVal)
 				return nil
 			case "1", "full":
-				fmt.Fprintln(cmd.OutOrStdout(), "telemetry: enabled (TRUSTABL_TELEMETRY set to full)")
+				fmt.Fprintf(cmd.OutOrStdout(), "telemetry: full (TRUSTABL_TELEMETRY=%s)\n", envVal)
 				return nil
 			case "minimal":
 				fmt.Fprintln(cmd.OutOrStdout(), "telemetry: minimal (TRUSTABL_TELEMETRY=minimal)")
@@ -74,21 +98,17 @@ func newTelemetryStatusCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if !existed {
-				fmt.Fprintln(cmd.OutOrStdout(), "telemetry: disabled (default — no config file)")
+			if !existed || cfg.Mode == "" {
+				fmt.Fprintln(cmd.OutOrStdout(), "telemetry: disabled (default — not yet configured)")
 				return nil
 			}
-			if cfg.Mode == "disabled" {
-				fmt.Fprintln(cmd.OutOrStdout(), "telemetry: disabled (config file)")
-			} else {
-				fmt.Fprintf(cmd.OutOrStdout(), "telemetry: %s (config file)\n", cfg.Mode)
-			}
+			fmt.Fprintf(cmd.OutOrStdout(), "telemetry: %s (config file)\n", cfg.Mode)
 			return nil
 		},
 	}
 }
 
-func setTelemetry(cmd *cobra.Command, enabled bool) error {
+func setTelemetryMode(cmd *cobra.Command, mode string) error {
 	path, err := telemetry.DefaultConfigPath()
 	if err != nil {
 		return err
@@ -97,18 +117,17 @@ func setTelemetry(cmd *cobra.Command, enabled bool) error {
 	if err != nil {
 		return err
 	}
-	if enabled {
-		cfg.Mode = "full"
-	} else {
-		cfg.Mode = "disabled"
-	}
+	cfg.Mode = mode
 	if err := telemetry.SaveConfig(path, cfg); err != nil {
 		return err
 	}
-	if enabled {
-		fmt.Fprintln(cmd.OutOrStdout(), "Telemetry enabled.")
-	} else {
+	switch mode {
+	case "disabled":
 		fmt.Fprintln(cmd.OutOrStdout(), "Telemetry disabled.")
+	case "minimal":
+		fmt.Fprintln(cmd.OutOrStdout(), "Telemetry set to minimal (version and outcome only).")
+	case "full":
+		fmt.Fprintln(cmd.OutOrStdout(), "Telemetry set to full.")
 	}
 	return nil
 }

@@ -2,7 +2,7 @@
 
 Trustabl collects anonymous usage data to help improve the product — to understand which SDKs users scan most often, catch reliability issues, and measure adoption. This page is the complete and authoritative list of every event and every property that can be sent. It is updated in the same commit as any event schema change.
 
-**Telemetry is on by default.** Opt out at any time — see [How to opt out](#how-to-opt-out) below.
+**Telemetry is off by default.** On your first interactive scan, Trustabl asks you to choose a level. You can change your choice at any time — see [Manage telemetry](#manage-telemetry) below.
 
 ---
 
@@ -23,6 +23,18 @@ No matter which events fire, Trustabl never sends:
 | Exact file counts | Raw file counts (coarse size buckets are used instead) |
 | Env var values | CI provider detected by variable presence only, never variable values |
 | Raw error strings | Error messages are bucketed into a closed enum before sending |
+
+---
+
+## Telemetry levels
+
+| Level | What is sent |
+|---|---|
+| **Disabled** | Nothing |
+| **Minimal** | `anonymous_id`, `cli_version`, `ci_provider`, `is_new_install`, `exit_code` — one event at scan end |
+| **Full** | All events and properties listed below |
+
+In CI (`CI=true` or a recognized CI provider env var), telemetry defaults to **Disabled** unless `TRUSTABL_TELEMETRY` is explicitly set.
 
 ---
 
@@ -117,33 +129,36 @@ Fired for every non-scan subcommand invocation.
 
 ---
 
-## How to opt out
+## Manage telemetry
 
-Three mechanisms, evaluated in this order:
+Four mechanisms, evaluated in this order:
 
 **1. Environment variable (highest priority)**
 
 ```sh
-export TRUSTABL_TELEMETRY=0   # disable for this shell session
+export TRUSTABL_TELEMETRY=disabled   # or: 0
+export TRUSTABL_TELEMETRY=minimal
+export TRUSTABL_TELEMETRY=full       # or: 1
 ```
 
-Set `TRUSTABL_TELEMETRY=1` to unconditionally enable (useful in CI when you want telemetry despite no config file).
-
-**2. CLI command (persisted)**
+**2. CLI commands (persisted to config file)**
 
 ```sh
-trustabl telemetry off    # writes enabled:false to config file
-trustabl telemetry on     # re-enable
-trustabl telemetry status # show current state and its source
+trustabl telemetry off      # disable — no data sent
+trustabl telemetry minimal  # version and outcome only
+trustabl telemetry full     # all anonymous usage stats
+trustabl telemetry status   # show current level and its source
 ```
 
 **3. Config file (manual)**
 
-Edit `~/.config/trustabl/telemetry.json` (created on first run):
+Edit `~/.config/trustabl/telemetry.json`:
 
 ```json
-{"enabled": false, "anonymous_id": "your-uuid-here"}
+{"mode": "minimal", "anonymous_id": "your-uuid-here"}
 ```
+
+Valid values for `mode`: `"disabled"`, `"minimal"`, `"full"`.
 
 ---
 
@@ -165,18 +180,24 @@ Events are batched and sent asynchronously — no telemetry call ever adds laten
 
 ---
 
-## First-run notice
+## First-run prompt
 
-On the first run in an interactive terminal (TTY), before any scan output, Trustabl prints:
+On the first scan in an interactive terminal (TTY), before any scan output, Trustabl asks:
 
 ```
-Trustabl collects anonymous usage data to help improve the product.
+Trustabl collects anonymous data to help improve the product.
 No source code, file paths, repo names, or finding details are ever sent.
-Run `trustabl telemetry off` or set TRUSTABL_TELEMETRY=0 to disable.
 Learn more: https://trustabl.ai/telemetry
+
+Choose a telemetry level:
+  1. Disabled - No data
+  2. Minimal  - Version and outcome
+  3. Full     - Usage stats
+
+Enter 1, 2, or 3 [default: 1]: 
 ```
 
-This notice is shown once, on TTY only. It is never shown in CI or when output is piped.
+The choice is saved to `~/.config/trustabl/telemetry.json` and never asked again. Empty input or no response defaults to **Disabled**. The prompt is never shown in CI or when output is piped.
 
 ---
 
