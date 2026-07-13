@@ -28,9 +28,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"runtime"
+	"runtime/debug"
 
 	"github.com/spf13/cobra"
 
+	"github.com/trustabl/trustabl/internal/crash"
 	"github.com/trustabl/trustabl/internal/logx"
 	"github.com/trustabl/trustabl/internal/telemetry"
 )
@@ -55,6 +58,13 @@ func main() {
 	configPath, _ := telemetry.DefaultConfigPath()
 	tel := telemetry.New(posthogAPIKey, version, configPath, os.Stderr, os.Stdin)
 	defer tel.Flush()
+	defer func() {
+		if r := recover(); r != nil {
+			crash.Handle(r, debug.Stack(), buildCrashMeta(), tel)
+			tel.Flush()
+			os.Exit(2)
+		}
+	}()
 
 	rootCmd := &cobra.Command{
 		Use:   "trustabl",
@@ -143,4 +153,15 @@ func refOrDefault(ref string) string {
 		return "default branch"
 	}
 	return ref
+}
+
+// buildCrashMeta assembles build/runtime context for a crash report. RulesSHA is
+// left empty here — it is not resolved until mid-scan.
+func buildCrashMeta() crash.Meta {
+	return crash.Meta{
+		Version: version,
+		Commit:  commit,
+		OS:      runtime.GOOS,
+		Arch:    runtime.GOARCH,
+	}
 }

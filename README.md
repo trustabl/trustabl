@@ -1082,6 +1082,8 @@ measurement.
 
 Trustabl optionally collects anonymous usage data — which SDKs are scanned, scan duration, which rules fire — to guide product direction. **No source code, file paths, repo names, or finding details are ever sent.** Telemetry is **off by default**; on your first interactive scan, Trustabl asks you to choose a level.
 
+On a panic, Trustabl writes a scrubbed crash report to `~/.config/trustabl/crash-<timestamp>.log` and, only in an interactive terminal, offers to send it anonymously or open a pre-filled GitHub issue — otherwise nothing is transmitted. There is no auto-send: the default is always silence, and sending is an explicit per-crash choice. The report contains the panic message (with common secret shapes redacted best-effort) and stack frames; no source code, file contents, or argument values are included.
+
 Three levels are available:
 - **Disabled** — no data sent (default)
 - **Minimal** — CLI version and scan outcome only

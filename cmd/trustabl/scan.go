@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
+	"github.com/trustabl/trustabl/internal/crash"
 	"github.com/trustabl/trustabl/internal/cyclonedx"
 	"github.com/trustabl/trustabl/internal/logx"
 	"github.com/trustabl/trustabl/internal/models"
@@ -226,24 +228,31 @@ func runScan(target string, f scanFlags, level logx.Level, tel *telemetry.Client
 	defer cancel()
 	cfg.Ctx = ctx
 	type scanOutcome struct {
-		result models.ScanResult
-		err    error
+		result     models.ScanResult
+		err        error
+		panicVal   any
+		panicStack []byte
 	}
 	done := make(chan scanOutcome, 1)
 	go func() {
-		// Convert a panic in the scan into a clean error on the channel. Without
-		// this, an unrecovered panic in this goroutine tears down the whole
-		// process with a raw stack trace; here it surfaces as a normal scan
-		// failure (exit 2) and lets the TTY reporter shut down first.
+		// Convert a panic in the scan into a crash report. Without this, an
+		// unrecovered panic in this goroutine tears down the whole process with a
+		// raw stack trace; here it lets the TTY reporter shut down cleanly first,
+		// then routes through the crash handler before exiting.
 		defer func() {
 			if r := recover(); r != nil {
+				// Route the panic back to the main goroutine rather than prompting
+				// from here: the main goroutine still owns the raw-mode TTY inside
+				// rep.Run(), so reading os.Stdin here would race it. rep.Done()
+				// makes rep.Run() return and restore the terminal; the main
+				// goroutine then runs the crash handler on a normal-mode terminal.
 				rep.Done()
-				done <- scanOutcome{err: fmt.Errorf("scan panicked: %v", r)}
+				done <- scanOutcome{panicVal: r, panicStack: debug.Stack()}
 			}
 		}()
 		result, err := resolveAndScan(&cfg, f, rep)
 		rep.Done()
-		done <- scanOutcome{result, err}
+		done <- scanOutcome{result: result, err: err}
 	}()
 	if err := rep.Run(); err != nil {
 		if errors.Is(err, progress.ErrInterrupted) {
@@ -261,6 +270,14 @@ func runScan(target string, f scanFlags, level logx.Level, tel *telemetry.Client
 		return err
 	}
 	out := <-done
+	if out.panicVal != nil {
+		// A panic unwound the scan goroutine (panics only — categorized scan
+		// errors still flow through finishScan/scan.failed). We are now past
+		// rep.Run(), so the terminal is restored and prompting is safe. main()
+		// owns the tel.Flush()+os.Exit(2) via exitCodeError.
+		crash.Handle(out.panicVal, out.panicStack, buildCrashMeta(), tel)
+		return exitCodeError{2}
+	}
 	return finishScan(out.result, out.err, f, log, tel, startTime)
 }
 

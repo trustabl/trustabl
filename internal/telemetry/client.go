@@ -14,6 +14,7 @@ import (
 // calls to the underlying Sink. Safe for concurrent use.
 type Client struct {
 	sink         Sink
+	crashSink    Sink // crash.reported transport; live whenever a key exists, independent of mode
 	anonymousID  string
 	mode         string
 	ciProvider   string
@@ -60,15 +61,23 @@ func New(apiKey, version, configPath string, stderr *os.File, stdin io.Reader) *
 		anonymousID = id
 	}
 
-	var sink Sink
-	if mode != "disabled" && apiKey != "" {
-		sink = newPostHogSink(apiKey)
-	} else {
-		sink = NewNullSink()
+	// The crash transport is live whenever a PostHog key is built into the binary,
+	// regardless of telemetry mode — crash reporting is a separate consent from
+	// usage telemetry (the per-crash prompt is the consent). The usage-telemetry
+	// sink shares that same PostHog client when telemetry is enabled, and is a
+	// NullSink otherwise.
+	var telSink, crashSink Sink = NewNullSink(), NewNullSink()
+	if apiKey != "" {
+		ph := newPostHogSink(apiKey)
+		crashSink = ph
+		if mode != "disabled" {
+			telSink = ph
+		}
 	}
 
 	return &Client{
-		sink:         sink,
+		sink:         telSink,
+		crashSink:    crashSink,
 		anonymousID:  anonymousID,
 		mode:         mode,
 		ciProvider:   ciProvider,
@@ -90,11 +99,16 @@ func NewWithSink(sink Sink, version, configPath string) *Client {
 	if mode == "" {
 		mode = "disabled"
 	}
+	// The provided sink is the crash transport regardless of mode, so tests can
+	// verify crash sends even when telemetry is disabled. The usage-telemetry
+	// sink is nulled when disabled.
+	telSink := sink
 	if mode == "disabled" {
-		sink = NewNullSink()
+		telSink = NewNullSink()
 	}
 	return &Client{
-		sink:         sink,
+		sink:         telSink,
+		crashSink:    sink,
 		anonymousID:  cfg.AnonymousID,
 		mode:         mode,
 		ciProvider:   DetectCIProvider(),
@@ -130,9 +144,9 @@ func (c *Client) Track(event string, props map[string]any) {
 			return
 		}
 		minimal := map[string]any{
-			"anonymous_id":  c.anonymousID,
-			"cli_version":   c.version,
-			"ci_provider":   c.ciProvider,
+			"anonymous_id":   c.anonymousID,
+			"cli_version":    c.version,
+			"ci_provider":    c.ciProvider,
 			"is_new_install": c.isNewInstall,
 		}
 		if v, ok := props["exit_code"]; ok {
@@ -151,8 +165,30 @@ func (c *Client) Track(event string, props map[string]any) {
 	c.sink.Track(event, merged)
 }
 
-// Flush blocks until all queued events are delivered.
-func (c *Client) Flush() { c.sink.Flush() }
+// TrackCrash sends the crash.reported event over the dedicated crash transport.
+// It is fully independent of the usage-telemetry level: it fires the same way in
+// full, minimal, AND disabled modes, because the per-crash prompt is its own
+// explicit consent, separate from telemetry. It only no-ops when no PostHog key
+// is built into the binary (nowhere to send).
+func (c *Client) TrackCrash(props map[string]any) {
+	merged := make(map[string]any, len(props)+2)
+	for k, v := range props {
+		merged[k] = v
+	}
+	merged["anonymous_id"] = c.anonymousID
+	merged["cli_version"] = c.version
+	c.crashSink.Track("crash.reported", merged)
+}
+
+// Flush blocks until all queued events are delivered. Both the usage-telemetry
+// sink and the crash transport are flushed; when telemetry is enabled they share
+// one PostHog client and the second flush is a harmless no-op.
+func (c *Client) Flush() {
+	c.sink.Flush()
+	if c.crashSink != c.sink {
+		c.crashSink.Flush()
+	}
+}
 
 // IsEnabled reports whether telemetry is active (mode is not "disabled").
 func (c *Client) IsEnabled() bool { return c.mode != "disabled" }

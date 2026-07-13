@@ -391,3 +391,62 @@ func TestPromptMode_eofDefault(t *testing.T) {
 		t.Errorf("want disabled on EOF, got %q", got)
 	}
 }
+
+func TestTrackCrashFiresInMinimalMode(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "telemetry.json")
+	if err := telemetry.SaveConfig(path, telemetry.Config{Mode: "minimal", AnonymousID: "id-1"}); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("TRUSTABL_TELEMETRY", "")
+	sink := telemetry.NewRecordingSink()
+	c := telemetry.NewWithSink(sink, "1.0.0", path)
+
+	c.TrackCrash(map[string]any{"panic_value": "boom"})
+
+	if len(sink.Events) != 1 || sink.Events[0].Name != "crash.reported" {
+		t.Fatalf("expected one crash.reported event, got %#v", sink.Events)
+	}
+	if sink.Events[0].Props["cli_version"] != "1.0.0" {
+		t.Fatalf("base props not merged: %#v", sink.Events[0].Props)
+	}
+}
+
+func TestTrackCrashFiresWhenTelemetryDisabled(t *testing.T) {
+	// Crash reporting is independent of the telemetry level: a crash report sends
+	// even when telemetry is disabled, because the per-crash prompt is its own
+	// consent, separate from usage telemetry.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "telemetry.json")
+	_ = telemetry.SaveConfig(path, telemetry.Config{Mode: "disabled", AnonymousID: "id-2"})
+	t.Setenv("TRUSTABL_TELEMETRY", "")
+	sink := telemetry.NewRecordingSink()
+	c := telemetry.NewWithSink(sink, "1.0.0", path)
+
+	c.TrackCrash(map[string]any{"panic_value": "boom"})
+
+	if len(sink.Events) != 1 || sink.Events[0].Name != "crash.reported" {
+		t.Fatalf("expected crash.reported even when telemetry disabled, got %#v", sink.Events)
+	}
+	if sink.Events[0].Props["anonymous_id"] != "id-2" || sink.Events[0].Props["cli_version"] != "1.0.0" {
+		t.Fatalf("base props not merged on crash event: %#v", sink.Events[0].Props)
+	}
+}
+
+func TestTrackDoesNotFireWhenTelemetryDisabled(t *testing.T) {
+	// The usage-telemetry Track path stays disabled — only crash reporting is
+	// decoupled. This guards that the crash change did not re-open normal
+	// telemetry when the user turned it off.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "telemetry.json")
+	_ = telemetry.SaveConfig(path, telemetry.Config{Mode: "disabled", AnonymousID: "id-3"})
+	t.Setenv("TRUSTABL_TELEMETRY", "")
+	sink := telemetry.NewRecordingSink()
+	c := telemetry.NewWithSink(sink, "1.0.0", path)
+
+	c.Track("scan.completed", map[string]any{"exit_code": 0})
+
+	if len(sink.Events) != 0 {
+		t.Fatalf("expected no usage-telemetry events when disabled, got %#v", sink.Events)
+	}
+}
