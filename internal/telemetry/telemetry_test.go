@@ -332,33 +332,33 @@ func TestClient_minimal_injectsIsNewInstall(t *testing.T) {
 	}
 }
 
-func TestPromptMode_choice1_disabled(t *testing.T) {
+func TestPromptMode_choice1_minimal(t *testing.T) {
 	r, w, _ := os.Pipe()
 	defer r.Close()
 	got := telemetry.PromptMode(w, strings.NewReader("1\n"))
 	w.Close()
-	if got != "disabled" {
-		t.Errorf("want disabled for input '1', got %q", got)
+	if got != "minimal" {
+		t.Errorf("want minimal for input '1', got %q", got)
 	}
 }
 
-func TestPromptMode_choice2_minimal(t *testing.T) {
+func TestPromptMode_choice2_full(t *testing.T) {
 	r, w, _ := os.Pipe()
 	defer r.Close()
 	got := telemetry.PromptMode(w, strings.NewReader("2\n"))
 	w.Close()
-	if got != "minimal" {
-		t.Errorf("want minimal for input '2', got %q", got)
+	if got != "full" {
+		t.Errorf("want full for input '2', got %q", got)
 	}
 }
 
-func TestPromptMode_choice3_full(t *testing.T) {
+func TestPromptMode_choice3_disabled(t *testing.T) {
 	r, w, _ := os.Pipe()
 	defer r.Close()
 	got := telemetry.PromptMode(w, strings.NewReader("3\n"))
 	w.Close()
-	if got != "full" {
-		t.Errorf("want full for input '3', got %q", got)
+	if got != "disabled" {
+		t.Errorf("want disabled for input '3', got %q", got)
 	}
 }
 

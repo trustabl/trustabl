@@ -190,11 +190,11 @@ No source code, file paths, repo names, or finding details are ever sent.
 Learn more: https://trustabl.ai/telemetry
 
 Choose a telemetry level:
-  1. Disabled - No data
-  2. Minimal  - Version and outcome
-  3. Full     - Usage stats
+  1. Minimal  - Version and outcome
+  2. Full     - Usage stats
+  3. Disabled - No data
 
-Enter 1, 2, or 3 [default: 1]: 
+Enter 1, 2, or 3 [default: 3]: 
 ```
 
 The choice is saved to `~/.config/trustabl/telemetry.json` and never asked again. Empty input or no response defaults to **Disabled**. The prompt is never shown in CI or when output is piped.

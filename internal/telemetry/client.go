@@ -171,10 +171,10 @@ func PromptMode(w io.Writer, r io.Reader) string {
 		"No source code, file paths, repo names, or finding details are ever sent.\n" +
 		"Learn more: https://trustabl.ai/telemetry\n\n" +
 		"Choose a telemetry level:\n" +
-		"  1. Disabled - No data\n" +
-		"  2. Minimal  - Version and outcome\n" +
-		"  3. Full     - Usage stats\n\n" +
-		"Enter 1, 2, or 3 [default: 1]: "
+		"  1. Minimal  - Version and outcome\n" +
+		"  2. Full     - Usage stats\n" +
+		"  3. Disabled - No data\n\n" +
+		"Enter 1, 2, or 3 [default: 3]: "
 	_, _ = io.WriteString(w, intro)
 
 	scanner := bufio.NewScanner(r)
@@ -183,15 +183,15 @@ func PromptMode(w io.Writer, r io.Reader) string {
 			return "disabled"
 		}
 		switch strings.TrimSpace(scanner.Text()) {
-		case "", "1":
-			return "disabled"
-		case "2":
+		case "1":
 			return "minimal"
-		case "3":
+		case "2":
 			return "full"
+		case "", "3":
+			return "disabled"
 		}
 		if attempt == 0 {
-			_, _ = io.WriteString(w, "Please enter 1, 2, or 3 [default: 1]: ")
+			_, _ = io.WriteString(w, "Please enter 1, 2, or 3 [default: 3]: ")
 		}
 	}
 	return "disabled"
