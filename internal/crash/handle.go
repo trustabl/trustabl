@@ -42,9 +42,9 @@ func act(w io.Writer, r io.Reader, interactive bool, rep Report, path string, te
 		}
 		fmt.Fprintln(w, "Thanks — report sent.")
 	case ChoiceGitHub:
-		u := IssueURL(rep)
+		u := IssueURL(rep, path)
 		_ = opener(u)
-		fmt.Fprintf(w, "File an issue here (paste %s):\n  %s\n", path, u)
+		fmt.Fprintf(w, "File an issue here (crash report pre-filled):\n  %s\n", u)
 	case ChoiceNothing:
 	}
 }
