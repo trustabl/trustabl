@@ -333,7 +333,10 @@ matching `--format` stdout output.
 dependencies the repo declares across every supported language — `requirements.txt`
 / `pyproject.toml` / `Pipfile` (pip), `package.json` (npm), `go.mod` (Go),
 `composer.json` (Composer), `*.csproj` (NuGet), `Cargo.toml` (Cargo). It is pure
-inventory of DECLARED direct deps and makes no network call.
+inventory of DECLARED direct deps and makes no network call. Where the manifest
+carries a `license` field (`package.json`, `Cargo.toml`, `composer.json`,
+`pyproject.toml`), the SPDX identifier is included in each component's
+`licenses[]` array in the BOM.
 
 `--vuln-scan` turns that BOM into a vulnerability verdict: it matches the repo's
 concretely-pinned dependencies against a pinned [OSV](https://osv.dev) snapshot
@@ -684,6 +687,17 @@ trustabl scan ./repo --bom-out sbom.json
 trustabl vulndb pull                              # pre-download OSV (optional; --vuln-scan auto-fetches)
 trustabl scan ./repo --vuln-scan                  # BOM inventory + CVE verdict in one pass
 trustabl scan ./repo --vuln-scan --bom-out bom.json  # CycloneDX BOM + VEX (vulnerabilities[]) in one file
+
+# License scan (opt-in): flag dependencies with copyleft licenses (GPL-2.0,
+# GPL-3.0, AGPL-3.0, LGPL-2.1, SSPL-1.0) as medium-severity findings.
+# License data is read from the manifest at parse time — no network call.
+trustabl scan ./repo --license-scan
+trustabl scan ./repo --license-scan --bom-out bom.json  # findings + BOM with licenses[]
+
+# Secret scan (opt-in): walk all text files in the repo for hardcoded
+# credential literals (SECRET-LIT-001, high) and scripts that read
+# credential environment variables (SECRET-ENV-001, medium).
+trustabl scan ./repo --secret-scan
 
 # JSON output for CI piping
 trustabl scan ./repo --format json

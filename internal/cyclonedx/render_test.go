@@ -221,3 +221,40 @@ func TestRender_NoVulnsOmitsArray(t *testing.T) {
 		t.Errorf("inventory-only BOM must not contain a vulnerabilities array:\n%s", out)
 	}
 }
+
+// TestRender_License proves a dep with a License field emits a CycloneDX
+// licenses[] array and a dep without one omits it.
+func TestRender_License(t *testing.T) {
+	deps := []models.DepRef{
+		{Name: "requests", Version: "2.31.0", Ecosystem: "pypi", Source: "requirements.txt", License: "MIT"},
+		{Name: "flask", Version: "3.0.0", Ecosystem: "pypi", Source: "requirements.txt"},
+	}
+	out := string(Render(deps, nil, "1.0.0"))
+	// The licensed component must carry licenses[0].license.id.
+	if !strings.Contains(out, `"id": "MIT"`) {
+		t.Errorf("BOM missing license id MIT:\n%s", out)
+	}
+	// The unlicensed component must not carry a licenses key at all.
+	// Verify by parsing and checking per-component.
+	var doc struct {
+		Components []struct {
+			Name     string            `json:"name"`
+			Licenses []json.RawMessage `json:"licenses"`
+		} `json:"components"`
+	}
+	if err := json.Unmarshal([]byte(out), &doc); err != nil {
+		t.Fatalf("invalid CycloneDX JSON: %v\n%s", err, out)
+	}
+	for _, c := range doc.Components {
+		switch c.Name {
+		case "requests":
+			if len(c.Licenses) != 1 {
+				t.Errorf("requests: want 1 license entry, got %d", len(c.Licenses))
+			}
+		case "flask":
+			if len(c.Licenses) != 0 {
+				t.Errorf("flask: want no licenses array, got %d entries", len(c.Licenses))
+			}
+		}
+	}
+}

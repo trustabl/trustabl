@@ -45,12 +45,21 @@ type tool struct {
 }
 
 type component struct {
-	BOMRef     string     `json:"bom-ref"`
-	Type       string     `json:"type"`
-	Name       string     `json:"name"`
-	Version    string     `json:"version,omitempty"`
-	PURL       string     `json:"purl"`
-	Properties []property `json:"properties,omitempty"`
+	BOMRef     string          `json:"bom-ref"`
+	Type       string          `json:"type"`
+	Name       string          `json:"name"`
+	Version    string          `json:"version,omitempty"`
+	PURL       string          `json:"purl"`
+	Licenses   []licenseChoice `json:"licenses,omitempty"`
+	Properties []property      `json:"properties,omitempty"`
+}
+
+type licenseChoice struct {
+	License licenseID `json:"license"`
+}
+
+type licenseID struct {
+	ID string `json:"id"`
 }
 
 type property struct {
@@ -135,6 +144,9 @@ func Render(deps []models.DepRef, vulns []models.DepVuln, toolVersion string) []
 			Name:    d.Name,
 			Version: d.Version,
 			PURL:    base,
+		}
+		if d.License != "" {
+			c.Licenses = []licenseChoice{{License: licenseID{ID: d.License}}}
 		}
 		if d.Source != "" {
 			c.Properties = []property{{Name: "trustabl:source", Value: d.Source}}

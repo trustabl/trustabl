@@ -2167,6 +2167,7 @@ var policyRepoRuleCases = []policyRepoCase{
 		},
 		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKOpenAIAgents}},
 		false},
+
 }
 
 // optionsWithPermissionMode builds a ClaudeAgentOptionsDef whose captured

@@ -1024,3 +1024,4 @@ func PredRepoClaudeOptionsPermissionModeIs(modes []string, inv models.RepoInvent
 	}
 	return false
 }
+

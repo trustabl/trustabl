@@ -45,6 +45,8 @@ type scanFlags struct {
 	sarifOut      string
 	bomOut        string
 	vulnScan      bool
+	licenseScan   bool
+	secretScan    bool
 	attest        bool
 	attestKey     string
 	attestBundle  string
@@ -148,6 +150,10 @@ Exit codes:
 		"also write a CycloneDX BOM of the repo's declared dependencies to this file")
 	cmd.Flags().BoolVar(&f.vulnScan, "vuln-scan", false,
 		"match dependencies against a pinned OSV snapshot and report known CVEs (off by default; fetches the OSV database on first use, then caches it)")
+	cmd.Flags().BoolVar(&f.licenseScan, "license-scan", false,
+		"flag dependencies with copyleft licenses (GPL-2.0, GPL-3.0, AGPL-3.0, LGPL-2.1, SSPL-1.0) as findings (opt-in)")
+	cmd.Flags().BoolVar(&f.secretScan, "secret-scan", false,
+		"scan all text files for hardcoded secret literals and credential reads (opt-in)")
 	cmd.Flags().BoolVar(&f.attest, "attest", false,
 		"after the scan, sign the JSON report into a cosign attestation (requires cosign on PATH; keyless by default — see 'trustabl attest')")
 	cmd.Flags().StringVar(&f.attestKey, "attest-key", "",
@@ -399,6 +405,8 @@ func resolveAndScan(cfg *scanner.Config, f scanFlags, rep progress.Reporter) (mo
 	cfg.RulesSchemaNewer = res.SchemaNewer
 	cfg.RulesOrigin = origin
 	cfg.VulnScan = f.vulnScan
+	cfg.LicenseScan = f.licenseScan
+	cfg.SecretScan = f.secretScan
 	cfg.VulnNoUpdate = f.noRulesUpdate // --no-rules-update is the offline switch for both rules and the OSV DB
 	cfg.Progress = rep
 
