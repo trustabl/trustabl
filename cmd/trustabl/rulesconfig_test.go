@@ -8,23 +8,23 @@ import (
 
 // TestEffectiveRules covers the source-selection precedence that drives BOTH the
 // rulesource.Config and the RulesOrigin, so the resolved source and its reported
-// provenance can never disagree. The default is still git this phase; the flip to
-// production is a one-line change to defaultRulesSource (ENG-6).
+// provenance can never disagree. After the ENG-6 cutover the default is the signed
+// production channel; the unsigned git path is the explicit opt-out.
 func TestEffectiveRules(t *testing.T) {
 	// Neutralize any ambient override so cases are hermetic.
 	t.Setenv("TRUSTABL_RULES_REPO", "")
 	t.Setenv("TRUSTABL_REQUIRE_SIGNED", "")
 
-	t.Run("default is unsigned git", func(t *testing.T) {
+	t.Run("default is the signed production channel", func(t *testing.T) {
 		cfg, origin, err := effectiveRules(scanFlags{})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if cfg.Channel != "" {
-			t.Errorf("Channel = %q, want git path (empty)", cfg.Channel)
+		if cfg.Channel != "production" {
+			t.Errorf("Channel = %q, want production (the post-cutover default)", cfg.Channel)
 		}
-		if origin.Signed || origin.Custom {
-			t.Errorf("origin = %+v, want unsigned default", origin)
+		if !origin.Signed || origin.Channel != "production" || origin.Custom {
+			t.Errorf("origin = %+v, want signed production default", origin)
 		}
 	})
 
@@ -159,14 +159,19 @@ func TestEffectiveRules(t *testing.T) {
 }
 
 // TestEffectiveRules_RequireSigned locks the signed-only gate: --require-signed
-// (or TRUSTABL_REQUIRE_SIGNED=1) refuses the unsigned git path and allows a
-// signed channel.
+// (or TRUSTABL_REQUIRE_SIGNED=1) refuses the unsigned git path (now the explicit
+// opt-out) and allows a signed channel — including the post-cutover default.
 func TestEffectiveRules_RequireSigned(t *testing.T) {
 	t.Setenv("TRUSTABL_RULES_REPO", "")
 	t.Setenv("TRUSTABL_REQUIRE_SIGNED", "")
 
-	if _, _, err := effectiveRules(scanFlags{requireSigned: true}); err == nil {
-		t.Fatal("--require-signed must refuse the unsigned git default")
+	// The default is now the signed production channel, so --require-signed is
+	// satisfied by the default; it only refuses when git is explicitly selected.
+	if _, _, err := effectiveRules(scanFlags{requireSigned: true}); err != nil {
+		t.Fatalf("--require-signed must allow the signed production default: %v", err)
+	}
+	if _, _, err := effectiveRules(scanFlags{requireSigned: true, rulesSource: "git"}); err == nil {
+		t.Fatal("--require-signed must refuse the explicit unsigned git path")
 	}
 	cfg, origin, err := effectiveRules(scanFlags{requireSigned: true, rulesSource: "production"})
 	if err != nil {
@@ -177,15 +182,15 @@ func TestEffectiveRules_RequireSigned(t *testing.T) {
 	}
 
 	t.Setenv("TRUSTABL_REQUIRE_SIGNED", "1")
-	if _, _, err := effectiveRules(scanFlags{}); err == nil {
-		t.Fatal("TRUSTABL_REQUIRE_SIGNED=1 must refuse the unsigned git default")
+	if _, _, err := effectiveRules(scanFlags{rulesSource: "git"}); err == nil {
+		t.Fatal("TRUSTABL_REQUIRE_SIGNED=1 must refuse the explicit unsigned git path")
 	}
 }
 
-// TestDefaultRulesSource_CutoverHasGenesisFloor is the cutover guard: the moment
-// the default flips from "git" to a signed channel (ENG-6), that channel MUST
-// ship with a non-zero genesis floor, or first contact has anti-rollback
-// disabled. While the default is still "git" this is a no-op.
+// TestDefaultRulesSource_CutoverHasGenesisFloor is the cutover guard: once the
+// default is a signed channel (ENG-6), that channel MUST ship with a non-zero
+// genesis floor, or first contact has anti-rollback disabled. (A "git" default
+// would make this a no-op.)
 func TestDefaultRulesSource_CutoverHasGenesisFloor(t *testing.T) {
 	if defaultRulesSource == "git" {
 		return // pre-cutover: unsigned git default, nothing to enforce yet

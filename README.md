@@ -754,16 +754,20 @@ populates it; each subsequent scan checks for an update first (unless
 `--no-rules-update`), falling back to the cached rules if the fetch
 fails.
 
-**Signed rules channels (opt-in).** `--rules-source <name>` resolves rules from a
-signature-verified release channel instead of cloning git: Trustabl verifies a
+**Signed rules channels (default).** A plain `trustabl scan` resolves rules from
+the signature-verified **production** release channel: Trustabl verifies a
 signed channel statement against an embedded trust keyring, fetches the bundle
 it commits to, and refuses (exit `2`) on any verification failure rather than
 running unverified rules. `--rules-source git` selects the unsigned git path
 explicitly, and `--rules-repo` / `--rules-ref` imply it; a non-default channel
 can still be pointed at a fork with `--rules-source <name> --rules-repo <fork>`
 to test a signed fork. (`--channel <name>` is a deprecated alias for
-`--rules-source <name>`.) The **default scan is unchanged** — it still uses the
-git source until the signed-production cutover. A scan that did not use blessed
+`--rules-source <name>`.) The **default scan now uses the signed production
+channel**; set `TRUSTABL_REQUIRE_SIGNED=1` (or `--require-signed`) to forbid the
+unsigned git fallback entirely in CI. Already-shipped pre-cutover binaries are
+unaffected (the default and keyring are compiled in); upgrading shifts `ScanID`
+once as the origin tag and git-SHA become the channel's bundle digest. A scan
+that did not use blessed
 production rules (a pre-release channel, or a custom `--rules-repo` source) is
 watermarked in the report and in the JSON `rules_origin` field, and its
 provenance is folded into `ScanID`. This build embeds the rule-signing public
