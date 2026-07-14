@@ -33,7 +33,7 @@ func TestPromptAlwaysShowsAllOptions(t *testing.T) {
 	var out strings.Builder
 	Prompt(&out, strings.NewReader("\n"))
 	menu := out.String()
-	for _, want := range []string{"1. Send crash report", "2. Open GitHub issue", "3. Do nothing", "[default: 3]"} {
+	for _, want := range []string{"1. Send anonymous crash report", "2. Open GitHub issue", "3. Do nothing", "[default: 3]"} {
 		if !strings.Contains(menu, want) {
 			t.Errorf("prompt missing %q, got:\n%s", want, menu)
 		}

@@ -22,7 +22,7 @@ const (
 // silence. Re-prompts once on the first invalid input.
 func Prompt(w io.Writer, r io.Reader) Choice {
 	io.WriteString(w, "\nHelp us fix it? No source code or file contents are sent.\n"+
-		"  1. Send crash report\n"+
+		"  1. Send anonymous crash report\n"+
 		"  2. Open GitHub issue\n"+
 		"  3. Do nothing\n\n"+
 		"Enter 1, 2, or 3 [default: 3]: ")

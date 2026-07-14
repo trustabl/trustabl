@@ -131,7 +131,7 @@ Fired for every non-scan subcommand invocation.
 
 ### `crash.reported`
 
-Fired **only** when a user explicitly chooses "Send crash report" after a panic. It is never sent automatically. Crash reporting is **independent of the telemetry setting** — this event fires the same way whether telemetry is `full`, `minimal`, or `disabled`, because the per-crash prompt is its own separate consent. The only thing that stops it is the absence of a PostHog key in the build (nowhere to send). Turning telemetry off does **not** turn off the ability to send a crash report; the choice is made fresh at each crash and is never stored.
+Fired **only** when a user explicitly chooses "Send anonymous crash report" after a panic. It is never sent automatically. Crash reporting is **independent of the telemetry setting** — this event fires the same way whether telemetry is `full`, `minimal`, or `disabled`, because the per-crash prompt is its own separate consent. The only thing that stops it is the absence of a PostHog key in the build (nowhere to send). Turning telemetry off does **not** turn off the ability to send a crash report; the choice is made fresh at each crash and is never stored.
 
 | Property | Type | Example | Notes |
 |---|---|---|---|
@@ -195,14 +195,14 @@ The crash report contains the scrubbed panic value and stack frames (see `crash.
 
 ```
 Help us fix it? No source code or file contents are sent.
-  1. Send crash report
+  1. Send anonymous crash report
   2. Open GitHub issue
   3. Do nothing
 
 Enter 1, 2, or 3 [default: 3]:
 ```
 
-This prompt is shown **only** in an interactive terminal (stderr is a TTY and neither `CI` nor a recognized CI provider env var is set). In CI or when output is piped, no prompt appears and nothing is sent. The default action is always "Do nothing". All three options are shown on **every** crash — the "Send crash report" option is **never** hidden or renumbered based on the telemetry setting, because crash reporting is a separate consent from usage telemetry. Choosing "Send crash report" fires the `crash.reported` event and works even when telemetry is `disabled` (it only no-ops if the build has no PostHog key); choosing "Open GitHub issue" opens a pre-filled URL in the browser — no data is transmitted by Trustabl itself.
+This prompt is shown **only** in an interactive terminal (stderr is a TTY and neither `CI` nor a recognized CI provider env var is set). In CI or when output is piped, no prompt appears and nothing is sent. The default action is always "Do nothing". All three options are shown on **every** crash — the "Send anonymous crash report" option is **never** hidden or renumbered based on the telemetry setting, because crash reporting is a separate consent from usage telemetry. Choosing "Send anonymous crash report" fires the `crash.reported` event and works even when telemetry is `disabled` (it only no-ops if the build has no PostHog key); choosing "Open GitHub issue" opens a pre-filled URL in the browser — no data is transmitted by Trustabl itself.
 
 ---
 
