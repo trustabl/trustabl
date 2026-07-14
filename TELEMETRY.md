@@ -129,6 +129,22 @@ Fired for every non-scan subcommand invocation.
 
 ---
 
+### `crash.reported`
+
+Fired **only** when a user explicitly chooses "Send anonymous crash report" after a panic. It is never sent automatically. Crash reporting is **independent of the telemetry setting** — this event fires the same way whether telemetry is `full`, `minimal`, or `disabled`, because the per-crash prompt is its own separate consent. The only thing that stops it is the absence of a PostHog key in the build (nowhere to send). Turning telemetry off does **not** turn off the ability to send a crash report; the choice is made fresh at each crash and is never stored.
+
+| Property | Type | Example | Notes |
+|---|---|---|---|
+| `panic_value` | string | `"runtime error: index out of range [2] with length 2"` | The recovered panic value, passed through best-effort redaction of common secret shapes (e.g. `sk-ant-*`, `sk-proj-*`, long hex/base64 strings). Not guaranteed to be free of all sensitive content. |
+| `stack` | string | `"goroutine 1 [running]:\nmain.(...)\n\tmain.go:42\n..."` | Scrubbed stack frames only — no argument values, no source lines, file paths trimmed to `basename:line`. |
+| `version` | string | `"0.9.1"` | CLI build version |
+| `commit` | string | `"abc1234"` | Build commit SHA |
+| `os` | string | `"darwin"` | `GOOS` |
+| `arch` | string | `"arm64"` | `GOARCH` |
+| `rules_sha` | string | `""` | Always empty for crash reports — build meta carries no resolved SHA at the panic site. Reserved for future use. |
+
+---
+
 ## Manage telemetry
 
 Three mechanisms for explicit control, evaluated in this order (the first-run prompt handles the initial choice):
@@ -167,8 +183,26 @@ Valid values for `mode`: `"disabled"`, `"minimal"`, `"full"`.
 | File | Contents |
 |---|---|
 | `~/.config/trustabl/telemetry.json` | `mode` setting and the stable anonymous UUID. Created when a telemetry level is chosen (first-run prompt or CLI command), mode `0600`. Never created in CI environments. |
+| `~/.config/trustabl/crash-<timestamp>.log` | Scrubbed crash report written on an unrecovered panic. See "Crash reports" below. |
 
 The config file is created with directory permissions `0700` and file permissions `0600`. It is never created in CI (where `CI=true` or a recognized CI provider env var is set).
+
+### Crash reports
+
+When Trustabl experiences an unrecovered panic, it always writes a scrubbed crash report to `~/.config/trustabl/crash-<UTC-timestamp>.log` (mode `0600`, directory `0700`). This happens even in CI or non-interactive environments — the local file is the permanent, transparent record of what was captured.
+
+The crash report contains the scrubbed panic value and stack frames (see `crash.reported` properties above for exactly what is included). **Nothing is transmitted without an explicit choice**: after writing the file, Trustabl prompts the user with a numbered menu:
+
+```
+Help us fix it? No source code or file contents are sent.
+  1. Send anonymous crash report
+  2. Open GitHub issue
+  3. Do nothing
+
+Enter 1, 2, or 3 [default: 3]:
+```
+
+This prompt is shown **only** in an interactive terminal (stderr is a TTY and neither `CI` nor a recognized CI provider env var is set). In CI or when output is piped, no prompt appears and nothing is sent. The default action is always "Do nothing". All three options are shown on **every** crash — the "Send anonymous crash report" option is **never** hidden or renumbered based on the telemetry setting, because crash reporting is a separate consent from usage telemetry. Choosing "Send anonymous crash report" fires the `crash.reported` event and works even when telemetry is `disabled` (it only no-ops if the build has no PostHog key); choosing "Open GitHub issue" opens a pre-filled URL in the browser — no data is transmitted by Trustabl itself.
 
 ---
 

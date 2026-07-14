@@ -2109,6 +2109,24 @@ The CLI is a thin shell over `scanner.Run`. The same
 `Run(Config) (ScanResult, error)` is what the MCP frontend (§8.1), a future
 GitHub Action, or a test harness calls; the boundary is intentionally narrow.
 
+### Crash reporting ([internal/crash/](internal/crash/))
+
+`internal/crash` implements local-first crash reporting. It is invoked from two `recover()` sites:
+
+1. **Top-level recover in `main()`** (`cmd/trustabl/main.go`) — catches any unrecovered panic that bubbles out of a cobra command handler, including startup and non-scan subcommands.
+2. **Scan-goroutine recover in `runScan`** (`cmd/trustabl/scan.go`) — catches panics in the `go func()` that runs `scanner.Run`. It calls `rep.Done()` and then routes the recovered value and stack **back to the main goroutine** over the `done` channel (as `scanOutcome.panicVal` / `panicStack`) rather than prompting from the worker. The main goroutine invokes `crash.Handle` only after `rep.Run()` has returned and the TTY is restored to normal mode — this avoids reading `os.Stdin` while bubbletea still owns the terminal in raw mode, and lets the worker's deferred cleanups run as the panic unwinds.
+
+Both recover sites ultimately call `crash.Handle(recovered, debug.Stack(), buildCrashMeta(), tel)` (the top-level `main()` recover directly; the scan path via the main goroutine after `rep.Run()`), which:
+
+1. Calls `Capture` to build a scrubbed `Report`: the panic value is passed through `scrubSecrets` (best-effort redaction of common secret shapes — `sk-ant-*`, `sk-proj-*`, long hex/base64 strings), and `renderStack` trims the raw `debug.Stack()` output to function names and `basename:line` pairs with argument values and source lines removed.
+2. Always writes the report to `~/.config/trustabl/crash-<UTC-timestamp>.log` (mode `0600`, directory `0700`), even in CI.
+3. Only in an interactive TTY (stderr is a terminal and neither `CI` nor a recognized CI provider env var is set), prompts the user with a numbered menu (Send / Open GitHub issue / Do nothing, default: nothing).
+4. If the user chooses Send, calls `tel.TrackCrash(rep.Props())`, which fires the `crash.reported` event over a **dedicated crash transport** (`Client.crashSink`) that is live whenever a PostHog key is built into the binary, **independent of the telemetry mode**. Crash reporting is a separate consent from usage telemetry: the "Send" menu item is always offered (never hidden or renumbered by the telemetry setting), and the send works even when telemetry is `disabled`; it only no-ops when the build has no PostHog key. The choice is per-crash and never persisted.
+
+After `Handle` returns, the caller flushes telemetry (`tel.Flush()`) and calls `os.Exit(2)` — the exit code is always 2 for a panic, matching the scanner-error bucket.
+
+**Scope of the crash path.** Only unrecovered panics route through `crash.Handle`. Categorized scan errors (rules fetch failure, clone failure, parse error) still return typed errors, emit `scan.failed` telemetry via the normal `Track` path, and exit 2 through the `exitCodeError` mechanism — they never touch `internal/crash`.
+
 ### 8.1 MCP frontend ([cmd/trustabl/mcp.go](cmd/trustabl/mcp.go) + [internal/mcpserver/](internal/mcpserver/))
 
 `trustabl mcp` runs a Model Context Protocol (MCP) server over stdio, so an MCP
