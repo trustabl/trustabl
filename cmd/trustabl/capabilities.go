@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/trustabl/trustabl/internal/rules"
+	"github.com/trustabl/trustabl/internal/telemetry"
 )
 
 // newCapabilitiesCommand emits this build's capability descriptor — the
@@ -15,7 +16,7 @@ import (
 // publishes this as an asset; the trustabl-rules CI gate compares proposed rules
 // against each supported release's descriptor so a rules change can't silently
 // break a deployed binary.
-func newCapabilitiesCommand() *cobra.Command {
+func newCapabilitiesCommand(tel *telemetry.Client) *cobra.Command {
 	return &cobra.Command{
 		Use:   "capabilities",
 		Short: "Print this build's rule-evaluation vocabulary as JSON",
@@ -38,6 +39,9 @@ release asset.`,
   trustabl capabilities > capabilities.json`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if tel != nil {
+				tel.Track("command.run", map[string]any{"command": "capabilities"})
+			}
 			b, err := json.MarshalIndent(rules.Describe(), "", "  ")
 			if err != nil {
 				return err

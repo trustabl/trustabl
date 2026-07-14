@@ -18,6 +18,14 @@ jobs:
     # verify -> tamper -> verify-fails, plus the scan --attest path. No OIDC, no
     # Rekor — deterministic assurance that the cosign integration is wired right.
     # This is the spike that cannot run on a dev box without cosign installed.
+    #
+    # Run against BOTH cosign majors: v2 (the --tlog-upload=false no-tlog path) and
+    # v3 (which removed that flag — no-tlog goes through a no-Rekor --signing-config).
+    # A single pinned version silently missed the v3 breakage.
+    strategy:
+      fail-fast: false
+      matrix:
+        cosign: ["v2.4.3", "v3.1.1"]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -27,9 +35,19 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - uses: sigstore/cosign-installer@v3
+      # Install the exact cosign under test by downloading the release binary
+      # directly. We do NOT use sigstore/cosign-installer here: its signature-
+      # verification step 404s on cosign v3 (v3 releases dropped the detached
+      # `.sig` asset that installer expects). This job is a functional e2e, not a
+      # cosign-provenance gate, so a direct download is the right tradeoff; the
+      # keyless job below still uses the installer.
+      - name: Install cosign ${{ matrix.cosign }}
+        run: |
+          sudo curl -sSfL "https://github.com/sigstore/cosign/releases/download/${{ matrix.cosign }}/cosign-linux-amd64" -o /usr/local/bin/cosign
+          sudo chmod +x /usr/local/bin/cosign
+          cosign version
 
-      - name: Attestation e2e (key mode)
+      - name: Attestation e2e (key mode, cosign ${{ matrix.cosign }})
         run: bash scripts/attest-e2e.sh
 
   attest-keyless:

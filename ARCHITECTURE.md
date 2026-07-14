@@ -141,10 +141,11 @@ never leaves a partial pack and the recorded SHA always matches the content
 (see `internal/rulesource/git.go`).
 
 Resolution sits behind a `rulesource.Source` interface with two
-implementations. The default `gitSource` is the git path described above.
-`releaseSource` (opt-in via `--rules-source <name>`, or its deprecated alias
-`--channel <name>`) resolves rules from a
-**signature-verified release channel**: it verifies a signed channel statement
+implementations. `gitSource` is the unsigned git path described above (after the
+cutover it is the explicit opt-out, reached via `--rules-source git` or a
+`--rules-repo` / `--rules-ref` override). `releaseSource` (the **default**, and
+any `--rules-source <name>` / deprecated alias `--channel <name>`) resolves rules
+from a **signature-verified release channel**: it verifies a signed channel statement
 against an embedded Ed25519 trust keyring (`internal/rulesign`), fetches the
 bundle the statement commits to from GitHub Releases, re-derives the bundle's
 canonical digest and matches it to the statement, then installs it to a
@@ -163,8 +164,9 @@ on `ScanResult.RulesStale` and as a louder "rules may be out of date" stderr
 warning). The
 provenance of the rules (`models.RulesOrigin`: signed channel / unsigned
 custom / unsigned default) is surfaced as a report watermark and folded into
-`ScanID`. The default scan is unchanged — `gitSource` stays the default until
-the signed-production cutover. The CLI maps flags to a source in one place:
+`ScanID`. After the signed-production cutover, the `production` channel via `releaseSource`
+is the default; `gitSource` is the explicit opt-out (`--rules-source git`, or any
+`--rules-repo` / `--rules-ref`). The CLI maps flags to a source in one place:
 `effectiveRules` (`cmd/trustabl/scan.go`) derives BOTH the `rulesource.Config`
 and the `RulesOrigin` from a single decision (default in `defaultRulesSource`),
 so the resolved source and its reported provenance cannot disagree; a
@@ -2058,6 +2060,7 @@ trustabl scan <target> [--detectors=…] [--format=human|json|sarif]
                        [--no-rules-update] [--vuln-scan]
 trustabl enrich        [-i SCAN_JSON] [-r REPO_ROOT] [-o OUTPUT_FILE]
                        [--diff] [--apply] [--only-enriched] [--rule RULE_ID]
+                       [--langsmith] [--langsmith-project NAME]
 trustabl mcp           [--rules-repo=URL] [--rules-ref=REF] [--no-rules-update]
 trustabl rules pull    [--rules-repo=URL] [--rules-ref=REF]
 trustabl rules validate [DIR]
@@ -2174,6 +2177,31 @@ All findings in one file are batched into a single LLM call
 The LLM client calls the active provider's model (from `llm.Load()`) and parses
 a JSON array response — one `enrichResult` per finding. A `salvagePartialJSON`
 fallback recovers partial objects if the response is truncated.
+
+**Optional runtime trace grounding (`--langsmith`,
+[internal/langsmith/](internal/langsmith/)).** With `--langsmith`, tool-scope
+findings gain a third context layer: recent executions of each flagged tool are
+sampled from a LangSmith project (up to 25 most-recent `run_type: tool` runs
+matching the tool's name) and aggregated into a `models.ToolTraceStats`: run
+count, error count, mean latency, and up to 3 distinct recent error messages.
+The summary is carried on the output as `EnrichedFinding.TraceEvidence` and fed
+to the LLM prompt as `Runtime trace evidence:` so explanations cite observed
+behavior instead of speculating. Gating is a double gate: the flag is the
+explicit opt-in and `LANGSMITH_API_KEY` is the BYOK credential; the flag
+without the key is a hard error (silently emitting output the user believes is
+trace-informed would be worse), while everything past that degrades per
+finding: a trace API error or a tool with no run history logs a warning and
+falls back to plain static enrichment, never failing the run. The project is
+resolved `--langsmith-project` → `$LANGSMITH_PROJECT` → `"default"`
+(`$LANGSMITH_ENDPOINT` overrides the API host for self-hosted deployments).
+The client caches per tool name for the invocation: repeat findings on one
+tool cost one fetch, and the pipeline consumes it through the
+`enrichment.TraceSource` seam, so tests inject a fake exactly as they do for
+the LLM client. Only tool *names* are sent to LangSmith; trace content flows
+in, never out. Nothing in the scan pipeline imports `internal/langsmith`; the
+scan's no-network and determinism contracts are untouched. Trace evidence is
+attached before the LLM call, so it survives an LLM failure
+(`Enriched=false` findings still carry their `trace_evidence`).
 
 The `--diff` flag renders a unified diff of all proposed replacements to **stderr**
 (in finding order, after all workers finish) so users can preview exactly what

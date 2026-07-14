@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
 	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"github.com/trustabl/trustabl/internal/cyclonedx"
 	"github.com/trustabl/trustabl/internal/logx"
@@ -23,6 +25,7 @@ import (
 	"github.com/trustabl/trustabl/internal/rulesource"
 	"github.com/trustabl/trustabl/internal/sarif"
 	"github.com/trustabl/trustabl/internal/scanner"
+	"github.com/trustabl/trustabl/internal/telemetry"
 )
 
 type scanFlags struct {
@@ -46,9 +49,10 @@ type scanFlags struct {
 	attestKey     string
 	attestBundle  string
 	attestNoTLog  bool
+	flagsUsed     []string
 }
 
-func newScanCommand() *cobra.Command {
+func newScanCommand(tel *telemetry.Client) *cobra.Command {
 	var f scanFlags
 	cmd := &cobra.Command{
 		Use:   "scan <target>",
@@ -101,7 +105,12 @@ Exit codes:
   trustabl scan . --no-rules-update`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runScan(args[0], f, logLevelFor(cmd))
+			var flagsUsed []string
+			cmd.Flags().Visit(func(fl *pflag.Flag) {
+				flagsUsed = append(flagsUsed, fl.Name)
+			})
+			f.flagsUsed = flagsUsed
+			return runScan(args[0], f, logLevelFor(cmd), tel)
 		},
 	}
 	cmd.Flags().StringVar(&f.detectors, "detectors", "",
@@ -150,7 +159,7 @@ Exit codes:
 	return cmd
 }
 
-func runScan(target string, f scanFlags, level logx.Level) error {
+func runScan(target string, f scanFlags, level logx.Level, tel *telemetry.Client) error {
 	if err := validateOutputFlags(f); err != nil {
 		return err
 	}
@@ -161,6 +170,12 @@ func runScan(target string, f scanFlags, level logx.Level) error {
 	log.Debugf("scan: flags format=%s strict=%v no-color=%v no-progress=%v output=%q json-out=%q sarif-out=%q bom-out=%q detectors=%q",
 		f.format, f.strict, f.noColor, f.noProgress, f.output, f.jsonOut, f.sarifOut, f.bomOut, f.detectors)
 
+	startTime := time.Now()
+	targetType := "local"
+	if strings.HasPrefix(target, "https://") || strings.HasPrefix(target, "http://") {
+		targetType = "remote"
+	}
+
 	cfg := scanner.Config{Target: target, Log: log}
 	if f.detectors != "" {
 		cats, err := parseCategories(f.detectors)
@@ -168,6 +183,19 @@ func runScan(target string, f scanFlags, level logx.Level) error {
 			return err
 		}
 		cfg.Categories = cats
+	}
+
+	if tel != nil {
+		tel.Track("scan.started", map[string]any{
+			"os":             runtime.GOOS,
+			"arch":           runtime.GOARCH,
+			"target_type":    targetType,
+			"format":         f.format,
+			"strict_mode":    f.strict,
+			"flags_used":     f.flagsUsed,
+			"ci_provider":    telemetry.DetectCIProvider(),
+			"is_new_install": tel.IsNewInstall(),
+		})
 	}
 
 	mode := pickScanMode(f, log)
@@ -181,7 +209,7 @@ func runScan(target string, f scanFlags, level logx.Level) error {
 		if mode == progress.ModePlain {
 			rep = progress.NewPlain(os.Stderr)
 		}
-		return runScanSync(f, cfg, rep)
+		return runScanSync(f, cfg, rep, tel, startTime)
 	}
 
 	// TTY path: render on the main goroutine, do the job in a goroutine. The
@@ -233,7 +261,7 @@ func runScan(target string, f scanFlags, level logx.Level) error {
 		return err
 	}
 	out := <-done
-	return finishScan(out.result, out.err, f, log)
+	return finishScan(out.result, out.err, f, log, tel, startTime)
 }
 
 // validateOutputFlags rejects output destinations that collide. --output writes
@@ -308,9 +336,9 @@ func modeName(m progress.Mode) string {
 }
 
 // runScanSync runs resolution + scan + render inline (plain/nop modes).
-func runScanSync(f scanFlags, cfg scanner.Config, rep progress.Reporter) error {
+func runScanSync(f scanFlags, cfg scanner.Config, rep progress.Reporter, tel *telemetry.Client, startTime time.Time) error {
 	result, err := resolveAndScan(&cfg, f, rep)
-	return finishScan(result, err, f, cfg.Log)
+	return finishScan(result, err, f, cfg.Log, tel, startTime)
 }
 
 // resolveAndScan resolves rules (reporting a "rules" phase) and runs the scan
@@ -383,7 +411,59 @@ func resolveAndScan(cfg *scanner.Config, f scanFlags, rep progress.Reporter) (mo
 }
 
 // finishScan turns a job outcome into output + the process exit code.
-func finishScan(result models.ScanResult, jobErr error, f scanFlags, log *logx.Logger) error {
+func finishScan(result models.ScanResult, jobErr error, f scanFlags, log *logx.Logger, tel *telemetry.Client, startTime time.Time) error {
+	durationMs := time.Since(startTime).Milliseconds()
+	// Compute exit code once; reused by the telemetry Track call and the return
+	// path below. When jobErr != nil these paths return early and the value is
+	// unused, but computing it unconditionally keeps the logic in one place.
+	scanExitCode := exitCode(result, f.strict)
+
+	if tel != nil && jobErr != nil {
+		errCategory := categorizeScanError(jobErr)
+		tel.Track("scan.failed", map[string]any{
+			"error_category": errCategory,
+			"phase":          failurePhase(errCategory),
+			"duration_ms":    durationMs,
+			"rules_sha":      result.RulesVersion,
+			"schema_version": result.RulesSchemaVersion,
+			"exit_code":      2,
+		})
+	} else if tel != nil {
+		// Aggregate findings.
+		bySeverity := map[string]int{}
+		ruleIDsFired := map[string]int{}
+		for _, finding := range result.Findings {
+			bySeverity[string(finding.Severity)]++
+			ruleIDsFired[finding.RuleID]++
+		}
+
+		// Convert SDK and language slices to []string.
+		sdks := make([]string, len(result.SDKs))
+		for i, s := range result.SDKs {
+			sdks[i] = string(s)
+		}
+		langs := make([]string, len(result.Languages))
+		for i, l := range result.Languages {
+			langs[i] = string(l)
+		}
+
+		tel.Track("scan.completed", map[string]any{
+			"duration_ms":          durationMs,
+			"repo_size_bucket":     repoSizeBucket(result.Manifest),
+			"sdks_detected":        sdks,
+			"languages_detected":   langs,
+			"tools_count":          len(result.Tools),
+			"agents_count":         len(result.Agents),
+			"findings_by_severity": bySeverity,
+			"rule_ids_fired":       ruleIDsFired,
+			"rules_sha":            result.RulesVersion,
+			"schema_version":       result.RulesSchemaVersion,
+			"exit_code":            scanExitCode,
+			"features_used":        scanFeaturesUsed(f),
+			"repo_id_hash":         telemetry.RepoIDHash(),
+		})
+	}
+
 	if jobErr != nil {
 		if errors.Is(jobErr, rules.ErrAllRulesIncompatible) {
 			fmt.Fprintf(os.Stderr,
@@ -413,7 +493,8 @@ func finishScan(result models.ScanResult, jobErr error, f scanFlags, log *logx.L
 			fmt.Fprintln(os.Stderr,
 				"No usable rules found: none cached locally and none could be fetched.")
 			fmt.Fprintln(os.Stderr,
-				`Run "trustabl rules pull" to download the rule packs.`)
+				`Run "trustabl rules pull" to pre-warm the signed channel cache for offline use, `+
+					`or pass --rules-source git to resolve from the unsigned git source.`)
 			return exitCodeError{2}
 		}
 		if errors.Is(jobErr, rules.ErrNoRulesInPack) {
@@ -425,11 +506,12 @@ func finishScan(result models.ScanResult, jobErr error, f scanFlags, log *logx.L
 		}
 		if errors.Is(jobErr, rulesource.ErrNoTrustKeys) {
 			fmt.Fprintln(os.Stderr,
-				"This build of Trustabl embeds no rule-signing keys, so a signed rules "+
-					"channel cannot be verified.")
+				"This build of Trustabl embeds no rule-signing keys, so the signed rules "+
+					"channel cannot be verified. A released binary always embeds them, so an "+
+					"empty keyring indicates a broken or custom build.")
 			fmt.Fprintln(os.Stderr,
-				"Use --rules-source git (or pass --rules-repo / --rules-ref) to resolve "+
-					"rules from the unsigned git source instead.")
+				"As a workaround, use --rules-source git (or pass --rules-repo / --rules-ref) "+
+					"to resolve rules from the unsigned git source instead.")
 			return exitCodeError{2}
 		}
 		if isRuleSignFailure(jobErr) {
@@ -565,7 +647,7 @@ func finishScan(result models.ScanResult, jobErr error, f scanFlags, log *logx.L
 		}
 	}
 
-	code := exitCode(result, f.strict)
+	code := scanExitCode
 	log.Verbosef("result: scan_id %s · overall %.0f%% · %d findings (%s) · exit %d",
 		result.ScanID, result.OverallScore*100, len(result.Findings), severitySummary(result.Findings), code)
 	if code != 0 {
@@ -687,14 +769,15 @@ func exitCode(result models.ScanResult, strict bool) int {
 	return 0
 }
 
-// defaultRulesSource is the rules source used when the operator selects none. It
-// stays "git" (the unsigned clone of the default branch) until the signed-
-// production cutover (ENG-6) flips it to "production". Keeping the default in one
-// place means the cutover is a one-line change, and effectiveRules already routes
-// the git opt-out (--rules-repo / --rules-ref / TRUSTABL_RULES_REPO) to the git
-// path for either default — so after the flip, "git only via --rules-ref/--rules-repo"
-// holds without further wiring.
-const defaultRulesSource = "git"
+// defaultRulesSource is the rules source used when the operator selects none.
+// The signed-production cutover (ENG-6) flipped it from "git" to "production": a
+// plain `trustabl scan` now resolves the signature-verified production channel,
+// and the unsigned git path is the explicit opt-out (--rules-source git, or any
+// --rules-repo / --rules-ref / TRUSTABL_RULES_REPO, which effectiveRules already
+// routes to git). The flip is safe only because the embedded keyring is populated
+// and channel-production has a published, floor-pinned statement — the
+// TestDefaultRulesSource_CutoverHasGenesisFloor guard fails the build otherwise.
+const defaultRulesSource = "production"
 
 // effectiveRules resolves the scan's rules source from flags into BOTH a
 // rulesource.Config and a models.RulesOrigin. Deriving them from one decision is
@@ -796,6 +879,112 @@ func isRuleSignFailure(err error) bool {
 		errors.Is(err, rulesign.ErrVersionRegression) ||
 		errors.Is(err, rulesign.ErrDigestMismatch) ||
 		errors.Is(err, rulesign.ErrStatementMalformed)
+}
+
+// repoSizeBucket classifies a repo's file count into a coarse bucket.
+// Thresholds: small < 20, medium < 200, large >= 200.
+func repoSizeBucket(m models.ScanManifest) string {
+	total := len(m.PythonFiles) + len(m.TypeScriptFiles) + len(m.JavaScriptFiles) +
+		len(m.GoFiles) + len(m.YAMLFiles) + len(m.JSONFiles) + len(m.MarkdownFiles) +
+		len(m.CSharpFiles) + len(m.PHPFiles) + len(m.RustFiles)
+	switch {
+	case total < 20:
+		return "small"
+	case total < 200:
+		return "medium"
+	default:
+		return "large"
+	}
+}
+
+// scanFeaturesUsed returns a list of optional feature names that were activated
+// by the given flags. Only features the user explicitly enabled are listed.
+func scanFeaturesUsed(f scanFlags) []string {
+	var features []string
+	if f.attest {
+		features = append(features, "attest")
+	}
+	if f.vulnScan {
+		features = append(features, "vuln_scan")
+	}
+	if f.sarifOut != "" {
+		features = append(features, "sarif_out")
+	}
+	if f.jsonOut != "" {
+		features = append(features, "json_out")
+	}
+	if f.bomOut != "" {
+		features = append(features, "bom_out")
+	}
+	if f.noRulesUpdate {
+		features = append(features, "no_rules_update")
+	}
+	return features
+}
+
+// failurePhase maps an error_category to the pipeline phase where it occurred.
+func failurePhase(category string) string {
+	switch category {
+	case "rules_fetch_failed", "no_rules":
+		return "rules"
+	case "clone_failed":
+		return "clone"
+	case "parse_error":
+		return "inventory"
+	default:
+		return "unknown"
+	}
+}
+
+// categorizeScanError maps a scan error to the closed error_category enum.
+// err.Error() is used internally for pattern matching only — the raw string
+// never reaches PostHog; only the closed label is forwarded.
+func categorizeScanError(err error) string {
+	if err == nil {
+		return ""
+	}
+	msg := err.Error()
+	switch {
+	case isRulesFetchError(err, msg):
+		return "rules_fetch_failed"
+	case isCloneError(err, msg):
+		return "clone_failed"
+	case isNoRulesError(err, msg):
+		return "no_rules"
+	case isParseError(err, msg):
+		return "parse_error"
+	default:
+		return "unknown"
+	}
+}
+
+func isRulesFetchError(_ error, msg string) bool {
+	// rulesource errors mention "fetch", "resolve", or "clone" in the context
+	// of the rules repo — check for the rulesource package sentinel strings.
+	return containsAny(msg, "fetch rules", "resolve rules", "rulesource")
+}
+
+func isCloneError(_ error, msg string) bool {
+	return containsAny(msg, "clone", "git clone", "cloning")
+}
+
+func isNoRulesError(_ error, msg string) bool {
+	return containsAny(msg, "no rules", "no usable rules", "no compatible rules",
+		"no rules in pack", "all rules incompatible")
+}
+
+func isParseError(_ error, msg string) bool {
+	return containsAny(msg, "parse error", "ast error", "tree-sitter", "syntax error", "failed to parse")
+}
+
+func containsAny(s string, needles ...string) bool {
+	sl := strings.ToLower(s)
+	for _, n := range needles {
+		if strings.Contains(sl, strings.ToLower(n)) {
+			return true
+		}
+	}
+	return false
 }
 
 func parseCategories(s string) ([]models.DetectorCategory, error) {

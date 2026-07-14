@@ -259,7 +259,13 @@ The rule schema's `language:` field gates per-language rule sets.
   `trustabl llm key set` at `~/.config/trustabl/keys.json`, mode 0600). Each call
   carries a request timeout, and `--apply` rewrites a file only when its current
   contents still match what the model reviewed (writing a `.trustabl.bak` backup
-  first) — a stale scan is skipped, never mis-applied.
+  first) — a stale scan is skipped, never mis-applied. With `--langsmith`
+  (opt-in, requires `LANGSMITH_API_KEY`), tool-scope findings are additionally
+  grounded in runtime trace evidence sampled from a LangSmith project: error
+  rate, latency, and recent error messages for each flagged tool, carried on
+  the output as `trace_evidence` and fed to the LLM alongside the static code
+  snippet; tools with no trace history degrade per finding to plain static
+  enrichment.
 - **Confidence scores are heuristic**, not LLM-judged, and not yet
   calibrated against a labelled real-agent corpus — treat findings as
   signal to investigate.
@@ -461,7 +467,7 @@ gh attestation verify <archive> --repo trustabl/trustabl
 ## Attestation
 ### Test Usage Example
 #### **Prerequisite and setup:**
-Install cosign **2.4.x** version
+Install cosign (any **2.x or 3.x** — Trustabl adapts to the installed version)
 
 ##### Add to target folder path:
 `export PATH="<folder_path>:$PATH"`
@@ -478,6 +484,24 @@ writes cosign.key (private) + cosign.pub (public)
 
 ##### VERIFICATION
 `./trustabl.exe verify report.json --key cosign.pub --bundle att.bundle.json --no-tlog`
+
+#### Keyless (CI / no key to manage)
+
+Keyless signs with your ambient **OIDC identity** instead of a key pair — nothing
+to generate or store. In CI (GitHub Actions) the runner's identity is used
+automatically; **on a laptop it opens a browser to log in**. Either way the
+signing event is recorded in the **public Rekor transparency log** — so use key
+mode above if that visibility is unacceptable. No `--no-tlog` here (keyless *is*
+the transparency-log path), so the cosign v2/v3 difference does not apply.
+
+##### Scan and Attest (keyless):
+`./trustabl.exe scan https://github.com/google/adk-python --json-out report.json --attest --attest-bundle att.bundle.json`
+
+##### VERIFICATION (keyless — you must pin who signed and the issuer):
+`./trustabl.exe verify report.json --bundle att.bundle.json --certificate-identity "<signer-identity>" --certificate-oidc-issuer "https://token.actions.githubusercontent.com"`
+
+In GitHub Actions the identity is the workflow ref, e.g.
+`https://github.com/OWNER/REPO/.github/workflows/scan.yml@refs/heads/main`.
 
 ### cosign (optional — only for scan attestation)
 
@@ -501,10 +525,15 @@ component add `sigstore/cosign-installer` for you.
 Key mode signs with a local key pair and skips the public transparency log — no
 browser, no network, ideal for a laptop or air-gapped run.
 
-> **cosign version:** the `--no-tlog` flag needs cosign **2.4.x**. cosign 2.5+
-> removed the underlying `--tlog-upload` flag, so the command errors there — pin
-> 2.4.3 if you hit that. On a PATH install the command is `trustabl`; for a local
+> **cosign version:** works with cosign **2.x and 3.x** — Trustabl selects the
+> right no-transparency-log mechanism per version automatically
+> (`--tlog-upload=false` on v2; a no-Rekor `--signing-config` on v3+, which
+> removed that flag). On a PATH install the command is `trustabl`; for a local
 > Windows build it is `.\trustabl.exe`.
+
+> **Attestation tiers:** this is the **free-tier basic attestation** — it signs
+> scan *provenance* (scan ID, rules version, reliability score, verdict, severity
+> counts). Behavioral and policy-aware attestations are on the paid roadmap.
 
 **Step 0 — install cosign** (see the commands above for your OS).
 
@@ -733,6 +762,12 @@ trustabl enrich --input scan.json --repo ./myrepo --diff --apply              # 
 trustabl enrich --input scan.json --repo ./myrepo --apply                     # apply fixes without previewing
 trustabl enrich --input scan.json --repo ./myrepo --rule CSDK-010             # focus on one rule
 trustabl enrich --input scan.json --repo ./myrepo --only-enriched             # CI: only enriched findings
+
+# Ground tool findings in LangSmith runtime traces (opt-in; error rates, latency,
+# recent errors are fetched per flagged tool and fed to the LLM as evidence)
+export LANGSMITH_API_KEY=lsv2_...          # BYOK; LANGSMITH_ENDPOINT overrides for self-hosted
+trustabl enrich --input scan.json --repo ./myrepo --langsmith                  # project: $LANGSMITH_PROJECT or "default"
+trustabl enrich --input scan.json --repo ./myrepo --langsmith --langsmith-project prod
 ```
 
 Rules are cached under your OS cache dir (`os.UserCacheDir()`, e.g.
@@ -742,16 +777,20 @@ populates it; each subsequent scan checks for an update first (unless
 `--no-rules-update`), falling back to the cached rules if the fetch
 fails.
 
-**Signed rules channels (opt-in).** `--rules-source <name>` resolves rules from a
-signature-verified release channel instead of cloning git: Trustabl verifies a
+**Signed rules channels (default).** A plain `trustabl scan` resolves rules from
+the signature-verified **production** release channel: Trustabl verifies a
 signed channel statement against an embedded trust keyring, fetches the bundle
 it commits to, and refuses (exit `2`) on any verification failure rather than
 running unverified rules. `--rules-source git` selects the unsigned git path
 explicitly, and `--rules-repo` / `--rules-ref` imply it; a non-default channel
 can still be pointed at a fork with `--rules-source <name> --rules-repo <fork>`
 to test a signed fork. (`--channel <name>` is a deprecated alias for
-`--rules-source <name>`.) The **default scan is unchanged** — it still uses the
-git source until the signed-production cutover. A scan that did not use blessed
+`--rules-source <name>`.) The **default scan now uses the signed production
+channel**; set `TRUSTABL_REQUIRE_SIGNED=1` (or `--require-signed`) to forbid the
+unsigned git fallback entirely in CI. Already-shipped pre-cutover binaries are
+unaffected (the default and keyring are compiled in); upgrading shifts `ScanID`
+once as the origin tag and git-SHA become the channel's bundle digest. A scan
+that did not use blessed
 production rules (a pre-release channel, or a custom `--rules-repo` source) is
 watermarked in the report and in the JSON `rules_origin` field, and its
 provenance is folded into `ScanID`. This build embeds the rule-signing public
@@ -1066,9 +1105,28 @@ corpus is the detection-quality target (see
 the current tests are regression coverage, not detection-quality
 measurement.
 
+## Privacy & telemetry
+
+Trustabl optionally collects anonymous usage data — which SDKs are scanned, scan duration, which rules fire — to guide product direction. **No source code, file paths, repo names, or finding details are ever sent.** Telemetry is **off by default**; on your first interactive scan, Trustabl asks you to choose a level.
+
+Three levels are available:
+- **Disabled** — no data sent (default)
+- **Minimal** — CLI version and scan outcome only
+- **Full** — anonymous usage stats
+
+```sh
+trustabl telemetry off          # disable
+trustabl telemetry minimal      # version and outcome only
+trustabl telemetry full         # full anonymous usage stats
+export TRUSTABL_TELEMETRY=0     # or disable for the current shell session
+trustabl telemetry status       # show current level and its source
+```
+
+The full event schema — every event name and every property, verbatim — is at [TELEMETRY.md](TELEMETRY.md) (and at [trustabl.ai/telemetry](https://trustabl.ai/telemetry) once the site is live). That page is kept in sync with the code; stale docs are treated as a defect.
+
 ## Community
 
-Join the [Trustabl Discord](https://discord.gg/maQ7QMPsB) to ask questions, share feedback, and follow development.
+Join the [Trustabl Discord](https://discord.gg/G6gM8nKxPg) to ask questions, share feedback, and follow development.
 
 ## License
 
