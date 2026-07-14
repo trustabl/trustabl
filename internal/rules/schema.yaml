@@ -385,6 +385,19 @@ rules:
 #       whitespace). Use skill_has_description: false to flag skills
 #       with a missing or blank description. Bool predicate.
 #
+#   skill_is_agent_specific: true
+#       Fires when the skill's frontmatter binds it to one specific agent
+#       (context: fork / agent: <name>) rather than being agent-agnostic.
+#       An agent-bound skill inherits that agent's trust and guardrail
+#       assumptions and is harder to reuse or review independently of it.
+#       Bool predicate.
+#
+#   skill_has_duplicate_tool_refs: true
+#       Fires when SkillDef.AllowedTools contains duplicate entries
+#       (case-insensitive, whitespace-trimmed) — the same tool referenced
+#       more than once unnecessarily. Configuration-quality signal, not a
+#       security bug on its own. Bool predicate.
+#
 #
 # ━━━ REPO-SCOPE PREDICATES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # (used only in scope: repo rules; match runs once per scan)

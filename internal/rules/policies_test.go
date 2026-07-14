@@ -2237,6 +2237,22 @@ var policySkillRuleCases = []policySkillCase{
 		models.SkillDef{Name: "helper", Location: models.Location{FilePath: ".claude/skills/helper/SKILL.md"},
 			Description: "Runs git diff and summarises changes."},
 		models.RepoInventory{}, false},
+
+	{"CSKILL-061 fires when allowed-tools has a duplicate entry", "CSKILL-061",
+		models.SkillDef{Name: "dup-tools",
+			Location:     models.Location{FilePath: ".claude/skills/dup-tools/SKILL.md"},
+			AllowedTools: []string{"Bash", "bash"}}, models.RepoInventory{}, true},
+	{"CSKILL-061 silent when allowed-tools has no duplicates", "CSKILL-061",
+		models.SkillDef{Name: "clean-tools",
+			Location:     models.Location{FilePath: ".claude/skills/clean-tools/SKILL.md"},
+			AllowedTools: []string{"Bash", "Read", "Grep"}}, models.RepoInventory{}, false},
+
+	{"CSKILL-071 fires when skill is bound to a specific agent", "CSKILL-071",
+		models.SkillDef{Name: "bound-skill", Agent: "reviewer",
+			Location: models.Location{FilePath: ".claude/skills/bound-skill/SKILL.md"}}, models.RepoInventory{}, true},
+	{"CSKILL-071 silent when skill is agent-agnostic", "CSKILL-071",
+		models.SkillDef{Name: "generic-skill",
+			Location: models.Location{FilePath: ".claude/skills/generic-skill/SKILL.md"}}, models.RepoInventory{}, false},
 }
 
 // policyAgentRuleCases covers agent-scoped rules.
