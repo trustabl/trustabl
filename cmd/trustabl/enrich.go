@@ -11,6 +11,7 @@ import (
 	"github.com/trustabl/trustabl/internal/langsmith"
 	"github.com/trustabl/trustabl/internal/llm"
 	"github.com/trustabl/trustabl/internal/models"
+	"github.com/trustabl/trustabl/internal/telemetry"
 )
 
 type enrichFlags struct {
@@ -25,7 +26,7 @@ type enrichFlags struct {
 	langsmithProject string
 }
 
-func newEnrichCommand() *cobra.Command {
+func newEnrichCommand(tel *telemetry.Client) *cobra.Command {
 	var f enrichFlags
 	cmd := &cobra.Command{
 		Use:   "enrich",
@@ -53,6 +54,9 @@ deployments: set LANGSMITH_ENDPOINT). Tools with no trace history, or trace API
 errors, degrade per finding to plain static enrichment; they never fail the run.`,
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
+			if tel != nil {
+				tel.Track("command.run", map[string]any{"command": "enrich"})
+			}
 			return runEnrich(cmd, f)
 		},
 	}

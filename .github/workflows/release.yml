@@ -53,6 +53,7 @@ jobs:
           # pick the wrong tag when multiple tags point at the same commit
           # (the v0.1.0 + v0.1.0-rc.3 collision that re-published rc.3).
           GORELEASER_CURRENT_TAG:    ${{ github.ref_name }}
+          POSTHOG_API_KEY:           ${{ secrets.POSTHOG_API_KEY }}
       - uses: actions/attest-build-provenance@v2
         with:
           subject-path: |
@@ -81,11 +82,13 @@ jobs:
         with:
           version: 0.16.0
       - name: Build static linux binaries
+        env:
+          POSTHOG_API_KEY: ${{ secrets.POSTHOG_API_KEY }}
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           COMMIT="${GITHUB_SHA}"
           DATE="$(git show -s --format=%cI HEAD)"
-          LDFLAGS="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}"
+          LDFLAGS="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE} -X main.posthogAPIKey=${POSTHOG_API_KEY}"
           for arch in amd64 arm64; do
             case "$arch" in
               amd64) target=x86_64-linux-musl ;;

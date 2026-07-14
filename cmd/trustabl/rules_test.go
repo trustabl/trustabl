@@ -30,7 +30,7 @@ rules:
 // returns the command's error (nil on success), discarding its output.
 func runRulesValidate(t *testing.T, dir string) error {
 	t.Helper()
-	cmd := newRulesCommand()
+	cmd := newRulesCommand(nil)
 	cmd.SetArgs([]string{"validate", dir})
 	cmd.SetOut(io.Discard)
 	cmd.SetErr(io.Discard)

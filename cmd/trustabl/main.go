@@ -32,14 +32,16 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/trustabl/trustabl/internal/logx"
+	"github.com/trustabl/trustabl/internal/telemetry"
 )
 
 // Build metadata, injected at release time via -ldflags -X (see .goreleaser.yaml).
 // Defaults are for local `go build` — an unreleased binary truthfully reports "dev".
 var (
-	version = "dev"
-	commit  = "none"
-	date    = "unknown"
+	version       = "dev"
+	commit        = "none"
+	date          = "unknown"
+	posthogAPIKey = "" // injected at release time via -ldflags -X main.posthogAPIKey=<key>
 )
 
 // exitCodeError carries a desired process exit code through the cobra error
@@ -50,6 +52,10 @@ type exitCodeError struct{ code int }
 func (e exitCodeError) Error() string { return "" }
 
 func main() {
+	configPath, _ := telemetry.DefaultConfigPath()
+	tel := telemetry.New(posthogAPIKey, version, configPath, os.Stderr, os.Stdin)
+	defer tel.Flush()
+
 	rootCmd := &cobra.Command{
 		Use:   "trustabl",
 		Short: "Static analyzer for agent reliability",
@@ -92,23 +98,26 @@ with --strict), 2 = scanner error or no usable rules.`,
 		"verbose diagnostics on stderr: rule provenance, discovery counts, phase summaries")
 	rootCmd.PersistentFlags().Bool("debug", false,
 		"debug diagnostics on stderr: everything --verbose shows plus per-phase timing and per-entity/per-finding detail (implies --verbose)")
-	rootCmd.AddCommand(newScanCommand())
-	rootCmd.AddCommand(newAttestCommand())
-	rootCmd.AddCommand(newVerifyCommand())
-	rootCmd.AddCommand(newVersionCommand())
-	rootCmd.AddCommand(newRulesCommand())
-	rootCmd.AddCommand(newVulnDBCommand())
-	rootCmd.AddCommand(newMCPCommand())
+	rootCmd.AddCommand(newScanCommand(tel))
+	rootCmd.AddCommand(newAttestCommand(tel))
+	rootCmd.AddCommand(newVerifyCommand(tel))
+	rootCmd.AddCommand(newVersionCommand(tel))
+	rootCmd.AddCommand(newRulesCommand(tel))
+	rootCmd.AddCommand(newVulnDBCommand(tel))
+	rootCmd.AddCommand(newMCPCommand(tel))
 	rootCmd.AddCommand(newLLMCommand())
-	rootCmd.AddCommand(newEnrichCommand())
-	rootCmd.AddCommand(newCapabilitiesCommand())
+	rootCmd.AddCommand(newEnrichCommand(tel))
+	rootCmd.AddCommand(newCapabilitiesCommand(tel))
+	rootCmd.AddCommand(newTelemetryCommand())
 
 	if err := rootCmd.Execute(); err != nil {
 		var ec exitCodeError
 		if errors.As(err, &ec) {
+			tel.Flush()
 			os.Exit(ec.code) // findings-based exit; message already printed
 		}
 		fmt.Fprintln(os.Stderr, "Error:", err)
+		tel.Flush()
 		os.Exit(2)
 	}
 }
