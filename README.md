@@ -467,7 +467,7 @@ gh attestation verify <archive> --repo trustabl/trustabl
 ## Attestation
 ### Test Usage Example
 #### **Prerequisite and setup:**
-Install cosign **2.4.x** version
+Install cosign (any **2.x or 3.x** — Trustabl adapts to the installed version)
 
 ##### Add to target folder path:
 `export PATH="<folder_path>:$PATH"`
@@ -484,6 +484,24 @@ writes cosign.key (private) + cosign.pub (public)
 
 ##### VERIFICATION
 `./trustabl.exe verify report.json --key cosign.pub --bundle att.bundle.json --no-tlog`
+
+#### Keyless (CI / no key to manage)
+
+Keyless signs with your ambient **OIDC identity** instead of a key pair — nothing
+to generate or store. In CI (GitHub Actions) the runner's identity is used
+automatically; **on a laptop it opens a browser to log in**. Either way the
+signing event is recorded in the **public Rekor transparency log** — so use key
+mode above if that visibility is unacceptable. No `--no-tlog` here (keyless *is*
+the transparency-log path), so the cosign v2/v3 difference does not apply.
+
+##### Scan and Attest (keyless):
+`./trustabl.exe scan https://github.com/google/adk-python --json-out report.json --attest --attest-bundle att.bundle.json`
+
+##### VERIFICATION (keyless — you must pin who signed and the issuer):
+`./trustabl.exe verify report.json --bundle att.bundle.json --certificate-identity "<signer-identity>" --certificate-oidc-issuer "https://token.actions.githubusercontent.com"`
+
+In GitHub Actions the identity is the workflow ref, e.g.
+`https://github.com/OWNER/REPO/.github/workflows/scan.yml@refs/heads/main`.
 
 ### cosign (optional — only for scan attestation)
 
@@ -507,10 +525,15 @@ component add `sigstore/cosign-installer` for you.
 Key mode signs with a local key pair and skips the public transparency log — no
 browser, no network, ideal for a laptop or air-gapped run.
 
-> **cosign version:** the `--no-tlog` flag needs cosign **2.4.x**. cosign 2.5+
-> removed the underlying `--tlog-upload` flag, so the command errors there — pin
-> 2.4.3 if you hit that. On a PATH install the command is `trustabl`; for a local
+> **cosign version:** works with cosign **2.x and 3.x** — Trustabl selects the
+> right no-transparency-log mechanism per version automatically
+> (`--tlog-upload=false` on v2; a no-Rekor `--signing-config` on v3+, which
+> removed that flag). On a PATH install the command is `trustabl`; for a local
 > Windows build it is `.\trustabl.exe`.
+
+> **Attestation tiers:** this is the **free-tier basic attestation** — it signs
+> scan *provenance* (scan ID, rules version, reliability score, verdict, severity
+> counts). Behavioral and policy-aware attestations are on the paid roadmap.
 
 **Step 0 — install cosign** (see the commands above for your OS).
 

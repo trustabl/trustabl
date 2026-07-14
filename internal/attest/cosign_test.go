@@ -28,6 +28,16 @@ func TestAttestArgs(t *testing.T) {
 			t.Errorf("attestArgs key = %v, want %v", got, want)
 		}
 	})
+	t.Run("key + no-tlog on cosign v3 (signing-config)", func(t *testing.T) {
+		got := attestArgs(AttestOptions{Predicate: "p.json", Bundle: "b.json", Blob: "report.json", KeyRef: "k.key", NoTLog: true, SigningConfig: "sc.json"})
+		want := []string{
+			"attest-blob", "--predicate", "p.json", "--type", PredicateType,
+			"--bundle", "b.json", "--yes", "--key", "k.key", "--signing-config", "sc.json", "report.json",
+		}
+		if !slices.Equal(got, want) {
+			t.Errorf("attestArgs v3 no-tlog = %v, want %v", got, want)
+		}
+	})
 }
 
 func TestVerifyArgs(t *testing.T) {
@@ -76,5 +86,23 @@ func TestVerify_CosignMissing(t *testing.T) {
 	err := Verify(context.Background(), VerifyOptions{Blob: "report.json", Bundle: "b.json", KeyRef: "k.pub"})
 	if !errors.Is(err, ErrCosignNotFound) {
 		t.Fatalf("Verify err = %v, want ErrCosignNotFound", err)
+	}
+}
+
+func TestCosignVersionRE(t *testing.T) {
+	cases := map[string]string{
+		"GitVersion:    v3.1.1\n": "3",
+		"GitVersion: v2.4.3":      "2",
+		"GitVersion:\t2.5.0":      "2",
+	}
+	for in, want := range cases {
+		m := cosignVersionRE.FindStringSubmatch(in)
+		if m == nil {
+			t.Errorf("parse %q: no match", in)
+			continue
+		}
+		if m[1] != want {
+			t.Errorf("parse %q major = %s, want %s", in, m[1], want)
+		}
 	}
 }
