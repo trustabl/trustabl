@@ -425,3 +425,59 @@ rules:
 		t.Fatalf("len(policies) = %d, want 1 (.git/ subtree must be skipped)", len(policies))
 	}
 }
+
+func TestLoad_SkipsMappingsDir(t *testing.T) {
+	// mappings/ at the pack root holds compliance-framework mapping packs
+	// (framework: + mappings: top-level keys), not detection policies. They do
+	// not decode as PolicyFile, so if the walker descended them the load would
+	// hard-fail on "policy.id is required" — in strict AND lenient modes
+	// (required-field validation is deliberately strict in both). The subtree
+	// must be skipped so a rules release that ships mapping packs cannot brick
+	// a deployed engine.
+	fsys := fstest.MapFS{
+		"mappings/nist_800_53_r5.yaml": &fstest.MapFile{Data: []byte(`framework:
+  id: nist_800_53_r5
+  name: "NIST SP 800-53 Rev 5"
+mappings:
+  - rule_id: "CSDK-101"
+    controls:
+      - id: "AC-6"
+`)},
+		"claude_sdk/x.yaml": &fstest.MapFile{Data: []byte(`policy:
+  id: p
+  name: P
+  category: claude_sdk
+  description: d
+rules:
+  - id: X-001
+    title: t
+    scope: tool
+    severity: low
+    confidence: 0.5
+    applies_to: [claude_sdk_tool]
+    match:
+      has_docstring: true
+    explanation: e
+    fix: f
+`)},
+	}
+	policies, err := rules.Load(fsys)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if len(policies) != 1 {
+		t.Fatalf("len(policies) = %d, want 1 (mappings/ subtree must be skipped)", len(policies))
+	}
+	// The lenient runtime path must skip it too — that is the path deployed
+	// binaries take, and the one the mappings merge would otherwise break.
+	lenPolicies, skipped, err := rules.LoadLenient(fsys)
+	if err != nil {
+		t.Fatalf("LoadLenient returned error: %v", err)
+	}
+	if len(lenPolicies) != 1 {
+		t.Fatalf("LoadLenient len(policies) = %d, want 1", len(lenPolicies))
+	}
+	if len(skipped) != 0 {
+		t.Fatalf("LoadLenient skipped = %v, want none (mappings files are not rules)", skipped)
+	}
+}

@@ -627,7 +627,8 @@ var hostedClassToKind = map[string]string{
 	"LocalShellTool":      "shell_invocation",
 	"CodeInterpreterTool": "shell_invocation",
 	"ApplyPatchTool":      "shell_invocation",
-	"BashTool":            "shell_invocation", // Google ADK
+	"BashTool":            "shell_invocation", // Google ADK (pre-rename class name)
+	"ExecuteBashTool":     "shell_invocation", // Google ADK (current class name)
 }
 
 func PredAgentUsesToolKind(kinds []string, a models.AgentDef, inv models.RepoInventory) bool {
@@ -1048,3 +1049,4 @@ func PredRepoClaudeOptionsPermissionModeIs(modes []string, inv models.RepoInvent
 	}
 	return false
 }
+

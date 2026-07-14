@@ -64,6 +64,17 @@ type Config struct {
 	VulnNoUpdate bool
 	VulnCacheDir string
 
+	// LicenseScan opts into the copyleft license detection layer: flag any
+	// declared dependency whose SPDX license is GPL-2.0, GPL-3.0, AGPL-3.0,
+	// LGPL-2.1, or SSPL-1.0. Off by default.
+	LicenseScan bool
+
+	// SecretScan opts into the repo-wide secret-scanning layer: walk all text
+	// files in the repository and flag hardcoded credential literals
+	// (SECRET-LIT-001) and scripts that read credentials from the environment
+	// (SECRET-ENV-001). Off by default.
+	SecretScan bool
+
 	// Progress receives real-time phase events. Nil means no progress output.
 	Progress progress.Reporter
 
@@ -461,6 +472,21 @@ func Run(cfg Config) (models.ScanResult, error) {
 		log.Verbosef("vuln-scan: OSV snapshot %s · %d dependency vulnerabilities", vulnDBVersion, len(vulns))
 	}
 
+	if cfg.LicenseScan {
+		lf := licenseFindings(inventory.Dependencies)
+		findings = append(findings, lf...)
+		log.Verbosef("license-scan: %d copyleft findings", len(lf))
+	}
+
+	var secrets []models.SecretMatch
+	if cfg.SecretScan {
+		rep.StartPhase("secret-scan", "Scanning repository for secrets")
+		secrets = analysis.DiscoverSecrets(profile.Manifest.RepoRoot)
+		rep.EndPhase(fmt.Sprintf("%d potential secrets", len(secrets)))
+		findings = append(findings, secretFindings(secrets)...)
+		log.Verbosef("secret-scan: %d potential secrets", len(secrets))
+	}
+
 	// Step 5: scoring
 	surfaces, overall := analysis.Score(tools, inventory.Agents, inventory.Subagents, inventory.Skills, findings)
 	projected := analysis.Project(tools, inventory.Agents, inventory.Subagents, inventory.Skills, findings)
@@ -504,6 +530,7 @@ func Run(cfg Config) (models.ScanResult, error) {
 		Skills:              inventory.Skills,
 		Dependencies:        inventory.Dependencies,
 		Vulnerabilities:     vulns,
+		Secrets:             secrets,
 		SlashCommands:       inventory.SlashCommands,
 		PluginManifests:     inventory.PluginManifests,
 		ClaudeSettings:      inventory.ClaudeSettings,

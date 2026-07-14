@@ -12,7 +12,6 @@ rules:
     title: Google ADK project ships no agent-guidance doc (AGENTS.md/CLAUDE.md)
     severity: low
     confidence: 0.9
-    language: python
     applies_to:
       - google_adk
     scope: repo

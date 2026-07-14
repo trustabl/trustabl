@@ -4,12 +4,12 @@ policy:
   category: google_adk
   description: >
     Rules that flag unsafe configurations on Google ADK built-in tool
-    classes (BashTool, etc.). Their safety kwargs must be set explicitly —
-    the defaults are permissive.
+    classes (the bash tool, etc.). Their safety kwargs must be set
+    explicitly — the defaults are permissive.
 
 rules:
   - id: ADK-008
-    title: Agent grants BashTool with no restrictive command policy
+    title: Agent grants the bash tool with no restrictive command policy
     severity: high
     confidence: 0.75
     language: python
@@ -17,23 +17,34 @@ rules:
       - adk_llm_agent
     scope: agent
     match:
-      all:
-        - agent_uses_hosted_tool_class: [BashTool]
-        - not:
-            agent_hosted_tool_kwarg_present:
-              class: BashTool
-              kwarg: policy
+      any:
+        - all:
+            - agent_uses_hosted_tool_class: [ExecuteBashTool]
+            - not:
+                agent_hosted_tool_kwarg_present:
+                  class: ExecuteBashTool
+                  kwarg: policy
+        - all:
+            - agent_uses_hosted_tool_class: [BashTool]
+            - not:
+                agent_hosted_tool_kwarg_present:
+                  class: BashTool
+                  kwarg: policy
     explanation: >
-      This LlmAgent grants BashTool with no explicit policy=. BashTool runs
-      shell commands chosen by the model, and its BashToolPolicy defaults to
-      allowed_command_prefixes=("*",) (every command) and blocked_operators=()
-      (no shell metacharacters blocked) — i.e. fully injectable. Without a
-      restrictive policy, model-supplied input reaches the shell with no
-      command allow-list and no operator filtering. (Earlier google-adk exposed
-      a block_shell_metacharacters kwarg; current ADK gates this through
+      This LlmAgent grants the bash tool (ExecuteBashTool in current
+      google-adk; BashTool in earlier releases) with no explicit policy=. The
+      tool runs shell commands chosen by the model, and its BashToolPolicy
+      defaults to allowed_command_prefixes=("*",) (every command) and
+      blocked_operators=() (no shell metacharacters blocked). The tool does
+      request a generic user confirmation before each run, but with no policy
+      that confirmation is the only gate: there is no command allow-list and
+      no operator filtering between model-supplied input and the shell, so a
+      convincing or obfuscated command only has to get past a human clicking
+      through a prompt. (Earlier google-adk exposed a
+      block_shell_metacharacters kwarg; current ADK gates this through
       BashToolPolicy instead.)
     fix: >
-      Construct BashTool with a restrictive policy=BashToolPolicy(...): set
+      Construct the tool with a restrictive policy=BashToolPolicy(...): set
       allowed_command_prefixes to the specific commands the agent needs and
       blocked_operators to deny shell metacharacters. Pair with a
       before_tool_callback that validates the command before execution.

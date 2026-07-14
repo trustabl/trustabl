@@ -1,0 +1,82 @@
+name: Attestation
+
+# CI for the scan-attestation feature, split out from the main test workflow
+# (test.yml) so attestation runs (and the cosign install) are isolated.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: # manual trigger for the keyless job (see attest-keyless)
+
+env:
+  CGO_ENABLED: "1" # tree-sitter is a C library; see ARCHITECTURE.md §9
+
+jobs:
+  attest-e2e:
+    # Hermetic, key-mode proof of the attestation feature: scan -> attest ->
+    # verify -> tamper -> verify-fails, plus the scan --attest path. No OIDC, no
+    # Rekor — deterministic assurance that the cosign integration is wired right.
+    # This is the spike that cannot run on a dev box without cosign installed.
+    #
+    # Run against BOTH cosign majors: v2 (the --tlog-upload=false no-tlog path) and
+    # v3 (which removed that flag — no-tlog goes through a no-Rekor --signing-config).
+    # A single pinned version silently missed the v3 breakage.
+    strategy:
+      fail-fast: false
+      matrix:
+        cosign: ["v2.4.3", "v3.1.1"]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # Install the exact cosign under test by downloading the release binary
+      # directly. We do NOT use sigstore/cosign-installer here: its signature-
+      # verification step 404s on cosign v3 (v3 releases dropped the detached
+      # `.sig` asset that installer expects). This job is a functional e2e, not a
+      # cosign-provenance gate, so a direct download is the right tradeoff; the
+      # keyless job below still uses the installer.
+      - name: Install cosign ${{ matrix.cosign }}
+        run: |
+          sudo curl -sSfL "https://github.com/sigstore/cosign/releases/download/${{ matrix.cosign }}/cosign-linux-amd64" -o /usr/local/bin/cosign
+          sudo chmod +x /usr/local/bin/cosign
+          cosign version
+
+      - name: Attestation e2e (key mode, cosign ${{ matrix.cosign }})
+        run: bash scripts/attest-e2e.sh
+
+  attest-keyless:
+    # Production-path proof: keyless signing with the runner's ambient GitHub OIDC
+    # identity through Fulcio + Rekor, then verifying against that identity. Manual
+    # only (workflow_dispatch) BECAUSE every run writes a permanent entry to the
+    # PUBLIC Rekor transparency log — we do not want that on every push. Run it
+    # on demand to confirm the keyless wiring; the per-PR assurance is attest-e2e.
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # mint the OIDC token cosign exchanges with Fulcio
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - uses: sigstore/cosign-installer@v3
+
+      - name: Keyless attest + verify
+        run: |
+          go build -o /tmp/trustabl ./cmd/trustabl
+          # A scan may exit 1 on findings; we only need the JSON report written.
+          /tmp/trustabl scan . --json-out /tmp/report.json --no-progress || true
+          /tmp/trustabl attest /tmp/report.json --bundle /tmp/att.bundle.json
+          /tmp/trustabl verify /tmp/report.json --bundle /tmp/att.bundle.json \
+            --certificate-identity "https://github.com/${{ github.repository }}/.github/workflows/attestation.yml@${{ github.ref }}" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com"

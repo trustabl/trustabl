@@ -69,6 +69,15 @@ func loadPolicies(fsys fs.FS, lenient bool) ([]PolicyFile, []string, error) {
 		if d.Type()&fs.ModeSymlink != 0 {
 			return nil
 		}
+		// mappings/ at the pack root holds compliance-framework mapping packs
+		// (top-level framework: + mappings: keys — editorial rule-ID → control
+		// crosswalks for NIST/ISO/SOC2/etc.). They are reporting metadata, not
+		// detection policies, and do not decode as PolicyFile — loading them
+		// as rules hard-fails the whole pack (policy.id is required) in BOTH
+		// strict and lenient modes. Skip the subtree, like manifest.yaml.
+		if d.IsDir() && path == "mappings" {
+			return fs.SkipDir
+		}
 		// manifest.yaml at the pack root carries schema metadata, not a
 		// policy. The rulesource package reads it; the loader skips it.
 		if !d.IsDir() && strings.HasSuffix(path, ".yaml") && path != "manifest.yaml" {

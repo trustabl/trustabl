@@ -347,8 +347,19 @@ type DepRef struct {
 	// StartLine/EndLine are the 1-indexed line of the dependency's declaration in
 	// Source. A declaration is a single manifest line, so EndLine == StartLine.
 	// Mirrors models.Location so a dependency attributes like any other entity.
-	StartLine int `json:"start_line"`
-	EndLine   int `json:"end_line"`
+	StartLine int    `json:"start_line"`
+	EndLine   int    `json:"end_line"`
+	License   string `json:"license,omitempty"`
+}
+
+// SecretMatch is one potential secret detected by the opt-in --secret-scan
+// layer: a hardcoded credential literal (SECRET-LIT-001) or a script that reads
+// credentials from the environment at runtime (SECRET-ENV-001). No raw secret
+// value is stored — only the file, 1-indexed line, and the rule ID that fired.
+type SecretMatch struct {
+	File   string `json:"file"`
+	Line   int    `json:"line"`
+	RuleID string `json:"rule_id"`
 }
 
 // DepVuln is one known vulnerability matched against a declared dependency by the
@@ -496,6 +507,7 @@ type ScanResult struct {
 	Skills              []SkillDef         `json:"skills"`
 	Dependencies        []DepRef           `json:"dependencies"`              // repo-wide declared-dependency BOM (TR-278); not folded into ScanID
 	Vulnerabilities     []DepVuln          `json:"vulnerabilities,omitempty"` // --vuln-scan OSV matches (TR-271); absent on the default path
+	Secrets             []SecretMatch      `json:"secrets,omitempty"`         // --secret-scan hardcoded-credential matches; absent on the default path
 	SlashCommands       []SlashCommandDef  `json:"slash_commands"`
 	PluginManifests     []PluginManifest   `json:"plugin_manifests"`
 	ClaudeSettings      []ClaudeSettings   `json:"claude_settings"`
@@ -528,6 +540,24 @@ type EnrichedFinding struct {
 	FalsePositive bool   `json:"false_positive,omitempty"`
 	Enriched      bool   `json:"enriched"`
 	Applied       bool   `json:"applied,omitempty"`
+	// TraceEvidence is a human-readable summary of recent runtime executions of
+	// the flagged tool, fetched from a trace backend (LangSmith) when
+	// `trustabl enrich --langsmith` is set. Set independently of the LLM call,
+	// present even when LLM enrichment for the finding failed. Empty when trace
+	// enrichment is off, the finding is not tool-scoped, or no traces exist.
+	TraceEvidence string `json:"trace_evidence,omitempty"`
+}
+
+// ToolTraceStats summarizes recent runtime executions of one tool, sampled from
+// a trace backend (LangSmith). Produced by internal/langsmith, consumed by the
+// enrichment pipeline as grounding evidence for tool-scope findings.
+type ToolTraceStats struct {
+	ToolName     string   `json:"tool_name"`
+	Project      string   `json:"project"`                  // trace project the sample came from
+	Runs         int      `json:"runs"`                     // runs sampled (most recent first, capped)
+	Errors       int      `json:"errors"`                   // runs with status "error"
+	AvgLatencyMS int64    `json:"avg_latency_ms,omitempty"` // mean wall-clock latency; 0 if timestamps unavailable
+	RecentErrors []string `json:"recent_errors,omitempty"`  // up to 3 distinct recent error messages, truncated
 }
 
 // EnrichmentResult is the top-level output of trustabl enrich.

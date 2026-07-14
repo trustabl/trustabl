@@ -74,7 +74,7 @@ func TestDiscoverDependencies_PoetryAndPipfile(t *testing.T) {
 	writeDep(t, root, "svc/Pipfile", "[packages]\nflask = \"*\"\nboto3 = \"==1.34.0\"\n[dev-packages]\nmypy = \"*\"\n")
 	got := depKeys(DiscoverDependencies(root))
 	want := []string{
-		"pypi:boto3@==1.34.0",
+		"pypi:boto3@1.34.0",
 		"pypi:flask@", // "*" normalized to empty
 		"pypi:mypy@",  // "*" normalized to empty
 		"pypi:pytest@^8.0",

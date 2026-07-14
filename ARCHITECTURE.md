@@ -141,10 +141,11 @@ never leaves a partial pack and the recorded SHA always matches the content
 (see `internal/rulesource/git.go`).
 
 Resolution sits behind a `rulesource.Source` interface with two
-implementations. The default `gitSource` is the git path described above.
-`releaseSource` (opt-in via `--rules-source <name>`, or its deprecated alias
-`--channel <name>`) resolves rules from a
-**signature-verified release channel**: it verifies a signed channel statement
+implementations. `gitSource` is the unsigned git path described above (after the
+cutover it is the explicit opt-out, reached via `--rules-source git` or a
+`--rules-repo` / `--rules-ref` override). `releaseSource` (the **default**, and
+any `--rules-source <name>` / deprecated alias `--channel <name>`) resolves rules
+from a **signature-verified release channel**: it verifies a signed channel statement
 against an embedded Ed25519 trust keyring (`internal/rulesign`), fetches the
 bundle the statement commits to from GitHub Releases, re-derives the bundle's
 canonical digest and matches it to the statement, then installs it to a
@@ -163,8 +164,9 @@ on `ScanResult.RulesStale` and as a louder "rules may be out of date" stderr
 warning). The
 provenance of the rules (`models.RulesOrigin`: signed channel / unsigned
 custom / unsigned default) is surfaced as a report watermark and folded into
-`ScanID`. The default scan is unchanged — `gitSource` stays the default until
-the signed-production cutover. The CLI maps flags to a source in one place:
+`ScanID`. After the signed-production cutover, the `production` channel via `releaseSource`
+is the default; `gitSource` is the explicit opt-out (`--rules-source git`, or any
+`--rules-repo` / `--rules-ref`). The CLI maps flags to a source in one place:
 `effectiveRules` (`cmd/trustabl/scan.go`) derives BOTH the `rulesource.Config`
 and the `RulesOrigin` from a single decision (default in `defaultRulesSource`),
 so the resolved source and its reported provenance cannot disagree; a
@@ -1242,6 +1244,26 @@ schema validator, which rejects a `fixes[]` entry lacking `artifactChanges`. Lik
 JSON, SARIF is a pure function of `ScanResult`: no clocks, no map-iteration
 leakage, byte-stable per `ScanID`.
 
+### Scan attestation (`internal/attest`)
+
+`internal/attest` turns a `ScanResult` into a signed, verifiable claim about the
+**scanned repo** (not the Trustabl binary — that is attested separately by the
+release workflow's build-provenance). It holds **no keys and no crypto of its
+own**: `BuildPredicate` renders a deterministic in-toto predicate (predicateType
+`https://trustabl.dev/attestation/scan/v1`) derived only from `ScanResult` — so it
+is byte-stable and is **not** folded into `ScanID` — and the package shells out to
+the **cosign** CLI (`attest-blob` / `verify-blob-attestation`) for all signing and
+verification. The attestation **subject** is the canonical JSON report itself
+(cosign signs its sha256); a repo has no single artifact digest, and the report
+already pins the scanned state, so signing the report is simpler and more
+reproducible than signing a source archive. Signing is **keyless by default**
+(ambient CI OIDC via Fulcio/Rekor) with a `--key` escape hatch for offline/private
+signing; the **signer is whoever runs the scan**, never trustabl.dev. `cmd/trustabl`
+exposes it two ways sharing one `doAttest` core — a standalone `trustabl attest
+<report.json>` and a `scan --attest` flag — while `trustabl verify` is a separate
+consumer-side command that pins the signer identity and OIDC issuer. cosign is an
+**optional runtime dependency**: a plain `scan` never touches it.
+
 **Report destination (`--output` / `-o`).** `cmd/trustabl` renders the chosen
 format to bytes (`renderReport`) and then writes them either to stdout or, when
 `--output <path>` is set, to that file (`writeReport`). Rendering is decoupled
@@ -2038,6 +2060,7 @@ trustabl scan <target> [--detectors=…] [--format=human|json|sarif]
                        [--no-rules-update] [--vuln-scan]
 trustabl enrich        [-i SCAN_JSON] [-r REPO_ROOT] [-o OUTPUT_FILE]
                        [--diff] [--apply] [--only-enriched] [--rule RULE_ID]
+                       [--langsmith] [--langsmith-project NAME]
 trustabl mcp           [--rules-repo=URL] [--rules-ref=REF] [--no-rules-update]
 trustabl rules pull    [--rules-repo=URL] [--rules-ref=REF]
 trustabl rules validate [DIR]
@@ -2085,6 +2108,24 @@ Exit codes:
 The CLI is a thin shell over `scanner.Run`. The same
 `Run(Config) (ScanResult, error)` is what the MCP frontend (§8.1), a future
 GitHub Action, or a test harness calls; the boundary is intentionally narrow.
+
+### Crash reporting ([internal/crash/](internal/crash/))
+
+`internal/crash` implements local-first crash reporting. It is invoked from two `recover()` sites:
+
+1. **Top-level recover in `main()`** (`cmd/trustabl/main.go`) — catches any unrecovered panic that bubbles out of a cobra command handler, including startup and non-scan subcommands.
+2. **Scan-goroutine recover in `runScan`** (`cmd/trustabl/scan.go`) — catches panics in the `go func()` that runs `scanner.Run`. It calls `rep.Done()` and then routes the recovered value and stack **back to the main goroutine** over the `done` channel (as `scanOutcome.panicVal` / `panicStack`) rather than prompting from the worker. The main goroutine invokes `crash.Handle` only after `rep.Run()` has returned and the TTY is restored to normal mode — this avoids reading `os.Stdin` while bubbletea still owns the terminal in raw mode, and lets the worker's deferred cleanups run as the panic unwinds.
+
+Both recover sites ultimately call `crash.Handle(recovered, debug.Stack(), buildCrashMeta(), tel)` (the top-level `main()` recover directly; the scan path via the main goroutine after `rep.Run()`), which:
+
+1. Calls `Capture` to build a scrubbed `Report`: the panic value is passed through `scrubSecrets` (best-effort redaction of common secret shapes — `sk-ant-*`, `sk-proj-*`, long hex/base64 strings), and `renderStack` trims the raw `debug.Stack()` output to function names and `basename:line` pairs with argument values and source lines removed.
+2. Always writes the report to `~/.config/trustabl/crash-<UTC-timestamp>.log` (mode `0600`, directory `0700`), even in CI.
+3. Only in an interactive TTY (stderr is a terminal and neither `CI` nor a recognized CI provider env var is set), prompts the user with a numbered menu (Send / Open GitHub issue / Do nothing, default: nothing).
+4. If the user chooses Send, calls `tel.TrackCrash(rep.Props())`, which fires the `crash.reported` event over a **dedicated crash transport** (`Client.crashSink`) that is live whenever a PostHog key is built into the binary, **independent of the telemetry mode**. Crash reporting is a separate consent from usage telemetry: the "Send" menu item is always offered (never hidden or renumbered by the telemetry setting), and the send works even when telemetry is `disabled`; it only no-ops when the build has no PostHog key. The choice is per-crash and never persisted.
+
+After `Handle` returns, the caller flushes telemetry (`tel.Flush()`) and calls `os.Exit(2)` — the exit code is always 2 for a panic, matching the scanner-error bucket.
+
+**Scope of the crash path.** Only unrecovered panics route through `crash.Handle`. Categorized scan errors (rules fetch failure, clone failure, parse error) still return typed errors, emit `scan.failed` telemetry via the normal `Track` path, and exit 2 through the `exitCodeError` mechanism — they never touch `internal/crash`.
 
 ### 8.1 MCP frontend ([cmd/trustabl/mcp.go](cmd/trustabl/mcp.go) + [internal/mcpserver/](internal/mcpserver/))
 
@@ -2154,6 +2195,31 @@ All findings in one file are batched into a single LLM call
 The LLM client calls the active provider's model (from `llm.Load()`) and parses
 a JSON array response — one `enrichResult` per finding. A `salvagePartialJSON`
 fallback recovers partial objects if the response is truncated.
+
+**Optional runtime trace grounding (`--langsmith`,
+[internal/langsmith/](internal/langsmith/)).** With `--langsmith`, tool-scope
+findings gain a third context layer: recent executions of each flagged tool are
+sampled from a LangSmith project (up to 25 most-recent `run_type: tool` runs
+matching the tool's name) and aggregated into a `models.ToolTraceStats`: run
+count, error count, mean latency, and up to 3 distinct recent error messages.
+The summary is carried on the output as `EnrichedFinding.TraceEvidence` and fed
+to the LLM prompt as `Runtime trace evidence:` so explanations cite observed
+behavior instead of speculating. Gating is a double gate: the flag is the
+explicit opt-in and `LANGSMITH_API_KEY` is the BYOK credential; the flag
+without the key is a hard error (silently emitting output the user believes is
+trace-informed would be worse), while everything past that degrades per
+finding: a trace API error or a tool with no run history logs a warning and
+falls back to plain static enrichment, never failing the run. The project is
+resolved `--langsmith-project` → `$LANGSMITH_PROJECT` → `"default"`
+(`$LANGSMITH_ENDPOINT` overrides the API host for self-hosted deployments).
+The client caches per tool name for the invocation: repeat findings on one
+tool cost one fetch, and the pipeline consumes it through the
+`enrichment.TraceSource` seam, so tests inject a fake exactly as they do for
+the LLM client. Only tool *names* are sent to LangSmith; trace content flows
+in, never out. Nothing in the scan pipeline imports `internal/langsmith`; the
+scan's no-network and determinism contracts are untouched. Trace evidence is
+attached before the LLM call, so it survives an LLM failure
+(`Enriched=false` findings still carry their `trace_evidence`).
 
 The `--diff` flag renders a unified diff of all proposed replacements to **stderr**
 (in finding order, after all workers finish) so users can preview exactly what

@@ -13,7 +13,6 @@ rules:
     title: Repo ships Claude Agent SDK code without an agent-guidance doc (AGENTS.md/CLAUDE.md)
     severity: low
     confidence: 0.9
-    language: python
     applies_to:
       - claude_sdk
     scope: repo

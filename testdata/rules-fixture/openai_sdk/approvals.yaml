@@ -23,15 +23,21 @@ rules:
             - has_shell_call: true
             - has_code_exec_call: true
             - has_write_call: true
-        - not:
-            tool_decorator_kwarg_present:
-              - needs_approval
+        - any:
+            - not:
+                tool_decorator_kwarg_present:
+                  - needs_approval
+            - tool_decorator_kwarg_value:
+                kwarg: needs_approval
+                value: "False"
     explanation: >
       This @function_tool shells out, executes dynamic code, or writes the
-      filesystem, but sets no needs_approval kwarg. needs_approval is the OpenAI
+      filesystem, but has no needs_approval gate — the kwarg is absent or
+      explicitly set to False. needs_approval is the OpenAI
       Agents SDK's documented human-in-the-loop gate for sensitive tool calls,
       and its default is False — so an un-gated privileged tool executes
-      attacker-influenced model output with no human checkpoint. This complements
+      attacker-influenced model output with no human checkpoint. Passing True
+      or a per-call approval callable both count as a gate and do not fire. This complements
       OAI-012 (subprocess) and OAI-013 (eval/exec): those flag the dangerous
       call; OAI-014 flags the missing approval gate around it.
     fix: >
@@ -54,38 +60,57 @@ rules:
       any:
         - all:
             - agent_uses_hosted_tool_class: [ShellTool]
-            - not:
-                agent_hosted_tool_kwarg_value:
-                  class: ShellTool
-                  kwarg: needs_approval
-                  value: "True"
+            - any:
+                - not:
+                    agent_hosted_tool_kwarg_present:
+                      class: ShellTool
+                      kwarg: needs_approval
+                - agent_hosted_tool_kwarg_value:
+                    class: ShellTool
+                    kwarg: needs_approval
+                    value: "False"
         - all:
             - agent_uses_hosted_tool_class: [LocalShellTool]
-            - not:
-                agent_hosted_tool_kwarg_value:
-                  class: LocalShellTool
-                  kwarg: needs_approval
-                  value: "True"
+            - any:
+                - not:
+                    agent_hosted_tool_kwarg_present:
+                      class: LocalShellTool
+                      kwarg: needs_approval
+                - agent_hosted_tool_kwarg_value:
+                    class: LocalShellTool
+                    kwarg: needs_approval
+                    value: "False"
         - all:
             - agent_uses_hosted_tool_class: [CodeInterpreterTool]
-            - not:
-                agent_hosted_tool_kwarg_value:
-                  class: CodeInterpreterTool
-                  kwarg: needs_approval
-                  value: "True"
+            - any:
+                - not:
+                    agent_hosted_tool_kwarg_present:
+                      class: CodeInterpreterTool
+                      kwarg: needs_approval
+                - agent_hosted_tool_kwarg_value:
+                    class: CodeInterpreterTool
+                    kwarg: needs_approval
+                    value: "False"
         - all:
             - agent_uses_hosted_tool_class: [ApplyPatchTool]
-            - not:
-                agent_hosted_tool_kwarg_value:
-                  class: ApplyPatchTool
-                  kwarg: needs_approval
-                  value: "True"
+            - any:
+                - not:
+                    agent_hosted_tool_kwarg_present:
+                      class: ApplyPatchTool
+                      kwarg: needs_approval
+                - agent_hosted_tool_kwarg_value:
+                    class: ApplyPatchTool
+                    kwarg: needs_approval
+                    value: "False"
     explanation: >
       This agent wires a privileged hosted tool — ShellTool or LocalShellTool
       (run shell commands), CodeInterpreterTool (run code), or ApplyPatchTool
-      (edit files) — without setting needs_approval=True on it. needs_approval
+      (edit files) — with no needs_approval gate: the kwarg is absent or
+      explicitly False. needs_approval
       defaults to False on these tools, so without an explicit opt-in the model
-      executes commands, code, or file edits with no human checkpoint.
+      executes commands, code, or file edits with no human checkpoint. Setting
+      it to True or to a per-call approval callable both count as a gate and
+      do not fire this rule.
       needs_approval is the SDK's human-in-the-loop gate for exactly this class
       of tool.
     fix: >

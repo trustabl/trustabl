@@ -21,6 +21,9 @@ rules:
     match:
       all:
         - agent_kwarg_present: [mcp_servers]
+        # An empty mcp_servers=[] wires no MCP tools — do not fire on it.
+        - not:
+            agent_kwarg_list_empty: [mcp_servers]
         - agent_kwarg_list_empty: [input_guardrails]
     explanation: >
       The agent imports tools from one or more MCP servers (mcp_servers=)
@@ -29,8 +32,9 @@ rules:
       controlled or compromised MCP server can craft tool descriptions
       that bait the agent into harmful actions — the "tool poisoning"
       pattern documented in the MCP threat literature. Detection only
-      fires when mcp_servers is actually configured, so agents without
-      MCP are unaffected.
+      fires when mcp_servers is actually configured with at least one
+      server (an empty list wires nothing), so agents without MCP are
+      unaffected.
     fix: >
       Add at least one @input_guardrail that inspects the user's input AND
       the resolved tool list before the model is invoked. Pin MCP servers

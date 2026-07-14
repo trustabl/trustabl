@@ -80,6 +80,35 @@ func skipForDeps(name string) bool {
 	return false
 }
 
+// spdxAliases maps common non-canonical spellings to their SPDX 3.x identifiers.
+// Unknown strings pass through normalizeSPDX unchanged.
+var spdxAliases = map[string]string{
+	"Apache 2.0": "Apache-2.0", "Apache-2": "Apache-2.0", "Apache 2": "Apache-2.0",
+	"GPL-2.0": "GPL-2.0-only", "GPLv2": "GPL-2.0-only", "GNU GPL v2": "GPL-2.0-only",
+	"GPL-3.0": "GPL-3.0-only", "GPLv3": "GPL-3.0-only",
+	"AGPL-3.0": "AGPL-3.0-only", "AGPLv3": "AGPL-3.0-only",
+	"LGPL-2.1": "LGPL-2.1-only", "LGPLv2.1": "LGPL-2.1-only",
+	"LGPL-3.0": "LGPL-3.0-only", "LGPLv3": "LGPL-3.0-only",
+	"MIT": "MIT", "BSD-2-Clause": "BSD-2-Clause", "BSD-3-Clause": "BSD-3-Clause",
+	"ISC": "ISC", "MPL-2.0": "MPL-2.0", "CC0-1.0": "CC0-1.0", "SSPL-1.0": "SSPL-1.0",
+}
+
+func normalizeSPDX(s string) string {
+	s = strings.TrimSpace(s)
+	if c, ok := spdxAliases[s]; ok {
+		return c
+	}
+	return s
+}
+
+// stampLicense sets License on every dep in the slice and returns it.
+func stampLicense(deps []models.DepRef, lic string) []models.DepRef {
+	for i := range deps {
+		deps[i].License = lic
+	}
+	return deps
+}
+
 // requirementLineRe captures a PEP 508 requirement's distribution name (group 1)
 // and its optional version specifier (group 2, from the first operator char).
 var requirementLineRe = regexp.MustCompile(`^([A-Za-z0-9][A-Za-z0-9._-]*)\s*(?:\[[^\]]*\])?\s*([=<>!~][^;#]*)?`)
@@ -132,9 +161,13 @@ func parsePyproject(abs, source string) []models.DepRef {
 		Project struct {
 			Dependencies         []string            `toml:"dependencies"`
 			OptionalDependencies map[string][]string `toml:"optional-dependencies"`
+			License              struct {
+				Text string `toml:"text"`
+			} `toml:"license"`
 		} `toml:"project"`
 		Tool struct {
 			Poetry struct {
+				License         string         `toml:"license"`
 				Dependencies    map[string]any `toml:"dependencies"`
 				DevDependencies map[string]any `toml:"dev-dependencies"`
 				Group           map[string]struct {
@@ -145,6 +178,10 @@ func parsePyproject(abs, source string) []models.DepRef {
 	}
 	if err := toml.Unmarshal(content, &doc); err != nil {
 		return nil
+	}
+	lic := normalizeSPDX(doc.Project.License.Text)
+	if lic == "" {
+		lic = normalizeSPDX(doc.Tool.Poetry.License)
 	}
 	var out []models.DepRef
 	for _, spec := range doc.Project.Dependencies {
@@ -172,7 +209,11 @@ func parsePyproject(abs, source string) []models.DepRef {
 	for _, g := range doc.Tool.Poetry.Group {
 		addPoetry(g.Dependencies)
 	}
-	return withLines(out, content)
+	out = withLines(out, content)
+	if lic != "" {
+		out = stampLicense(out, lic)
+	}
+	return out
 }
 
 // parsePipfile extracts pip deps from a Pipfile ([packages] / [dev-packages]).
@@ -195,6 +236,7 @@ func parsePipfile(abs, source string) []models.DepRef {
 			if ver == "*" {
 				ver = ""
 			}
+			ver = strings.TrimPrefix(ver, "==")
 			out = append(out, models.DepRef{Name: name, Version: ver, Ecosystem: "pypi", Source: source})
 		}
 	}
@@ -205,17 +247,55 @@ func parsePipfile(abs, source string) []models.DepRef {
 
 // parseNpmPackageJSON extracts npm deps (runtime + dev) from a package.json.
 func parseNpmPackageJSON(abs, source string) []models.DepRef {
-	return parseJSONDepMaps(abs, source, "npm",
-		[]string{"dependencies", "devDependencies"}, nil)
+	deps := parseJSONDepMaps(abs, source, "npm", []string{"dependencies", "devDependencies"}, nil)
+	if lic := jsonTopLevelLicense(abs); lic != "" {
+		deps = stampLicense(deps, lic)
+	}
+	return deps
 }
 
 // parseComposerJSON extracts PHP deps from a composer.json (require + require-dev).
 // Platform/meta requirements (php, ext-*, anything without a vendor/name slash)
 // are skipped — they are not Packagist packages.
 func parseComposerJSON(abs, source string) []models.DepRef {
-	return parseJSONDepMaps(abs, source, "composer",
+	deps := parseJSONDepMaps(abs, source, "composer",
 		[]string{"require", "require-dev"},
 		func(name string) bool { return !strings.Contains(name, "/") })
+	if lic := jsonTopLevelLicense(abs); lic != "" {
+		deps = stampLicense(deps, lic)
+	}
+	return deps
+}
+
+// jsonTopLevelLicense reads the top-level "license" field from a JSON manifest.
+// The field may be a string (npm: "MIT") or an array of strings
+// (composer: ["MIT", "Apache-2.0"]); arrays are joined with " OR ".
+func jsonTopLevelLicense(abs string) string {
+	content, err := readCapped(abs, maxBundledScriptScanBytes)
+	if err != nil {
+		return ""
+	}
+	var doc struct {
+		License json.RawMessage `json:"license"`
+	}
+	if err := json.Unmarshal(content, &doc); err != nil || doc.License == nil {
+		return ""
+	}
+	var s string
+	if err := json.Unmarshal(doc.License, &s); err == nil {
+		return normalizeSPDX(s)
+	}
+	var arr []string
+	if err := json.Unmarshal(doc.License, &arr); err == nil {
+		parts := make([]string, 0, len(arr))
+		for _, item := range arr {
+			if n := normalizeSPDX(item); n != "" {
+				parts = append(parts, n)
+			}
+		}
+		return strings.Join(parts, " OR ")
+	}
+	return ""
 }
 
 // parseJSONDepMaps reads the named top-level objects of a JSON manifest
@@ -297,6 +377,9 @@ func parseCargoToml(abs, source string) []models.DepRef {
 		return nil
 	}
 	var doc struct {
+		Package struct {
+			License string `toml:"license"`
+		} `toml:"package"`
 		Dependencies      map[string]any `toml:"dependencies"`
 		DevDependencies   map[string]any `toml:"dev-dependencies"`
 		BuildDependencies map[string]any `toml:"build-dependencies"`
@@ -304,10 +387,11 @@ func parseCargoToml(abs, source string) []models.DepRef {
 	if err := toml.Unmarshal(content, &doc); err != nil {
 		return nil
 	}
+	lic := normalizeSPDX(doc.Package.License)
 	var out []models.DepRef
 	add := func(m map[string]any) {
 		for name, v := range m {
-			out = append(out, models.DepRef{Name: name, Version: tomlVersion(v), Ecosystem: "cargo", Source: source})
+			out = append(out, models.DepRef{Name: name, Version: tomlVersion(v), Ecosystem: "cargo", Source: source, License: lic})
 		}
 	}
 	add(doc.Dependencies)
