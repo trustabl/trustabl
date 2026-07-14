@@ -37,7 +37,10 @@ list_yaml() { # $1 = root
     # covered automatically. The previous hardcoded list (claude_sdk openai_sdk
     # google_adk) silently skipped langchain, mcp, and every later pack, so a
     # fixture/production drift in those categories went unchecked.
-    find . -mindepth 2 -name '*.yaml'
+    # mappings/ is excluded: it holds compliance-framework mapping packs
+    # (reporting metadata the loader also skips), not detection policies, and
+    # is deliberately NOT mirrored into the engine fixture.
+    find . -mindepth 2 -name '*.yaml' -not -path './mappings/*'
     [ -f manifest.yaml ] && echo ./manifest.yaml
   ) | sed 's#^\./##' | sort
 }

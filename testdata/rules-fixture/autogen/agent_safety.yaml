@@ -53,8 +53,13 @@ rules:
             value: NEVER
         - agent_kwarg_present:
             - code_execution_config
+        - not:
+            agent_kwarg_value:
+              kwarg: code_execution_config
+              value: "False"
     explanation: >
-      This agent enables code execution (code_execution_config is set) while
+      This agent enables code execution (code_execution_config is set, and not
+      to the disabling False) while
       human_input_mode="NEVER" removes the human-in-the-loop step. The combination
       makes the agent fully autonomous: every code block the model emits runs with
       zero review, so a prompt injection or a confused model executes attacker-chosen
@@ -102,12 +107,19 @@ rules:
       - autogen_assistant_agent
     scope: agent
     match:
-      agent_kwarg_present:
-        - code_execution_config
+      all:
+        - agent_kwarg_present:
+            - code_execution_config
+        - not:
+            agent_kwarg_value:
+              kwarg: code_execution_config
+              value: "False"
     explanation: >
-      This AssistantAgent sets code_execution_config, enabling code execution on the
+      This AssistantAgent sets code_execution_config to an enabling value,
+      turning on code execution on the
       LLM-facing agent. AutoGen's recommended pattern splits responsibilities: the
-      AssistantAgent generates code with code_execution_config=False, and a separate
+      AssistantAgent generates code with code_execution_config=False (the safe,
+      explicit-disable form, which this rule does not flag), and a separate
       UserProxyAgent (the executor) runs it. Collapsing both roles into one agent
       removes that review boundary — the same agent that the model fully controls
       also executes whatever it produces, so a prompt injection has a direct path
@@ -131,10 +143,15 @@ rules:
       all:
         - agent_kwarg_present:
             - code_execution_config
+        - not:
+            agent_kwarg_value:
+              kwarg: code_execution_config
+              value: "False"
         - agent_kwarg_missing:
             - max_consecutive_auto_reply
     explanation: >
-      This executor enables code execution (code_execution_config is set) but does
+      This executor enables code execution (code_execution_config is set, and
+      not to the disabling False) but does
       not set max_consecutive_auto_reply, so it falls back to AutoGen's class
       default of 100 (MAX_CONSECUTIVE_AUTO_REPLY). That is a cap, but a very loose
       one for an agent that auto-executes model-emitted code: up to 100 consecutive

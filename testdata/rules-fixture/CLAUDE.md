@@ -56,8 +56,9 @@ and shipped TS rules). JavaScript (`.js`/`.jsx`/`.mjs`/`.cjs`) now shares the
 TypeScript grammar and discovery (the tsx parser parses plain JS) and is
 audited by the `language: typescript` rule packs via the TS/JS family gate
 (`models.IsTSOrJS`) — so a `typescript` rule fires on `.js` too (and a
-`javascript` rule, were one shipped, fires on both). Go is still recognized by
-recon but has no AST parser, so `go` rules load but never fire until one ships.
+`javascript` rule, were one shipped, fires on both). Go, C#, PHP, and Rust have
+MCP tool discovery with field-based rules (MCP-015..022), so rules in those
+languages fire against discovered MCP tools.
 
 ## Per-scope `applies_to` values
 
@@ -202,19 +203,19 @@ production-grade, in priority order:
   `call_without_kwarg` and `has_dynamic_url_call` resolve local-variable client
   aliases (`s = requests.Session(); s.get(...)`, and the `with ... as c:` form)
   via `analysis.ResolveClientAliases` + `IsHTTPCallNode`. **Residual
-  limitations:** (1) instance attributes (`self.client.get(...)`) and
-  cross-function / cross-module aliases are still unresolved; (2) the engine
-  canonicalizes an aiohttp session alias to `aiohttp.<method>` (e.g.
-  `aiohttp.get`), but rule callee lists currently use
-  `aiohttp.ClientSession.<method>` — so aiohttp aliasing is wired in the engine
-  but a rule pack must list `aiohttp.<method>` callees to benefit. `requests`
-  and `httpx` aliasing work end-to-end with existing callee lists.
+  limitation:** instance attributes (`self.client.get(...)`) and
+  cross-function / cross-module aliases are still unresolved. aiohttp session
+  aliases canonicalize to `aiohttp.ClientSession.<method>` (see
+  `analysis.clientConstructorModule` and its guard test), which the timeout
+  rules' callee lists carry — aliased aiohttp works end-to-end, same as
+  `requests` and `httpx`.
 - **(c) Hosted + decorated shell tools in the agent shell-tool rules — DONE.**
   `agent_uses_tool_kind: [shell_invocation]` (OAI-101, OAI-104) now matches
   three shapes, not just a bare undecorated function: (1) a bare
   `KindShellInvocation` function; (2) the SDK's hosted shell tools
   (`ShellTool`, `LocalShellTool`, `CodeInterpreterTool`, `ApplyPatchTool`,
-  ADK `BashTool`) via the `hostedClassToKind` map over `HostedToolRefs`; and
+  ADK `ExecuteBashTool`/`BashTool`) via the `hostedClassToKind` map over
+  `HostedToolRefs`; and
   (3) a *decorated* tool (`@function_tool` / `tool()`) that shells out —
   discovery stamps a structural `shells_out` fact on the `ToolDef` (Python in
   `buildTool`, TS in `tsHandlerFacts`) and `PredAgentUsesToolKind` honors it

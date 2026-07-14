@@ -34,7 +34,7 @@ rules:
       it as documentation for the parent agent's model.
 
   - id: ADK-102
-    title: Agent with BashTool has no before_tool_callback
+    title: Agent with the bash tool has no before_tool_callback
     severity: high
     confidence: 0.85
     language: python
@@ -44,17 +44,19 @@ rules:
     match:
       all:
         - agent_class: [LlmAgent]
-        - agent_uses_hosted_tool_class: [BashTool]
+        - agent_uses_hosted_tool_class: [BashTool, ExecuteBashTool]
         - agent_kwarg_missing: [before_tool_callback]
     explanation: >
-      An LlmAgent with `BashTool` in its tools= list can execute
+      An LlmAgent with the bash tool (`ExecuteBashTool` in current google-adk;
+      `BashTool` in earlier releases) in its tools= list can execute
       arbitrary shell commands chosen by the model. ADK's
       `before_tool_callback` is the only synchronous interception point
       where you can inspect a tool call before it executes and
       short-circuit it — the moral analog of an OpenAI agent's
-      `input_guardrails`. An agent with BashTool and no
-      `before_tool_callback` has no opportunity to deny a shell command
-      the model invents.
+      `input_guardrails`. An agent with the bash tool and no
+      `before_tool_callback` has no policy of its own over which shell
+      commands the model invents — only the tool's generic built-in
+      confirmation prompt stands between the model and execution.
     fix: >
       Add a `before_tool_callback=` that inspects the tool name and
       arguments, allow-lists known-safe commands (or denies known-bad
@@ -63,7 +65,7 @@ rules:
       tool execution.
 
   - id: ADK-103
-    title: Sub-agent is granted BashTool
+    title: Sub-agent is granted the bash tool
     severity: high
     confidence: 0.9
     language: python
@@ -73,17 +75,18 @@ rules:
     match:
       all:
         - agent_is_subagent_of_any: true
-        - agent_uses_hosted_tool_class: [BashTool]
+        - agent_uses_hosted_tool_class: [BashTool, ExecuteBashTool]
     explanation: >
       This LlmAgent appears in another agent's `sub_agents=[...]` tree
-      AND is granted `BashTool`. A parent agent can delegate to a
-      child without the child's tool calls being mediated by the
-      parent's `before_tool_callback`. Granting shell access to a
+      AND is granted the bash tool (`ExecuteBashTool` in current
+      google-adk; `BashTool` in earlier releases). A parent agent can
+      delegate to a child without the child's tool calls being mediated
+      by the parent's `before_tool_callback`. Granting shell access to a
       delegated sub-agent makes the parent's policy worthless: the
       model can route around any safety hook by handing off to the
       sub-agent and asking it to run the same command.
     fix: >
-      Either remove `BashTool` from this sub-agent's tools= list, or
+      Either remove the bash tool from this sub-agent's tools= list, or
       restructure so the shell-capable agent is the orchestrator at
       the top of the tree (so its `before_tool_callback` actually
       mediates every shell call).
@@ -236,11 +239,15 @@ rules:
     match:
       all:
         - agent_class: [LlmAgent]
-        - agent_uses_hosted_tool_class: [UrlContextTool, LoadWebPage]
+        - any:
+            - agent_uses_hosted_tool_class: [UrlContextTool, LoadWebPage]
+            - agent_grants_builtin_tool: [url_context, load_web_page]
         - agent_kwarg_missing: [before_tool_callback]
     explanation: >
-      This LlmAgent is wired with a URL/page-fetch built-in (UrlContextTool or
-      LoadWebPage) but has no before_tool_callback. These tools retrieve
+      This LlmAgent is wired with a URL/page-fetch built-in — the idiomatic
+      url_context instance or the load_web_page function reference, or a
+      directly-constructed UrlContextTool — but has no before_tool_callback.
+      These tools retrieve
       model-chosen URLs whose content re-enters the agent loop — a prompt
       injection vector (attacker-controlled page content) and an SSRF surface
       (the model can point the fetch at internal addresses). Without a callback

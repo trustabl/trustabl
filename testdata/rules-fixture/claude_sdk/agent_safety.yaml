@@ -172,6 +172,112 @@ rules:
       restrict the tool surface, and prefer a safe default permission mode
       ("default" or "acceptEdits") scoped to a minimal tool set.
 
+  - id: CSDK-121
+    title: TypeScript AgentDefinition is granted the Bash tool
+    severity: high
+    confidence: 0.8
+    language: typescript
+    applies_to:
+      - claude_agent_definition
+    scope: agent
+    match:
+      agent_grants_builtin_tool:
+        - Bash
+    explanation: >
+      This TypeScript AgentDefinition (a typed const or an inline entry in
+      options.agents) lists "Bash" in its tools array, giving the subagent
+      arbitrary shell-command execution. Subagents are dispatched autonomously
+      by a lead agent in response to model-generated task descriptions, so a
+      prompt-injected or mis-scoped task can reach the shell with no human in
+      the loop. This is acute when the surrounding options set
+      permissionMode: "bypassPermissions", which removes the SDK's interactive
+      approval gate entirely.
+    fix: >
+      Remove "Bash" from this agent definition's tools array unless shell
+      execution is essential to its job. If it is essential, gate it with a
+      PreToolUse hook that allowlists the specific commands the subagent may
+      run, and do not pair it with permissionMode: "bypassPermissions".
+
+  - id: CSDK-122
+    title: TypeScript AgentDefinition is granted the WebSearch tool
+    severity: medium
+    confidence: 0.8
+    language: typescript
+    applies_to:
+      - claude_agent_definition
+    scope: agent
+    match:
+      agent_grants_builtin_tool:
+        - WebSearch
+    explanation: >
+      This TypeScript AgentDefinition lists "WebSearch" in its tools array,
+      giving the subagent access to live internet content. Subagents are
+      dispatched autonomously by a lead agent; a prompt-injected or mis-scoped
+      task can direct the subagent to retrieve attacker-controlled pages, whose
+      content can then inject further instructions into the agentic loop.
+      WebSearch results are untrusted external data with no SDK-level
+      filtering — the subagent will process whatever the search returns.
+    fix: >
+      Remove "WebSearch" from this agent definition's tools array unless
+      internet access is essential to its job. If it is essential, gate inbound
+      queries with a PreToolUse hook that validates the search query before it
+      executes, and ensure the lead agent that dispatches this subagent
+      validates task descriptions before passing them down.
+
+  - id: CSDK-123
+    title: TypeScript AgentDefinition is granted filesystem-write built-ins
+    severity: high
+    confidence: 0.8
+    language: typescript
+    applies_to:
+      - claude_agent_definition
+    scope: agent
+    match:
+      agent_grants_builtin_tool:
+        - Write
+        - Edit
+        - MultiEdit
+        - NotebookEdit
+    explanation: >
+      This TypeScript AgentDefinition lists a filesystem-write built-in
+      (Write, Edit, MultiEdit, or NotebookEdit) in its tools array, letting
+      the subagent modify files on disk. Subagents are dispatched
+      autonomously; a prompt-injected or mis-scoped task can drive the
+      subagent to rewrite source, configuration, or even the
+      .claude/settings.json that governs the agent's own permissions. Write
+      access is comparable blast radius to shell execution (CSDK-121) and is
+      not gated by any guardrail mechanism on AgentDefinition itself.
+    fix: >
+      Remove the write built-ins from this agent definition's tools array
+      unless file mutation is essential to its job. If it is essential, scope
+      the writable area, gate writes with a PreToolUse hook, and never pair
+      broad write access with permissionMode: "bypassPermissions".
+
+  - id: CSDK-124
+    title: TypeScript AgentDefinition is granted the WebFetch tool
+    severity: high
+    confidence: 0.75
+    language: typescript
+    applies_to:
+      - claude_agent_definition
+    scope: agent
+    match:
+      agent_grants_builtin_tool:
+        - WebFetch
+    explanation: >
+      This TypeScript AgentDefinition lists "WebFetch" in its tools array.
+      WebFetch retrieves a model-chosen URL and feeds its content back into
+      the agent loop. Unlike WebSearch (CSDK-122), WebFetch takes a direct
+      URL, so it is both a prompt-injection vector (attacker-controlled page
+      content re-enters the loop) and a server-side request forgery surface
+      (the model can point it at internal addresses). Fetched content is
+      untrusted external data with no SDK-level filtering.
+    fix: >
+      Remove "WebFetch" from this agent definition's tools array unless
+      fetching is essential. If it is essential, gate it with a PreToolUse
+      hook that allowlists permitted hosts/URLs and blocks internal address
+      ranges, and validate the task descriptions the lead agent passes down.
+
   - id: CSDK-130
     title: TypeScript query() main agent is granted the Bash tool
     severity: high
