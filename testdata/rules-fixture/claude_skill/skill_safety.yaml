@@ -237,3 +237,68 @@ rules:
       Make the description match the grants: either narrow allowed-tools to the
       read-only set the description promises (Read, Grep, Glob), or correct the
       description to disclose the side-effecting tools the skill actually uses.
+
+  - id: CSKILL-070
+    title: Skill is missing a description
+    severity: low
+    confidence: 0.9
+    applies_to:
+      - claude_skill
+    scope: skill
+    match:
+      skill_has_description: false
+    explanation: >
+      This skill has no description. The description is the primary signal a
+      user and the model rely on to understand what a skill does and when to
+      invoke it. A missing description means the model has no context for
+      choosing the skill safely, and a user has no basis for deciding whether
+      to install it. Even a one-sentence summary is enough to enable informed
+      trust decisions.
+    fix: >
+      Add a description: field to the skill's SKILL.md frontmatter that names
+      what the skill does, what tools it uses, and any side effects it may
+      have. One to two sentences is enough — for example: "Summarises the
+      current git diff and posts a draft PR description. Uses Bash (read-only
+      git commands) and WebFetch."
+
+  - id: CSKILL-061
+    title: Skill allowed-tools list has duplicate tool references
+    severity: low
+    confidence: 0.7
+    applies_to:
+      - claude_skill
+    scope: skill
+    match:
+      skill_has_duplicate_tool_refs: true
+    explanation: >
+      This skill's allowed-tools list references the same tool more than once
+      (case-insensitive, whitespace-trimmed). Duplicate grants are redundant —
+      they don't widen the skill's actual capability — but they add noise to
+      the allowed-tools list and can mask intent when reviewing what a skill
+      is really authorized to do.
+    fix: >
+      Remove the duplicate entry so each tool appears once in allowed-tools.
+      If the duplicates use different patterns (e.g. "Bash" and "Bash(git *)"),
+      consolidate to the single broadest pattern actually needed.
+
+  - id: CSKILL-071
+    title: Skill is bound to a single agent, reducing portability
+    severity: low
+    confidence: 0.6
+    applies_to:
+      - claude_skill
+    scope: skill
+    match:
+      skill_is_agent_specific: true
+    explanation: >
+      This skill's frontmatter binds it to one specific agent (context: fork /
+      agent: <name>) rather than leaving it agent-agnostic. An agent-bound skill
+      inherits that agent's trust and guardrail assumptions implicitly, which
+      makes the skill harder to reuse safely with a different agent and harder
+      to review independently of the agent it's coupled to.
+    fix: >
+      Only bind a skill to a specific agent when that coupling is intentional
+      and documented in the skill's description. Otherwise, leave the skill
+      agent-agnostic so it can be reused across agents and reviewed on its own
+      tool grants rather than inheriting assumptions from one agent's
+      configuration.

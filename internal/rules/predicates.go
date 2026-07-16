@@ -946,6 +946,31 @@ func PredSkillDescriptionToolMismatch(s models.SkillDef) bool {
 	return PredSkillAllowsUnrestrictedShell(s) || PredSkillAllowsTool(s, sideEffectingSkillTools)
 }
 
+func PredSkillHasDescription(s models.SkillDef) bool {
+	return strings.TrimSpace(s.Description) != ""
+}
+
+// PredSkillIsAgentSpecific reports whether the skill is bound to one
+// specific agent (context: fork) rather than being agent-agnostic and
+// reusable.
+func PredSkillIsAgentSpecific(s models.SkillDef) bool {
+	return strings.TrimSpace(s.Agent) != ""
+}
+
+// PredSkillHasDuplicateToolRefs reports whether the skill's allowed-tools
+// list references the same tool more than once.
+func PredSkillHasDuplicateToolRefs(s models.SkillDef) bool {
+	seen := make(map[string]bool)
+	for _, tool := range s.AllowedTools {
+		normalized := strings.TrimSpace(strings.ToLower(tool))
+		if seen[normalized] {
+			return true
+		}
+		seen[normalized] = true
+	}
+	return false
+}
+
 // ─── repo predicates ──────────────────────────────────────────────────────────
 
 func PredRepoHasSDKInCode(sdks []string, inv models.RepoInventory) bool {
