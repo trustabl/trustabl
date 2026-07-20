@@ -302,3 +302,74 @@ rules:
       agent-agnostic so it can be reused across agents and reviewed on its own
       tool grants rather than inheriting assumptions from one agent's
       configuration.
+
+  - id: CSKILL-062
+    title: Skill body references TODO/FIXME placeholder text
+    severity: low
+    confidence: 0.5
+    applies_to:
+      - claude_skill
+    scope: skill
+    match:
+      skill_body_has_text:
+        - "TODO"
+        - "FIXME"
+    explanation: >
+      This skill's body contains a TODO or FIXME placeholder. A skill checked
+      into a shared repository with unfinished instructions is a review gap —
+      the model executes whatever incomplete or provisional guidance the
+      placeholder marks, and a reviewer skimming the frontmatter has no signal
+      that the body is still a work in progress.
+    fix: >
+      Resolve the TODO/FIXME before shipping the skill, or remove it and file
+      the follow-up work as a tracked issue instead of leaving it inline in
+      instructions the model will act on.
+
+  - id: CSKILL-063
+    title: Skill name suggests it is a draft or test artifact
+    severity: low
+    confidence: 0.5
+    applies_to:
+      - claude_skill
+    scope: skill
+    match:
+      skill_name_has_text:
+        - "draft"
+        - "test"
+        - "wip"
+    explanation: >
+      This skill's name contains a marker like "draft", "test", or "wip"
+      (case-insensitive). A skill named this way is often a work-in-progress
+      or scratch artifact that was never intended to ship, but once it's
+      installed in .claude/skills it is discoverable and — unless
+      disable-model-invocation is set — invocable by the model like any other
+      skill.
+    fix: >
+      Rename the skill to reflect its real purpose before shipping it, or
+      delete it if it was scratch work. If it's intentionally a draft, keep
+      it out of any directory the scanner or Claude Code loads skills from
+      until it's ready.
+
+  - id: CSKILL-064
+    title: Skill description references an unreviewed or internal-only source
+    severity: low
+    confidence: 0.4
+    applies_to:
+      - claude_skill
+    scope: skill
+    match:
+      skill_description_has_text:
+        - "internal use only"
+        - "do not distribute"
+        - "unreviewed"
+    explanation: >
+      This skill's description flags itself as internal-only, unreviewed, or
+      not for distribution. That self-disclosure is a signal worth surfacing
+      at scan time — a skill carrying this language in a repository that gets
+      shared, forked, or published may be shipping further than its author
+      intended.
+    fix: >
+      Confirm the skill's actual distribution matches its stated intent:
+      either complete the review and update the description, or keep the
+      skill out of any repository or plugin that gets shared beyond its
+      intended audience.

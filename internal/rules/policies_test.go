@@ -2306,6 +2306,29 @@ var policySkillRuleCases = []policySkillCase{
 	{"CSKILL-071 silent when skill is agent-agnostic", "CSKILL-071",
 		models.SkillDef{Name: "generic-skill",
 			Location: models.Location{FilePath: ".claude/skills/generic-skill/SKILL.md"}}, models.RepoInventory{}, false},
+
+	{"CSKILL-062 fires when the body contains a TODO marker", "CSKILL-062",
+		models.SkillDef{Name: "helper",
+			Location: models.Location{FilePath: ".claude/skills/helper/SKILL.md"},
+			Body:     "# Helper\n\nTODO: finish the retry logic."}, models.RepoInventory{}, true},
+	{"CSKILL-062 silent when the body has no placeholder text", "CSKILL-062",
+		models.SkillDef{Name: "helper",
+			Location: models.Location{FilePath: ".claude/skills/helper/SKILL.md"},
+			Body:     "# Helper\n\nSummarises the current git diff."}, models.RepoInventory{}, false},
+
+	{"CSKILL-063 fires when the name contains a draft marker", "CSKILL-063",
+		models.SkillDef{Name: "deploy-draft",
+			Location: models.Location{FilePath: ".claude/skills/deploy-draft/SKILL.md"}}, models.RepoInventory{}, true},
+	{"CSKILL-063 silent when the name has no draft/test/wip marker", "CSKILL-063",
+		models.SkillDef{Name: "deploy",
+			Location: models.Location{FilePath: ".claude/skills/deploy/SKILL.md"}}, models.RepoInventory{}, false},
+
+	{"CSKILL-064 fires when the description flags internal-only use", "CSKILL-064",
+		models.SkillDef{Name: "helper", Description: "Internal use only — do not distribute outside the team.",
+			Location: models.Location{FilePath: ".claude/skills/helper/SKILL.md"}}, models.RepoInventory{}, true},
+	{"CSKILL-064 silent when the description has no such marker", "CSKILL-064",
+		models.SkillDef{Name: "helper", Description: "Summarises the current git diff.",
+			Location: models.Location{FilePath: ".claude/skills/helper/SKILL.md"}}, models.RepoInventory{}, false},
 }
 
 // policyAgentRuleCases covers agent-scoped rules.
