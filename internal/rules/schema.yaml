@@ -400,6 +400,23 @@ rules:
 #       more than once unnecessarily. Configuration-quality signal, not a
 #       security bug on its own. Bool predicate.
 #
+#   skill_body_has_text: [substring, substring, ...]
+#       Fires when the SKILL.md body (the raw markdown below the frontmatter)
+#       contains any listed substring, matched case-insensitively. Mirrors the
+#       tool-scope has_body_text — same DISCOURAGED-last-resort caveat: prefer
+#       a structured predicate (skill_body_has_dynamic_exec,
+#       skill_references_external_url, skill_body_has_injection_marker, ...)
+#       when one fits; reserve this for a known phrase with no structural
+#       signature.
+#
+#   skill_name_has_text: [substring, substring, ...]
+#       Fires when SkillDef.Name contains any listed substring, matched
+#       case-insensitively.
+#
+#   skill_description_has_text: [substring, substring, ...]
+#       Fires when SkillDef.Description contains any listed substring,
+#       matched case-insensitively.
+#
 #
 # ━━━ REPO-SCOPE PREDICATES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # (used only in scope: repo rules; match runs once per scan)
