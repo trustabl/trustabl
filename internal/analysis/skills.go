@@ -76,6 +76,7 @@ func DiscoverSkills(manifest models.ScanManifest) []models.SkillDef {
 			HasDynamicArgs:         hasDynamicArgs,
 			ReferencesSkills:       skillRefs,
 			BundledFiles:           bundledFiles(manifest.RepoRoot, p),
+			Body:                   string(body),
 			Location:               models.Location{FilePath: p, Line: startLine, EndLine: endLine},
 		})
 	}
