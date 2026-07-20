@@ -971,6 +971,43 @@ func PredSkillHasDuplicateToolRefs(s models.SkillDef) bool {
 	return false
 }
 
+// PredSkillBodyHasText reports whether the skill's raw SKILL.md body contains
+// any of needles (case-insensitive). Mirrors PredHasBodyText for the skill
+// scope — same last-resort substring-matching caveats apply.
+func PredSkillBodyHasText(needles []string, s models.SkillDef) bool {
+	body := strings.ToLower(s.Body)
+	for _, n := range needles {
+		if strings.Contains(body, strings.ToLower(n)) {
+			return true
+		}
+	}
+	return false
+}
+
+// PredSkillNameHasText reports whether the skill's name contains any of
+// needles (case-insensitive).
+func PredSkillNameHasText(needles []string, s models.SkillDef) bool {
+	name := strings.ToLower(s.Name)
+	for _, n := range needles {
+		if strings.Contains(name, strings.ToLower(n)) {
+			return true
+		}
+	}
+	return false
+}
+
+// PredSkillDescriptionHasText reports whether the skill's description
+// contains any of needles (case-insensitive).
+func PredSkillDescriptionHasText(needles []string, s models.SkillDef) bool {
+	desc := strings.ToLower(s.Description)
+	for _, n := range needles {
+		if strings.Contains(desc, strings.ToLower(n)) {
+			return true
+		}
+	}
+	return false
+}
+
 // ─── repo predicates ──────────────────────────────────────────────────────────
 
 func PredRepoHasSDKInCode(sdks []string, inv models.RepoInventory) bool {
@@ -1049,4 +1086,3 @@ func PredRepoClaudeOptionsPermissionModeIs(modes []string, inv models.RepoInvent
 	}
 	return false
 }
-

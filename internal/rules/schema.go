@@ -101,6 +101,9 @@ type MatchExpr struct {
 	SkillHasDescription                     *bool    `yaml:"skill_has_description,omitempty"`
 	SkillIsAgentSpecific                    *bool    `yaml:"skill_is_agent_specific,omitempty"`
 	SkillHasDuplicateToolRefs               *bool    `yaml:"skill_has_duplicate_tool_refs,omitempty"`
+	SkillBodyHasText                        []string `yaml:"skill_body_has_text,omitempty"`
+	SkillNameHasText                        []string `yaml:"skill_name_has_text,omitempty"`
+	SkillDescriptionHasText                 []string `yaml:"skill_description_has_text,omitempty"`
 
 	// Repo-scope predicates
 	RepoHasSDKInCode                  []string `yaml:"repo_has_sdk_in_code,omitempty"`

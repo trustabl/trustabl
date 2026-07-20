@@ -492,6 +492,29 @@ func TestScan_SkillDuplicateToolRefs(t *testing.T) {
 	}
 }
 
+func TestScan_SkillNameMatch(t *testing.T) {
+	_, thisFile, _, _ := runtime.Caller(0)
+	target := filepath.Join(filepath.Dir(thisFile), "..", "..", "testdata", "corpus", "skill-name-match")
+	res, err := scanner.Run(scanner.Config{Target: target, RulesFS: rulesFixture(t)})
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+
+	fired := map[string]bool{}
+	for _, f := range res.Findings {
+		fired[f.RuleID] = true
+	}
+	if !fired["CSKILL-063"] {
+		t.Errorf("expected CSKILL-063 to fire on skill-name-match; fired set: %v", fired)
+	}
+
+	for _, f := range res.Findings {
+		if strings.HasPrefix(f.RuleID, "CSKILL-") && f.RuleID != "CSKILL-063" {
+			t.Errorf("unexpected skill finding %s fired on skill-name-match", f.RuleID)
+		}
+	}
+}
+
 func TestScan_SkillAgentSpecific(t *testing.T) {
 	_, thisFile, _, _ := runtime.Caller(0)
 	target := filepath.Join(filepath.Dir(thisFile), "..", "..", "testdata", "corpus", "skill-agent-specific")
