@@ -267,46 +267,67 @@ func readCapped(path string, maxBytes int64) ([]byte, error) {
 	return io.ReadAll(io.LimitReader(f, maxBytes))
 }
 
+// skillAssetDirs are the conventional subdirectories a skill ships its bundled
+// files in. They bound the walk when a SKILL.md sits at the scan root, where
+// filepath.Dir yields "." and walking it would mean walking the whole repository.
+// `scripts`/`bin`/`tools` hold code the skill can execute; `references`/`assets`
+// hold text that can still carry a committed secret literal.
+var skillAssetDirs = []string{"scripts", "bin", "tools", "references", "assets"}
+
 // bundledFiles inventories the non-SKILL.md files shipped alongside a skill, by
 // walking the skill's own directory (filepath.Dir of the SKILL.md path) under
-// repoRoot. A skill whose SKILL.md sits at the repo root has no bounded skill
-// directory, so it returns nil rather than walking the whole repository. Any
-// SKILL.md (the entrypoint, or a nested skill's) is skipped. Paths are
-// repo-relative and slash-separated; the result is sorted for determinism.
+// repoRoot. Any SKILL.md (the entrypoint, or a nested skill's) is skipped. Paths
+// are repo-relative and slash-separated; the result is sorted for determinism.
+//
+// A SKILL.md at the scan root has no bounded skill directory: walking "." would
+// attribute every file in the repository to this one skill. Rather than skip
+// bundled analysis entirely — which silently dropped the CSKILL-010/011
+// bundled-script findings whenever a user scanned a single skill directory
+// directly, and *improved* that skill's score — the walk falls back to the
+// conventional asset subdirectories in skillAssetDirs. That keeps the walk
+// bounded while making the common single-skill scan behave like a nested one.
 func bundledFiles(repoRoot, skillPath string) []models.BundledFile {
-	dir := filepath.Dir(skillPath)
-	if dir == "." || dir == "" {
-		return nil
-	}
-	var out []models.BundledFile
-	_ = filepath.WalkDir(filepath.Join(repoRoot, dir), func(abs string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() || d.Name() == "SKILL.md" {
-			return nil
-		}
-		rel, rerr := filepath.Rel(repoRoot, abs)
-		if rerr != nil {
-			return nil
-		}
-		bf := models.BundledFile{Path: filepath.ToSlash(rel), Kind: classifyBundledFile(d.Name())}
-		// Content-scan every non-binary bundled file: a skill can run its scripts
-		// (egress / secret reads), and any text file can carry a committed secret
-		// literal — both surfaces that scanning SKILL.md alone misses.
-		if bf.Kind != "binary" {
-			if content, rerr := readCapped(abs, maxBundledScriptScanBytes); rerr == nil {
-				// A committed secret literal counts even inside a comment, so scan raw.
-				bf.HasHardcodedSecret = bundledSecretLiteralRe.Match(content)
-				if bf.Kind == "script" {
-					// Egress / secret-read describe executed behavior, so strip `#`
-					// line comments first: `# never curl secrets` is not a real call.
-					code := bundledCommentRe.ReplaceAll(content, nil)
-					bf.HasNetworkEgress = bundledEgressRe.Match(code)
-					bf.ReadsSecrets = bundledSecretRe.Match(code)
-				}
+	var roots []string
+	if dir := filepath.Dir(skillPath); dir == "." || dir == "" {
+		for _, d := range skillAssetDirs {
+			if fi, err := os.Stat(filepath.Join(repoRoot, d)); err == nil && fi.IsDir() {
+				roots = append(roots, d)
 			}
 		}
-		out = append(out, bf)
-		return nil
-	})
+	} else {
+		roots = []string{dir}
+	}
+	var out []models.BundledFile
+	for _, root := range roots {
+		_ = filepath.WalkDir(filepath.Join(repoRoot, root), func(abs string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() || d.Name() == "SKILL.md" {
+				return nil
+			}
+			rel, rerr := filepath.Rel(repoRoot, abs)
+			if rerr != nil {
+				return nil
+			}
+			bf := models.BundledFile{Path: filepath.ToSlash(rel), Kind: classifyBundledFile(d.Name())}
+			// Content-scan every non-binary bundled file: a skill can run its scripts
+			// (egress / secret reads), and any text file can carry a committed secret
+			// literal — both surfaces that scanning SKILL.md alone misses.
+			if bf.Kind != "binary" {
+				if content, rerr := readCapped(abs, maxBundledScriptScanBytes); rerr == nil {
+					// A committed secret literal counts even inside a comment, so scan raw.
+					bf.HasHardcodedSecret = bundledSecretLiteralRe.Match(content)
+					if bf.Kind == "script" {
+						// Egress / secret-read describe executed behavior, so strip `#`
+						// line comments first: `# never curl secrets` is not a real call.
+						code := bundledCommentRe.ReplaceAll(content, nil)
+						bf.HasNetworkEgress = bundledEgressRe.Match(code)
+						bf.ReadsSecrets = bundledSecretRe.Match(code)
+					}
+				}
+			}
+			out = append(out, bf)
+			return nil
+		})
+	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Path < out[j].Path })
 	return out
 }
