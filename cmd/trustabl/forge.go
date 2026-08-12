@@ -93,6 +93,8 @@ section per detected SDK, with rules ordered by severity.`,
 	cmd.Flags().StringVar(&rulesRef, "rules-ref", "",
 		"pin the trustabl-rules branch or tag (default: latest cached)")
 
+	cmd.AddCommand(newForgeCheckCommand())
+
 	return cmd
 }
 
@@ -134,14 +136,10 @@ func runForge(cmd *cobra.Command, target string, explicit []models.DetectorCateg
 	}
 
 	// Step 4: build stamp (passive watermark)
-	sha := res.SHA
-	if len(sha) > 7 {
-		sha = sha[:7]
-	}
-	stamp := forge.Stamp{
+	stamp := forge.PolicyStamp{
 		Date:          time.Now().Format("2006-01-02"),
-		RulesSHA:      sha,
-		SchemaVersion: rules.SupportedSchemaVersion,
+		RulesSHA:      res.SHA,
+		SchemaVersion: res.SchemaVersion,
 		Categories:    categories,
 	}
 

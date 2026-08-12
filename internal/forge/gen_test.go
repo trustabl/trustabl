@@ -140,7 +140,12 @@ func TestGenerate_GoldenFile(t *testing.T) {
 		t.Fatal("no skill-scoped rules found in fixture")
 	}
 
-	got := Generate(pf.Policy, skillRules)
+	got := Generate(pf.Policy, skillRules, Stamp{
+		Date:   "2026-01-01",
+		SHA:    "0000000000000000000000000000000000000000",
+		Schema: 1,
+		SDKs:   []string{"claude_skill"},
+	})
 
 	goldenPath := filepath.Join("..", "..", "testdata", "forge", "claude_skill", "expected", "SKILL.md")
 	if *update {
@@ -179,8 +184,8 @@ func TestGenerate_Deterministic(t *testing.T) {
 			skillRules = append(skillRules, r)
 		}
 	}
-	a := Generate(pf.Policy, skillRules)
-	b := Generate(pf.Policy, skillRules)
+	a := Generate(pf.Policy, skillRules, Stamp{})
+	b := Generate(pf.Policy, skillRules, Stamp{})
 	if a != b {
 		t.Error("Generate is not deterministic: two calls with same input produced different output")
 	}
@@ -189,7 +194,7 @@ func TestGenerate_Deterministic(t *testing.T) {
 	shuffled := make([]rules.RuleDef, len(skillRules))
 	copy(shuffled, skillRules)
 	rand.Shuffle(len(shuffled), func(i, j int) { shuffled[i], shuffled[j] = shuffled[j], shuffled[i] })
-	c := Generate(pf.Policy, shuffled)
+	c := Generate(pf.Policy, shuffled, Stamp{})
 	if a != c {
 		t.Error("Generate is not order-independent: shuffled input produced different output")
 	}
@@ -201,7 +206,7 @@ func TestGenerate_EmptyRules(t *testing.T) {
 		Name:        "Test Policy",
 		Description: "A test policy. Second sentence.",
 	}
-	got := Generate(meta, nil)
+	got := Generate(meta, nil, Stamp{})
 	if !strings.Contains(got, "name: test-policy") {
 		t.Errorf("expected name: test-policy in output, got:\n%s", got)
 	}
@@ -227,7 +232,7 @@ func TestGenerate_SkillCompliant(t *testing.T) {
 			skillRules = append(skillRules, r)
 		}
 	}
-	got := Generate(pf.Policy, skillRules)
+	got := Generate(pf.Policy, skillRules, Stamp{})
 
 	// The generated skill must itself be CSKILL-compliant.
 	if strings.Contains(got, "allowed-tools: Bash") {
@@ -301,7 +306,7 @@ func TestGenerateCombined_GoldenFile(t *testing.T) {
 		t.Fatal("no policies loaded from fixture")
 	}
 
-	stamp := Stamp{
+	stamp := PolicyStamp{
 		Date:          "2026-01-01",
 		RulesSHA:      "abc1234",
 		SchemaVersion: 13,
@@ -338,7 +343,7 @@ func TestGenerateCombined_Deterministic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load fixture rules: %v", err)
 	}
-	stamp := Stamp{
+	stamp := PolicyStamp{
 		Date:          "2026-01-01",
 		RulesSHA:      "abc1234",
 		SchemaVersion: 13,
@@ -358,7 +363,7 @@ func TestGenerateCombined_UnknownCategorySkipped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load fixture rules: %v", err)
 	}
-	stamp := Stamp{
+	stamp := PolicyStamp{
 		Date:          "2026-01-01",
 		RulesSHA:      "abc1234",
 		SchemaVersion: 13,
