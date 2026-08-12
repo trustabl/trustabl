@@ -21,6 +21,7 @@ import (
 
 	"github.com/trustabl/trustabl/internal/analysis"
 	"github.com/trustabl/trustabl/internal/analysis/astutil"
+	"github.com/trustabl/trustabl/internal/analysis/detectors"
 	"github.com/trustabl/trustabl/internal/ingestion"
 	"github.com/trustabl/trustabl/internal/logx"
 	"github.com/trustabl/trustabl/internal/models"
@@ -36,6 +37,17 @@ type Config struct {
 	// RulesFS is the filesystem the rule packs are loaded from, resolved by
 	// the caller (cmd/trustabl) via the rulesource package. Required.
 	RulesFS fs.FS
+	// RulesLoader, when non-nil, replaces rules.LoadFor. It exists for
+	// long-running callers (the guard server): LoadFor re-reads and re-parses the
+	// whole rule pack on every scan, which measured ~19.8 ms of a ~23 ms scan, so
+	// a server passes a loader that memoizes by SDK set. A nil loader keeps the
+	// default one-shot CLI behavior. The signature is deliberately identical to
+	// rules.LoadFor so it stays a drop-in.
+	//
+	// A replacement MUST be deterministic for a given (FS, SDK set): the returned
+	// registry and skipped-rule list feed ScanID, so a loader that varied per call
+	// would break the determinism contract.
+	RulesLoader func(fs.FS, []models.SDK) (*detectors.Registry, []string, error)
 	// Rules provenance, recorded into ScanResult and folded into ScanID.
 	RulesSource    string
 	RulesVersion   string
@@ -417,7 +429,11 @@ func Run(cfg Config) (models.ScanResult, error) {
 	if cfg.RulesFS == nil {
 		return models.ScanResult{}, fmt.Errorf("scan: no rules filesystem provided")
 	}
-	registry, rulesSkipped, err := rules.LoadFor(cfg.RulesFS, inventory.SDKsDetected)
+	loadRules := cfg.RulesLoader
+	if loadRules == nil {
+		loadRules = rules.LoadFor
+	}
+	registry, rulesSkipped, err := loadRules(cfg.RulesFS, inventory.SDKsDetected)
 	if err != nil {
 		return models.ScanResult{}, fmt.Errorf("load rules: %w", err)
 	}
