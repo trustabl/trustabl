@@ -1,6 +1,10 @@
 <p align="center">
-  <img src="assets/github_banner.jpg" alt="Trustabl" width="100%">
+  <img src="assets/github_banner.jpg" alt="Trustabl — open source AI agent reliability" width="100%">
 </p>
+
+Find and automatically fix guardrail gaps, unsafe tools, missing validation, and
+unbounded loops in Claude Agent SDK, OpenAI Agents SDK, Google ADK, LangChain,
+CrewAI, and MCP agents — before production.
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License: Apache-2.0"></a>
@@ -17,17 +21,66 @@
   <a href="README.md#output-modes"><img src="https://img.shields.io/badge/output-human%20%7C%20JSON%20%7C%20SARIF-blue" alt="Output formats"></a>
 </p>
 
-Trustabl is a static analyzer for agent reliability. It parses an agent-SDK
-repository (Claude Agent SDK, OpenAI Agents SDK, Google ADK, MCP, LangChain /
-LangGraph, CrewAI, AutoGen / AG2, Pydantic AI, and the Vercel AI SDK), models the
-tools, agents, subagents, skills, slash commands, and plugin manifests it
-declares, and checks them against a catalog of reliability and safety rules. It reports the weaknesses it finds — each
-with an explanation, a suggested fix, and a confidence score — as a
-human-readable summary, JSON, or SARIF 2.1.0, plus a per-surface reliability
-score and a CI-friendly exit code. It ships as a single Go binary with no
-hosted service: it runs as a CLI, or as a local stdio MCP server
-(`trustabl mcp`) that exposes the same scan to MCP clients without opening a
-network port.
+# Trustabl — find and fix AI agent reliability gaps
+
+**Find what will make your AI agent fail — then fix it with one command.**
+
+Trustabl scans an agent repository for the gaps that break agents in production:
+tool descriptions too vague for a model to know when to use them, missing retry
+and timeout handling, untyped parameters, absent guardrails, and tool grants that
+exceed what the agent claims to do. Then it applies the fix directly to your
+source.
+
+Every other agent scanner hands you a report. Trustabl hands you a patch.
+
+Reliability is engineered before deployment, not observed after it.
+
+**Scanning runs entirely on your machine.** No cloud scanner, no account, no
+code upload, no LLM — deterministic static analysis.
+
+```bash
+docker run --rm -v "$PWD:/repo" ghcr.io/trustabl/trustabl:latest scan /repo   # try it, nothing installed
+
+brew install trustabl/tap/trustabl                                            # macOS / Linux
+scoop bucket add trustabl https://github.com/trustabl/scoop-bucket             # Windows
+scoop install trustabl
+
+trustabl scan .                                                               # find issues (fully local)
+trustabl scan . --format json > scan.json
+trustabl enrich --input scan.json --repo . --diff --apply                     # preview, then fix
+```
+
+185+ rules · 9 SDKs · 7 languages · human, JSON, or SARIF 2.1.0 output ·
+CI-friendly exit codes · also runs as a local stdio MCP server (`trustabl mcp`).
+
+Deepest coverage for **Claude Agent SDK**, **OpenAI Agents SDK**, **Google ADK**,
+and **MCP servers**. Also scans LangChain / LangGraph, CrewAI, AutoGen / AG2,
+Pydantic AI, and the Vercel AI SDK — see [COVERAGE.md](COVERAGE.md) for the full
+matrix.
+
+Scanning needs no key and no network. Applying fixes uses your own Anthropic,
+OpenAI, or Google key.
+
+## AI agents pass their demo and fail in production
+
+The failures are rarely exotic. They are the same handful of gaps, over and over:
+
+- An agent holding shell tools with **no input guardrails**
+- A tool making an HTTP call with **no timeout**, hanging the whole run
+- **Untyped tool parameters**, so the model guesses and guesses wrong
+- A tool description so vague the model calls the wrong tool — 56% of MCP tool
+  descriptions fail to state their purpose clearly, and 97.1% carry at least one
+  description defect (Hasan et al., *MCP Tool Descriptions Are Smelly!*,
+  [arXiv 2602.14878](https://arxiv.org/abs/2602.14878) — 856 tools across 103
+  servers)
+- A **subagent granted `Bash`** despite a read-only description
+- A **skill that auto-approves unrestricted shell access**
+- **No retry handling**, so one transient 500 fails the task
+- An agent loop with **no iteration bound**, burning tokens until it is killed
+- A **user-controlled URL** flowing into a fetch — SSRF, from your agent
+
+Every one of these is visible in the source before the agent ever runs. Trustabl
+finds them in seconds, offline, with no LLM — and fixes them.
 
 The rest of this document explains *what Trustabl reasons about* and *how
 the scan works*, then covers building and running it. For the full
