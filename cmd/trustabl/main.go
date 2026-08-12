@@ -6,6 +6,7 @@
 //	trustabl attest <report.json>    sign a scan report into an attestation (cosign)
 //	trustabl verify <report.json>    verify a scan attestation (consumer side)
 //	trustabl enrich [flags]          enrich a scan result with AI fixes
+//	trustabl forge [flags]           generate a pre-coding SKILL.md from a policy
 //	trustabl mcp [flags]             run a stdio MCP server exposing the scan
 //	trustabl rules pull [flags]      pre-fetch the detection rule packs
 //	trustabl llm ...                 manage optional LLM provider config (BYOK)
@@ -117,6 +118,7 @@ with --strict), 2 = scanner error or no usable rules.`,
 	rootCmd.AddCommand(newMCPCommand(tel))
 	rootCmd.AddCommand(newLLMCommand())
 	rootCmd.AddCommand(newEnrichCommand(tel))
+	rootCmd.AddCommand(newForgeCommand(tel))
 	rootCmd.AddCommand(newCapabilitiesCommand(tel))
 	rootCmd.AddCommand(newTelemetryCommand())
 

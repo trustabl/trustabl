@@ -350,12 +350,16 @@ When changing a rule (add / remove / edit severity, confidence, match, text):
 6. Commit and push the rules repo **and** the rulebook (the user pushes engine
    commits manually; confirm before pushing any of the three).
 
-> **Rulebook status (2026-07-07):** the fixture carries **187** rules across ten
-> SDK categories (`autogen`, `claude_sdk`, `claude_skill`, `crewai`,
-> `google_adk`, `langchain`, `mcp`, `openai_sdk`, `pydantic_ai`, `vercel_ai`);
-> production ships 183 until the 2026-07-07 audit corrections (new
-> CSDK-121..124) merge to trustabl-rules. The rulebook carries a rationale doc
-> for every shipped rule (`check_rulebook.py` enforces the pairing in CI).
+> **Rulebook status (2026-08-12):** the fixture and production both carry
+> **204** rules across ten SDK categories (`autogen`, `claude_sdk`,
+> `claude_skill`, `crewai`, `google_adk`, `langchain`, `mcp`, `openai_sdk`,
+> `pydantic_ai`, `vercel_ai`) — in sync as of the `claude_skill` reconciliation
+> that added `skill_quality_text.yaml` (CSKILL-080..086) to the fixture and
+> dropped the fixture-only CSKILL-062..064 test artifacts. Known gap: CSKILL-
+> 080..086 ship in production with no paired rationale doc in
+> `trustabl-rulebook/docs/Policy/claude_skill/` (only `skill_safety.md`
+> exists there) — `check_rulebook.py` should be failing on this and needs a
+> `skill_quality_text.md` doc to close it.
 
 The rule-authoring contract (required fields, ID conventions, per-scope
 `applies_to` values, framing discipline) lives in

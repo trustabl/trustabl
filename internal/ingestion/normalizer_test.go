@@ -430,3 +430,63 @@ func TestDetectSDKDeps_TSGoogleADKFromPackageJSON(t *testing.T) {
 		t.Errorf("expected google-adk@package.json in deps, got %+v", deps)
 	}
 }
+
+func TestDetectSDKDeps_NemoAgentToolkit(t *testing.T) {
+	dir := t.TempDir()
+	reqs := "nvidia-nat>=1.8.0\n"
+	if err := os.WriteFile(filepath.Join(dir, "requirements.txt"), []byte(reqs), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	deps := detectSDKDeps(dir)
+	var found bool
+	for _, d := range deps {
+		if d.Name == "nvidia-nat" && d.Source == "requirements.txt" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("nvidia-nat not in detected deps: %+v", deps)
+	}
+}
+
+// TestDetectSDKDeps_NemoAgentToolkitBracketedExtra guards the substring-match
+// justification in the needle's comment: the install docs advertise
+// nvidia-nat[langchain] (and other bracketed extras), and substring matching
+// against "nvidia-nat" must catch these without any special-case handling.
+func TestDetectSDKDeps_NemoAgentToolkitBracketedExtra(t *testing.T) {
+	dir := t.TempDir()
+	pyproject := `[project]
+dependencies = ["nvidia-nat[langchain]>=1.8.0"]
+`
+	if err := os.WriteFile(filepath.Join(dir, "pyproject.toml"), []byte(pyproject), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	deps := detectSDKDeps(dir)
+	var found bool
+	for _, d := range deps {
+		if d.Name == "nvidia-nat" && d.Source == "pyproject.toml" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("nvidia-nat not detected from bracketed extra nvidia-nat[langchain]: %+v", deps)
+	}
+}
+
+// TestDetectSDKDeps_NemoAgentToolkitAbsent guards against an over-broad
+// pattern: an unrelated dependency must not spuriously match "nvidia-nat".
+func TestDetectSDKDeps_NemoAgentToolkitAbsent(t *testing.T) {
+	dir := t.TempDir()
+	reqs := "requests==2.32.0\n"
+	if err := os.WriteFile(filepath.Join(dir, "requirements.txt"), []byte(reqs), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	deps := detectSDKDeps(dir)
+	for _, d := range deps {
+		if d.Name == "nvidia-nat" {
+			t.Errorf("nvidia-nat should not be detected in a repo with unrelated deps: %+v", deps)
+		}
+	}
+}

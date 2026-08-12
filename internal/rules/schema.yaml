@@ -203,6 +203,28 @@ rules:
 #       Reserve new uses for a known constant that has no structural
 #       signature.
 #
+#   has_description_text: [substring, substring, ...]
+#       The tool's description (docstring for Python, the explicit
+#       description argument for TypeScript) contains any listed substring.
+#       Matching is CASE-INSENSITIVE (unlike has_body_text above) — placeholder
+#       markers show up as "TODO", "todo", "Todo" interchangeably, and lowering
+#       both sides avoids authoring a rule per casing. Reads ToolDef.Description,
+#       not the function body — use has_body_text for body content.
+#       Intended use: catch placeholder descriptions (todo, tbd, fixme,
+#       placeholder, "no description") that pass has_docstring but give the
+#       model no real selection signal.
+#
+#
+# ━━━ INT PREDICATES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#
+#   description_length_lt: N
+#       Fires when the tool's description, trimmed of leading/trailing
+#       whitespace, is shorter than N characters. Pair with
+#       `has_docstring: true` (via `all:`) so this doesn't double-report
+#       against a rule that already flags a missing description — an empty
+#       description is length 0, which is also < N, but that case belongs to
+#       has_docstring, not this predicate.
+#
 #
 # ━━━ NESTED STRUCT PREDICATES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #
@@ -400,6 +422,23 @@ rules:
 #       more than once unnecessarily. Configuration-quality signal, not a
 #       security bug on its own. Bool predicate.
 #
+#   skill_body_has_text: [substring, substring, ...]
+#       Fires when the SKILL.md body (the raw markdown below the frontmatter)
+#       contains any listed substring, matched case-insensitively. Mirrors the
+#       tool-scope has_body_text — same DISCOURAGED-last-resort caveat: prefer
+#       a structured predicate (skill_body_has_dynamic_exec,
+#       skill_references_external_url, skill_body_has_injection_marker, ...)
+#       when one fits; reserve this for a known phrase with no structural
+#       signature.
+#
+#   skill_name_has_text: [substring, substring, ...]
+#       Fires when SkillDef.Name contains any listed substring, matched
+#       case-insensitively.
+#
+#   skill_description_has_text: [substring, substring, ...]
+#       Fires when SkillDef.Description contains any listed substring,
+#       matched case-insensitively.
+#
 #
 # ━━━ REPO-SCOPE PREDICATES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # (used only in scope: repo rules; match runs once per scan)
@@ -435,3 +474,12 @@ rules:
 #       permission_mode to one of the listed modes. Reads
 #       RepoInventory.ClaudeAgentOptions[].Kwargs (permission_mode). The in-code,
 #       session-level analogue of repo_claude_default_mode_is. Used by CSDK-202.
+#   repo_claude_options_max_turns_missing: true | false
+#       Fires when the repo has at least one non-opaque ClaudeAgentOptions(...)
+#       construction and NONE of them set max_turns. Reads
+#       RepoInventory.ClaudeAgentOptions[].Kwargs (max_turns) via the same
+#       lookup as repo_claude_options_permission_mode_is. Constructions built
+#       with ** unpacking (Opaque: true) are skipped — their kwarg set is
+#       untrustworthy, so their silence isn't evidence of a missing cap. A repo
+#       with zero ClaudeAgentOptions constructions never fires. Used by
+#       CSDK-204.

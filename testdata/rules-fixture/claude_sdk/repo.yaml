@@ -57,3 +57,30 @@ rules:
       auto-approve only file edits while still gating shell and network access).
       Reserve bypassPermissions for disposable sandboxes, never code that runs
       on a developer's or user's machine.
+
+  - id: CSDK-204
+    title: Claude Agent SDK session sets no explicit max_turns limit
+    severity: low
+    confidence: 0.6
+    applies_to:
+      - claude_sdk
+    scope: repo
+    match:
+      repo_claude_options_max_turns_missing: true
+    explanation: >
+      No ClaudeAgentOptions(...) in this project sets max_turns, so the agent
+      loop runs to whatever ceiling the runtime applies by default rather than
+      to a bound sized for this task. A model that loops or oscillates —
+      retrying a failing tool, re-reading the same file, ping-ponging between
+      two steps — keeps consuming turns, tokens, and tool side effects until
+      that implicit ceiling is reached, and an implicit ceiling can shift
+      between SDK versions without any change on your side. An explicit cap
+      also turns a stuck run into a clean, observable stop instead of a slow
+      burn.
+    fix: >
+      Pass max_turns= to ClaudeAgentOptions(...), sized to the work the
+      session actually does — a handful of turns for a single-file edit, more
+      for a multi-step investigation. Treat hitting the cap as a signal to
+      surface and handle rather than to raise it: if a task legitimately
+      needs many turns, split it into bounded sub-sessions instead of
+      removing the bound.

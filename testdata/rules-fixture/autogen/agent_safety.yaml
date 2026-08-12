@@ -74,7 +74,7 @@ rules:
       the AutoGen executor.
 
   - id: AG2-004
-    title: AutoGen GroupChatManager has no explicit max_round bound
+    title: AutoGen group chat has no explicit max_round bound
     severity: low
     confidence: 0.6
     language: python
@@ -82,8 +82,11 @@ rules:
       - autogen_group_chat_manager
     scope: agent
     match:
-      agent_kwarg_missing:
-        - max_round
+      all:
+        - agent_class:
+            - GroupChat
+        - agent_kwarg_missing:
+            - max_round
     explanation: >
       This group chat does not set max_round explicitly, so the speaker-selection
       loop falls back to AutoGen's built-in max_round default rather than running
@@ -92,11 +95,14 @@ rules:
       back and forth, or a model that never emits the termination signal) still
       runs to the default ceiling, burning token budget, and when the participating
       agents wield side-effecting tools (file writes, shell, network) the same
-      mutation can be applied repeatedly up to that bound.
+      mutation can be applied repeatedly up to that bound. The check anchors on
+      the GroupChat config object — the only constructor that accepts max_round —
+      so a GroupChatManager wrapping a bounded GroupChat does not fire on the
+      manager.
     fix: >
-      Pass max_round= to GroupChat / GroupChatManager with a concrete cap sized to
-      the workflow (often 10–25). Pair it with a clear termination condition so the
-      chat ends on success rather than only on the round cap.
+      Pass max_round= to GroupChat(...) with a concrete cap sized to the workflow
+      (often 10–25). Pair it with a clear termination condition so the chat ends
+      on success rather than only on the round cap.
 
   - id: AG2-005
     title: AutoGen AssistantAgent enables code execution on the LLM agent

@@ -210,6 +210,7 @@ type SkillDef struct {
 	HasDynamicArgs         bool          `json:"has_dynamic_args,omitempty"`
 	ReferencesSkills       []string      `json:"references_skills,omitempty"`
 	BundledFiles           []BundledFile `json:"bundled_files,omitempty"`
+	Body                   string        `json:"-"` // raw SKILL.md body text; in-memory only, never serialized
 	Location                             // file_path = SKILL.md path
 }
 

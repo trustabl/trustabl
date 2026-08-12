@@ -57,9 +57,14 @@ type MatchExpr struct {
 	Always                    *bool `yaml:"always,omitempty"`
 
 	// String-list predicates
-	NameIn        []string `yaml:"name_in,omitempty"`
-	NameHasPrefix []string `yaml:"name_has_prefix,omitempty"`
-	HasBodyText   []string `yaml:"has_body_text,omitempty"`
+	NameIn             []string `yaml:"name_in,omitempty"`
+	NameHasPrefix      []string `yaml:"name_has_prefix,omitempty"`
+	HasBodyText        []string `yaml:"has_body_text,omitempty"`
+	HasDescriptionText []string `yaml:"has_description_text,omitempty"`
+
+	// Int predicates (tool scope) — pointer distinguishes "0" from "absent",
+	// mirroring the *bool tri-state pattern above.
+	DescriptionLengthLt *int `yaml:"description_length_lt,omitempty"`
 
 	// Nested struct predicates (tool scope)
 	ParamNameMatches              *ParamNameMatchExpr                `yaml:"param_name_matches,omitempty"`
@@ -101,6 +106,9 @@ type MatchExpr struct {
 	SkillHasDescription                     *bool    `yaml:"skill_has_description,omitempty"`
 	SkillIsAgentSpecific                    *bool    `yaml:"skill_is_agent_specific,omitempty"`
 	SkillHasDuplicateToolRefs               *bool    `yaml:"skill_has_duplicate_tool_refs,omitempty"`
+	SkillBodyHasText                        []string `yaml:"skill_body_has_text,omitempty"`
+	SkillNameHasText                        []string `yaml:"skill_name_has_text,omitempty"`
+	SkillDescriptionHasText                 []string `yaml:"skill_description_has_text,omitempty"`
 
 	// Repo-scope predicates
 	RepoHasSDKInCode                  []string `yaml:"repo_has_sdk_in_code,omitempty"`
@@ -108,6 +116,7 @@ type MatchExpr struct {
 	RepoUsesDefaultTracing            *bool    `yaml:"repo_uses_default_tracing,omitempty"`
 	RepoClaudeDefaultModeIs           []string `yaml:"repo_claude_default_mode_is,omitempty"`
 	RepoClaudeOptionsPermissionModeIs []string `yaml:"repo_claude_options_permission_mode_is,omitempty"`
+	RepoClaudeOptionsMaxTurnsMissing  *bool    `yaml:"repo_claude_options_max_turns_missing,omitempty"`
 }
 
 // ToolDecoratorKwargValueExpr matches a decorator kwarg to a specific value.

@@ -27,4 +27,4 @@ package rules
 // that rule (safe) instead of mis-evaluating a predicate whose meaning changed.
 // That rename discipline is what keeps lenient loading safe without a hard
 // version gate.
-const SupportedSchemaVersion = 13
+const SupportedSchemaVersion = 14

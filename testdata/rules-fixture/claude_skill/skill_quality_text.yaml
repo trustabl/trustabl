@@ -1,0 +1,260 @@
+policy:
+  id: claude_skill_quality_text
+  name: Claude Agent Skill quality (text-match)
+  category: claude_skill
+  description: >
+    Quality and data-governance signals in Claude Code Agent Skills (SKILL.md)
+    detected via free-text matching over the skill's name, description, and
+    body — claimed crypto/security purpose, sensitive-data handling, missing
+    error-handling or purpose language, and broad-access or retention phrasing.
+    Skill rules audit SKILL.md frontmatter + body and are language-agnostic
+    (markdown), so they carry no language: field.
+
+rules:
+  - id: CSKILL-080
+    title: Skill claims cryptographic operations
+    severity: high
+    confidence: 0.75
+    applies_to:
+      - claude_skill
+    scope: skill
+    match:
+      any:
+        - skill_name_has_text:
+            - crypto
+            - encrypt
+            - decrypt
+            - sign
+            - hash
+            - certificate
+            - signing
+            - cipher
+            - asymmetric
+            - symmetric
+        - skill_description_has_text:
+            - crypto
+            - encrypt
+            - decrypt
+            - sign
+            - hash
+            - certificate
+            - signing
+            - cipher
+            - asymmetric
+            - symmetric
+    explanation: >
+      This skill's name or description claims a cryptographic operation —
+      encrypting, decrypting, signing, hashing, or certificate handling — but
+      states no concrete primitive, key source, or algorithm bound. Crypto is
+      easy to misuse silently: a weak cipher, a reused IV, an unvalidated
+      signature, or a hardcoded key all look like working code right up until
+      they fail under attack, and a skill invoked without those specifics gives
+      Claude no constraint to hold to when it writes the actual crypto code.
+    fix: >
+      State the exact primitive the skill uses (e.g. "AES-256-GCM via the
+      `cryptography` library", "Ed25519 signing"), where keys or certificates
+      come from, and any bounds on their use. Prefer delegating to a vetted,
+      well-maintained crypto library and name it explicitly rather than having
+      the skill describe cryptographic operations in the abstract.
+
+  - id: CSKILL-081
+    title: Skill processes sensitive data
+    severity: high
+    confidence: 0.7
+    applies_to:
+      - claude_skill
+    scope: skill
+    match:
+      any:
+        - skill_body_has_text:
+            - password
+            - secret
+            - token
+            - ssn
+            - credit card
+            - pii
+            - personal data
+            - sensitive
+            - confidential
+            - private key
+        - skill_description_has_text:
+            - password
+            - secret
+            - token
+            - ssn
+            - credit card
+            - pii
+            - personal data
+            - sensitive
+            - confidential
+            - private key
+    explanation: >
+      This skill's body or description names a sensitive data class —
+      passwords, tokens, SSNs, credit card numbers, PII, or private keys —
+      without stating what it does with that data beyond naming it. Without an
+      explicit data-minimization boundary and a stated purpose, there is no way
+      to tell whether the skill only touches the fields the task actually
+      requires or whether it retains what it reads.
+    fix: >
+      Declare exactly which sensitive fields the skill reads, why it needs
+      them, and how long it keeps them (ideally: not at all, beyond the current
+      turn). If the skill only needs to detect or redact sensitive data rather
+      than process its contents, say so explicitly in the description.
+
+  - id: CSKILL-082
+    title: Security-purpose skill grants side-effecting tools
+    severity: high
+    confidence: 0.8
+    applies_to:
+      - claude_skill
+    scope: skill
+    match:
+      all:
+        - skill_name_has_text:
+            - security
+            - audit
+            - pentest
+            - scan
+            - vulnerability
+            - compliance
+        - skill_allows_tool:
+            - Bash
+            - Write
+            - Edit
+            - WebFetch
+            - NotebookEdit
+    explanation: >
+      This skill's name claims a security, audit, pentest, or compliance
+      purpose — a role that is expected to observe and report, not mutate —
+      yet its allowed-tools pre-approve a side-effecting or exfiltration-
+      capable tool (Bash / Write / Edit / WebFetch / NotebookEdit). A skill
+      that can be steered into "auditing" a system while holding write or
+      shell access turns a read-first review into a privilege-escalation
+      path, whether by an ambiguous request or an injected instruction
+      encountered mid-audit.
+    fix: >
+      Narrow allowed-tools to the read-only set an audit role actually needs
+      (Read, Grep, Glob). If the skill genuinely must remediate what it finds,
+      split remediation into a separate, explicitly-named skill so the
+      audit-only skill's grants match what its name promises.
+
+  - id: CSKILL-083
+    title: Skill body lacks error-handling guidance
+    severity: low
+    confidence: 0.5
+    applies_to:
+      - claude_skill
+    scope: skill
+    match:
+      not:
+        skill_body_has_text:
+          - error
+          - exception
+          - catch
+          - retry
+          - fallback
+          - fail
+          - handle
+          - recover
+    explanation: >
+      This skill's body contains no error-handling language at all — no
+      mention of what to do if a step errors, a tool call fails, or a retry is
+      warranted. When a tool fails mid-task, Claude has no guidance from the
+      skill on whether to retry, fall back, or stop, and may proceed on
+      partial or unexpected results rather than surfacing the failure.
+    fix: >
+      Add a short paragraph naming what should happen if a step fails — retry
+      once, fall back to an alternative, or stop and report the failure to the
+      user — so the skill's guidance covers the unhappy path, not just the
+      success case.
+
+  - id: CSKILL-084
+    title: Skill requests broad, unminimized data access
+    severity: medium
+    confidence: 0.6
+    applies_to:
+      - claude_skill
+    scope: skill
+    match:
+      skill_body_has_text:
+        - all data
+        - entire
+        - complete database
+        - every record
+        - full export
+        - all files
+        - all records
+    explanation: >
+      This skill's body uses broad-access phrasing — "all data", "entire",
+      "every record", "full export" — that suggests it pulls more than the
+      task at hand needs. Requesting an entire dataset or a full export when a
+      task needs only a filtered subset widens the blast radius of any bug,
+      leak, or injected instruction that later acts on the retrieved data.
+    fix: >
+      Scope the skill's data access to the specific records or fields the task
+      requires and filter at the source rather than fetching everything and
+      filtering afterward. If a full export genuinely is the task, state why
+      in the skill's description so reviewers can evaluate the scope
+      deliberately rather than by default.
+
+  - id: CSKILL-085
+    title: Skill description states no purpose
+    severity: low
+    confidence: 0.5
+    applies_to:
+      - claude_skill
+    scope: skill
+    match:
+      not:
+        skill_description_has_text:
+          - in order to
+          - to allow
+          - to enable
+          - purpose
+          - used for
+          - designed to
+          - intended to
+    explanation: >
+      This skill's description contains no purpose phrasing — nothing framed
+      as "to enable…", "used for…", or "designed to…" — so it states what the
+      skill touches without stating why. A user or reviewer deciding whether
+      the skill's data access and tool grants are justified has no stated
+      intent to weigh them against.
+    fix: >
+      Add one clause to the description that states the skill's purpose, e.g.
+      "…to allow drafting release notes from commit history." A single
+      purpose phrase is enough to let a reviewer judge whether the skill's
+      access is proportionate to what it's for.
+
+  - id: CSKILL-086
+    title: Skill body implies data retention or logging
+    severity: medium
+    confidence: 0.65
+    applies_to:
+      - claude_skill
+    scope: skill
+    match:
+      skill_body_has_text:
+        - log
+        - store
+        - persist
+        - save
+        - retain
+        - cache
+        - database
+        - write to
+        - append to
+        - record
+    explanation: >
+      This skill's body uses language implying persistence — logging,
+      storing, caching, or writing to a database — without stating a
+      retention policy or user-consent basis for keeping that data. Data that
+      is written or logged outlives the current session, so what gets kept,
+      for how long, and who can see it needs to be explicit rather than
+      implied by a verb in the instructions.
+    fix: >
+      State what is stored, where it's stored, how long it's retained, and
+      the basis for retaining it (e.g. "logs the request ID only, for 24
+      hours, to support debugging"). If the skill doesn't need to persist
+      anything beyond the current turn, say so explicitly instead of leaving
+      it to be inferred.

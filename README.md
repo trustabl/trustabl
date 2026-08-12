@@ -866,6 +866,80 @@ key, so a signed `--rules-source` runs the verification pipeline and refuses
 expired key, channel mismatch, expired or rolled-back statement, or digest
 mismatch).
 
+### Pre-coding constraints (trustabl forge)
+
+`trustabl forge` is the counterpart to `trustabl scan`: instead of auditing
+code *after* it is written, it generates a combined pre-coding `SKILL.md` that
+tells an agent *before* it writes any code which patterns to avoid. The
+generated skill organizes rules by SDK and scope (tool, agent, subagent, repo,
+skill) and is ordered by severity so the highest-risk constraints appear first.
+
+**How SDK detection works.** Forge scans the target's dependency manifests —
+`pyproject.toml`, `requirements.txt`, `Pipfile`, `poetry.lock`, `package.json`,
+and `go.mod` — to determine which SDK policy packs to include. This is the
+same lightweight dep-file recon that `trustabl scan` performs in its recon
+step: no AST parsing, fast, and safe on any repo. When no manifests are found
+(or none declare a recognized SDK), forge exits `1` and tells you what to pass
+via `--policy`.
+
+```bash
+# Auto-detect SDKs from the current directory
+trustabl forge
+
+# Auto-detect from a specific repo path
+trustabl forge /path/to/repo
+
+# Add a policy on top of auto-detected SDKs — useful when introducing a new
+# SDK that is not yet in the dependency manifest
+trustabl forge --policy openai_sdk
+trustabl forge /path/to/repo --policy claude_sdk,mcp
+
+# Write the generated SKILL.md to a file instead of stdout
+trustabl forge -o .claude/skills/trustabl-pre-coding/SKILL.md
+
+# Pin a specific rules version (same as trustabl scan --rules-ref)
+trustabl forge --rules-ref v0.3.0
+
+# Backward-compatible: generate only the Agent Skill (CSKILL-*) rules
+trustabl forge --policy claude_skill
+```
+
+**Available policy categories** (pass to `--policy`):
+
+| Category | SDK / framework |
+|---|---|
+| `claude_sdk` | Claude Agent SDK (Python + TypeScript) |
+| `openai_sdk` | OpenAI Agents SDK (Python + TypeScript) |
+| `google_adk` | Google Agent Development Kit (Python + TypeScript) |
+| `mcp` | Model Context Protocol servers |
+| `langchain` | LangChain / LangGraph (Python + TypeScript) |
+| `crewai` | CrewAI (Python) |
+| `pydantic_ai` | Pydantic AI (Python) |
+| `vercel_ai` | Vercel AI SDK (TypeScript) |
+| `autogen` | AutoGen / AG2 (Python) |
+| `claude_skill` | Claude Code skills (`SKILL.md`) |
+| `openshell` | Shell-invocation tools (no rules in the current pack) |
+
+Multiple categories are comma-separated: `--policy openai_sdk,mcp`.
+
+**What the output contains.** The generated file is a valid `SKILL.md` with:
+
+- A frontmatter block (`name: trustabl-pre-coding`, `allowed-tools: Read`,
+  `disable-model-invocation: false`).
+- A passive stamp comment embedding the rules SHA, date, schema version, and
+  detected SDK list — so you know exactly which ruleset produced the file
+  and when to regenerate.
+- One `## SDK Name` section per detected SDK, each containing `### Tool Rules`,
+  `### Agent Rules`, `### Subagent Rules`, `### Repo Rules`, and
+  `### Skill Rules` subsections (empty subsections are omitted).
+- Per-rule blocks: **Directive** (the fix, first sentence), **Why** (the
+  explanation, first sentence), **When this applies**, severity, and confidence.
+
+Drop the output into `.claude/skills/trustabl-pre-coding/SKILL.md` in the
+agent repo and Claude Code will invoke it automatically before any agent code
+is written. Re-run `trustabl forge` after adding a new SDK dependency or after
+pulling a rules update to refresh the constraints.
+
 ### Continuous integration
 
 Two CI patterns are supported, and they compose:

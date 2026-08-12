@@ -1,6 +1,6 @@
 ---
 name: dup-skill
-description: A skill with duplicate tool references
+description: A skill with duplicate tool references, used for reading a file the user names.
 allowed-tools: Read read
 ---
 
@@ -9,4 +9,5 @@ allowed-tools: Read read
 Reads a file the user names. This is a synthetic Trustabl test fixture with
 no dynamic execution, no external references, and no side-effecting tools —
 it exists solely to exercise CSKILL-061 (duplicate allowed-tools entries) in
-isolation.
+isolation. If the read fails, it stops and reports the failure rather than
+guessing.

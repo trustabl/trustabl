@@ -87,3 +87,30 @@ rules:
       If the crew must delegate, keep high-risk tools (code execution, file read,
       shell) off every agent reachable through delegation, and constrain each
       peer's tool set to the minimum its role requires.
+
+  - id: CREW-110
+    title: CrewAI agent has no explicit max_iter limit
+    severity: low
+    confidence: 0.6
+    language: python
+    applies_to:
+      - crewai_agent
+    scope: agent
+    match:
+      agent_kwarg_missing:
+        - max_iter
+    explanation: >
+      This Agent sets no explicit max_iter, so it falls back to CrewAI's default
+      iteration cap (documented as 20). That default prevents a true runaway, but
+      it is a generic ceiling rather than one sized to this agent's role: a model
+      that loops or oscillates still burns up to the full budget of tool
+      round-trips and LLM calls before CrewAI forces a final answer — a latency
+      and token cost the workflow may not tolerate. The implicit cap has also
+      changed across CrewAI releases, so a version bump can silently move the
+      bound this agent actually runs under.
+    fix: >
+      Pass max_iter= to the Agent constructor, sized to the role — a
+      single-lookup agent rarely needs more than a handful of iterations. Pair it
+      with max_execution_time= so a slow or stalled run is bounded in wall-clock
+      seconds as well as in iterations, and the agent cannot hold the crew open
+      indefinitely.

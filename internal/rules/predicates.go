@@ -311,6 +311,30 @@ func bodyTextFromSpan(src []byte, start, end int) string {
 	return strings.Join(lines[start-1:end], "\n")
 }
 
+// PredHasDescriptionText reports whether the tool's description contains any
+// of the listed substrings, case-insensitively. Unlike PredHasBodyText (which
+// matches case-sensitively against the function body), this lowers both sides
+// because placeholder markers in descriptions appear inconsistently cased
+// ("TODO", "todo", "Todo").
+func PredHasDescriptionText(needles []string, t models.ToolDef) bool {
+	description := strings.ToLower(t.Description)
+	for _, n := range needles {
+		if strings.Contains(description, strings.ToLower(n)) {
+			return true
+		}
+	}
+	return false
+}
+
+// ─── int predicates ───────────────────────────────────────────────────────────
+
+// PredDescriptionLengthLt reports whether the tool's trimmed description is
+// shorter than n characters — a stub description too short to give the model
+// a usable selection signal.
+func PredDescriptionLengthLt(t models.ToolDef, n int) bool {
+	return len(strings.TrimSpace(t.Description)) < n
+}
+
 func PredParamNameMatches(expr ParamNameMatchExpr, t models.ToolDef) bool {
 	for _, p := range t.ParamNames {
 		lower := strings.ToLower(p)
@@ -971,6 +995,43 @@ func PredSkillHasDuplicateToolRefs(s models.SkillDef) bool {
 	return false
 }
 
+// PredSkillBodyHasText reports whether the skill's raw SKILL.md body contains
+// any of needles (case-insensitive). Mirrors PredHasBodyText for the skill
+// scope — same last-resort substring-matching caveats apply.
+func PredSkillBodyHasText(needles []string, s models.SkillDef) bool {
+	body := strings.ToLower(s.Body)
+	for _, n := range needles {
+		if strings.Contains(body, strings.ToLower(n)) {
+			return true
+		}
+	}
+	return false
+}
+
+// PredSkillNameHasText reports whether the skill's name contains any of
+// needles (case-insensitive).
+func PredSkillNameHasText(needles []string, s models.SkillDef) bool {
+	name := strings.ToLower(s.Name)
+	for _, n := range needles {
+		if strings.Contains(name, strings.ToLower(n)) {
+			return true
+		}
+	}
+	return false
+}
+
+// PredSkillDescriptionHasText reports whether the skill's description
+// contains any of needles (case-insensitive).
+func PredSkillDescriptionHasText(needles []string, s models.SkillDef) bool {
+	desc := strings.ToLower(s.Description)
+	for _, n := range needles {
+		if strings.Contains(desc, strings.ToLower(n)) {
+			return true
+		}
+	}
+	return false
+}
+
 // ─── repo predicates ──────────────────────────────────────────────────────────
 
 func PredRepoHasSDKInCode(sdks []string, inv models.RepoInventory) bool {
@@ -1050,3 +1111,24 @@ func PredRepoClaudeOptionsPermissionModeIs(modes []string, inv models.RepoInvent
 	return false
 }
 
+// PredRepoClaudeOptionsMaxTurnsMissing fires when the repo constructs at least
+// one ClaudeAgentOptions(...) and NO such construction sets max_turns. This is
+// an absence check across every construction, not a per-call value match: a
+// single options object that sets an explicit cap silences the rule for the
+// repo. Constructions marked Opaque (built with ** unpacking) are skipped —
+// their kwarg set is untrustworthy, so their silence is not evidence of a
+// missing cap. A repo with no ClaudeAgentOptions at all never fires: there is
+// no session config to flag.
+func PredRepoClaudeOptionsMaxTurnsMissing(inv models.RepoInventory) bool {
+	concrete := 0
+	for _, opt := range inv.ClaudeAgentOptions {
+		if opt.Opaque {
+			continue
+		}
+		concrete++
+		if node := lookupKwargInTree(opt.Kwargs, "max_turns"); node != nil && node.Value != nil {
+			return false
+		}
+	}
+	return concrete > 0
+}
