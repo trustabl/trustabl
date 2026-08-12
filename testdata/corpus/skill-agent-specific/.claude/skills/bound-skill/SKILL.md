@@ -1,6 +1,6 @@
 ---
 name: bound-skill
-description: A skill bound to one specific agent
+description: A skill bound to one specific agent, used for reading files that agent points it at.
 agent: some-agent
 allowed-tools: Read
 ---
@@ -13,4 +13,5 @@ specific agent via the `agent:` frontmatter field and is not meant to be
 reused across agents. It only reads files the user points it at — no
 dynamic-context execution, no external URLs, no bundled scripts, and no
 prompt-injection markers, so CSKILL-071 is the only skill-scope rule
-expected to fire.
+expected to fire. If a read fails, it stops and reports the failure rather
+than guessing.

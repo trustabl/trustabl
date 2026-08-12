@@ -36,17 +36,43 @@ rules:
       subagent_grants_tool:
         - Write
         - Edit
+        - MultiEdit
+        - NotebookEdit
         - WebFetch
     explanation: >
-      This subagent's frontmatter grants a filesystem-write (`Write`/`Edit`) or
-      web-fetch (`WebFetch`) built-in. Like Bash (CSDK-110), these widen the
-      blast radius of an autonomously-dispatched subagent: write tools let it
-      modify source, config, or the `.claude/` settings that govern it, and
-      WebFetch pulls attacker-controllable URL content back into the loop (a
-      prompt-injection and SSRF surface). A narrowly-scoped subagent rarely
-      needs them.
+      This subagent's frontmatter grants a filesystem-write
+      (`Write`/`Edit`/`MultiEdit`/`NotebookEdit`) or web-fetch (`WebFetch`)
+      built-in. Like Bash (CSDK-110), these widen the blast radius of an
+      autonomously-dispatched subagent: write tools let it modify source,
+      config, or the `.claude/` settings that govern it, and WebFetch pulls
+      attacker-controllable URL content back into the loop (a prompt-injection
+      and SSRF surface). A narrowly-scoped subagent rarely needs them.
     fix: >
-      Remove `Write`/`Edit`/`WebFetch` from the subagent's `tools:` list unless
-      the role genuinely requires them. For read/research roles prefer Read,
-      Grep, Glob; for fetching, gate with a PreToolUse hook that allowlists
-      hosts.
+      Remove the write and fetch built-ins from the subagent's `tools:` list
+      unless the role genuinely requires them. For read/research roles prefer
+      Read, Grep, Glob; for fetching, gate with a PreToolUse hook that
+      allowlists hosts.
+
+  - id: CSDK-112
+    title: Subagent granted the WebSearch tool
+    severity: medium
+    confidence: 0.8
+    applies_to:
+      - claude_subagent
+    scope: subagent
+    match:
+      subagent_grants_tool:
+        - WebSearch
+    explanation: >
+      This subagent's frontmatter grants the built-in `WebSearch` tool, so
+      search-result content chosen by the model flows back into the subagent's
+      context. Search results are attacker-reachable text (anyone can publish a
+      page that ranks for a query the subagent is likely to make), which makes
+      the grant a prompt-injection channel into an autonomously-dispatched
+      worker — the same surface the agent-scope check flags on
+      AgentDefinition (CSDK-102), here declared in `.claude/agents/*.md`.
+    fix: >
+      Remove `WebSearch` from the subagent's `tools:` list unless the role is
+      genuinely research-oriented. If the subagent must search, keep its other
+      grants read-only so injected search content cannot escalate into writes
+      or shell, and treat its output as untrusted in the parent loop.

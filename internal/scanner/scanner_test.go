@@ -460,10 +460,12 @@ func TestScan_SkillMissingDescription(t *testing.T) {
 		t.Errorf("expected CSKILL-070 to fire on skill-missing-description; fired set: %v", fired)
 	}
 
-	// The fixture is deliberately clean of every other skill-scope trigger, so
-	// no other CSKILL-* rule should fire alongside it.
+	// CSKILL-085 (description states no purpose) also legitimately fires here:
+	// the omitted description carries no purpose phrase either. The fixture is
+	// otherwise clean of every other skill-scope trigger.
+	allowed := map[string]bool{"CSKILL-070": true, "CSKILL-085": true}
 	for _, f := range res.Findings {
-		if strings.HasPrefix(f.RuleID, "CSKILL-") && f.RuleID != "CSKILL-070" {
+		if strings.HasPrefix(f.RuleID, "CSKILL-") && !allowed[f.RuleID] {
 			t.Errorf("unexpected skill finding %s fired on skill-missing-description", f.RuleID)
 		}
 	}
@@ -488,6 +490,29 @@ func TestScan_SkillDuplicateToolRefs(t *testing.T) {
 	for _, f := range res.Findings {
 		if strings.HasPrefix(f.RuleID, "CSKILL-") && f.RuleID != "CSKILL-061" {
 			t.Errorf("unexpected skill finding %s fired on skill-duplicate-tool-refs", f.RuleID)
+		}
+	}
+}
+
+func TestScan_SkillNameMatch(t *testing.T) {
+	_, thisFile, _, _ := runtime.Caller(0)
+	target := filepath.Join(filepath.Dir(thisFile), "..", "..", "testdata", "corpus", "skill-name-match")
+	res, err := scanner.Run(scanner.Config{Target: target, RulesFS: rulesFixture(t)})
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+
+	fired := map[string]bool{}
+	for _, f := range res.Findings {
+		fired[f.RuleID] = true
+	}
+	if !fired["CSKILL-080"] {
+		t.Errorf("expected CSKILL-080 to fire on skill-name-match; fired set: %v", fired)
+	}
+
+	for _, f := range res.Findings {
+		if strings.HasPrefix(f.RuleID, "CSKILL-") && f.RuleID != "CSKILL-080" {
+			t.Errorf("unexpected skill finding %s fired on skill-name-match", f.RuleID)
 		}
 	}
 }

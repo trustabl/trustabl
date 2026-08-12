@@ -163,6 +163,14 @@ func detectSDKDeps(root string) []models.SDKDep {
 			Manifests: []string{"package.json"}},
 		{Name: "vercel-ai", Pattern: "@ai-sdk/",
 			Manifests: []string{"package.json"}},
+		// NVIDIA NeMo Agent Toolkit (Python). The PyPI package is "nvidia-nat";
+		// substring matching also covers the bracketed extras the install docs use
+		// (nvidia-nat[langchain], …) and any nvidia-nat-* subdistribution. Recon-only
+		// today: there is no NeMo discovery pass, so this feeds the declared-dep
+		// inventory and nothing else — deliberately NOT wired into
+		// scanner.depNameToSDK, which would emit a permanent false META-002.
+		{Name: "nvidia-nat", Pattern: "nvidia-nat",
+			Manifests: []string{"pyproject.toml", "requirements.txt", "Pipfile", "poetry.lock"}},
 	}
 	seen := make(map[string]bool)
 	var out []models.SDKDep

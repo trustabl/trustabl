@@ -1,0 +1,37 @@
+policy:
+  id: claude_sdk_agent_safety
+  name: Claude Agent SDK
+  category: claude_sdk
+  description: >
+    Agent and tool rules for the Claude Agent SDK.
+
+rules:
+  - id: CSDK-001
+    title: Claude subagent tool function has no docstring
+    severity: medium
+    confidence: 0.9
+    language: python
+    applies_to:
+      - claude_sdk_tool
+    scope: tool
+    match:
+      has_docstring: false
+    explanation: >
+      Missing docstring means the model cannot read the tool's intent.
+    fix: >
+      Add a docstring describing what the tool does, its parameters, and return value.
+
+  - id: CSDK-101
+    title: Claude subagent is granted the Bash tool without restrictions
+    severity: high
+    confidence: 0.8
+    language: python
+    applies_to:
+      - claude_agent_definition
+    scope: agent
+    match:
+      agent_kwarg_list_empty: [input_guardrails]
+    explanation: >
+      An agent with unrestricted Bash access poses a high risk.
+    fix: >
+      Add input guardrails or restrict tool grants to exact prefixes.

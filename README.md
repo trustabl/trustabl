@@ -1,6 +1,10 @@
 <p align="center">
-  <img src="assets/github_banner.jpg" alt="Trustabl" width="100%">
+  <img src="assets/github_banner.jpg" alt="Trustabl — open source AI agent reliability" width="100%">
 </p>
+
+Find and automatically fix guardrail gaps, unsafe tools, missing validation, and
+unbounded loops in Claude Agent SDK, OpenAI Agents SDK, Google ADK, LangChain,
+CrewAI, and MCP agents — before production.
 
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License: Apache-2.0"></a>
@@ -9,7 +13,7 @@
   <a href="https://github.com/trustabl/trustabl/actions/workflows/test.yml"><img src="https://img.shields.io/github/actions/workflow/status/trustabl/trustabl/test.yml?branch=main&amp;label=tests" alt="Tests"></a>
   <a href="go.mod"><img src="https://img.shields.io/github/go-mod/go-version/trustabl/trustabl" alt="Go version"></a>
   <br>
-  <a href="https://github.com/trustabl/trustabl-rules"><img src="https://img.shields.io/badge/rules-187-brightgreen" alt="187 detection rules"></a>
+  <a href="https://github.com/trustabl/trustabl-rules"><img src="https://img.shields.io/badge/rules-204-brightgreen" alt="204 detection rules"></a>
   <a href="COVERAGE.md"><img src="https://img.shields.io/badge/SDKs-9-blue" alt="9 SDKs supported"></a>
   <a href="COVERAGE.md"><img src="https://img.shields.io/badge/languages-7-blue" alt="7 languages supported"></a>
   <a href="COVERAGE.md"><img src="https://img.shields.io/badge/scopes-5-blue" alt="5 detection scopes"></a>
@@ -17,17 +21,66 @@
   <a href="README.md#output-modes"><img src="https://img.shields.io/badge/output-human%20%7C%20JSON%20%7C%20SARIF-blue" alt="Output formats"></a>
 </p>
 
-Trustabl is a static analyzer for agent reliability. It parses an agent-SDK
-repository (Claude Agent SDK, OpenAI Agents SDK, Google ADK, MCP, LangChain /
-LangGraph, CrewAI, AutoGen / AG2, Pydantic AI, and the Vercel AI SDK), models the
-tools, agents, subagents, skills, slash commands, and plugin manifests it
-declares, and checks them against a catalog of reliability and safety rules. It reports the weaknesses it finds — each
-with an explanation, a suggested fix, and a confidence score — as a
-human-readable summary, JSON, or SARIF 2.1.0, plus a per-surface reliability
-score and a CI-friendly exit code. It ships as a single Go binary with no
-hosted service: it runs as a CLI, or as a local stdio MCP server
-(`trustabl mcp`) that exposes the same scan to MCP clients without opening a
-network port.
+# Trustabl — find and fix AI agent reliability gaps
+
+**Find what will make your AI agent fail — then fix it with one command.**
+
+Trustabl scans an agent repository for the gaps that break agents in production:
+tool descriptions too vague for a model to know when to use them, missing retry
+and timeout handling, untyped parameters, absent guardrails, and tool grants that
+exceed what the agent claims to do. Then it applies the fix directly to your
+source.
+
+Every other agent scanner hands you a report. Trustabl hands you a patch.
+
+Reliability is engineered before deployment, not observed after it.
+
+**Scanning runs entirely on your machine.** No cloud scanner, no account, no
+code upload, no LLM — deterministic static analysis.
+
+```bash
+docker run --rm -v "$PWD:/repo" ghcr.io/trustabl/trustabl:latest scan /repo   # try it, nothing installed
+
+brew install trustabl/tap/trustabl                                            # macOS / Linux
+scoop bucket add trustabl https://github.com/trustabl/scoop-bucket             # Windows
+scoop install trustabl
+
+trustabl scan .                                                               # find issues (fully local)
+trustabl scan . --format json > scan.json
+trustabl enrich --input scan.json --repo . --diff --apply                     # preview, then fix
+```
+
+185+ rules · 9 SDKs · 7 languages · human, JSON, or SARIF 2.1.0 output ·
+CI-friendly exit codes · also runs as a local stdio MCP server (`trustabl mcp`).
+
+Deepest coverage for **Claude Agent SDK**, **OpenAI Agents SDK**, **Google ADK**,
+and **MCP servers**. Also scans LangChain / LangGraph, CrewAI, AutoGen / AG2,
+Pydantic AI, and the Vercel AI SDK — see [COVERAGE.md](COVERAGE.md) for the full
+matrix.
+
+Scanning needs no key and no network. Applying fixes uses your own Anthropic,
+OpenAI, or Google key.
+
+## AI agents pass their demo and fail in production
+
+The failures are rarely exotic. They are the same handful of gaps, over and over:
+
+- An agent holding shell tools with **no input guardrails**
+- A tool making an HTTP call with **no timeout**, hanging the whole run
+- **Untyped tool parameters**, so the model guesses and guesses wrong
+- A tool description so vague the model calls the wrong tool — 56% of MCP tool
+  descriptions fail to state their purpose clearly, and 97.1% carry at least one
+  description defect (Hasan et al., *MCP Tool Descriptions Are Smelly!*,
+  [arXiv 2602.14878](https://arxiv.org/abs/2602.14878) — 856 tools across 103
+  servers)
+- A **subagent granted `Bash`** despite a read-only description
+- A **skill that auto-approves unrestricted shell access**
+- **No retry handling**, so one transient 500 fails the task
+- An agent loop with **no iteration bound**, burning tokens until it is killed
+- A **user-controlled URL** flowing into a fetch — SSRF, from your agent
+
+Every one of these is visible in the source before the agent ever runs. Trustabl
+finds them in seconds, offline, with no LLM — and fixes them.
 
 The rest of this document explains *what Trustabl reasons about* and *how
 the scan works*, then covers building and running it. For the full
@@ -812,6 +865,80 @@ key, so a signed `--rules-source` runs the verification pipeline and refuses
 (exit `2`) only on a genuine verification failure (bad signature, untrusted or
 expired key, channel mismatch, expired or rolled-back statement, or digest
 mismatch).
+
+### Pre-coding constraints (trustabl forge)
+
+`trustabl forge` is the counterpart to `trustabl scan`: instead of auditing
+code *after* it is written, it generates a combined pre-coding `SKILL.md` that
+tells an agent *before* it writes any code which patterns to avoid. The
+generated skill organizes rules by SDK and scope (tool, agent, subagent, repo,
+skill) and is ordered by severity so the highest-risk constraints appear first.
+
+**How SDK detection works.** Forge scans the target's dependency manifests —
+`pyproject.toml`, `requirements.txt`, `Pipfile`, `poetry.lock`, `package.json`,
+and `go.mod` — to determine which SDK policy packs to include. This is the
+same lightweight dep-file recon that `trustabl scan` performs in its recon
+step: no AST parsing, fast, and safe on any repo. When no manifests are found
+(or none declare a recognized SDK), forge exits `1` and tells you what to pass
+via `--policy`.
+
+```bash
+# Auto-detect SDKs from the current directory
+trustabl forge
+
+# Auto-detect from a specific repo path
+trustabl forge /path/to/repo
+
+# Add a policy on top of auto-detected SDKs — useful when introducing a new
+# SDK that is not yet in the dependency manifest
+trustabl forge --policy openai_sdk
+trustabl forge /path/to/repo --policy claude_sdk,mcp
+
+# Write the generated SKILL.md to a file instead of stdout
+trustabl forge -o .claude/skills/trustabl-pre-coding/SKILL.md
+
+# Pin a specific rules version (same as trustabl scan --rules-ref)
+trustabl forge --rules-ref v0.3.0
+
+# Backward-compatible: generate only the Agent Skill (CSKILL-*) rules
+trustabl forge --policy claude_skill
+```
+
+**Available policy categories** (pass to `--policy`):
+
+| Category | SDK / framework |
+|---|---|
+| `claude_sdk` | Claude Agent SDK (Python + TypeScript) |
+| `openai_sdk` | OpenAI Agents SDK (Python + TypeScript) |
+| `google_adk` | Google Agent Development Kit (Python + TypeScript) |
+| `mcp` | Model Context Protocol servers |
+| `langchain` | LangChain / LangGraph (Python + TypeScript) |
+| `crewai` | CrewAI (Python) |
+| `pydantic_ai` | Pydantic AI (Python) |
+| `vercel_ai` | Vercel AI SDK (TypeScript) |
+| `autogen` | AutoGen / AG2 (Python) |
+| `claude_skill` | Claude Code skills (`SKILL.md`) |
+| `openshell` | Shell-invocation tools (no rules in the current pack) |
+
+Multiple categories are comma-separated: `--policy openai_sdk,mcp`.
+
+**What the output contains.** The generated file is a valid `SKILL.md` with:
+
+- A frontmatter block (`name: trustabl-pre-coding`, `allowed-tools: Read`,
+  `disable-model-invocation: false`).
+- A passive stamp comment embedding the rules SHA, date, schema version, and
+  detected SDK list — so you know exactly which ruleset produced the file
+  and when to regenerate.
+- One `## SDK Name` section per detected SDK, each containing `### Tool Rules`,
+  `### Agent Rules`, `### Subagent Rules`, `### Repo Rules`, and
+  `### Skill Rules` subsections (empty subsections are omitted).
+- Per-rule blocks: **Directive** (the fix, first sentence), **Why** (the
+  explanation, first sentence), **When this applies**, severity, and confidence.
+
+Drop the output into `.claude/skills/trustabl-pre-coding/SKILL.md` in the
+agent repo and Claude Code will invoke it automatically before any agent code
+is written. Re-run `trustabl forge` after adding a new SDK dependency or after
+pulling a rules update to refresh the constraints.
 
 ### Continuous integration
 

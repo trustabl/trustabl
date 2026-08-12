@@ -65,7 +65,7 @@ rules:
       explicit human approval rather than exposing a model-invokable code runner.
 
   - id: PYD-103
-    title: Pydantic AI agent wires a model-driven URL-fetching native tool
+    title: Pydantic AI agent wires a model-driven web-fetching or search native tool
     severity: medium
     confidence: 0.75
     language: python
@@ -76,23 +76,27 @@ rules:
       agent_uses_hosted_tool_class:
         - WebFetchTool
         - UrlContextTool
+        - WebSearchTool
     explanation: >
-      This agent wires a native URL-fetching tool (WebFetchTool or UrlContextTool)
-      that retrieves model-chosen URLs. The model controls the destination, so a
-      prompt injection can point it at internal services, the cloud metadata
-      endpoint (169.254.169.254), or localhost admin ports the agent host can
-      reach — a server-side request forgery surface — and can also exfiltrate
-      retrieved or in-context data to an attacker-controlled URL. Pydantic AI's
-      built-in fetchers have already needed SSRF hardening (CVE-2026-46678,
-      CVE-2026-25580), so enabling one without network egress controls reintroduces
-      that exposure.
+      This agent wires a native web-retrieval tool (WebFetchTool, UrlContextTool,
+      or WebSearchTool) whose destination or query the model controls. For the
+      URL fetchers, a prompt injection can point the request at internal
+      services, the cloud metadata endpoint (169.254.169.254), or localhost
+      admin ports the agent host can reach — a server-side request forgery
+      surface — and can also exfiltrate retrieved or in-context data to an
+      attacker-controlled URL. For WebSearchTool, the query itself is an
+      exfiltration channel and the returned results are attacker-reachable text
+      that re-enters the context as a second-order prompt-injection channel.
+      Pydantic AI's built-in fetchers have already needed SSRF hardening
+      (CVE-2026-46678, CVE-2026-25580), so enabling one without network egress
+      controls reintroduces that exposure.
     fix: >
-      Only enable a native fetch tool when the agent genuinely needs open web
-      access, and put network egress controls around the agent process: an
-      allow-list of permitted hosts, blocked private/link-local IP ranges, and a
-      proxy that rejects requests to internal addresses. Prefer a purpose-built
+      Only enable a native fetch or search tool when the agent genuinely needs
+      open web access, and put network egress controls around the agent process:
+      an allow-list of permitted hosts, blocked private/link-local IP ranges, and
+      a proxy that rejects requests to internal addresses. Prefer a purpose-built
       tool that fetches from a fixed, vetted set of endpoints over an open URL
-      fetcher.
+      fetcher, and treat retrieved or searched content as untrusted input.
 
   - id: PYD-105
     title: Pydantic AI agent retries with the exhaustive end strategy

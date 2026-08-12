@@ -1,0 +1,22 @@
+policy:
+  id: openai_sdk_tool_definition
+  name: OpenAI Agents SDK
+  category: openai_sdk
+  description: >
+    Tool definition hygiene for the OpenAI Agents SDK.
+
+rules:
+  - id: OAI-001
+    title: Tool function has no docstring
+    severity: low
+    confidence: 0.9
+    language: python
+    applies_to:
+      - openai_tool
+    scope: tool
+    match:
+      has_docstring: false
+    explanation: >
+      The docstring is the model-facing description; without it the model cannot use the tool correctly.
+    fix: >
+      Add a docstring to every @function_tool decorated function.

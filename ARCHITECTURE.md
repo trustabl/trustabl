@@ -1758,6 +1758,12 @@ internal/
 ├── mcpserver/                   Stdio MCP server frontend over scanner.Run.
 │   ├── jsonrpc.go               JSON-RPC 2.0 stdio framing (no third-party SDK).
 │   └── server.go                MCP methods (initialize/tools-list/tools-call) + scan tool.
+├── forge/                       Pre-coding SKILL.md generator (trustabl forge).
+│   ├── detect.go                DetectCategories (dep-manifest recon → DetectorCategory slice),
+│   │                            MergeCategories (dedup + sort two category slices).
+│   └── gen.go                   Generate (single-pack skill-scope, kept for compat),
+│                                GenerateCombined (multi-SDK all-scope output),
+│                                matchConditionForScope, Stamp.
 ├── review/                      Human renderer (read-only; no file writes).
 └── inference/                   BYOK inference router (interface + cache).
 
@@ -2058,6 +2064,8 @@ trustabl scan <target> [--detectors=…] [--format=human|json|sarif]
                        [--strict] [--no-color] [--no-progress]
                        [--rules-repo=URL] [--rules-ref=REF] [--channel=NAME]
                        [--no-rules-update] [--vuln-scan]
+trustabl forge [target] [--policy=CATEGORY,…] [--output=PATH|-o PATH]
+                        [--rules-ref=REF]
 trustabl enrich        [-i SCAN_JSON] [-r REPO_ROOT] [-o OUTPUT_FILE]
                        [--diff] [--apply] [--only-enriched] [--rule RULE_ID]
                        [--langsmith] [--langsmith-project NAME]
@@ -2240,6 +2248,63 @@ replacements appear in the JSON output only.
   active provider, or the enrichment pipeline failed. `enrich` constructs no
   `exitCodeError`, so every failure path funnels through `main`'s catch-all to
   exit `2` — there is no distinct exit-`1` bucket.
+
+### 8.3 Forge subcommand ([cmd/trustabl/forge.go](cmd/trustabl/forge.go) + [internal/forge/](internal/forge/))
+
+`trustabl forge` is the pre-coding counterpart to `trustabl scan`. Instead of
+auditing code after it is written, it generates a combined `SKILL.md` that
+encodes the detection rules as actionable constraints an agent applies *before*
+writing any SDK code.
+
+**Pipeline** (four steps, no AST):
+
+1. **DetectCategories** (`internal/forge/detect.go`) — calls `ingestion.Resolve`
+   and `ingestion.Recon` against the target directory to obtain
+   `RepoProfile.SDKDeps`, then maps each dep name through a local
+   `depCategoryMap` table (9 entries, mirrors `scanner.depNameToSDK`) to
+   produce a sorted, deduplicated `[]models.DetectorCategory`. Returns a
+   non-nil empty slice (not nil) when no SDK is found.
+
+2. **MergeCategories** — deduplicates and sorts the auto-detected slice with
+   any categories supplied via `--policy`. Explicit additions are additive, not
+   overrides — useful when a new SDK is being introduced before its first
+   dependency declaration.
+
+3. **rulesource.Resolve + rules.LoadLenient** — same resolution path as
+   `trustabl scan`, keyed on `--rules-ref`. All policy packs are loaded;
+   `GenerateCombined` filters to the requested categories itself.
+
+4. **GenerateCombined** (`internal/forge/gen.go`) — routes each rule into
+   per-category, per-scope buckets (`tools`, `agents`, `subagents`, `repos`,
+   `skills`), emits one `## SDK Name` section per category in
+   `stamp.Categories` order, with `### Tool / Agent / Subagent / Repo / Skill
+   Rules` subsections (empty subsections omitted). Rules within each subsection
+   are sorted by severity (critical first) then rule ID ascending. A passive
+   stamp comment (`<!-- generated: DATE | rules: SHA | schema: VERSION | sdks:
+   LIST -->`) is embedded in the body — not in frontmatter — so the file is
+   scannable to detect staleness.
+
+**matchConditionForScope** dispatches "When this applies" text by scope: tool →
+"When defining a tool.", agent → "When declaring an agent.", repo → "For any
+repo using this SDK.", subagent → "When declaring a subagent.", skill →
+delegates to the existing `matchCondition` predicate switch. This keeps the
+generated prose accurate for all five scopes without enumerating 15+ predicates.
+
+**Output.** A valid `SKILL.md` (`allowed-tools: Read`,
+`disable-model-invocation: false`) intended to be dropped into
+`.claude/skills/trustabl-pre-coding/` in the agent repo. Written to stdout or
+`--output`. No file is written into the scanned repo.
+
+**Exit codes for forge:**
+
+- `0` — SKILL.md generated and written.
+- `1` — no SDKs detected and no `--policy` given; or an unrecognized `--policy`
+  value.
+- `2` — rules fetch / load error (same as `scan`).
+
+The `Generate` function (single-pack, skill-scope-only) is kept for backward
+compatibility with existing tests; it is not exposed via the CLI. The
+`GenerateCombined` path is what `trustabl forge` calls.
 
 ---
 

@@ -6,13 +6,14 @@ policy:
     Agent-scope safety rules for Vercel AI SDK agents — the generateText /
     streamText / generateObject / streamObject tool-loop calls and the
     ToolLoopAgent class. These flag agents wired with provider tools that hand
-    the model shell, computer-control, or code-execution reach, and agents whose
-    tool loop has no bound, the two ways a Vercel agent turns a prompt injection
-    into runaway or arbitrary execution.
+    the model shell, computer-control, file-editing, or code-execution reach,
+    agents wired with provider tools that retrieve model-chosen web content,
+    and agents whose tool loop has no bound — the ways a Vercel agent turns a
+    prompt injection into runaway execution or data exfiltration.
 
 rules:
   - id: VAI-006
-    title: Vercel AI agent wires a provider shell / computer / code-execution tool
+    title: Vercel AI agent wires a provider shell / computer / file-editing / code-execution tool
     severity: high
     confidence: 0.85
     language: typescript
@@ -23,6 +24,7 @@ rules:
       agent_uses_hosted_tool_class:
         - anthropic.tools.bash
         - anthropic.tools.computer
+        - anthropic.tools.textEditor
         - anthropic.tools.codeExecution
         - openai.tools.localShell
         - openai.tools.computerUsePreview
@@ -30,20 +32,22 @@ rules:
         - google.tools.codeExecution
     explanation: >
       This agent's tools record includes a Vercel-provider tool that gives the
-      model shell, full computer control, or a code interpreter — anthropic's
-      bash / computer / codeExecution, openai's localShell / computerUsePreview /
-      codeInterpreter, or google's codeExecution. The Vercel AI SDK ships and
-      markets these provider tools as first-class, so wiring one is a single line
-      that hands a model-driven loop direct execution on the host or sandbox.
-      Because the agent's prompts and prior tool outputs are model-reachable, a
-      prompt injection has a direct path to running attacker-chosen commands or
-      code with the agent's privileges.
+      model shell, full computer control, host file editing, or a code
+      interpreter — anthropic's bash / computer / textEditor / codeExecution,
+      openai's localShell / computerUsePreview / codeInterpreter, or google's
+      codeExecution. The Vercel AI SDK ships and markets these provider tools as
+      first-class, so wiring one is a single line that hands a model-driven loop
+      direct execution or file mutation on the host or sandbox. Because the
+      agent's prompts and prior tool outputs are model-reachable, a prompt
+      injection has a direct path to running attacker-chosen commands or code —
+      or writing attacker-chosen file content — with the agent's privileges.
     fix: >
-      Drop the provider execution tool unless the workflow truly requires it. If
-      it is essential, run it against an isolated, ephemeral sandbox with no
-      credentials, no private-network reach, and a hard timeout; constrain which
-      commands or code may run; and gate every invocation behind an explicit
-      human approval rather than letting the tool loop call it autonomously.
+      Drop the provider execution or editing tool unless the workflow truly
+      requires it. If it is essential, run it against an isolated, ephemeral
+      sandbox with no credentials, no private-network reach, and a hard timeout;
+      constrain which commands, code, or paths it may touch; and gate every
+      invocation behind an explicit human approval rather than letting the tool
+      loop call it autonomously.
 
   - id: VAI-007
     title: Vercel AI agent tool loop has no explicit step bound
@@ -111,3 +115,37 @@ rules:
       a call is genuinely mandatory. Keep shell / computer / code-execution tools
       out of any agent that forces a tool call, and gate their use behind an
       explicit approval.
+
+  - id: VAI-009
+    title: Vercel AI agent wires a provider tool that retrieves model-chosen web content
+    severity: medium
+    confidence: 0.7
+    language: typescript
+    applies_to:
+      - vercel_ai_agent
+    scope: agent
+    match:
+      agent_uses_hosted_tool_class:
+        - anthropic.tools.webSearch
+        - openai.tools.webSearch
+        - openai.tools.webSearchPreview
+        - google.tools.googleSearch
+        - google.tools.urlContext
+    explanation: >
+      This agent's tools record includes a Vercel-provider tool that retrieves
+      web content the model chooses — anthropic's webSearch, openai's webSearch /
+      webSearchPreview, or google's googleSearch / urlContext. The model controls
+      the query or URL, so an injected instruction can steer retrieval toward
+      attacker-published pages, and the query string itself is a channel for
+      exfiltrating in-context data. The retrieved content then re-enters the
+      conversation as untrusted text, giving the fetched site a second-order
+      prompt-injection channel into the agent — the same surface the OpenAI,
+      Google ADK, CrewAI, and Pydantic AI packs flag on their web-retrieval
+      built-ins.
+    fix: >
+      Only wire a provider search or URL-context tool when the agent genuinely
+      needs open web access. Treat everything it returns as untrusted input:
+      keep it out of the system prompt, do not let it expand tool permissions,
+      and pair it with an output check before retrieved text can influence
+      side-effecting tools. For urlContext, constrain candidate URLs to an
+      allow-list of hosts rather than passing raw model-supplied links.
