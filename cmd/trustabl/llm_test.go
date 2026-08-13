@@ -305,6 +305,57 @@ func TestLLMModelSet(t *testing.T) {
 	}
 }
 
+func TestLLMBaseURLSet(t *testing.T) {
+	setLLMConfigDir(t, t.TempDir())
+
+	// Active provider a real one (custom) so no "will be ignored" note fires.
+	provCmd := newLLMProviderSetCommand()
+	provCmd.SetArgs([]string{"custom"})
+	if err := provCmd.Execute(); err != nil {
+		t.Fatalf("provider set setup: unexpected error: %v", err)
+	}
+
+	cmd := newLLMBaseURLSetCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	cmd.SetArgs([]string{"http://localhost:4000"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(buf.String(), "http://localhost:4000") {
+		t.Errorf("output %q missing base URL", buf.String())
+	}
+	if strings.Contains(buf.String(), "will ignore") {
+		t.Errorf("output %q should not warn for custom provider", buf.String())
+	}
+
+	cfg, err := llm.Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.ActiveProvider().BaseURL != "http://localhost:4000" {
+		t.Errorf("BaseURL = %q, want http://localhost:4000", cfg.ActiveProvider().BaseURL)
+	}
+}
+
+func TestLLMBaseURLSet_WarnsForNonCustomProvider(t *testing.T) {
+	setLLMConfigDir(t, t.TempDir())
+	// Default active provider is anthropic — base-url is meaningless there.
+
+	cmd := newLLMBaseURLSetCommand()
+	var buf bytes.Buffer
+	cmd.SetOut(&buf)
+	cmd.SetErr(&buf)
+	cmd.SetArgs([]string{"http://localhost:4000"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(buf.String(), "will ignore") {
+		t.Errorf("output %q should warn that anthropic ignores base-url", buf.String())
+	}
+}
+
 func TestLLMProviderSet_New(t *testing.T) {
 	setLLMConfigDir(t, t.TempDir())
 

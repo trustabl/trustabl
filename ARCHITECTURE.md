@@ -2346,8 +2346,8 @@ take it absent a concrete distribution requirement.
 
 - **LLM enrichment is a separate post-scan step.** `internal/llm/` owns key storage
   (`~/.config/trustabl/keys.json`, mode 0600) and is managed via
-  `trustabl llm` (list / key set|get|delete / model set / provider set|list).
-  The package exposes `Load`/`Save` (atomic write, mode 0600), `SetActive`
+  `trustabl llm` (list / key set|get|delete / model set / base-url set /
+  provider set|list). The package exposes `Load`/`Save` (atomic write, mode 0600), `SetActive`
   (switches active provider, auto-creates entry with a per-provider default
   model), `ValidateKey`, and `MaskKey`. A `defaultModels` map supplies
   fast/cheap defaults per known provider (`anthropic → claude-haiku-4-5`,
