@@ -27,9 +27,14 @@ Respond with a JSON array only, one object per issue in the same order:
 [{"explanation":"...","fix":"...","line_start":N,"line_end":N,"original":"...","replacement":"...","false_positive":false},...]
 - explanation: 2-3 sentences specific to the actual code at that line (not generic)
 - fix: human-readable description of what was changed and why
-- line_start / line_end: MUST include the flagged line number. Only expand the range if adjacent lines must also change.
+- line_start / line_end: MUST include the flagged line number. Keep this the SMALLEST range that contains the
+  change — do not pull in an import, decorator, comment, or unrelated statement above or below it unless that
+  exact line is itself changing.
 - original: the current lines line_start..line_end copied VERBATIM (identical text, indentation, and order). It is used to verify the file is unchanged before applying your fix; if you cannot copy them exactly, set line_start and line_end to 0.
-- replacement: the exact new lines in the correct language (preserve original indentation, no trailing newline)
+- replacement: the exact new lines in the correct language (preserve original indentation, no trailing newline).
+  Copy every line in the range you are not changing VERBATIM — never repeat/duplicate an existing line or
+  argument instead of editing it, and never drop a line the rest of the file still relies on (an import, a
+  constant, a helper) just because it fell inside line_start..line_end.
 If no code change is needed set line_start, line_end to 0 and replacement to "".
 Do not wrap in markdown code fences.`
 
@@ -37,6 +42,50 @@ Do not wrap in markdown code fences.`
 // The real implementation is llmClient; tests inject a mock.
 type llmEnricher interface {
 	enrichFile(ctx context.Context, filePath string, issues []issueContext) ([]enrichResult, error)
+	// reviseResult asks for a corrected REPLACEMENT ONLY, after the prior one
+	// failed a syntax check (see validateSyntax). Deliberately narrow: the
+	// syntax check only proved the code was wrong, not the explanation/fix
+	// text, so this call's job is fixing the code — the caller keeps the rest
+	// of the original enrichResult untouched rather than risking drift (or a
+	// silently re-flipped false_positive) from a full re-generation. Not a
+	// threaded/multi-turn call either — a fresh, small, single-issue prompt is
+	// simpler across three provider SDKs and cheaper than re-running the batch.
+	reviseResult(ctx context.Context, filePath string, issue issueContext, priorReplacement, parseErr string) (string, error)
+}
+
+const reviseSystemPrompt = `Your previous suggested code replacement for this issue failed a syntax check.
+Return ONLY the corrected code as a single JSON object:
+{"replacement":"..."}
+Fix the syntax error while preserving the same intent, content, and line range as your original
+replacement (preserve original indentation, no trailing newline). Copy every line you are not
+specifically fixing VERBATIM from your previous replacement — do not duplicate a line or argument
+instead of correcting it, and do not drop an import or other line the rest of the file depends on.
+Do not wrap in markdown code fences.`
+
+// revisionResponse is the correction call's response shape: just the fixed
+// code, nothing else — see the llmEnricher.reviseResult doc comment for why.
+type revisionResponse struct {
+	Replacement string `json:"replacement"`
+}
+
+// buildRevisePrompt formats the user message for a single-issue correction
+// call: what failed, what it looked like, and why it didn't parse.
+func buildRevisePrompt(filePath string, issue issueContext, priorReplacement, parseErr string) string {
+	return fmt.Sprintf(
+		"File: %s\nIssue: %s\nYour previous replacement:\n%s\n\nParse error: %s\n\nReturn the corrected JSON object.",
+		filePath, issue.title, priorReplacement, parseErr,
+	)
+}
+
+// parseReviseResponse strips a markdown fence if present and decodes the
+// corrected-code JSON object, returning just its replacement field.
+func parseReviseResponse(raw string) (string, error) {
+	raw = stripFence(strings.TrimSpace(raw))
+	var r revisionResponse
+	if err := json.Unmarshal([]byte(raw), &r); err != nil {
+		return "", fmt.Errorf("parse revision response: %w", err)
+	}
+	return r.Replacement, nil
 }
 
 type enrichResult struct {
@@ -67,7 +116,7 @@ type llmClient struct {
 	model  anthropic.Model
 }
 
-func newLLMClient(ctx context.Context, provider, apiKey, model string) (llmEnricher, error) {
+func newLLMClient(ctx context.Context, provider, apiKey, model, baseURL string) (llmEnricher, error) {
 	switch provider {
 	case "anthropic":
 		return &llmClient{
@@ -82,6 +131,18 @@ func newLLMClient(ctx context.Context, provider, apiKey, model string) (llmEnric
 			client: openai.NewClient(openaiopt.WithAPIKey(apiKey)),
 			model:  model,
 		}, nil
+	case "custom":
+		// Self-hosted OpenAI-compatible endpoint (e.g. a local model server).
+		// Wire-compatible with the "openai" case above, just pointed elsewhere
+		// — apiKey may legitimately be "" here, such endpoints often don't
+		// require one.
+		if baseURL == "" {
+			return nil, fmt.Errorf("custom provider requires a base URL (OPENAI_BASE_URL)")
+		}
+		return &openaiClient{
+			client: openai.NewClient(openaiopt.WithAPIKey(apiKey), openaiopt.WithBaseURL(baseURL)),
+			model:  model,
+		}, nil
 	case "google":
 		c, err := genai.NewClient(ctx, &genai.ClientConfig{APIKey: apiKey})
 		if err != nil {
@@ -89,7 +150,7 @@ func newLLMClient(ctx context.Context, provider, apiKey, model string) (llmEnric
 		}
 		return &googleClient{client: c, model: model}, nil
 	default:
-		return nil, fmt.Errorf("unsupported LLM provider %q (known: anthropic, openai, google)", provider)
+		return nil, fmt.Errorf("unsupported LLM provider %q (known: anthropic, openai, google, custom)", provider)
 	}
 }
 
@@ -135,6 +196,23 @@ func (c *llmClient) enrichFile(ctx context.Context, filePath string, issues []is
 	return results, nil
 }
 
+func (c *llmClient) reviseResult(ctx context.Context, filePath string, issue issueContext, priorReplacement, parseErr string) (string, error) {
+	user := buildRevisePrompt(filePath, issue, priorReplacement, parseErr)
+	msg, err := c.client.Messages.New(ctx, anthropic.MessageNewParams{
+		Model:     c.model,
+		MaxTokens: 512, // just the code, not a full object — narrower than enrichFile's 2048
+		System:    []anthropic.TextBlockParam{{Text: reviseSystemPrompt}},
+		Messages:  []anthropic.MessageParam{anthropic.NewUserMessage(anthropic.NewTextBlock(user))},
+	})
+	if err != nil {
+		return "", fmt.Errorf("claude api: %w", err)
+	}
+	if len(msg.Content) == 0 {
+		return "", fmt.Errorf("claude api: empty response")
+	}
+	return parseReviseResponse(msg.Content[0].Text)
+}
+
 type openaiClient struct {
 	client openai.Client
 	model  string
@@ -173,6 +251,25 @@ func (c *openaiClient) enrichFile(ctx context.Context, filePath string, issues [
 	return results, nil
 }
 
+func (c *openaiClient) reviseResult(ctx context.Context, filePath string, issue issueContext, priorReplacement, parseErr string) (string, error) {
+	user := buildRevisePrompt(filePath, issue, priorReplacement, parseErr)
+	resp, err := c.client.Chat.Completions.New(ctx, openai.ChatCompletionNewParams{
+		Model: c.model,
+		Messages: []openai.ChatCompletionMessageParamUnion{
+			openai.SystemMessage(reviseSystemPrompt),
+			openai.UserMessage(user),
+		},
+		MaxTokens: openai.Int(512),
+	})
+	if err != nil {
+		return "", fmt.Errorf("openai api: %w", err)
+	}
+	if len(resp.Choices) == 0 {
+		return "", fmt.Errorf("openai api: empty response")
+	}
+	return parseReviseResponse(resp.Choices[0].Message.Content)
+}
+
 type googleClient struct {
 	client *genai.Client
 	model  string
@@ -202,6 +299,18 @@ func (c *googleClient) enrichFile(ctx context.Context, filePath string, issues [
 		}
 	}
 	return results, nil
+}
+
+func (c *googleClient) reviseResult(ctx context.Context, filePath string, issue issueContext, priorReplacement, parseErr string) (string, error) {
+	prompt := reviseSystemPrompt + "\n\n" + buildRevisePrompt(filePath, issue, priorReplacement, parseErr)
+	resp, err := c.client.Models.GenerateContent(ctx, c.model, genai.Text(prompt), nil)
+	if err != nil {
+		return "", fmt.Errorf("google api: %w", err)
+	}
+	if resp == nil || len(resp.Candidates) == 0 {
+		return "", fmt.Errorf("google api: empty response")
+	}
+	return parseReviseResponse(resp.Text())
 }
 
 // buildIssueList formats the issue list portion of the LLM prompt.

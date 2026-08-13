@@ -343,7 +343,7 @@ func TestIsKnownProvider(t *testing.T) {
 
 func TestKnownProviders_SortedAndComplete(t *testing.T) {
 	got := llm.KnownProviders()
-	want := []string{"anthropic", "google", "openai"}
+	want := []string{"anthropic", "custom", "google", "openai"}
 	if len(got) != len(want) {
 		t.Fatalf("KnownProviders() = %v, want %v", got, want)
 	}
@@ -411,6 +411,71 @@ func TestLoad_EnvVarKey_Google(t *testing.T) {
 	}
 	if p.Model != "gemini-2.5-flash-lite" {
 		t.Errorf("Model = %q, want gemini-2.5-flash-lite", p.Model)
+	}
+}
+
+func TestLoad_EnvVarBaseURL_Custom(t *testing.T) {
+	setConfigDir(t, t.TempDir())
+	t.Setenv("OPENAI_BASE_URL", "http://10.8.0.1:4000")
+	t.Setenv("OPENAI_API_KEY", "sk-local-AAAAAAAAAAAAAAAAAAAAAA")
+	t.Setenv("TRUSTABL_LLM_MODEL", "qwen-32b")
+
+	cfg, err := llm.Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.Active != "custom" {
+		t.Errorf("Active = %q, want custom", cfg.Active)
+	}
+	p := cfg.ActiveProvider()
+	if p.Key != "sk-local-AAAAAAAAAAAAAAAAAAAAAA" {
+		t.Errorf("Key = %q, want sk-local-AAAAAAAAAAAAAAAAAAAAAA", p.Key)
+	}
+	if p.BaseURL != "http://10.8.0.1:4000" {
+		t.Errorf("BaseURL = %q, want http://10.8.0.1:4000", p.BaseURL)
+	}
+	if p.Model != "qwen-32b" {
+		t.Errorf("Model = %q, want qwen-32b", p.Model)
+	}
+}
+
+// A self-hosted endpoint often needs no key at all — this must not be
+// mistaken for "not configured" (see the OPENAI_API_KEY != "" branch below).
+func TestLoad_EnvVarBaseURL_CustomNoKey(t *testing.T) {
+	setConfigDir(t, t.TempDir())
+	t.Setenv("OPENAI_BASE_URL", "http://10.8.0.1:4000")
+	t.Setenv("TRUSTABL_LLM_MODEL", "qwen-32b")
+
+	cfg, err := llm.Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.Active != "custom" {
+		t.Errorf("Active = %q, want custom", cfg.Active)
+	}
+	p := cfg.ActiveProvider()
+	if p.Key != "" {
+		t.Errorf("Key = %q, want empty", p.Key)
+	}
+	if p.BaseURL != "http://10.8.0.1:4000" {
+		t.Errorf("BaseURL = %q, want http://10.8.0.1:4000", p.BaseURL)
+	}
+}
+
+// OPENAI_BASE_URL is the unambiguous signal for "custom" — it must win over
+// the plain OPENAI_API_KEY branch even when both are set, or a custom
+// endpoint would silently fall back to hosted OpenAI.
+func TestLoad_EnvVarBaseURL_TakesPriorityOverPlainOpenAI(t *testing.T) {
+	setConfigDir(t, t.TempDir())
+	t.Setenv("OPENAI_API_KEY", "sk-proj-AAAAAAAAAAAAAAAAAAAAAA")
+	t.Setenv("OPENAI_BASE_URL", "http://10.8.0.1:4000")
+
+	cfg, err := llm.Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.Active != "custom" {
+		t.Errorf("Active = %q, want custom", cfg.Active)
 	}
 }
 

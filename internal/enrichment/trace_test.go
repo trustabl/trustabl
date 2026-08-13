@@ -31,6 +31,10 @@ func (m *captureLLM) enrichFile(_ context.Context, _ string, issues []issueConte
 	return out, nil
 }
 
+func (m *captureLLM) reviseResult(_ context.Context, _ string, _ issueContext, priorReplacement, _ string) (string, error) {
+	return priorReplacement, nil
+}
+
 // fakeTraces returns canned stats and records which tools were looked up.
 type fakeTraces struct {
 	mu    sync.Mutex

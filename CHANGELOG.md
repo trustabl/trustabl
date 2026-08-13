@@ -28,6 +28,13 @@ to follow Semantic Versioning once it reaches 1.0.
 
 ### Added
 
+- **`custom` LLM provider for self-hosted / local model servers.** `trustabl
+  enrich` can now target any OpenAI-compatible endpoint (LiteLLM, vLLM, a local
+  model server, etc.) instead of a hosted provider. Set `OPENAI_BASE_URL` to
+  activate it — it takes priority over a plain `OPENAI_API_KEY`, and unlike
+  every other provider, `custom` does not require a key at all, since
+  self-hosted endpoints often don't check one. `TRUSTABL_LLM_MODEL` is
+  required (`custom` has no default model).
 - **Scan attestation (opt-in).** New `internal/attest` package plus `trustabl
   attest` / `trustabl verify` subcommands and a `scan --attest` flag. Trustabl
   renders a deterministic in-toto predicate (type

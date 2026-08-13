@@ -2204,6 +2204,29 @@ The LLM client calls the active provider's model (from `llm.Load()`) and parses
 a JSON array response — one `enrichResult` per finding. A `salvagePartialJSON`
 fallback recovers partial objects if the response is truncated.
 
+**Replacement validation and targeted correction**
+(`internal/enrichment/validate.go` + `Pipeline.validateAndCorrect` in
+`internal/enrichment/pipeline.go`). Every non-empty `Replacement` is spliced
+into the file and syntax-checked in-process before it can reach `--apply` or
+the JSON output: `validateSyntax` reuses `internal/analysis/astutil`'s
+existing tree-sitter parsers (Python, Go, TS/TSX, C#, PHP, Rust —
+`HasError()` on the parsed root; an extension with no grammar here is skipped,
+not failed closed). A replacement that fails the check gets up to
+`maxCorrectionAttempts-1` (currently 1) targeted correction calls —
+`llmEnricher.reviseResult`, a small single-issue prompt scoped to just that
+finding's prior bad replacement and the parse error, never a re-run of the
+whole batch. The correction call returns ONLY the fixed code: it merges into
+the existing `enrichResult`, replacing `Replacement` alone —
+`Explanation`/`Fix`/`Original`/`FalsePositive` and the line range stay exactly
+as the original generation produced them, since the syntax check only proved
+the code was wrong, not the rest of the result. If correction is exhausted
+without a clean parse, the finding falls back to the same "no code change"
+shape the LLM itself can produce: `Replacement`/`LineStart`/`LineEnd` cleared,
+`Explanation` kept. This keeps
+`enrich`'s own non-determinism (LLM output) from ever writing unparseable code
+to disk, while leaving `trustabl scan`'s byte-stable/`ScanID` contract
+untouched — `enrich` is a separate command outside the scan pipeline.
+
 **Optional runtime trace grounding (`--langsmith`,
 [internal/langsmith/](internal/langsmith/)).** With `--langsmith`, tool-scope
 findings gain a third context layer: recent executions of each flagged tool are
@@ -2328,7 +2351,15 @@ take it absent a concrete distribution requirement.
   (switches active provider, auto-creates entry with a per-provider default
   model), `ValidateKey`, and `MaskKey`. A `defaultModels` map supplies
   fast/cheap defaults per known provider (`anthropic → claude-haiku-4-5`,
-  `openai → gpt-4.1-nano`, `google → gemini-2.5-flash-lite`).
+  `openai → gpt-4.1-nano`, `google → gemini-2.5-flash-lite`, `custom → ""`).
+  `custom` is a fourth known provider for a self-hosted OpenAI-compatible
+  endpoint (e.g. a local model server): `Load()` activates it whenever
+  `OPENAI_BASE_URL` is set, ahead of the plain `OPENAI_API_KEY` branch, has no
+  fixed default model (`TRUSTABL_LLM_MODEL` is required), and — unlike every
+  other provider — does not require a key, since such endpoints often don't
+  check one. `newLLMClient` (`internal/enrichment/llm.go`) wires its `BaseURL`
+  into the OpenAI SDK client via `option.WithBaseURL`; wire-compatible with
+  the `openai` case otherwise.
   `trustabl enrich` (§8.2) reads this config to call the active LLM provider with BYOK.
   The scan pipeline itself makes no LLM call — rule-based detection is the
   entire scan, with or without a key configured.

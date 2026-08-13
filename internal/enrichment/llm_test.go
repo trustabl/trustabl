@@ -71,12 +71,32 @@ func TestIndentBlock(t *testing.T) {
 }
 
 func TestNewLLMClient_UnknownProvider(t *testing.T) {
-	_, err := newLLMClient(context.Background(), "unknown", "key", "model")
+	_, err := newLLMClient(context.Background(), "unknown", "key", "model", "")
 	if err == nil {
 		t.Fatal("newLLMClient with unknown provider: expected error, got nil")
 	}
 	if !strings.Contains(err.Error(), "unsupported") {
 		t.Errorf("error %q should contain \"unsupported\"", err.Error())
+	}
+}
+
+func TestNewLLMClient_CustomRequiresBaseURL(t *testing.T) {
+	_, err := newLLMClient(context.Background(), "custom", "", "model", "")
+	if err == nil {
+		t.Fatal("newLLMClient with custom provider and no base URL: expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "base URL") {
+		t.Errorf("error %q should mention the missing base URL", err.Error())
+	}
+}
+
+func TestNewLLMClient_CustomWithBaseURL(t *testing.T) {
+	client, err := newLLMClient(context.Background(), "custom", "", "model", "http://localhost:4000")
+	if err != nil {
+		t.Fatalf("newLLMClient with custom provider and base URL: unexpected error: %v", err)
+	}
+	if client == nil {
+		t.Fatal("newLLMClient with custom provider and base URL: expected a client, got nil")
 	}
 }
 

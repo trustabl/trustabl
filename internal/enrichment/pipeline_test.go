@@ -16,6 +16,12 @@ type mockLLM struct {
 	results []enrichResult
 	err     error
 	calls   atomic.Int32
+
+	// reviseResults are the corrected-code strings returned in order, one per
+	// call to reviseResult. reviseErr, if set, is returned instead on every call.
+	reviseResults []string
+	reviseErr     error
+	reviseCalls   atomic.Int32
 }
 
 func (m *mockLLM) enrichFile(_ context.Context, _ string, issues []issueContext) ([]enrichResult, error) {
@@ -31,6 +37,17 @@ func (m *mockLLM) enrichFile(_ context.Context, _ string, issues []issueContext)
 		}
 	}
 	return out, nil
+}
+
+func (m *mockLLM) reviseResult(_ context.Context, _ string, _ issueContext, _, _ string) (string, error) {
+	i := m.reviseCalls.Add(1) - 1
+	if m.reviseErr != nil {
+		return "", m.reviseErr
+	}
+	if int(i) < len(m.reviseResults) {
+		return m.reviseResults[i], nil
+	}
+	return "", nil
 }
 
 func writeTempFile(t *testing.T, dir, name, content string) string {

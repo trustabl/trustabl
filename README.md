@@ -821,7 +821,16 @@ trustabl llm model set claude-sonnet-4-6   # change model for active provider
 trustabl llm provider set openai           # switch active provider (auto-creates entry)
 trustabl llm provider list                 # list configured providers
 
-# Enrich a scan result (requires any configured LLM provider with a key set)
+# Self-hosted / local model server (any OpenAI-compatible endpoint, e.g. a
+# LiteLLM or vLLM gateway). OPENAI_BASE_URL alone activates "custom" — it
+# takes priority over a plain OPENAI_API_KEY. No default model, so
+# TRUSTABL_LLM_MODEL is required. OPENAI_API_KEY is optional: only set it if
+# the endpoint actually checks it.
+export OPENAI_BASE_URL=http://localhost:4000
+export TRUSTABL_LLM_MODEL=qwen-32b
+
+# Enrich a scan result (requires any configured LLM provider — a custom
+# endpoint may not need a key, every other provider does)
 trustabl scan ./myrepo --format json | trustabl enrich --repo ./myrepo        # pipe scan into enrich (stdout)
 trustabl enrich --input scan.json --repo ./myrepo --output enriched.json      # file in, file out
 trustabl enrich --input scan.json --repo ./myrepo --diff                      # preview proposed fixes as a unified diff (stderr)
