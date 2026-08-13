@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -91,5 +93,86 @@ func TestForgeCommand_MaxOnePositionalArg(t *testing.T) {
 	err := cmd.Args(cmd, []string{"arg1", "arg2"})
 	if err == nil {
 		t.Error("expected error for two positional args")
+	}
+}
+
+func TestForgeCheckCommand_Registered(t *testing.T) {
+	cmd := newForgeCommand(nil)
+	var found bool
+	for _, sub := range cmd.Commands() {
+		if sub.Name() == "check" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("forge check subcommand not registered")
+	}
+}
+
+func TestForgeCheckCommand_Flags(t *testing.T) {
+	cmd := newForgeCommand(nil)
+	var checkCmd *cobra.Command
+	for _, sub := range cmd.Commands() {
+		if sub.Name() == "check" {
+			checkCmd = sub
+			break
+		}
+	}
+	if checkCmd == nil {
+		t.Fatal("forge check subcommand not found")
+	}
+	if checkCmd.Flags().Lookup("rules-ref") == nil {
+		t.Error("forge check: --rules-ref flag not registered")
+	}
+}
+
+func TestForgeCheckCommand_TooManyArgs(t *testing.T) {
+	root := &cobra.Command{Use: "trustabl", SilenceUsage: true, SilenceErrors: true}
+	root.AddCommand(newForgeCommand(nil))
+	root.SetArgs([]string{"forge", "check", "file1.md", "file2.md"})
+	buf := &bytes.Buffer{}
+	root.SetErr(buf)
+	if err := root.Execute(); err == nil {
+		t.Error("expected error for two positional args")
+	}
+}
+
+func TestForgeCheckCommand_FileNotFound_DefaultPath(t *testing.T) {
+	tmp := t.TempDir()
+	orig, _ := os.Getwd()
+	defer os.Chdir(orig)
+	os.Chdir(tmp)
+
+	root := &cobra.Command{Use: "trustabl", SilenceUsage: true, SilenceErrors: true}
+	root.AddCommand(newForgeCommand(nil))
+	root.SetArgs([]string{"forge", "check"})
+	errBuf := &bytes.Buffer{}
+	root.SetErr(errBuf)
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected non-nil error for missing SKILL.md")
+	}
+	if !strings.Contains(errBuf.String(), "SKILL.md") {
+		t.Errorf("stderr should mention SKILL.md, got: %s", errBuf.String())
+	}
+}
+
+func TestForgeCheckCommand_NoStamp_Exit1(t *testing.T) {
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "skill.md")
+	os.WriteFile(path, []byte("# Some Skill\n\nNo stamp here.\n"), 0o644)
+
+	root := &cobra.Command{Use: "trustabl", SilenceUsage: true, SilenceErrors: true}
+	root.AddCommand(newForgeCommand(nil))
+	root.SetArgs([]string{"forge", "check", path})
+	errBuf := &bytes.Buffer{}
+	root.SetErr(errBuf)
+	err := root.Execute()
+	if err == nil {
+		t.Fatal("expected non-nil error for unstamped file")
+	}
+	if !strings.Contains(errBuf.String(), "no forge stamp") {
+		t.Errorf("stderr should mention 'no forge stamp', got: %s", errBuf.String())
 	}
 }

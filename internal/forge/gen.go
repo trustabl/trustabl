@@ -97,8 +97,8 @@ func matchCondition(expr rules.MatchExpr) string {
 	return "When the condition described by this rule is met."
 }
 
-// Stamp is the passive watermark embedded in a GenerateCombined output.
-type Stamp struct {
+// PolicyStamp is the passive watermark embedded in a GenerateCombined output.
+type PolicyStamp struct {
 	Date          string                    // YYYY-MM-DD
 	RulesSHA      string                    // short (7-char) or full SHA
 	SchemaVersion int
@@ -164,7 +164,7 @@ func emitRuleSection(b *strings.Builder, heading string, rs []rules.RuleDef, sco
 // Output is byte-stable: categories are iterated in stamp.Categories order;
 // within each section rules are sorted by severity (critical first) then rule
 // ID ascending.
-func GenerateCombined(categories []models.DetectorCategory, policies []rules.PolicyFile, stamp Stamp) string {
+func GenerateCombined(categories []models.DetectorCategory, policies []rules.PolicyFile, stamp PolicyStamp) string {
 	// build category set for O(1) membership check
 	catSet := make(map[models.DetectorCategory]bool, len(categories))
 	for _, c := range categories {
@@ -272,7 +272,8 @@ func sanitizeEmittedText(s string) string {
 // Only rules already filtered to scope==skill should be passed; Generate does
 // not re-filter. Output is byte-stable: rules are sorted by severity rank
 // (critical first), then by rule ID ascending within each rank.
-func Generate(meta rules.PolicyMeta, skillRules []rules.RuleDef) string {
+// When stamp.SHA is non-empty, a provenance comment is embedded after the header.
+func Generate(meta rules.PolicyMeta, skillRules []rules.RuleDef, stamp Stamp) string {
 	sorted := make([]rules.RuleDef, len(skillRules))
 	copy(sorted, skillRules)
 	sort.Slice(sorted, func(i, j int) bool {
@@ -301,6 +302,10 @@ func Generate(meta rules.PolicyMeta, skillRules []rules.RuleDef) string {
 	// --- Header ---
 	fmt.Fprintf(&b, "# Trustabl Pre-Coding: %s\n", meta.Name)
 	fmt.Fprintf(&b, "\n")
+	if line := stamp.Line(); line != "" {
+		fmt.Fprintf(&b, "%s\n", line)
+		fmt.Fprintf(&b, "\n")
+	}
 	fmt.Fprintf(&b, "Before writing any SKILL.md, you MUST apply every constraint below. Rules are\n")
 	fmt.Fprintf(&b, "ordered by severity. A violation here will fire the corresponding finding\n")
 	fmt.Fprintf(&b, "in post-build scan — prevent it now.\n")
