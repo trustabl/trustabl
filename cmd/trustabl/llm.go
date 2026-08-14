@@ -32,6 +32,7 @@ today, with or without a key configured.`,
 	cmd.AddCommand(newLLMListCommand())
 	cmd.AddCommand(newLLMKeyCommand())
 	cmd.AddCommand(newLLMModelCommand())
+	cmd.AddCommand(newLLMBaseURLCommand())
 	cmd.AddCommand(newLLMProviderCommand())
 	return cmd
 }
@@ -63,7 +64,7 @@ func runLLMList(cmd *cobra.Command) error {
 		return err
 	}
 	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 3, ' ', 0)
-	fmt.Fprintln(w, "PROVIDER\tMODEL\tKEY")
+	fmt.Fprintln(w, "PROVIDER\tMODEL\tBASE URL\tKEY")
 	names := make([]string, 0, len(cfg.Providers))
 	for name := range cfg.Providers {
 		names = append(names, name)
@@ -75,7 +76,11 @@ func runLLMList(cmd *cobra.Command) error {
 		if name == cfg.Active {
 			active = " *"
 		}
-		fmt.Fprintf(w, "%s%s\t%s\t%s\n", name, active, p.Model, llm.MaskKey(p.Key))
+		baseURL := p.BaseURL
+		if baseURL == "" {
+			baseURL = "-"
+		}
+		fmt.Fprintf(w, "%s%s\t%s\t%s\t%s\n", name, active, p.Model, baseURL, llm.MaskKey(p.Key))
 	}
 	return w.Flush()
 }
@@ -249,6 +254,52 @@ func runLLMModelSet(cmd *cobra.Command, model string) error {
 		return err
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "Model for %s set to %s.\n", cfg.Active, model)
+	return nil
+}
+
+// ── base-url ──────────────────────────────────────────────────────────────────
+
+func newLLMBaseURLCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "base-url",
+		Short: "Manage the API base URL for the active provider",
+		Long: `Manage a custom API base URL for the active provider. Only meaningful for
+"custom" — a self-hosted OpenAI-compatible endpoint (e.g. LiteLLM, vLLM, a
+local model server). Other providers ignore it and use their default hosted
+API.`,
+		Example: "  trustabl llm provider set custom\n  trustabl llm base-url set http://localhost:4000\n  trustabl llm model set qwen-32b",
+	}
+	cmd.AddCommand(newLLMBaseURLSetCommand())
+	return cmd
+}
+
+func newLLMBaseURLSetCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:     "set <url>",
+		Short:   "Set the API base URL for the active provider",
+		Long:    "Set the API base URL for the active provider. The value is stored as-is and\nis not validated as a reachable endpoint.",
+		Example: "  trustabl llm base-url set http://localhost:4000",
+		Args:    cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runLLMBaseURLSet(cmd, args[0])
+		},
+	}
+}
+
+func runLLMBaseURLSet(cmd *cobra.Command, baseURL string) error {
+	cfg, err := llm.Load()
+	if err != nil {
+		return err
+	}
+	cfg.SetBaseURL(baseURL)
+	if err := cfg.Save(); err != nil {
+		return err
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "Base URL for %s set to %s.\n", cfg.Active, baseURL)
+	if cfg.Active != "custom" {
+		fmt.Fprintf(cmd.OutOrStdout(),
+			"Note: only the \"custom\" provider uses a base URL — %s will ignore this.\n", cfg.Active)
+	}
 	return nil
 }
 

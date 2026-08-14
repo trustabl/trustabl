@@ -19,6 +19,11 @@ var defaultModels = map[string]string{
 	"anthropic": "claude-haiku-4-5",
 	"openai":    "gpt-4.1-nano",
 	"google":    "gemini-2.5-flash-lite",
+	// "custom" (a self-hosted OpenAI-compatible endpoint) has no fixed
+	// default — the model name is meaningless without knowing what the
+	// endpoint serves, so it must always be set explicitly (TRUSTABL_LLM_MODEL
+	// or `trustabl llm model set`).
+	"custom": "",
 }
 
 // IsKnownProvider reports whether Trustabl ships a default model for provider
@@ -52,6 +57,9 @@ type Config struct {
 type Provider struct {
 	Model string `json:"model"`
 	Key   string `json:"key"`
+	// BaseURL overrides the API endpoint. Only meaningful for "custom" (a
+	// self-hosted OpenAI-compatible server); other providers ignore it.
+	BaseURL string `json:"base_url,omitempty"`
 }
 
 // ActiveProvider returns the Provider entry for the active provider name.
@@ -89,6 +97,17 @@ func (c *Config) SetModel(model string) {
 	c.Providers[c.Active] = p
 }
 
+// SetBaseURL sets the API base URL for the active provider. Only meaningful
+// for "custom" — points a self-hosted OpenAI-compatible server.
+func (c *Config) SetBaseURL(baseURL string) {
+	if c.Providers == nil {
+		c.Providers = make(map[string]Provider)
+	}
+	p := c.Providers[c.Active]
+	p.BaseURL = baseURL
+	c.Providers[c.Active] = p
+}
+
 // SetActive sets the active provider, auto-creating its entry with a default
 // model if it does not already exist. Existing entries are never overwritten.
 func (c *Config) SetActive(provider string) {
@@ -107,6 +126,20 @@ func Load() (*Config, error) {
 	if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" {
 		cfg := defaults()
 		cfg.SetKey(key)
+		if m := os.Getenv("TRUSTABL_LLM_MODEL"); m != "" {
+			cfg.SetModel(m)
+		}
+		return cfg, nil
+	}
+	// A custom OpenAI-compatible endpoint (self-hosted or local model server)
+	// is signaled by OPENAI_BASE_URL alone — checked ahead of the plain
+	// OPENAI_API_KEY branch below because such endpoints often need no key at
+	// all, so this must not gate on OPENAI_API_KEY being set.
+	if baseURL := os.Getenv("OPENAI_BASE_URL"); baseURL != "" {
+		cfg := defaults()
+		cfg.SetActive("custom")
+		cfg.SetKey(os.Getenv("OPENAI_API_KEY"))
+		cfg.SetBaseURL(baseURL)
 		if m := os.Getenv("TRUSTABL_LLM_MODEL"); m != "" {
 			cfg.SetModel(m)
 		}

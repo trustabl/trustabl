@@ -818,10 +818,28 @@ trustabl llm key set sk-ant-api03-...      # set key non-interactively
 trustabl llm key get                       # show masked key for active provider
 trustabl llm key delete                    # delete key with confirmation prompt
 trustabl llm model set claude-sonnet-4-6   # change model for active provider
+trustabl llm base-url set http://host:4000 # set API base URL (only meaningful for "custom")
 trustabl llm provider set openai           # switch active provider (auto-creates entry)
 trustabl llm provider list                 # list configured providers
 
-# Enrich a scan result (requires any configured LLM provider with a key set)
+# Self-hosted / local model server (any OpenAI-compatible endpoint, e.g. a
+# LiteLLM or vLLM gateway). Two ways to configure it:
+#
+# 1. Env vars — no persistent config, works in CI:
+#    OPENAI_BASE_URL alone activates "custom", ahead of a plain OPENAI_API_KEY.
+#    No default model, so TRUSTABL_LLM_MODEL is required. OPENAI_API_KEY is
+#    optional: only set it if the endpoint actually checks it.
+export OPENAI_BASE_URL=http://localhost:4000
+export TRUSTABL_LLM_MODEL=qwen-32b
+#
+# 2. Persistent config — same three fields, saved to ~/.config/trustabl/keys.json:
+trustabl llm provider set custom
+trustabl llm base-url set http://localhost:4000
+trustabl llm model set qwen-32b
+# trustabl llm key set is optional — skip it if the endpoint needs no key
+
+# Enrich a scan result (requires any configured LLM provider — a custom
+# endpoint may not need a key, every other provider does)
 trustabl scan ./myrepo --format json | trustabl enrich --repo ./myrepo        # pipe scan into enrich (stdout)
 trustabl enrich --input scan.json --repo ./myrepo --output enriched.json      # file in, file out
 trustabl enrich --input scan.json --repo ./myrepo --diff                      # preview proposed fixes as a unified diff (stderr)

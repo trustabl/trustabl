@@ -20,9 +20,10 @@ func init() {
 
 // Pipeline orchestrates enrichment of a ScanResult.
 type Pipeline struct {
-	LLMProvider  string   // "anthropic" | "openai" | "google"
-	LLMKey       string   // API key from llm.Load()
+	LLMProvider  string   // "anthropic" | "openai" | "google" | "custom"
+	LLMKey       string   // API key from llm.Load(); may be "" for "custom"
 	LLMModel     string   // model name from llm.Load(), e.g. "claude-haiku-4-5"
+	LLMBaseURL   string   // API base URL override; only used by "custom"
 	RepoRoot     string   // root of the scanned repo; source files are read relative to this
 	RuleFilter   []string // if non-empty, only enrich findings whose RuleID is in this list
 	Apply        bool     // write AI-generated replacements to disk
@@ -65,11 +66,13 @@ func (p *Pipeline) shouldEnrich(f models.Finding) bool {
 func (p *Pipeline) Run(ctx context.Context, result *models.ScanResult) (*models.EnrichmentResult, error) {
 	client := p.llm
 	if client == nil {
-		if p.LLMKey == "" {
+		// "custom" (a self-hosted OpenAI-compatible endpoint) may legitimately
+		// have no key — every other provider requires one.
+		if p.LLMKey == "" && p.LLMProvider != "custom" {
 			return nil, fmt.Errorf("enrichment: no LLM key configured, run: trustabl llm key set")
 		}
 		var clientErr error
-		client, clientErr = newLLMClient(ctx, p.LLMProvider, p.LLMKey, p.LLMModel)
+		client, clientErr = newLLMClient(ctx, p.LLMProvider, p.LLMKey, p.LLMModel, p.LLMBaseURL)
 		if clientErr != nil {
 			return nil, clientErr
 		}
@@ -210,6 +213,7 @@ func (p *Pipeline) enrichFile(ctx context.Context, client llmEnricher, filePath 
 			break
 		}
 		r := results[i]
+		r = p.validateAndCorrect(ctx, client, filePath, string(fileContent), issues[i], r)
 		out[i].AIExplanation = r.Explanation
 		out[i].AIFix = r.Fix
 		out[i].LineStart = r.LineStart
@@ -295,6 +299,61 @@ func (p *Pipeline) traceEvidenceFor(ctx context.Context, f models.Finding) strin
 		return "" // no traces recorded for this tool, nothing to say
 	}
 	return formatTraceEvidence(stats)
+}
+
+// maxCorrectionAttempts bounds how many times validateAndCorrect will retry a
+// single result: the original generation plus up to this many corrective
+// calls before giving up on that finding's replacement. Kept small — each
+// attempt beyond the first is a real LLM call paid out of the user's own
+// BYOK budget for what should be a narrow fix, not a full re-generation.
+const maxCorrectionAttempts = 2
+
+// validateAndCorrect checks r's replacement (if any) against a syntax parse
+// of the file with that replacement spliced in, and asks the LLM for up to
+// maxCorrectionAttempts-1 targeted corrections — scoped to this ONE finding,
+// never the whole batch — before giving up. A correction only ever replaces
+// r.Replacement; Explanation/Fix/Original/FalsePositive and the line range
+// are the original generation's and are never re-asked for — the syntax
+// check only proved the code was wrong, not the rest of the result. A
+// replacement that never validates falls back to the same "no code change"
+// shape the LLM itself can produce: Replacement/LineStart/LineEnd cleared,
+// Explanation kept.
+func (p *Pipeline) validateAndCorrect(ctx context.Context, client llmEnricher, filePath, fileContent string, issue issueContext, r enrichResult) enrichResult {
+	if r.Replacement == "" {
+		return r
+	}
+
+	for attempt := 0; attempt < maxCorrectionAttempts; attempt++ {
+		spliced, perr := applyPatches(fileContent, []filePatch{
+			{lineStart: r.LineStart, lineEnd: r.LineEnd, replacement: r.Replacement},
+		})
+		if perr != nil {
+			// Can't even splice it (bad line range) — a validity check has
+			// nothing to check; leave r as-is for --apply's own anchor check
+			// to handle.
+			return r
+		}
+
+		verr := validateSyntax(ctx, filePath, spliced)
+		if verr == nil {
+			return r // valid — keep r as-is
+		}
+
+		if attempt == maxCorrectionAttempts-1 {
+			log.Printf("warn: %s: replacement still invalid after %d correction(s): %v", filePath, attempt, verr)
+			r.Replacement, r.LineStart, r.LineEnd = "", 0, 0
+			return r
+		}
+
+		revised, rerr := client.reviseResult(ctx, filePath, issue, r.Replacement, verr.Error())
+		if rerr != nil {
+			log.Printf("warn: %s: correction call failed: %v", filePath, rerr)
+			r.Replacement, r.LineStart, r.LineEnd = "", 0, 0
+			return r
+		}
+		r.Replacement = revised
+	}
+	return r
 }
 
 // formatTraceEvidence renders ToolTraceStats as the prose block fed to the LLM

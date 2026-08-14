@@ -87,10 +87,11 @@ func runEnrich(cmd *cobra.Command, f enrichFlags) error {
 		return fmt.Errorf("enrich: load llm config: %w", err)
 	}
 	key := cfg.ActiveProvider().Key
-	if key == "" {
+	if key == "" && cfg.Active != "custom" {
 		return fmt.Errorf("enrich: no LLM key configured, run: trustabl llm key set")
 	}
 	model := cfg.ActiveProvider().Model
+	baseURL := cfg.ActiveProvider().BaseURL
 
 	result, err := readScanResult(f.inputFile)
 	if err != nil {
@@ -101,6 +102,7 @@ func runEnrich(cmd *cobra.Command, f enrichFlags) error {
 		LLMProvider:  cfg.Active,
 		LLMKey:       key,
 		LLMModel:     model,
+		LLMBaseURL:   baseURL,
 		RepoRoot:     f.repoRoot,
 		RuleFilter:   f.rules,
 		Apply:        f.apply,
