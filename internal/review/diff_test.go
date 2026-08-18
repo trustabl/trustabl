@@ -447,3 +447,49 @@ func TestRender_RulesSkippedShownAsDegraded(t *testing.T) {
 		t.Errorf("a clean scan must not show a skipped-rules line:\n%s", clean)
 	}
 }
+
+// TestRender_EmptyScanShowsEmptyState is the regression test for the bug where
+// scanning a repo with no agent surfaces reported "100%". Scoring an empty
+// surface set returns 1.0, so a repo containing no tools, agents, subagents or
+// skills rendered as a perfect result when in fact nothing had been evaluated.
+// The human format must say so rather than print a passing score.
+func TestRender_EmptyScanShowsEmptyState(t *testing.T) {
+	result := models.ScanResult{
+		Repo:            "./empty",
+		OverallScore:    1.0, // what scoring returns for an empty surface set
+		NoAgentSurfaces: true,
+	}
+
+	out := (&review.Renderer{NoColor: true}).Render(result)
+
+	if !strings.Contains(out, "No agent surfaces found") {
+		t.Errorf("empty scan must state that nothing was evaluated; got:\n%s", out)
+	}
+	if !strings.Contains(out, "Overall score:      n/a") {
+		t.Errorf("empty scan must not report a numeric score; got:\n%s", out)
+	}
+	if strings.Contains(out, "100%") {
+		t.Errorf("empty scan must never render 100%%; got:\n%s", out)
+	}
+}
+
+// A repo that does have surfaces must still render its score, so the empty
+// state cannot mask real results.
+func TestRender_NonEmptyScanStillShowsScore(t *testing.T) {
+	result := models.ScanResult{
+		Repo:         "./fixture",
+		OverallScore: 0.96,
+		Surfaces: []models.SurfaceReadiness{
+			{Kind: models.ScopeTool, Name: "search", FilePath: "tools.py", Score: 0.96},
+		},
+	}
+
+	out := (&review.Renderer{NoColor: true}).Render(result)
+
+	if strings.Contains(out, "No agent surfaces found") {
+		t.Errorf("a scan with surfaces must not show the empty state; got:\n%s", out)
+	}
+	if !strings.Contains(out, "96%") {
+		t.Errorf("a scan with surfaces must render its score; got:\n%s", out)
+	}
+}

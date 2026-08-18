@@ -563,6 +563,9 @@ func Run(cfg Config) (models.ScanResult, error) {
 		RulesSkipped:        sortedUnique(rulesSkipped),
 		RulesOrigin:         cfg.RulesOrigin,
 		Coverage:            coverage,
+		// An empty surface set means nothing was evaluated. Flag it so a
+		// score of 1.0 is not mistaken for a clean bill of health.
+		NoAgentSurfaces: len(surfaces) == 0,
 	}, nil
 }
 

@@ -524,6 +524,11 @@ type ScanResult struct {
 	RulesSkipped        []string           `json:"rules_skipped,omitempty"`        // rule IDs dropped as forward-incompatible (sorted, deduped)
 	RulesOrigin         RulesOrigin        `json:"rules_origin"`                   // provenance of the rules (signed channel / unsigned / custom)
 	Coverage            Coverage           `json:"coverage"`                       // how many source files parsed vs. were skipped
+	// NoAgentSurfaces marks a scan that found nothing to evaluate: no tools,
+	// agents, subagents or skills. Scoring an empty set yields 1.0, which reads
+	// as a perfect result when in fact nothing was checked, so consumers must be
+	// able to tell the two apart. OverallScore is left at 1.0 for compatibility.
+	NoAgentSurfaces bool `json:"no_agent_surfaces,omitempty"`
 }
 
 // EnrichedFinding extends Finding with AI-generated context and an optional
