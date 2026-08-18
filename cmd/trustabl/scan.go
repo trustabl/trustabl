@@ -777,6 +777,15 @@ func writeSideOutputs(result models.ScanResult, f scanFlags) error {
 }
 
 func exitCode(result models.ScanResult, strict bool) int {
+	// A scan that evaluated nothing is the worst thing to pass silently under
+	// --strict: a mistyped path or a moved source tree leaves the gate green
+	// forever, and nobody investigates a passing build. --strict means "I expect
+	// agent code here", so finding none is itself the failure. The default path
+	// is untouched: scanning a repo with no agents is not an error unless the
+	// caller asked for strictness.
+	if strict && result.NoAgentSurfaces {
+		return 1
+	}
 	for _, f := range result.Findings {
 		switch f.Severity {
 		case models.SeverityMedium, models.SeverityHigh, models.SeverityCritical:

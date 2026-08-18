@@ -387,3 +387,27 @@ func TestValidateOutputFlags(t *testing.T) {
 		})
 	}
 }
+
+// TestExitCode_StrictFailsEmptyScan covers the case where a scan evaluated
+// nothing at all. Under --strict that must fail: a mistyped path or a moved
+// source tree would otherwise leave the gate permanently green, and a passing
+// build is never investigated. Without --strict it stays a pass, because
+// scanning a repo that legitimately has no agent code is not an error.
+func TestExitCode_StrictFailsEmptyScan(t *testing.T) {
+	empty := models.ScanResult{NoAgentSurfaces: true}
+
+	if got := exitCode(empty, true); got != 1 {
+		t.Errorf("exitCode(empty, strict=true) = %d, want 1", got)
+	}
+	if got := exitCode(empty, false); got != 0 {
+		t.Errorf("exitCode(empty, strict=false) = %d, want 0", got)
+	}
+
+	// A repo with surfaces and no findings must still pass under --strict.
+	clean := models.ScanResult{
+		Surfaces: []models.SurfaceReadiness{{Kind: models.ScopeTool, Name: "t", Score: 1}},
+	}
+	if got := exitCode(clean, true); got != 0 {
+		t.Errorf("exitCode(clean repo, strict=true) = %d, want 0", got)
+	}
+}
