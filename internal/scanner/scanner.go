@@ -403,6 +403,7 @@ func Run(cfg Config) (models.ScanResult, error) {
 	inventory.PluginManifests = analysis.DiscoverPlugins(profile.Manifest)
 	inventory.ClaudeSettings = analysis.DiscoverClaudeSettings(profile.Manifest)
 	inventory.ClaudeAgentOptions = analysis.DiscoverClaudeAgentOptions(parsed)
+	inventory.AgentRunCalls = analysis.DiscoverAgentRunCalls(parsed)
 	// Markdown subagents are an independent Claude Agent SDK signal: a repo can
 	// ship .claude/agents/*.md (or a flat collection) with no Claude SDK code.
 	// Fold them into SDKsDetected so LoadFor loads the claude_sdk pack (CSDK-110).
