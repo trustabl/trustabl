@@ -3721,6 +3721,26 @@ var policyAgentRuleCases = []policyAgentCase{
 		models.RepoInventory{},
 		false},
 
+	// ─── OAI-112 agent has no explicit max_turns limit ────────────────────────
+	{"OAI-112 fires when the matching Runner.run call sets no max_turns", "OAI-112",
+		models.AgentDef{
+			SDK: models.SDKOpenAIAgents, Class: "Agent", Language: models.LanguagePython,
+			Location: models.Location{FilePath: "main.py"}, VarName: "agent",
+		},
+		models.RepoInventory{AgentRunCalls: []models.AgentRunCallDef{
+			{SDK: models.SDKOpenAIAgents, Location: models.Location{FilePath: "main.py"}, AgentVarName: "agent"},
+		}},
+		true},
+	{"OAI-112 silent when max_turns is set", "OAI-112",
+		models.AgentDef{
+			SDK: models.SDKOpenAIAgents, Class: "Agent", Language: models.LanguagePython,
+			Location: models.Location{FilePath: "main.py"}, VarName: "agent",
+		},
+		models.RepoInventory{AgentRunCalls: []models.AgentRunCallDef{
+			{SDK: models.SDKOpenAIAgents, Location: models.Location{FilePath: "main.py"}, AgentVarName: "agent", Kwargs: runCallKwargs("max_turns", "5")},
+		}},
+		false},
+
 	// ─── CSDK-120 TS agent bypassPermissions ─────────────────────────────────
 	{"CSDK-120 fires on bypassPermissions TS agent", "CSDK-120",
 		parseTSAgentInline("import { query } from \"@anthropic-ai/claude-agent-sdk\";\n" +
@@ -3851,6 +3871,25 @@ var policyAgentRuleCases = []policyAgentCase{
 				"end_strategy": {Value: &models.Expr{Kind: models.ExprLiteralString, Text: `"early"`}},
 			}}},
 		models.RepoInventory{}, false},
+
+	{"PYD-106 fires when the matching agent.run call sets no usage_limits", "PYD-106",
+		models.AgentDef{
+			SDK: models.SDKPydanticAI, Class: "PydanticAgent", Language: models.LanguagePython,
+			Location: models.Location{FilePath: "main.py"}, VarName: "agent",
+		},
+		models.RepoInventory{AgentRunCalls: []models.AgentRunCallDef{
+			{SDK: models.SDKPydanticAI, Location: models.Location{FilePath: "main.py"}, AgentVarName: "agent"},
+		}},
+		true},
+	{"PYD-106 silent when usage_limits is set", "PYD-106",
+		models.AgentDef{
+			SDK: models.SDKPydanticAI, Class: "PydanticAgent", Language: models.LanguagePython,
+			Location: models.Location{FilePath: "main.py"}, VarName: "agent",
+		},
+		models.RepoInventory{AgentRunCalls: []models.AgentRunCallDef{
+			{SDK: models.SDKPydanticAI, Location: models.Location{FilePath: "main.py"}, AgentVarName: "agent", Kwargs: runCallKwargs("usage_limits", "UsageLimits(request_limit=5)")},
+		}},
+		false},
 
 	// ─── Vercel AI SDK agent rules (VAI-*) ────────────────────────────────────
 	// The object-record tools walk: a provider hosted-tool call

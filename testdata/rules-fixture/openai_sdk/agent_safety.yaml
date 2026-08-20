@@ -165,6 +165,35 @@ rules:
       on the Agent(...) constructor. It should inspect the final output for
       data exfiltration and unsafe content before it is returned.
 
+  - id: OAI-112
+    title: OpenAI Agents SDK agent has no explicit max_turns limit
+    severity: low
+    confidence: 0.6
+    language: python
+    applies_to:
+      - openai_agent
+      - openai_sandbox_agent
+    scope: agent
+    match:
+      agent_run_call_max_turns_missing: true
+    explanation: >
+      No Runner.run/run_sync/run_streamed call that executes this agent sets
+      max_turns, so the loop runs to whatever ceiling the SDK's
+      DEFAULT_MAX_TURNS applies rather than to a bound sized for this task. A
+      model that loops or oscillates — retrying a failing tool, re-reading the
+      same file, ping-ponging between two steps — keeps consuming turns,
+      tokens, and tool side effects until that implicit ceiling is reached,
+      and an implicit ceiling can shift between SDK versions without any
+      change on your side. An explicit cap also turns a stuck run into a
+      clean, observable MaxTurnsExceeded instead of a slow burn.
+    fix: >
+      Pass max_turns= to Runner.run(...) (or run_sync/run_streamed), sized to
+      the work this agent actually does — a handful of turns for a
+      single-lookup agent, more for a multi-step task. Treat hitting the cap
+      as a signal to surface and handle rather than to raise it: if a task
+      legitimately needs many turns, split it into bounded sub-runs instead of
+      removing the bound.
+
   - id: OAI-105
     title: TypeScript agent wires a content-fetching hosted tool without inputGuardrails
     severity: high

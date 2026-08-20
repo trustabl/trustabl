@@ -124,3 +124,30 @@ rules:
       model produces a final result, skipping pending tool calls. Only choose
       exhaustive when every tool the agent can call is side-effect-free and you
       specifically need the remaining calls to complete.
+
+  - id: PYD-106
+    title: Pydantic AI agent has no explicit usage_limits set
+    severity: low
+    confidence: 0.6
+    language: python
+    applies_to:
+      - pydantic_ai_agent
+    scope: agent
+    match:
+      agent_run_call_usage_limits_missing: true
+    explanation: >
+      No run/run_sync/run_stream call that executes this agent sets
+      usage_limits, so Pydantic AI falls back to a bare UsageLimits() —
+      capping request count but leaving token and cost usage completely
+      unbounded. A model that loops or oscillates, or a single run that
+      balloons into an unexpectedly long tool-calling chain, can burn far more
+      tokens and cost than the task warrants before the request cap is ever
+      reached, and nothing stops a single expensive run from running the bill
+      up. An explicit, task-sized UsageLimits also turns a runaway run into a
+      clean UsageLimitExceeded instead of a silent cost overrun.
+    fix: >
+      Pass usage_limits=UsageLimits(...) to agent.run/run_sync/run_stream,
+      sized to the task — request_limit for a hard step count, and
+      total_tokens_limit or input_tokens_limit/output_tokens_limit to bound
+      token spend directly. Treat hitting the limit as a signal to surface and
+      handle rather than to raise it.
