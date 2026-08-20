@@ -320,3 +320,23 @@ type ClaudeAgentOptionsDef struct {
 	Kwargs *KwargTree `json:"-"`
 	Opaque bool       `json:"opaque,omitempty"`
 }
+
+// AgentRunCallDef is one execution call discovered in code that actually runs
+// an agent: a Runner.run/run_sync/run_streamed call (OpenAI Agents SDK) or an
+// <agent>.run/run_sync/run_stream call (Pydantic AI). Execution limits like
+// max_turns or usage_limits are set at this call site, not at the agent's
+// constructor — ClaudeAgentOptionsDef-style construction-site capture can't
+// see them. AgentVarName is the resolved identifier naming the agent this
+// call runs (the first positional arg for Runner.run, the method receiver for
+// <agent>.run), so agent-scope rules can correlate a specific AgentDef (by
+// same-file FilePath+VarName) against the call that executes it. Kwargs is an
+// in-memory carrier (not serialized); Opaque is true when the call used **
+// unpacking that makes the kwarg set untrustworthy.
+type AgentRunCallDef struct {
+	Location
+	SDK          SDK        `json:"sdk"`
+	Callee       string     `json:"callee"` // raw callee text, e.g. "Runner.run", "agent.run_sync"
+	AgentVarName string     `json:"-"`
+	Kwargs       *KwargTree `json:"-"`
+	Opaque       bool       `json:"opaque,omitempty"`
+}

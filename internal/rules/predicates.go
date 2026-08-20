@@ -799,6 +799,50 @@ func PredAgentIsSubagentOfAny(a models.AgentDef, inv models.RepoInventory) bool 
 	return false
 }
 
+// agentRunCallMissingKwarg fires when this AgentDef has a VarName, at least
+// one same-SDK, same-file, non-opaque AgentRunCallDef whose AgentVarName
+// resolves to it, and NONE of those matching run calls set kwarg. This is an
+// absence check across every matching run call for THIS agent specifically —
+// unlike PredRepoClaudeOptionsMaxTurnsMissing (repo-scoped, because
+// ClaudeAgentOptions configures a whole session), a Runner.run/agent.run call
+// names the exact agent it executes, so the correlation — and the finding —
+// is agent-scoped: two agents in the same repo can be in different execution-
+// limit postures, and flattening that to one repo-wide bool would lose the
+// attribution (see "Agent as the unit of analysis" in CLAUDE.md). An agent
+// with no VarName, or with no matching run call at all, never fires — no
+// resolvable execution site is not evidence that one is missing a cap.
+func agentRunCallMissingKwarg(a models.AgentDef, inv models.RepoInventory, sdk models.SDK, kwarg string) bool {
+	if a.SDK != sdk || a.VarName == "" {
+		return false
+	}
+	matched := false
+	for _, rc := range inv.AgentRunCalls {
+		if rc.SDK != sdk || rc.Opaque || rc.FilePath != a.FilePath || rc.AgentVarName != a.VarName {
+			continue
+		}
+		matched = true
+		if node := lookupKwargInTree(rc.Kwargs, kwarg); node != nil && node.Value != nil {
+			return false
+		}
+	}
+	return matched
+}
+
+// PredAgentRunCallMaxTurnsMissing fires when this OpenAI Agents SDK agent has
+// a resolvable Runner.run-family call and none of those calls set max_turns.
+// See agentRunCallMissingKwarg for the correlation and silence rules.
+func PredAgentRunCallMaxTurnsMissing(a models.AgentDef, inv models.RepoInventory) bool {
+	return agentRunCallMissingKwarg(a, inv, models.SDKOpenAIAgents, "max_turns")
+}
+
+// PredAgentRunCallUsageLimitsMissing fires when this Pydantic AI agent has a
+// resolvable <agent>.run-family call and none of those calls set
+// usage_limits. See agentRunCallMissingKwarg for the correlation and silence
+// rules.
+func PredAgentRunCallUsageLimitsMissing(a models.AgentDef, inv models.RepoInventory) bool {
+	return agentRunCallMissingKwarg(a, inv, models.SDKPydanticAI, "usage_limits")
+}
+
 // ─── subagent predicates ──────────────────────────────────────────────────────
 
 // PredSubagentGrantsTool reports whether the subagent grants any of names.

@@ -1184,6 +1184,136 @@ func TestPredAgentIsSubagentOfAny(t *testing.T) {
 	}
 }
 
+func runCallKwargs(name, text string) *models.KwargTree {
+	return &models.KwargTree{
+		Children: map[string]*models.KwargTree{
+			name: {Value: &models.Expr{Kind: models.ExprLiteralInt, Text: text}},
+		},
+	}
+}
+
+func TestPredAgentRunCallMaxTurnsMissing(t *testing.T) {
+	agent := models.AgentDef{
+		SDK: models.SDKOpenAIAgents, Language: models.LanguagePython,
+		Location: models.Location{FilePath: "main.py"}, VarName: "agent",
+	}
+	cases := []struct {
+		name string
+		a    models.AgentDef
+		inv  models.RepoInventory
+		want bool
+	}{
+		{
+			"fires when the only matching run call sets no max_turns",
+			agent,
+			models.RepoInventory{AgentRunCalls: []models.AgentRunCallDef{
+				{SDK: models.SDKOpenAIAgents, Location: models.Location{FilePath: "main.py"}, AgentVarName: "agent"},
+			}},
+			true,
+		},
+		{
+			"silent when max_turns is set",
+			agent,
+			models.RepoInventory{AgentRunCalls: []models.AgentRunCallDef{
+				{SDK: models.SDKOpenAIAgents, Location: models.Location{FilePath: "main.py"}, AgentVarName: "agent", Kwargs: runCallKwargs("max_turns", "5")},
+			}},
+			false,
+		},
+		{
+			"silent when no run call matches this agent's VarName at all",
+			agent,
+			models.RepoInventory{AgentRunCalls: []models.AgentRunCallDef{
+				{SDK: models.SDKOpenAIAgents, Location: models.Location{FilePath: "main.py"}, AgentVarName: "other_agent"},
+			}},
+			false,
+		},
+		{
+			"silent when the matching call is in a different file",
+			agent,
+			models.RepoInventory{AgentRunCalls: []models.AgentRunCallDef{
+				{SDK: models.SDKOpenAIAgents, Location: models.Location{FilePath: "other.py"}, AgentVarName: "agent"},
+			}},
+			false,
+		},
+		{
+			"silent when the agent has no VarName",
+			models.AgentDef{SDK: models.SDKOpenAIAgents, Language: models.LanguagePython, Location: models.Location{FilePath: "main.py"}},
+			models.RepoInventory{AgentRunCalls: []models.AgentRunCallDef{
+				{SDK: models.SDKOpenAIAgents, Location: models.Location{FilePath: "main.py"}, AgentVarName: ""},
+			}},
+			false,
+		},
+		{
+			"silent when the matching call is opaque",
+			agent,
+			models.RepoInventory{AgentRunCalls: []models.AgentRunCallDef{
+				{SDK: models.SDKOpenAIAgents, Location: models.Location{FilePath: "main.py"}, AgentVarName: "agent", Opaque: true},
+			}},
+			false,
+		},
+		{
+			"never fires for a Pydantic AI agent, even with a matching-named OpenAI run call",
+			models.AgentDef{SDK: models.SDKPydanticAI, Language: models.LanguagePython, Location: models.Location{FilePath: "main.py"}, VarName: "agent"},
+			models.RepoInventory{AgentRunCalls: []models.AgentRunCallDef{
+				{SDK: models.SDKOpenAIAgents, Location: models.Location{FilePath: "main.py"}, AgentVarName: "agent"},
+			}},
+			false,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := rules.PredAgentRunCallMaxTurnsMissing(c.a, c.inv)
+			if got != c.want {
+				t.Errorf("got %v, want %v", got, c.want)
+			}
+		})
+	}
+}
+
+func TestPredAgentRunCallUsageLimitsMissing(t *testing.T) {
+	agent := models.AgentDef{
+		SDK: models.SDKPydanticAI, Language: models.LanguagePython,
+		Location: models.Location{FilePath: "main.py"}, VarName: "agent",
+	}
+	cases := []struct {
+		name string
+		a    models.AgentDef
+		inv  models.RepoInventory
+		want bool
+	}{
+		{
+			"fires when the only matching run call sets no usage_limits",
+			agent,
+			models.RepoInventory{AgentRunCalls: []models.AgentRunCallDef{
+				{SDK: models.SDKPydanticAI, Location: models.Location{FilePath: "main.py"}, AgentVarName: "agent"},
+			}},
+			true,
+		},
+		{
+			"silent when usage_limits is set",
+			agent,
+			models.RepoInventory{AgentRunCalls: []models.AgentRunCallDef{
+				{SDK: models.SDKPydanticAI, Location: models.Location{FilePath: "main.py"}, AgentVarName: "agent", Kwargs: runCallKwargs("usage_limits", "UsageLimits(request_limit=5)")},
+			}},
+			false,
+		},
+		{
+			"silent when no run call matches this agent at all",
+			agent,
+			models.RepoInventory{},
+			false,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := rules.PredAgentRunCallUsageLimitsMissing(c.a, c.inv)
+			if got != c.want {
+				t.Errorf("got %v, want %v", got, c.want)
+			}
+		})
+	}
+}
+
 func TestPredAgentKwargMissing_None(t *testing.T) {
 	mk := func(kind models.ExprKind, text string) models.AgentDef {
 		return models.AgentDef{

@@ -400,6 +400,7 @@ type RepoInventory struct {
 	PluginManifests    []PluginManifest        `json:"plugin_manifests"`
 	ClaudeSettings     []ClaudeSettings        `json:"claude_settings"`
 	ClaudeAgentOptions []ClaudeAgentOptionsDef `json:"claude_agent_options,omitempty"`
+	AgentRunCalls      []AgentRunCallDef       `json:"agent_run_calls,omitempty"`
 	SDKsDetected       []SDK                   `json:"sdks_detected"`
 	// HasShellInvocations is true if any discovered ToolDef is a
 	// KindShellInvocation (a Python function whose body calls

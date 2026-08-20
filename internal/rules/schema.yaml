@@ -333,6 +333,19 @@ rules:
 #       equals `value` (quote-stripped for string literals), e.g. ShellTool with
 #       needs_approval == "True".
 #
+#   agent_run_call_max_turns_missing: bool
+#       OpenAI Agents SDK only (agent.sdk == openai_agents). Returns true if
+#       the agent has at least one same-file Runner.run/run_sync/run_streamed
+#       call resolvable to it by variable name, and none of those calls set
+#       max_turns. Silent (false) if the agent has no resolvable run call at
+#       all — absence of evidence isn't evidence of absence.
+#
+#   agent_run_call_usage_limits_missing: bool
+#       Pydantic AI only (agent.sdk == pydantic_ai). Returns true if the agent
+#       has at least one same-file <agent>.run/run_sync/run_stream call
+#       resolvable to it by variable name, and none of those calls set
+#       usage_limits. Same silence rule as agent_run_call_max_turns_missing.
+#
 #
 # ━━━ SUBAGENT-SCOPE PREDICATES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # (used only in scope: subagent rules)
