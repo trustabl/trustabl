@@ -161,7 +161,18 @@ func (r *Renderer) Render(result models.ScanResult) string {
 		}
 	}
 
-	fmt.Fprintf(&b, "  Overall score:      %s\n\n", scoreCell(result.OverallScore))
+	// Nothing to evaluate is not the same as everything passing. Scoring an
+	// empty surface set returns 1.0, so print an explicit empty state instead
+	// of a 100% that implies the repo was checked and found clean.
+	if result.NoAgentSurfaces {
+		fmt.Fprintf(&b, "  Overall score:      %s\n", styleDim.Render("n/a"))
+		fmt.Fprintf(&b, "  %s\n", styleMed.Render("No agent surfaces found - nothing was evaluated."))
+		fmt.Fprintf(&b, "      %s\n", styleDim.Render("Trustabl scores tools, agents, subagents and skills from the supported"))
+		fmt.Fprintf(&b, "      %s\n", styleDim.Render("SDKs. This repo has none, so there is no readiness score to report."))
+		fmt.Fprintf(&b, "      %s\n\n", styleDim.Render("Check the scanned path is correct and that your SDK is supported."))
+	} else {
+		fmt.Fprintf(&b, "  Overall score:      %s\n\n", scoreCell(result.OverallScore))
+	}
 
 	if len(result.Agents) > 0 {
 		b.WriteString(styleHeader.Render("Agents") + "\n")
