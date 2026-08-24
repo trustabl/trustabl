@@ -6,7 +6,8 @@ policy:
     Quality and data-governance signals in Claude Code Agent Skills (SKILL.md)
     detected via free-text matching over the skill's name, description, and
     body — claimed crypto/security purpose, sensitive-data handling, missing
-    error-handling or purpose language, and broad-access or retention phrasing.
+    error-handling or purpose language, placeholder descriptions, and
+    broad-access or retention phrasing.
     Skill rules audit SKILL.md frontmatter + body and are language-agnostic
     (markdown), so they carry no language: field.
 
@@ -258,3 +259,34 @@ rules:
       hours, to support debugging"). If the skill doesn't need to persist
       anything beyond the current turn, say so explicitly instead of leaving
       it to be inferred.
+
+  - id: CSKILL-087
+    title: Skill description is a placeholder
+    severity: low
+    confidence: 0.85
+    applies_to:
+      - claude_skill
+    scope: skill
+    match:
+      skill_description_has_text:
+        - todo
+        - tbd
+        - fixme
+        - placeholder
+        - no description
+        - does stuff
+    explanation: >
+      This skill's description is present, so it passes the empty-description
+      check, but the text is a placeholder stub ("TODO", "TBD", "FIXME",
+      "placeholder", "no description", "does stuff") rather than a real
+      account of what the skill does. Claude Code always loads the description
+      into context and uses it to decide whether to auto-invoke the skill; a
+      stub gives the model no selection signal and a reviewer no basis for
+      judging the skill's tool grants — functionally the same as no
+      description at all, except CSKILL-070 never sees it.
+    fix: >
+      Replace the placeholder in the SKILL.md `description:` field with a
+      real one-to-two-sentence summary of what the skill does, which tools it
+      uses, and any side effects it may have. For example: "Summarises the
+      current git diff and posts a draft PR description. Uses Bash
+      (read-only git commands) and WebFetch."
