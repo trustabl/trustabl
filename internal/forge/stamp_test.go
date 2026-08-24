@@ -79,3 +79,13 @@ func TestParseStamp_MidFile(t *testing.T) {
 		t.Errorf("SHA: got %q, want %q", got.SHA, s.SHA)
 	}
 }
+
+func TestParseStamp_MalformedSDKsPrefix(t *testing.T) {
+	// A 4th segment without the "sdks: " prefix is a malformed stamp and must
+	// be rejected — mirroring the rules:/schema: prefix guards — rather than
+	// silently absorbing the raw segment into the SDK list.
+	content := "<!-- generated: 2026-08-11 | rules: abc123 | schema: 13 | claude_sdk, mcp -->"
+	if got, ok := ParseStamp(content); ok {
+		t.Errorf("ParseStamp returned true for missing sdks: prefix, got %+v", got)
+	}
+}

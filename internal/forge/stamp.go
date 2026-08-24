@@ -67,6 +67,9 @@ func ParseStamp(content string) (Stamp, bool) {
 	}
 
 	sdksStr := strings.TrimPrefix(parts[3], "sdks: ")
+	if sdksStr == parts[3] { // prefix not found
+		return Stamp{}, false
+	}
 	var sdks []string
 	for _, s := range strings.Split(sdksStr, ", ") {
 		if s = strings.TrimSpace(s); s != "" {
