@@ -183,3 +183,61 @@ rules:
       Expand the description to at least a full sentence covering inputs,
       outputs, and the situation in which this tool should be used over
       alternatives.
+
+  - id: CSDK-021
+    title: TypeScript Claude SDK tool description is a placeholder
+    severity: low
+    confidence: 0.85
+    language: typescript
+    applies_to:
+      - claude_sdk_tool
+    scope: tool
+    match:
+      has_description_text:
+        - todo
+        - tbd
+        - fixme
+        - placeholder
+        - no description
+        - does stuff
+    explanation: >
+      The tool sets a description, so it passes CSDK-014, but the string is a
+      placeholder rather than real content. That leaves the tool in exactly the
+      state CSDK-014 exists to prevent: the TypeScript SDK has no docstring
+      fallback, so this argument is the entire account of the tool in the
+      prompt, and "TODO: describe this tool" tells the model nothing the tool
+      name did not. Nothing reports it — the SDK does not warn, the Zod schema
+      still validates, and the only symptom is a tool the model calls at the
+      wrong moment or never reaches for at all.
+    fix: >
+      Replace the placeholder with a real description covering what the tool
+      does, what it returns, and when the model should call it rather than a
+      neighboring tool. The SDK passes the string to the model verbatim, so
+      write it for the model rather than a human maintainer.
+
+  - id: CSDK-022
+    title: TypeScript Claude SDK tool description is too short to guide model selection
+    severity: low
+    confidence: 0.8
+    language: typescript
+    applies_to:
+      - claude_sdk_tool
+    scope: tool
+    match:
+      all:
+        - has_docstring: true
+        - description_length_lt: 40
+    explanation: >
+      A description under 40 characters is rarely enough to convey what a tool
+      does, what it returns, and when to call it rather than a similarly named
+      neighbor. With no docstring fallback in the TypeScript SDK, a stub like
+      "Gets data." is the whole prompt-side account of the tool, so scope and
+      preconditions are left to guesswork. The Zod input schema does not close
+      the gap: it constrains the shape of the arguments once the model has
+      decided to call this tool, and says nothing about whether calling it was
+      the right move.
+    fix: >
+      Expand the description to at least a full sentence covering inputs,
+      outputs, and the situation in which this tool should be used over the
+      alternatives. Where two tools are easy to confuse, say in each which one
+      the other case belongs to.
