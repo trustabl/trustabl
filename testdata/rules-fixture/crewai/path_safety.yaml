@@ -1,0 +1,49 @@
+policy:
+  id: crewai_path_safety
+  name: CrewAI filesystem path safety
+  category: crewai
+  description: >
+    Rules that catch a model-supplied filesystem path flowing into an I/O call
+    inside a CrewAI tool without containment. A traversal payload like
+    ../../etc/passwd reaches real filesystem state if the tool does not resolve
+    the path and check it against an allowed root.
+
+rules:
+  - id: CREW-009
+    title: CrewAI tool uses a path parameter in I/O without validation
+    severity: high
+    confidence: 0.7
+    language: python
+    applies_to:
+      - crewai_tool
+    scope: tool
+    # call_uses_unnormalized_path_param is per-param: a tool with two path
+    # params and one .resolve() correctly fires on the unresolved one. A
+    # body-wide check would suppress the finding whenever any normalization
+    # appears, masking real exposure on the other param.
+    match:
+      call_uses_unnormalized_path_param:
+        callees:
+          - open
+          - Path
+        callee_prefixes:
+          - shutil.
+          - os.
+    explanation: >
+      This tool takes a path-like parameter and hands it to a file or directory
+      operation without resolving it or checking it against an allowed root, so
+      a model-supplied ../../etc/passwd reaches the real filesystem. The tool's
+      args_schema does not close this: a Pydantic field typed str or Path
+      validates fine while still carrying a traversal payload, because the
+      schema constrains the argument's type and not the region of the filesystem
+      it points at. Reach is wider than the agent that owns the tool — a crew
+      shares one process and threads each task's output forward as context, so a
+      file read through this tool lands in the transcript every downstream task
+      reasons over, and CREW-104's delegation means an agent that was never
+      granted the tool can still reach it by asking a peer.
+    fix: >
+      Resolve the path with Path(...).resolve() and assert the result sits under
+      an allowed root before touching it, rejecting anything that escapes.
+      Encode the check as a validator on the args_schema field so containment
+      holds wherever the tool is shared across the crew rather than being
+      re-implemented per call site.
