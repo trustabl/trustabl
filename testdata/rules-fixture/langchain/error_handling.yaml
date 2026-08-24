@@ -1,0 +1,37 @@
+policy:
+  id: langchain_error_handling
+  name: LangChain error contract hygiene
+  category: langchain
+  description: >
+    Rules covering how a LangChain / LangGraph tool surfaces failures back to
+    the agent. A tool that raises is converted into a message the model reads as
+    prose, so an uncaught exception becomes the model's only signal about what
+    went wrong.
+
+rules:
+  - id: LC-007
+    title: LangChain tool raises exceptions without a structured error contract
+    severity: low
+    confidence: 0.6
+    language: python
+    applies_to:
+      - langchain_tool
+    scope: tool
+    match:
+      all:
+        - has_raise: true
+        - has_try_except: false
+    explanation: >
+      When a LangChain tool raises, the executor either aborts the run or, with
+      handle_tool_error set, stringifies the exception into a ToolMessage the
+      model reads as prose. Either way the model gets no field it can branch on:
+      it cannot tell a bad argument it should correct from a remote outage it
+      should retry from a permission denial it should stop on, so it typically
+      re-calls the tool with the same arguments. The stringified traceback can
+      also carry internal paths and stack frames into the transcript.
+    fix: >
+      Catch the failure modes you expect and return a structured result the model
+      can act on — e.g. {"error": "...", "retryable": true} — reserving raises
+      for genuinely unrecoverable states. If you do want the executor to relay
+      errors, set handle_tool_error to a function that maps the exception to that
+      same structured shape rather than to True.

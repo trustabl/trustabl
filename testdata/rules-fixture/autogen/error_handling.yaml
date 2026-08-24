@@ -1,0 +1,35 @@
+policy:
+  id: autogen_error_handling
+  name: AutoGen error contract hygiene
+  category: autogen
+  description: >
+    Rules covering how an AutoGen / AG2 tool surfaces failures back to the
+    conversation. A registered tool's return value becomes a message in the chat
+    history, so an uncaught exception is what the next speaker reasons over.
+
+rules:
+  - id: AG2-013
+    title: AutoGen tool raises exceptions without a structured error contract
+    severity: low
+    confidence: 0.6
+    language: python
+    applies_to:
+      - autogen_tool
+    scope: tool
+    match:
+      all:
+        - has_raise: true
+        - has_try_except: false
+    explanation: >
+      An AutoGen tool that raises produces a tool-response message carrying the
+      stringified exception, and that message stays in the conversation history
+      for every subsequent turn. The model cannot branch on it — there is no field
+      separating a malformed argument from an unreachable dependency — so it
+      re-calls the tool or hands the failure to another agent as prose. In a group
+      chat the bad message is replayed to every participant on each round, so one
+      opaque traceback consumes context for the rest of the run.
+    fix: >
+      Catch the failure modes you expect and return a structured result the model
+      can act on — e.g. {"error": "...", "retryable": true} — so the response that
+      lands in the history is something the next speaker can reason about. Reserve
+      raises for unrecoverable states.

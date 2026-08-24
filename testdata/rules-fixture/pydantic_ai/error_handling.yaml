@@ -1,0 +1,35 @@
+policy:
+  id: pydantic_ai_error_handling
+  name: Pydantic AI error contract hygiene
+  category: pydantic_ai
+  description: >
+    Rules covering how a Pydantic AI tool surfaces failures back to the model.
+    The framework has an explicit retry channel (ModelRetry); an arbitrary
+    exception bypasses it and ends the run instead.
+
+rules:
+  - id: PYD-008
+    title: Pydantic AI tool raises exceptions without a structured error contract
+    severity: low
+    confidence: 0.6
+    language: python
+    applies_to:
+      - pydantic_ai_tool
+    scope: tool
+    match:
+      all:
+        - has_raise: true
+        - has_try_except: false
+    explanation: >
+      Pydantic AI distinguishes two kinds of tool failure: a ModelRetry, which is
+      fed back to the model as guidance so it can correct its arguments and try
+      again, and any other exception, which propagates out of agent.run() and ends
+      the run. A tool that raises whatever the underlying library raised takes the
+      second path for failures that belonged in the first — a validation error or a
+      404 aborts the whole run rather than giving the model a chance to fix its
+      call.
+    fix: >
+      Catch the failures you expect and either raise ModelRetry with a message
+      telling the model what to change, or return a structured result it can
+      branch on — e.g. {"error": "...", "retryable": true}. Let only genuinely
+      unrecoverable exceptions escape the tool.

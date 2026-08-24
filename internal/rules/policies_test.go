@@ -219,6 +219,22 @@ def fetch(q: str) -> str:
     return requests.get("https://api.example.com/data").text
 `, wantFires: false},
 
+	{name: "LC-007 fires on bare raise", ruleID: "LC-007", kind: models.KindLangChainTool, src: `
+def lookup(key: str) -> str:
+    """Look up a key."""
+    if not key:
+        raise ValueError("key required")
+    return key
+`, wantFires: true},
+	{name: "LC-007 silent when the raise is caught", ruleID: "LC-007", kind: models.KindLangChainTool, src: `
+def lookup(key: str) -> dict:
+    """Look up a key."""
+    try:
+        return {"value": key}
+    except KeyError as e:
+        return {"error": str(e), "retryable": False}
+`, wantFires: false},
+
 	{name: "LC-006 fires on return_direct=True", ruleID: "LC-006", kind: models.KindLangChainTool, src: `
 def f(x: str) -> str:
     """Doc."""
@@ -425,6 +441,22 @@ def fetch(q: str) -> str:
     return requests.get("https://api.example.com/data").text
 `, wantFires: false},
 
+	{name: "CREW-007 fires on bare raise", ruleID: "CREW-007", kind: models.KindCrewAITool, src: `
+def fetch_record(record_id: str) -> str:
+    """Fetch a record."""
+    if not record_id:
+        raise ValueError("record_id required")
+    return record_id
+`, wantFires: true},
+	{name: "CREW-007 silent when the raise is caught", ruleID: "CREW-007", kind: models.KindCrewAITool, src: `
+def fetch_record(record_id: str) -> dict:
+    """Fetch a record."""
+    try:
+        return {"record": record_id}
+    except KeyError as e:
+        return {"error": str(e), "retryable": False}
+`, wantFires: false},
+
 	{name: "CREW-006 fires on mutating tool without key", ruleID: "CREW-006", kind: models.KindCrewAITool, src: `
 def create_order(customer_id: str, amount: float) -> dict:
     """Create an order."""
@@ -508,6 +540,22 @@ def fetch(q: str) -> str:
     """Fetch."""
     import requests
     return requests.get("https://api.example.com/data").text
+`, wantFires: false},
+
+	{name: "AG2-013 fires on bare raise", ruleID: "AG2-013", kind: models.KindAutoGenTool, src: `
+def load_config(name: str) -> str:
+    """Load a config."""
+    if not name:
+        raise ValueError("name required")
+    return name
+`, wantFires: true},
+	{name: "AG2-013 silent when the raise is caught", ruleID: "AG2-013", kind: models.KindAutoGenTool, src: `
+def load_config(name: str) -> dict:
+    """Load a config."""
+    try:
+        return {"config": name}
+    except FileNotFoundError as e:
+        return {"error": str(e), "retryable": False}
 `, wantFires: false},
 
 	{name: "AG2-012 fires on network call without timeout", ruleID: "AG2-012", kind: models.KindAutoGenTool, src: `
@@ -597,6 +645,22 @@ def fetch(q: str) -> str:
     """Fetch."""
     import requests
     return requests.get("https://api.example.com/data", timeout=10).text
+`, wantFires: false},
+
+	{name: "PYD-008 fires on bare raise", ruleID: "PYD-008", kind: models.KindPydanticAITool, src: `
+def get_user(user_id: str) -> str:
+    """Get a user."""
+    if not user_id:
+        raise ValueError("user_id required")
+    return user_id
+`, wantFires: true},
+	{name: "PYD-008 silent when the raise is caught", ruleID: "PYD-008", kind: models.KindPydanticAITool, src: `
+def get_user(user_id: str) -> dict:
+    """Get a user."""
+    try:
+        return {"user": user_id}
+    except KeyError as e:
+        return {"error": str(e), "retryable": False}
 `, wantFires: false},
 
 	{name: "PYD-007 fires on mutating tool without key", ruleID: "PYD-007", kind: models.KindPydanticAITool, src: `

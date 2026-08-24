@@ -1,0 +1,35 @@
+policy:
+  id: crewai_error_handling
+  name: CrewAI error contract hygiene
+  category: crewai
+  description: >
+    Rules covering how a CrewAI tool surfaces failures back to the agent. A tool
+    that raises is caught by the executor and replayed to the model as text, so
+    an uncaught exception becomes the model's only account of what failed.
+
+rules:
+  - id: CREW-007
+    title: CrewAI tool raises exceptions without a structured error contract
+    severity: low
+    confidence: 0.6
+    language: python
+    applies_to:
+      - crewai_tool
+    scope: tool
+    match:
+      all:
+        - has_raise: true
+        - has_try_except: false
+    explanation: >
+      A CrewAI tool that raises hands the executor an exception it can only
+      stringify back into the agent's scratchpad. The model sees a message, not a
+      status: it cannot distinguish an invalid argument it should fix from a
+      transient timeout it should retry, so it burns iterations re-calling the
+      tool the same way until max_iter stops the agent. Because the tool's output
+      is also what a delegating agent reads, an opaque error propagates across the
+      crew rather than staying local to the task that failed.
+    fix: >
+      Catch the failures you expect and return a structured result the model can
+      branch on — e.g. {"error": "...", "retryable": true} — and keep raises for
+      states no retry can fix. Name the failing input in the message so the model
+      can correct its next call instead of repeating it.
