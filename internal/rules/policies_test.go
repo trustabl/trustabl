@@ -1986,6 +1986,30 @@ def fetch_data(x: str) -> dict:
     return {}
 `,
 		toolConfig: nil, wantFires: false},
+	{name: "ADK-115 fires on placeholder description", ruleID: "ADK-115", kind: models.KindADKFunctionTool, src: `
+def lookup_order(order_id: str) -> str:
+    """TODO: describe this tool."""
+    return order_id
+`, wantFires: true},
+	{name: "ADK-115 silent on a real description", ruleID: "ADK-115", kind: models.KindADKFunctionTool, src: `
+def lookup_order(order_id: str) -> str:
+    """Look up a single order by its identifier and return its current status."""
+    return order_id
+`, wantFires: false},
+	{name: "ADK-116 fires on a too-short description", ruleID: "ADK-116", kind: models.KindADKFunctionTool, src: `
+def list_orders(customer_id: str) -> str:
+    """Gets data."""
+    return customer_id
+`, wantFires: true},
+	{name: "ADK-116 silent on a full description", ruleID: "ADK-116", kind: models.KindADKFunctionTool, src: `
+def list_orders(customer_id: str) -> str:
+    """List every order belonging to one customer, most recent first."""
+    return customer_id
+`, wantFires: false},
+	{name: "ADK-116 silent when the docstring is absent (ADK-001's case)", ruleID: "ADK-116", kind: models.KindADKFunctionTool, src: `
+def list_orders(customer_id: str) -> str:
+    return customer_id
+`, wantFires: false},
 }
 
 // policyRepoRuleCases covers repo-scoped rules.
@@ -2246,7 +2270,6 @@ var policyRepoRuleCases = []policyRepoCase{
 		},
 		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKOpenAIAgents}},
 		false},
-
 }
 
 // optionsWithPermissionMode builds a ClaudeAgentOptionsDef whose captured

@@ -127,3 +127,67 @@ rules:
       Pass a one-sentence `description` in the `new FunctionTool({...})` options
       that names what the tool does, the inputs it expects, and what it returns.
       Write it for the model, not for a human reader.
+
+  - id: ADK-115
+    title: FunctionTool description is a placeholder
+    severity: low
+    confidence: 0.85
+    language: python
+    applies_to:
+      - adk_function_tool
+    scope: tool
+    match:
+      has_description_text:
+        - todo
+        - tbd
+        - fixme
+        - placeholder
+        - no description
+        - does stuff
+    explanation: >
+      The docstring passes the ADK-001 has-a-docstring check but carries a
+      placeholder marker instead of real content. The ADK builds the tool
+      declaration it sends to the model from this docstring, so a stub like
+      "TODO: describe this tool" is functionally indistinguishable from no
+      docstring at all and the model still has to guess from the function name.
+      The ADK also parses the docstring for the per-parameter descriptions that
+      accompany the generated schema, so a placeholder body strips the
+      argument-level guidance at the same time as the tool-level guidance. In an
+      agent tree the mis-selection does not stay local: a tool picked wrongly
+      inside one branch produces output the following agents treat as
+      established fact, so the error is laundered into the shared session state
+      rather than surfacing where it began.
+    fix: >
+      Replace the placeholder with a real description covering what the tool
+      does, what it returns, and when the model should call it rather than a
+      neighboring tool, and document each parameter so the ADK can carry those
+      descriptions into the generated declaration.
+
+  - id: ADK-116
+    title: FunctionTool description is too short to guide model selection
+    severity: low
+    confidence: 0.8
+    language: python
+    applies_to:
+      - adk_function_tool
+    scope: tool
+    match:
+      all:
+        - has_docstring: true
+        - description_length_lt: 40
+    explanation: >
+      A docstring under 40 characters is rarely enough to convey what a tool
+      does, what it returns, and when to call it rather than a similarly named
+      neighbor. The ADK passes it to the model as the tool's only selection
+      signal, so a stub like "Gets data." leaves scope and preconditions to
+      guesswork. A docstring this short also has no room for the per-parameter
+      descriptions the ADK reads into the tool declaration, so the arguments
+      reach the model undescribed as well. ADK-102 and ADK-107's
+      before_tool_callback gate can block a call it recognizes as wrong, but it
+      cannot supply the judgment the description was meant to provide, so a thin
+      description is not something a callback compensates for.
+    fix: >
+      Expand the docstring to at least a full sentence covering inputs, outputs,
+      and the situation in which this tool should be used over the alternatives,
+      and document each parameter so those descriptions reach the model with the
+      generated schema.
