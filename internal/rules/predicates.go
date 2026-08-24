@@ -255,8 +255,21 @@ func PredHasHTTPCallWithoutTimeout(t models.ToolDef) bool {
 
 // ─── string-list predicates ───────────────────────────────────────────────────
 
+// toolNameForMatch returns the name predicates should match against.
+// Prefer ToolDef.Name when set (OpenAI / Claude / most Python tools). When
+// Name is empty — Vercel AI tools leave it blank because the model-facing
+// name is the agent's tools-record key — fall back to VarName (the binding
+// identifier, e.g. createCharge). Without this, name_has_prefix / name_in
+// never fire on Vercel tools.
+func toolNameForMatch(t models.ToolDef) string {
+	if t.Name != "" {
+		return t.Name
+	}
+	return t.VarName
+}
+
 func PredNameIn(names []string, t models.ToolDef) bool {
-	lower := strings.ToLower(t.Name)
+	lower := strings.ToLower(toolNameForMatch(t))
 	for _, n := range names {
 		if lower == strings.ToLower(n) {
 			return true
@@ -266,7 +279,7 @@ func PredNameIn(names []string, t models.ToolDef) bool {
 }
 
 func PredNameHasPrefix(prefixes []string, t models.ToolDef) bool {
-	lower := strings.ToLower(t.Name)
+	lower := strings.ToLower(toolNameForMatch(t))
 	for _, p := range prefixes {
 		if strings.HasPrefix(lower, strings.ToLower(p)) {
 			return true
