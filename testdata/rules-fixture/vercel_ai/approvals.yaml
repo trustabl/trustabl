@@ -1,0 +1,36 @@
+policy:
+  id: vercel_ai_approvals
+  name: Vercel AI SDK tool approval gates
+  category: vercel_ai
+  description: >
+    Flags privileged Vercel AI SDK tools that can execute without the SDK's
+    built-in human approval gate.
+
+rules:
+  - id: VAI-013
+    title: Privileged Vercel AI tool has no needsApproval gate
+    severity: high
+    confidence: 0.7
+    language: typescript
+    applies_to:
+      - vercel_ai_tool
+    scope: tool
+    match:
+      all:
+        - any:
+            - has_shell_call: true
+            - has_code_exec_call: true
+        - any:
+            - not:
+                tool_decorator_kwarg_present:
+                  - needsApproval
+            - tool_decorator_kwarg_value:
+                kwarg: needsApproval
+                value: "false"
+    explanation: >
+      This Vercel AI tool spawns a process or evaluates dynamic code but has no
+      needsApproval gate. A model-selected action can therefore execute without
+      a human checkpoint. A true value or callback counts as a configured gate.
+    fix: >
+      Set needsApproval to true or to a per-call callback for sensitive inputs,
+      and handle the resulting approval request before executing the tool.
