@@ -1,0 +1,53 @@
+policy:
+  id: langchain_idempotency
+  name: LangChain mutating-tool idempotency
+  category: langchain
+  description: >
+    Rules that flag mutating LangChain tools (create/send/refund/...) with no
+    idempotency key. A ReAct agent re-calls a tool whenever an observation reads
+    as inconclusive, so a mutation with no key can commit twice.
+
+rules:
+  - id: LC-017
+    title: Mutating LangChain tool has no idempotency key
+    severity: medium
+    confidence: 0.55
+    language: python
+    applies_to:
+      - langchain_tool
+    scope: tool
+    match:
+      all:
+        - name_has_prefix:
+            - create_
+            - send_
+            - delete_
+            - post_
+            - update_
+            - refund_
+            - charge_
+            - issue_
+        - not:
+            param_name_matches:
+              contains:
+                - idempot
+              exact:
+                - request_id
+                - txn_id
+    explanation: >
+      The tool name signals a side effect (create/send/refund/…) and the tool
+      takes no idempotency key, so a repeated call commits the mutation twice.
+      The LangChain agent loop makes repetition routine rather than
+      exceptional: an AgentExecutor step whose observation reads as
+      inconclusive — a timeout, a truncated response, an error string returned
+      under handle_tool_error — leads the model to reason about the same goal
+      again and re-issue the same action, and it cannot know the first call
+      already committed. Retry wrappers and LangChain's own with_retry compound
+      it, since a network failure after the side effect landed is
+      indistinguishable from one before. The result is a duplicate charge,
+      order, or message.
+    fix: >
+      Accept an idempotency key parameter (idempotency_key / request_id),
+      require the caller to derive it from the unit of work rather than
+      generating a fresh one per call, and de-duplicate server-side so a
+      repeated call returns the first result instead of committing again.
