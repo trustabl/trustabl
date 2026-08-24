@@ -2484,6 +2484,15 @@ var policyAgentRuleCases = []policyAgentCase{
 	{"LC-101 silent on a StateGraph with no dangerous builtin", "LC-101",
 		models.AgentDef{SDK: models.SDKLangChain, Class: "StateGraph", Language: models.LanguagePython},
 		models.RepoInventory{}, false},
+	// The bare PythonREPL utility is in LangChainHostedToolClasses as a
+	// code-execution class, so `tools=[PythonREPL()]` is discovered as a hosted
+	// edge — but LC-101 did not list it, so an RCE-class wiring scanned clean.
+	{"LC-101 fires when agent wires the bare PythonREPL utility", "LC-101",
+		models.AgentDef{
+			SDK: models.SDKLangChain, Class: "ReactAgent", Language: models.LanguagePython,
+			HostedToolRefs: []models.HostedToolRef{{Class: "PythonREPL"}},
+		},
+		models.RepoInventory{}, true},
 
 	{"LC-102 fires when AgentExecutor has no max_iterations", "LC-102",
 		models.AgentDef{SDK: models.SDKLangChain, Class: "AgentExecutor", Language: models.LanguagePython},
@@ -2493,6 +2502,36 @@ var policyAgentRuleCases = []policyAgentCase{
 			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
 				"max_iterations": {Value: &models.Expr{Kind: models.ExprLiteralInt, Text: "5"}},
 			}}},
+		models.RepoInventory{}, false},
+
+	// LC-103 / LC-104 split the langchain_community requests built-ins by effect:
+	// GET is a read (SSRF + untrusted-content intake), the write verbs also mutate
+	// remote state. The silent cases cross over deliberately — each rule must stay
+	// quiet on the other's verbs, or the split is not real.
+	{"LC-103 fires when agent wires RequestsGetTool", "LC-103",
+		models.AgentDef{
+			SDK: models.SDKLangChain, Class: "ReactAgent", Language: models.LanguagePython,
+			HostedToolRefs: []models.HostedToolRef{{Class: "RequestsGetTool"}},
+		},
+		models.RepoInventory{}, true},
+	{"LC-103 silent on a write-verb requests builtin", "LC-103",
+		models.AgentDef{
+			SDK: models.SDKLangChain, Class: "ReactAgent", Language: models.LanguagePython,
+			HostedToolRefs: []models.HostedToolRef{{Class: "RequestsPostTool"}},
+		},
+		models.RepoInventory{}, false},
+
+	{"LC-104 fires when agent wires RequestsDeleteTool", "LC-104",
+		models.AgentDef{
+			SDK: models.SDKLangChain, Class: "ReactAgent", Language: models.LanguagePython,
+			HostedToolRefs: []models.HostedToolRef{{Class: "RequestsDeleteTool"}},
+		},
+		models.RepoInventory{}, true},
+	{"LC-104 silent on the read-only requests builtin", "LC-104",
+		models.AgentDef{
+			SDK: models.SDKLangChain, Class: "ReactAgent", Language: models.LanguagePython,
+			HostedToolRefs: []models.HostedToolRef{{Class: "RequestsGetTool"}},
+		},
 		models.RepoInventory{}, false},
 
 	{"LC-111 fires when TS AgentExecutor has no maxIterations", "LC-111",
