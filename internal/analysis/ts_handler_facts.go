@@ -27,6 +27,17 @@ func tsHandlerFacts(handler *sitter.Node, src []byte) map[string]string {
 			}
 			return true
 		}
+		// Error-contract facts. The Python has_raise / has_try_except
+		// predicates match the "raise_statement" node type, which the TS
+		// grammar does not have — its equivalents are "throw_statement" and
+		// "try_statement". Recording them here lets those predicates branch on
+		// language the way has_shell_call already does.
+		switch n.Type() {
+		case "throw_statement":
+			out["throws"] = "true"
+		case "try_statement":
+			out["try_catch"] = "true"
+		}
 		if n.Type() != "call_expression" {
 			return true
 		}

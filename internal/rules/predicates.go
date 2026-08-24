@@ -25,7 +25,16 @@ func PredHasTypedParams(t models.ToolDef) bool {
 	return t.HasTypedParams
 }
 
+// PredHasRaise reports whether the tool body raises an uncaught-by-default
+// error. For TypeScript tools it reads the discovery-computed "throws" fact
+// (set by tsHandlerFacts for `throw` statements); the Python AST walk matches
+// "raise_statement", a node type the TS grammar does not have, so without the
+// branch this returned false for every TS tool — a silent miss that would let
+// a TS error-contract rule load and validate but never fire.
 func PredHasRaise(t models.ToolDef, pf analysis.ParsedFile) bool {
+	if models.IsTSOrJS(t.Language) {
+		return t.Facts["throws"] == "true"
+	}
 	root := analysis.FindFunctionNode(t, pf)
 	if root == nil {
 		return false
@@ -33,7 +42,15 @@ func PredHasRaise(t models.ToolDef, pf analysis.ParsedFile) bool {
 	return len(astutil.FindAll(root, "raise_statement")) > 0
 }
 
+// PredHasTryExcept reports whether the tool body wraps work in a structured
+// error handler. For TypeScript tools it reads the discovery-computed
+// "try_catch" fact. The Python path matches "try_statement" on the tool's own
+// function node; the TS fact is scoped to the handler node for the same
+// reason, so a try/catch in a sibling function does not silence the rule.
 func PredHasTryExcept(t models.ToolDef, pf analysis.ParsedFile) bool {
+	if models.IsTSOrJS(t.Language) {
+		return t.Facts["try_catch"] == "true"
+	}
 	root := analysis.FindFunctionNode(t, pf)
 	if root == nil {
 		return false

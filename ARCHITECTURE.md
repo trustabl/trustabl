@@ -615,7 +615,8 @@ For each language recon cleared, do the AST work and produce a `RepoInventory`:
   description, zodSchema, handler, extras?)` factory calls. Captures `Name`
   (arg 0), `Description` (arg 1), `ParamNames` from the Zod schema top-level
   keys, handler body facts via shared `tsHandlerFacts` (`shells_out`,
-  `http_call`, `dynamic_url`), and extras flattened into `Config`. Sets
+  `http_call`, `dynamic_url`, `http_no_timeout`, `writes_fs`, `code_exec`,
+  `throws`, `try_catch`), and extras flattened into `Config`. Sets
   `VarName` from the enclosing `const x = tool(...)` binding.
 - **DiscoverTSAgents** (`ts_agents.go`) — TS Claude SDK agent shapes:
   one `AgentDef` per `query({...})` call (`Class="QueryMainAgent"`), each
