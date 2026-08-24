@@ -96,3 +96,34 @@ func TestGuardrailDef_VarName_OmitEmpty(t *testing.T) {
 		t.Errorf("var_name should be present when set, got: %s", b)
 	}
 }
+
+func TestScanManifest_SourceFileCount(t *testing.T) {
+	// Empty manifest counts zero.
+	if got := (models.ScanManifest{}).SourceFileCount(); got != 0 {
+		t.Errorf("empty manifest: got %d, want 0", got)
+	}
+
+	// Every source-language bucket is summed; data files are excluded.
+	m := models.ScanManifest{
+		PythonFiles:     []string{"a.py"},
+		TypeScriptFiles: []string{"a.ts", "b.ts"},
+		JavaScriptFiles: []string{"a.js"},
+		GoFiles:         []string{"a.go"},
+		CSharpFiles:     []string{"a.cs"},
+		PHPFiles:        []string{"a.php"},
+		RustFiles:       []string{"a.rs"},
+		// Data files must NOT be counted.
+		YAMLFiles:     []string{"a.yaml", "b.yaml"},
+		JSONFiles:     []string{"a.json"},
+		MarkdownFiles: []string{"a.md"},
+	}
+	if got, want := m.SourceFileCount(), 8; got != want {
+		t.Errorf("SourceFileCount: got %d, want %d", got, want)
+	}
+
+	// Regression: a non-Python repo must not report zero source files.
+	tsOnly := models.ScanManifest{TypeScriptFiles: []string{"a.ts", "b.ts", "c.ts"}}
+	if got, want := tsOnly.SourceFileCount(), 3; got != want {
+		t.Errorf("TypeScript-only SourceFileCount: got %d, want %d", got, want)
+	}
+}
