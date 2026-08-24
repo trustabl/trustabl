@@ -51,3 +51,37 @@ rules:
       Pass `timeout=` (typically 5–30 seconds) to the request. Choose a
       value that's tight enough to fail fast and loose enough to allow
       legitimate slow responses for this endpoint.
+
+  - id: ADK-114
+    title: TypeScript FunctionTool HTTP call has no timeout
+    severity: high
+    confidence: 0.6
+    language: typescript
+    applies_to:
+      - adk_function_tool
+    scope: tool
+    match:
+      has_http_call_without_timeout: true
+    explanation: >
+      This TypeScript ADK FunctionTool makes an outbound HTTP call (fetch /
+      axios / got / undici) with no deadline — no signal, timeout, or
+      abortSignal option. Node's fetch has no implicit deadline, so a slow or
+      unresponsive host blocks the tool callback until the socket eventually
+      dies. What that costs depends on where the tool sits in the agent tree,
+      and the composition ADK encourages makes it worse rather than better: a
+      stalled tool inside a SequentialAgent blocks every step after it, and
+      inside a ParallelAgent the whole fan-out waits on its slowest branch, so
+      one unresponsive host stalls work that has nothing to do with it.
+      ADK-108's max_iterations bounds how many times a LoopAgent goes round, not
+      how long one tool call may run, so no configured limit breaks the stall.
+      The exposure compounds with ADK-016: a tool that fetches a
+      caller-controlled URL and cannot time out can be steered at an internal
+      host that never answers.
+    fix: >
+      Attach a deadline. On modern runtimes,
+      await fetch(url, { signal: AbortSignal.timeout(15_000) }); on older ones,
+      create an AbortController, abort it from a setTimeout, pass
+      controller.signal, and clear the timer in a finally. axios and got take a
+      timeout option directly. Return the abort as a structured tool result so
+      the agent can react to an unreachable upstream rather than the branch
+      hanging.

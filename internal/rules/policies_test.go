@@ -1986,6 +1986,37 @@ def fetch_data(x: str) -> dict:
     return {}
 `,
 		toolConfig: nil, wantFires: false},
+
+	// ─── ADK-114: TS ADK FunctionTool HTTP call without a timeout ───────────
+	// adk-js uses the options-object form (new FunctionTool({ ..., execute })),
+	// not the Python FunctionTool(fn) wrapper shape.
+	{
+		name: "ADK-114 fires on TS fetch with no AbortSignal", ruleID: "ADK-114",
+		kind: models.KindADKFunctionTool, lang: models.LanguageTypeScript, wantFires: true,
+		src: "import { FunctionTool } from \"@google/adk\";\n" +
+			"const t = new FunctionTool({ name: \"fetch_report\", description: \"Fetch a report.\", parameters: {}, execute: async () => {\n" +
+			"  const r = await fetch(\"https://reports.internal/x\");\n" +
+			"  return await r.text();\n" +
+			"} });\n",
+	},
+	{
+		name: "ADK-114 silent when AbortSignal present", ruleID: "ADK-114",
+		kind: models.KindADKFunctionTool, lang: models.LanguageTypeScript, wantFires: false,
+		src: "import { FunctionTool } from \"@google/adk\";\n" +
+			"const t = new FunctionTool({ name: \"fetch_report\", description: \"Fetch a report.\", parameters: {}, execute: async () => {\n" +
+			"  const r = await fetch(\"https://reports.internal/x\", { signal: AbortSignal.timeout(15000) });\n" +
+			"  return await r.text();\n" +
+			"} });\n",
+	},
+	{
+		name: "ADK-114 fires when fetch options omit any timeout", ruleID: "ADK-114",
+		kind: models.KindADKFunctionTool, lang: models.LanguageTypeScript, wantFires: true,
+		src: "import { FunctionTool } from \"@google/adk\";\n" +
+			"const t = new FunctionTool({ name: \"fetch_report\", description: \"Fetch a report.\", parameters: {}, execute: async () => {\n" +
+			"  const r = await fetch(\"https://reports.internal/x\", { method: \"POST\" });\n" +
+			"  return await r.text();\n" +
+			"} });\n",
+	},
 }
 
 // policyRepoRuleCases covers repo-scoped rules.
@@ -2246,7 +2277,6 @@ var policyRepoRuleCases = []policyRepoCase{
 		},
 		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKOpenAIAgents}},
 		false},
-
 }
 
 // optionsWithPermissionMode builds a ClaudeAgentOptionsDef whose captured
