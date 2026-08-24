@@ -1986,6 +1986,21 @@ def fetch_data(x: str) -> dict:
     return {}
 `,
 		toolConfig: nil, wantFires: false},
+
+	// ─── CREW-007: CrewAI tool network call without a timeout ───────────────
+	// Same call_without_kwarg callee list as PYD-006.
+	{name: "CREW-007 fires on network call without timeout", ruleID: "CREW-007", kind: models.KindCrewAITool, src: `
+def fetch_report(url: str) -> str:
+    """Fetch a report."""
+    import requests
+    return requests.get(url).text
+`, wantFires: true},
+	{name: "CREW-007 silent with timeout", ruleID: "CREW-007", kind: models.KindCrewAITool, src: `
+def fetch_report(url: str) -> str:
+    """Fetch a report."""
+    import requests
+    return requests.get(url, timeout=10).text
+`, wantFires: false},
 }
 
 // policyRepoRuleCases covers repo-scoped rules.
@@ -2246,7 +2261,6 @@ var policyRepoRuleCases = []policyRepoCase{
 		},
 		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKOpenAIAgents}},
 		false},
-
 }
 
 // optionsWithPermissionMode builds a ClaudeAgentOptionsDef whose captured
