@@ -309,3 +309,67 @@ rules:
     fix: >
       Rename the method (or set the `#[tool]` `name = "..."` argument) to a
       verb-object form, e.g. `summarize_invoice`, `fetch_weather`.
+
+  - id: MCP-027
+    title: TypeScript MCP tool description is a placeholder
+    severity: low
+    confidence: 0.85
+    language: typescript
+    applies_to:
+      - mcp_tool
+    scope: tool
+    match:
+      has_description_text:
+        - todo
+        - tbd
+        - fixme
+        - placeholder
+        - no description
+        - does stuff
+    explanation: >
+      The tool registration sets a description, so it passes MCP-011, but the
+      string is a placeholder rather than real content. The server publishes it
+      across the protocol boundary in its tools/list response, so it is the
+      entire account of the tool that every connecting client and model
+      receives, and "TODO: describe this tool" tells them nothing the tool name
+      did not. The consumer has no fallback: it cannot read this repo's source,
+      the neighboring tools, or the project's docs. The server's authors do not
+      see the result either, because mis-selection surfaces in someone else's
+      client session as a wrong answer rather than as an error on this side of
+      the connection.
+    fix: >
+      Replace the placeholder with a real description covering what the tool
+      does, what it returns, and when a model should call it rather than a
+      neighboring tool on this server. Write it for a reader with no other
+      knowledge of the server, since that is what a connecting client is.
+
+  - id: MCP-028
+    title: TypeScript MCP tool description is too short to guide model selection
+    severity: low
+    confidence: 0.8
+    language: typescript
+    applies_to:
+      - mcp_tool
+    scope: tool
+    match:
+      all:
+        - has_docstring: true
+        - description_length_lt: 40
+    explanation: >
+      A description under 40 characters is rarely enough to convey what a tool
+      does, what it returns, and when to call it rather than a similarly named
+      neighbor. It is the whole of what the server publishes about the tool in
+      tools/list, so a stub like "Gets data." leaves scope and preconditions to
+      guesswork for every client that connects. The Zod input schema does not
+      close the gap — it constrains the arguments once the model has chosen this
+      tool, not whether choosing it was right. The ambiguity also is not
+      confined to this server: a client typically connects several at once and
+      the model picks across all of them from these strings alone, so a thin
+      description competes badly against a well-described tool from an unrelated
+      server that only approximately fits the request.
+    fix: >
+      Expand the description to at least a full sentence covering inputs,
+      outputs, and the situation in which this tool should be used over the
+      alternatives. Name the domain the tool acts on rather than assuming the
+      server name conveys it, since the model sees the tool alongside those of
+      every other connected server.

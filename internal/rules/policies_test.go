@@ -1986,6 +1986,43 @@ def fetch_data(x: str) -> dict:
     return {}
 `,
 		toolConfig: nil, wantFires: false},
+
+	// ─── MCP-027 / MCP-028: TS MCP description quality ──────────────────────
+	{
+		name: "MCP-027 fires on placeholder description", ruleID: "MCP-027",
+		kind: models.KindMCPTool, lang: models.LanguageTypeScript, wantFires: true,
+		src: "import { McpServer } from \"@modelcontextprotocol/sdk/server/mcp.js\";\n" +
+			"const s = new McpServer({ name: \"orders\", version: \"1.0.0\" });\n" +
+			"s.tool(\"lookup_order\", \"TODO: describe this tool.\", {}, async () => ({ content: [] }));\n",
+	},
+	{
+		name: "MCP-027 silent on a real description", ruleID: "MCP-027",
+		kind: models.KindMCPTool, lang: models.LanguageTypeScript, wantFires: false,
+		src: "import { McpServer } from \"@modelcontextprotocol/sdk/server/mcp.js\";\n" +
+			"const s = new McpServer({ name: \"orders\", version: \"1.0.0\" });\n" +
+			"s.tool(\"lookup_order\", \"Look up one order by its number and return its fulfillment status.\", {}, async () => ({ content: [] }));\n",
+	},
+	{
+		name: "MCP-028 fires on a too-short description", ruleID: "MCP-028",
+		kind: models.KindMCPTool, lang: models.LanguageTypeScript, wantFires: true,
+		src: "import { McpServer } from \"@modelcontextprotocol/sdk/server/mcp.js\";\n" +
+			"const s = new McpServer({ name: \"orders\", version: \"1.0.0\" });\n" +
+			"s.tool(\"list_orders\", \"Gets data.\", {}, async () => ({ content: [] }));\n",
+	},
+	{
+		name: "MCP-028 silent on a full description", ruleID: "MCP-028",
+		kind: models.KindMCPTool, lang: models.LanguageTypeScript, wantFires: false,
+		src: "import { McpServer } from \"@modelcontextprotocol/sdk/server/mcp.js\";\n" +
+			"const s = new McpServer({ name: \"orders\", version: \"1.0.0\" });\n" +
+			"s.tool(\"list_orders\", \"List every order belonging to one customer, most recent first.\", {}, async () => ({ content: [] }));\n",
+	},
+	{
+		name: "MCP-028 silent when the description is absent (MCP-011's case)", ruleID: "MCP-028",
+		kind: models.KindMCPTool, lang: models.LanguageTypeScript, wantFires: false,
+		src: "import { McpServer } from \"@modelcontextprotocol/sdk/server/mcp.js\";\n" +
+			"const s = new McpServer({ name: \"orders\", version: \"1.0.0\" });\n" +
+			"s.tool(\"list_orders\", \"\", {}, async () => ({ content: [] }));\n",
+	},
 }
 
 // policyRepoRuleCases covers repo-scoped rules.
@@ -2246,7 +2283,6 @@ var policyRepoRuleCases = []policyRepoCase{
 		},
 		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKOpenAIAgents}},
 		false},
-
 }
 
 // optionsWithPermissionMode builds a ClaudeAgentOptionsDef whose captured
