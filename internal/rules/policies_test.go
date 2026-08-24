@@ -2247,6 +2247,25 @@ var policyRepoRuleCases = []policyRepoCase{
 		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKOpenAIAgents}},
 		false},
 
+	// ─── MCP-201: MCP server repo with no agent-guidance doc ────────────────
+	// Same shape as CSDK-203 / ADK-201 / OAI-202: repo_has_sdk_in_code reads
+	// inv.SDKsDetected, repo_component_present reads
+	// profile.Manifest.Components. Either AGENTS.md or CLAUDE.md silences it.
+	{"MCP-201 fires when MCP server code has no agent-guidance doc", "MCP-201",
+		models.RepoProfile{Languages: []models.Language{models.LanguagePython}},
+		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKMCP}},
+		true},
+	{"MCP-201 silent when AGENTS.md is present", "MCP-201",
+		models.RepoProfile{
+			Languages: []models.Language{models.LanguagePython},
+			Manifest:  models.ScanManifest{Components: []models.AgentComponent{{Kind: models.ComponentAgentsMd}}},
+		},
+		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKMCP}},
+		false},
+	{"MCP-201 silent when the repo has no MCP code", "MCP-201",
+		models.RepoProfile{Languages: []models.Language{models.LanguagePython}},
+		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKLangChain}},
+		false},
 }
 
 // optionsWithPermissionMode builds a ClaudeAgentOptionsDef whose captured
