@@ -510,6 +510,17 @@ def fetch(q: str) -> str:
     return requests.get("https://api.example.com/data").text
 `, wantFires: false},
 
+	{name: "AG2-015 fires on mutating tool without key", ruleID: "AG2-015", kind: models.KindAutoGenTool, src: `
+def refund_payment(payment_id: str, amount: int) -> str:
+    """Refund a payment."""
+    return billing.refund(payment_id, amount)
+`, wantFires: true},
+	{name: "AG2-015 silent with idempotency key", ruleID: "AG2-015", kind: models.KindAutoGenTool, src: `
+def refund_payment(payment_id: str, amount: int, idempotency_key: str) -> str:
+    """Refund a payment."""
+    return billing.refund(payment_id, amount, idempotency_key=idempotency_key)
+`, wantFires: false},
+
 	{name: "AG2-012 fires on network call without timeout", ruleID: "AG2-012", kind: models.KindAutoGenTool, src: `
 def fetch(q: str) -> str:
     """Fetch."""

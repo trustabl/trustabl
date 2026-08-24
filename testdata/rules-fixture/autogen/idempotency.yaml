@@ -1,0 +1,55 @@
+policy:
+  id: autogen_idempotency
+  name: AutoGen mutating-tool idempotency
+  category: autogen
+  description: >
+    Rules that flag mutating tools (create/send/refund/...) without an
+    idempotency key. Retries (model re-invocation, a group-chat speaker
+    re-issuing a call, or your own retry policy) can re-run a side-effecting
+    call; without a key the same action can fire twice.
+
+rules:
+  - id: AG2-015
+    title: Mutating AutoGen tool has no idempotency key
+    severity: medium
+    confidence: 0.55
+    language: python
+    applies_to:
+      - autogen_tool
+    scope: tool
+    match:
+      all:
+        - name_has_prefix:
+            - create_
+            - send_
+            - delete_
+            - post_
+            - update_
+            - refund_
+            - charge_
+            - issue_
+        - not:
+            param_name_matches:
+              contains:
+                - idempot
+              exact:
+                - request_id
+                - txn_id
+    explanation: >
+      Tool name suggests a side effect (create/send/refund/…). A mutating tool
+      with no idempotency key cannot tell a new request from a retry of one whose
+      result was lost, and AutoGen supplies more ways for that retry to happen
+      than a single-agent loop does. The tool response is a message in a
+      conversation that is re-sent in full on every later turn, so a call whose
+      result read as inconclusive stays visible and re-invitable for the rest of
+      the run; in a group chat any speaker the manager selects can re-issue it,
+      including an agent that was not the original caller and cannot know the
+      side effect already committed. Without a key the same action fires twice —
+      a duplicate charge, a double-sent message, a repeated delete. Downstream
+      services must also honor the key for this protection to be effective.
+    fix: >
+      Add an `idempotency_key: str` parameter and pass it through to the backing
+      API so a retried call is recognized and deduplicated rather than
+      re-executed. Derive the key from the request's own identity, not from a
+      fresh uuid4() per call — a key regenerated on the retry deduplicates
+      nothing.
