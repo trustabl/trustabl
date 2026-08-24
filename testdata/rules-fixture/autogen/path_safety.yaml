@@ -1,0 +1,42 @@
+policy:
+  id: autogen_path_safety
+  name: AutoGen filesystem path safety
+  category: autogen
+  description: >
+    Rules that catch a model-chosen filesystem path flowing into I/O inside an
+    AutoGen / AG2 tool without containment. Tool arguments are produced by the
+    model from the shared conversation, so a traversal payload reaches real
+    filesystem state if the function does not resolve and gate it.
+
+rules:
+  - id: AG2-014
+    title: AutoGen tool uses a caller-supplied path without containment
+    severity: high
+    confidence: 0.7
+    language: python
+    applies_to:
+      - autogen_tool
+    scope: tool
+    # call_uses_unnormalized_path_param is per-param: a tool with two path
+    # params and one .resolve() correctly fires on the unresolved one.
+    match:
+      call_uses_unnormalized_path_param:
+        callees:
+          - open
+          - Path
+        callee_prefixes:
+          - shutil.
+          - os.
+    explanation: >
+      The tool takes a path-like parameter and hands it to file or directory
+      operations without resolving it or checking it against an allowed root.
+      AutoGen fills the argument from the conversation, and in a group chat every
+      participant writes into that conversation, so a path proposed by any agent
+      — including one summarizing untrusted content — reaches this function. A
+      ../../etc/passwd then reads or writes state outside the intended directory.
+      Detection is heuristic: confirm the parameter is genuinely model-supplied.
+    fix: >
+      Resolve the path with Path(...).resolve() and assert it sits under an
+      allowed root before any I/O touches it, rejecting anything that escapes.
+      Do the check on the resolved path — validating the raw string still lets
+      symlinks and .. segments through.

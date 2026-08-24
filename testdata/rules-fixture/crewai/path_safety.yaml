@@ -1,0 +1,42 @@
+policy:
+  id: crewai_path_safety
+  name: CrewAI filesystem path safety
+  category: crewai
+  description: >
+    Rules that catch a model-chosen filesystem path flowing into I/O inside a
+    CrewAI tool without containment. Tool arguments come from the agent, and in
+    a crew they may originate in another agent's output, so a traversal payload
+    reaches real filesystem state if the handler does not resolve and gate it.
+
+rules:
+  - id: CREW-008
+    title: CrewAI tool uses a caller-supplied path without containment
+    severity: high
+    confidence: 0.7
+    language: python
+    applies_to:
+      - crewai_tool
+    scope: tool
+    # call_uses_unnormalized_path_param is per-param: a tool with two path
+    # params and one .resolve() correctly fires on the unresolved one.
+    match:
+      call_uses_unnormalized_path_param:
+        callees:
+          - open
+          - Path
+        callee_prefixes:
+          - shutil.
+          - os.
+    explanation: >
+      The tool takes a path-like parameter and hands it to file or directory
+      operations without resolving it or checking it against an allowed root.
+      The argument is chosen by the agent from its context, and in a crew that
+      context includes other agents' task output and any document they fetched,
+      so the path is attacker-reachable through any of those. A ../../etc/passwd
+      then reads or writes state outside the intended directory. Detection is
+      heuristic: confirm the parameter is genuinely agent-supplied.
+    fix: >
+      Resolve the path with Path(...).resolve() and assert it sits under an
+      allowed root before any I/O touches it, rejecting anything that escapes.
+      Do the check on the resolved path — validating the raw string still lets
+      symlinks and .. segments through.

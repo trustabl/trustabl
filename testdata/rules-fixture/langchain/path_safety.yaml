@@ -1,0 +1,42 @@
+policy:
+  id: langchain_path_safety
+  name: LangChain filesystem path safety
+  category: langchain
+  description: >
+    Rules that catch a model-chosen filesystem path flowing into I/O inside a
+    LangChain / LangGraph tool without containment. The tool's arguments are
+    produced by the model from conversation context, so a traversal payload
+    reaches real filesystem state if the handler does not resolve and gate it.
+
+rules:
+  - id: LC-008
+    title: LangChain tool uses a caller-supplied path without containment
+    severity: high
+    confidence: 0.7
+    language: python
+    applies_to:
+      - langchain_tool
+    scope: tool
+    # call_uses_unnormalized_path_param is per-param: a tool with two path
+    # params and one .resolve() correctly fires on the unresolved one.
+    match:
+      call_uses_unnormalized_path_param:
+        callees:
+          - open
+          - Path
+        callee_prefixes:
+          - shutil.
+          - os.
+    explanation: >
+      The tool takes a path-like parameter and hands it to file or directory
+      operations without resolving it or checking it against an allowed root.
+      A LangChain tool's arguments are filled in by the model from whatever is in
+      its context — retrieved documents, tool output, user text — so the path is
+      attacker-reachable wherever any of that is untrusted, and a
+      ../../etc/passwd reads or writes state outside the intended directory.
+      Detection is heuristic: confirm the parameter is genuinely model-supplied.
+    fix: >
+      Resolve the path with Path(...).resolve() and assert it sits under an
+      allowed root before any I/O touches it, rejecting anything that escapes.
+      Do the check on the resolved path — validating the raw string still lets
+      symlinks and .. segments through.

@@ -1,0 +1,43 @@
+policy:
+  id: pydantic_ai_path_safety
+  name: Pydantic AI filesystem path safety
+  category: pydantic_ai
+  description: >
+    Rules that catch a model-chosen filesystem path flowing into I/O inside a
+    Pydantic AI tool without containment. A validated argument type constrains
+    the shape of the path, not where it points, so a traversal payload reaches
+    real filesystem state if the tool does not resolve and gate it.
+
+rules:
+  - id: PYD-009
+    title: Pydantic AI tool uses a caller-supplied path without containment
+    severity: high
+    confidence: 0.7
+    language: python
+    applies_to:
+      - pydantic_ai_tool
+    scope: tool
+    # call_uses_unnormalized_path_param is per-param: a tool with two path
+    # params and one .resolve() correctly fires on the unresolved one.
+    match:
+      call_uses_unnormalized_path_param:
+        callees:
+          - open
+          - Path
+        callee_prefixes:
+          - shutil.
+          - os.
+    explanation: >
+      The tool takes a path-like parameter and hands it to file or directory
+      operations without resolving it or checking it against an allowed root.
+      Pydantic AI validates the argument against its annotation, which is easy to
+      mistake for having validated it: str and Path both accept ../../etc/passwd,
+      because the type says what the value looks like and not where it points.
+      The model fills the argument from its context, so the path is
+      attacker-reachable wherever that context is. Detection is heuristic:
+      confirm the parameter is genuinely model-supplied.
+    fix: >
+      Resolve the path with Path(...).resolve() and assert it sits under an
+      allowed root before any I/O touches it, rejecting anything that escapes.
+      A Pydantic field validator is a good place for it, provided it checks the
+      resolved path — validating the raw string still lets symlinks and .. through.

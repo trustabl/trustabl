@@ -219,6 +219,23 @@ def fetch(q: str) -> str:
     return requests.get("https://api.example.com/data").text
 `, wantFires: false},
 
+	{name: "LC-008 fires on unresolved path param", ruleID: "LC-008", kind: models.KindLangChainTool, src: `
+def read_doc(path: str) -> str:
+    """Read a file."""
+    with open(path) as f:
+        return f.read()
+`, wantFires: true},
+	{name: "LC-008 silent when the path is resolved and contained", ruleID: "LC-008", kind: models.KindLangChainTool, src: `
+def read_doc(path: str) -> str:
+    """Read a file."""
+    from pathlib import Path
+    p = Path(path).resolve()
+    if not p.is_relative_to(ROOT):
+        return "denied"
+    with open(p) as f:
+        return f.read()
+`, wantFires: false},
+
 	{name: "LC-006 fires on return_direct=True", ruleID: "LC-006", kind: models.KindLangChainTool, src: `
 def f(x: str) -> str:
     """Doc."""
@@ -425,6 +442,23 @@ def fetch(q: str) -> str:
     return requests.get("https://api.example.com/data").text
 `, wantFires: false},
 
+	{name: "CREW-008 fires on unresolved path param", ruleID: "CREW-008", kind: models.KindCrewAITool, src: `
+def read_report(path: str) -> str:
+    """Read a file."""
+    with open(path) as f:
+        return f.read()
+`, wantFires: true},
+	{name: "CREW-008 silent when the path is resolved and contained", ruleID: "CREW-008", kind: models.KindCrewAITool, src: `
+def read_report(path: str) -> str:
+    """Read a file."""
+    from pathlib import Path
+    p = Path(path).resolve()
+    if not p.is_relative_to(ROOT):
+        return "denied"
+    with open(p) as f:
+        return f.read()
+`, wantFires: false},
+
 	{name: "CREW-006 fires on mutating tool without key", ruleID: "CREW-006", kind: models.KindCrewAITool, src: `
 def create_order(customer_id: str, amount: float) -> dict:
     """Create an order."""
@@ -508,6 +542,23 @@ def fetch(q: str) -> str:
     """Fetch."""
     import requests
     return requests.get("https://api.example.com/data").text
+`, wantFires: false},
+
+	{name: "AG2-014 fires on unresolved path param", ruleID: "AG2-014", kind: models.KindAutoGenTool, src: `
+def read_notes(path: str) -> str:
+    """Read a file."""
+    with open(path) as f:
+        return f.read()
+`, wantFires: true},
+	{name: "AG2-014 silent when the path is resolved and contained", ruleID: "AG2-014", kind: models.KindAutoGenTool, src: `
+def read_notes(path: str) -> str:
+    """Read a file."""
+    from pathlib import Path
+    p = Path(path).resolve()
+    if not p.is_relative_to(ROOT):
+        return "denied"
+    with open(p) as f:
+        return f.read()
 `, wantFires: false},
 
 	{name: "AG2-012 fires on network call without timeout", ruleID: "AG2-012", kind: models.KindAutoGenTool, src: `
@@ -597,6 +648,23 @@ def fetch(q: str) -> str:
     """Fetch."""
     import requests
     return requests.get("https://api.example.com/data", timeout=10).text
+`, wantFires: false},
+
+	{name: "PYD-009 fires on unresolved path param", ruleID: "PYD-009", kind: models.KindPydanticAITool, src: `
+def read_ledger(path: str) -> str:
+    """Read a file."""
+    with open(path) as f:
+        return f.read()
+`, wantFires: true},
+	{name: "PYD-009 silent when the path is resolved and contained", ruleID: "PYD-009", kind: models.KindPydanticAITool, src: `
+def read_ledger(path: str) -> str:
+    """Read a file."""
+    from pathlib import Path
+    p = Path(path).resolve()
+    if not p.is_relative_to(ROOT):
+        return "denied"
+    with open(p) as f:
+        return f.read()
 `, wantFires: false},
 
 	{name: "PYD-007 fires on mutating tool without key", ruleID: "PYD-007", kind: models.KindPydanticAITool, src: `
