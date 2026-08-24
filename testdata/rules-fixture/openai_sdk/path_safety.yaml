@@ -29,3 +29,35 @@ rules:
       Normalize the path before use: p = Path(file_path).resolve(). Then
       check that the resolved path is inside an explicit allowed-root
       directory before opening.
+
+  - id: OAI-029
+    title: TypeScript tool writes to the filesystem
+    severity: low
+    confidence: 0.5
+    language: typescript
+    applies_to:
+      - openai_tool
+    scope: tool
+    match:
+      has_write_call: true
+    explanation: >
+      This TypeScript Agents SDK tool writes to the filesystem. If the path or
+      the contents derive from the tool's arguments, the model chooses both, and
+      a prompt injection carried in retrieved content or an earlier tool result
+      can steer the write at any file the host process can reach. The guardrail
+      story does not cover it: OAI-101 is about input guardrails on the agent,
+      which screen what enters the conversation, not what a tool does with an
+      argument once the model has produced it — and a tool call that reaches
+      execute() has already passed whatever guardrails were configured. Tools
+      here also typically run in the same server process as the request handler
+      rather than a sandbox, so the write inherits the application's own
+      filesystem permissions. (Coarse signal — it flags any filesystem write,
+      not only unnormalized paths, because TypeScript path-normalization
+      analysis is not yet wired. Confirm the path is genuinely model-supplied
+      before acting.)
+    fix: >
+      Confine writes to a dedicated working directory: resolve the final path,
+      verify it stays under that root before writing, and reject absolute paths
+      and any input containing "..". Where the tool only ever writes generated
+      names, derive the filename server-side from an id rather than accepting a
+      path from the model at all.
