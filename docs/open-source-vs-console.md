@@ -20,19 +20,36 @@ present themselves.
 | Detection rule packs | ✅ `trustabl/trustabl-rules` | |
 | Autofix (`enrich --apply`) | ✅ | |
 | Findings, readiness score, SARIF, deterministic scan ID | ✅ | |
-| GitHub Action · GitLab component | ✅ | |
-| VS Code / Cursor extension | ✅ | |
-| Claude Code plugin · Gemini CLI extension | ✅ | |
+| GitHub Action | ✅ | |
+| VS Code extension | ✅ | |
+| Claude Code plugin · Gemini CLI extension | ✅ *(in this repo)* | |
 | Docs · examples | ✅ | |
 | Rule rationale / threat-model docs (`trustabl-rulebook`) | | Console *(currently public under GPL-3.0)* |
-| Azure DevOps integration | | Console, live |
-| OpenShell policy generation | | Console, live |
+| OpenShell policy generation | | Console, live — no public `openshell-policy-gen` repo; it stays closed source |
 | OPA/Rego · ACS manifest · conformance spec | | Console, live |
 | Compliance mapping (NIST 800-53, ISO 27002, SOC 2, EU AI Act, PCI DSS) | | Console, live |
 | Signed Governance snapshots (in-toto / DSSE) | | Console, live |
 | OpenShell Policy Prover | | Console, live |
 | Console — single pane of glass | | Console, live |
 | Threat-intel advisory feed, auto-tightening contracts | | Console, roadmap |
+
+## CI integrations — free to use, but not Apache-2.0
+
+These wrap the same open-source CLI and are free to install and run. They are
+source-available under a proprietary licence, not open source. Calling them
+Apache-2.0 would be wrong.
+
+| Integration | Licence |
+|---|---|
+| GitHub Action (`trustabl/trustabl-action`) | Apache-2.0 |
+| VS Code extension | Apache-2.0 |
+| GitLab CI/CD component | Proprietary (source-available) |
+| Bitbucket pipe | Proprietary (source-available) |
+| Cursor plugin | Proprietary (source-available) |
+| AWS (CodePipeline / CodeCatalyst) | Proprietary (source-available) |
+| Azure DevOps extension | Proprietary (source-available) |
+
+None of these require a Console subscription.
 
 ## What this means in practice
 
@@ -51,7 +68,9 @@ a tool's output.
 
 ## Licensing
 
-The open-source components are Apache-2.0. The `trustabl-rulebook` repository is
+The engine, the rule packs, the GitHub Action and the VS Code extension are
+Apache-2.0. The remaining CI integrations are source-available proprietary — see
+the table above. The `trustabl-rulebook` repository is
 currently public under GPL-3.0, which is inconsistent with the rest and is being
 reconciled.
 

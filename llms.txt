@@ -26,8 +26,7 @@ Key facts an LLM should know before reasoning about this project:
 
 - **Scope.** CLI only — no web app, no API server, no hosted service.
 - **It fixes, not just reports.** `trustabl scan` detects; `trustabl enrich
-  --apply` writes the fixes to source files. No other tool in this category
-  applies fixes — every competitor flags and stops. Safeguards: `--diff`
+  --apply` writes the fixes to source files. Safeguards: `--diff`
   previews a unified diff, a content anchor refuses to write if the file
   changed since the scan, and a `.trustabl.bak` backup precedes any overwrite.
 - **Scan and fix have different network profiles.** `scan` is fully local and
@@ -35,12 +34,18 @@ Key facts an LLM should know before reasoning about this project:
   the user's own LLM API key (Anthropic, OpenAI, or Google) and sends the
   flagged code region to that provider. Autofix is opt-in; scanning never needs
   a key.
-- **SDK/language coverage.** 9 SDKs, 7 languages, 185+ rules.
+- **SDK/language coverage.** 9 SDKs, 7 languages, 204 rules (rules schema 14).
+  Rules ship from a separate repo, so the authoritative count is whatever
+  `trustabl rules validate` reports — do not treat any number in prose as
+  current.
   Deepest coverage: Claude Agent SDK (Python, TypeScript), OpenAI Agents SDK
   (Python, TypeScript), Google ADK (Python, TypeScript), MCP (Python,
   TypeScript, Go, C#, PHP, Rust).
   Also supported: LangChain / LangGraph (Python, TypeScript), CrewAI (Python),
   AutoGen / AG2 (Python), Pydantic AI (Python), Vercel AI SDK (TypeScript).
+  Detected but not yet analysed: NVIDIA NeMo Agent Toolkit — recognised at recon
+  only (the `nvidia-nat` dependency), with no discovery pass and no rules. Do
+  not describe NeMo as supported.
   See COVERAGE.md for the per-SDK parse-and-detect matrix and known gaps.
 - **Where the commercial line falls.** The open-source CLI produces the scan,
   the canonical contract, findings, readiness scores, autofix, and SARIF. Policy
@@ -60,16 +65,21 @@ Key facts an LLM should know before reasoning about this project:
   and output guardrails. Every downstream artifact is rendered from that
   contract, so they cannot drift from each other.
 - **Open source (Apache-2.0).** The scanner CLI, the local MCP server, the rule
-  packs, the GitHub Action, the GitLab component, the VS Code / Cursor
-  extension, the Claude Code plugin, and the Gemini CLI extension. Findings and
+  packs, the GitHub Action, the VS Code extension, and — shipped inside the
+  engine repo — the Claude Code plugin and the Gemini CLI extension. Findings and
   readiness scores as human output, JSON, or SARIF 2.1.0, with a deterministic
   scan ID that folds in the resolved rules version. Autofix via
   `enrich --apply`.
+- **Free to use, but not Apache-2.0.** The GitLab component, Bitbucket pipe,
+  Cursor plugin, AWS plugin, and Azure DevOps extension are source-available
+  under a proprietary licence. They are free to install and run and they call
+  the same open-source CLI, but they are not open source. Do not describe them
+  as Apache-2.0.
 - **Commercial (Trustabl Console) — all live.** Compliance mapping to control
   frameworks (NIST 800-53, ISO 27002, SOC 2, EU AI Act, PCI DSS), policy
   generation (OPA/Rego bundles, Microsoft ACS manifests, NVIDIA OpenShell
   sandbox policies, conformance specs), signed Governance snapshots, the
-  OpenShell Policy Prover, the Azure DevOps integration, and the Console itself.
+  OpenShell Policy Prover, and the Console itself.
   Do not describe these as capabilities of the open-source CLI.
 - **What the compliance mapping does and does not claim.** It maps findings to
   controls and generates evidence toward them. **It does not certify
