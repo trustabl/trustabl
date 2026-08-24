@@ -1,0 +1,41 @@
+policy:
+  id: mcp_observability
+  name: MCP tool observability hygiene
+  category: mcp
+  description: >
+    Rules covering how an MCP tool handler emits diagnostics. On a stdio
+    server — the default transport — stdout is the protocol channel, so a
+    handler that prints to it is not writing a log line, it is writing into the
+    JSON-RPC frame stream.
+
+rules:
+  - id: MCP-023
+    title: MCP tool prints to stdout, corrupting a stdio transport
+    severity: medium
+    confidence: 0.7
+    language: python
+    applies_to:
+      - mcp_tool
+    scope: tool
+    match:
+      has_print_call: true
+    explanation: >
+      The tool handler calls print(), which writes to the process's stdout. On
+      an MCP server using the stdio transport — the default for FastMCP and the
+      usual way an editor or desktop client launches a server — stdout is not a
+      log sink, it is the protocol channel: the client reads newline-delimited
+      JSON-RPC messages from it. A loose print interleaves with those frames, so
+      the client hits a parse error on a line that is not JSON and, depending on
+      the client, drops the response, logs a protocol error, or tears down the
+      connection. The failure does not look like the cause: the symptom is a
+      tool call that returns nothing or a server that disconnects mid-session,
+      while the print that broke it reads like harmless debugging. A server run
+      over HTTP or SSE instead escapes the corruption, but the diagnostic is
+      still lost — the model never sees stdout, only the return value.
+    fix: >
+      Remove the print(). Diagnostics from an MCP server belong on stderr, which
+      the transport leaves alone and clients typically capture as server logs —
+      emit through a module logger (logging.getLogger(__name__)) configured with
+      a StreamHandler on sys.stderr, and make sure nothing in the process
+      reconfigures logging onto stdout. If the information needs to reach the
+      model, return it as part of the tool's result instead.
