@@ -95,3 +95,65 @@ rules:
       Provide a concise `description` string in the `tool({...})` options stating
       what the tool does and when the model should call it. The description is the
       model's primary routing signal alongside the tool name.
+
+  - id: OAI-025
+    title: Tool description is a placeholder
+    severity: low
+    confidence: 0.85
+    language: python
+    applies_to:
+      - openai_tool
+    scope: tool
+    match:
+      has_description_text:
+        - todo
+        - tbd
+        - fixme
+        - placeholder
+        - no description
+        - does stuff
+    explanation: >
+      The docstring passes the OAI-001 has-a-description check but carries a
+      placeholder marker instead of real content. The Agents SDK forwards this
+      text to the model verbatim as the tool's selection signal, so a stub like
+      "TODO: describe this tool" is functionally indistinguishable from no
+      description at all and the model still has to guess from the function
+      name. Strict schemas do not compensate: OAI-003's strict_mode constrains
+      the shape of the arguments, never whether calling this tool was the right
+      move, so a placeholder description produces a well-formed call to the
+      wrong tool. Mis-selection also spends a turn against the OAI-112 max_turns
+      budget, and nothing in a trace attributes the wasted turn to the
+      description that caused it.
+    fix: >
+      Replace the placeholder with a real description covering what the tool
+      does, what it returns, and when the model should call it rather than a
+      neighboring tool. Where the function name cannot carry that, pass an
+      explicit description_override to @function_tool instead of relying on the
+      docstring.
+
+  - id: OAI-026
+    title: Tool description is too short to guide model selection
+    severity: low
+    confidence: 0.8
+    language: python
+    applies_to:
+      - openai_tool
+    scope: tool
+    match:
+      all:
+        - has_docstring: true
+        - description_length_lt: 40
+    explanation: >
+      A description under 40 characters is rarely enough to convey what a tool
+      does, what it returns, and when to call it rather than a similarly named
+      neighbor. The Agents SDK passes this text to the model as its only
+      selection signal, so a stub like "Gets data." leaves scope and
+      preconditions to guesswork. The cost lands where it is hardest to see: an
+      agent with handoffs picks between its own tools and its peers' on the
+      strength of these strings, so a thin description does not just cause a
+      wrong call, it can route the whole conversation to the wrong agent.
+    fix: >
+      Expand the description to at least a full sentence covering inputs,
+      outputs, and the situation in which this tool should be used over the
+      alternatives. Where two tools are easy to confuse, say in each which one
+      the other case belongs to.
