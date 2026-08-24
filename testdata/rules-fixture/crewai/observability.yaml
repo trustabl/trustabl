@@ -1,0 +1,37 @@
+policy:
+  id: crewai_observability
+  name: CrewAI tool observability hygiene
+  category: crewai
+  description: >
+    Rules covering how a CrewAI tool emits diagnostics. A tool body that prints
+    to stdout writes into the same channel the crew's own verbose narration uses,
+    so the record is neither visible to the agent nor separable from the run
+    commentary around it.
+
+rules:
+  - id: CREW-012
+    title: CrewAI tool prints to stdout for diagnostics
+    severity: low
+    confidence: 0.65
+    language: python
+    applies_to:
+      - crewai_tool
+    scope: tool
+    match:
+      has_print_call: true
+    explanation: >
+      The tool body calls print(), which writes to the process's stdout. The
+      agent never sees it — only the return value becomes the observation it
+      reasons over — so the output silently disappears in any deployment that
+      captures structured records rather than raw stdout. CrewAI makes it worse
+      than a lost log line: a crew running with verbose=True is already writing
+      its own narration to that same stream, so a tool print is interleaved into
+      run commentary from several agents at once with nothing marking which
+      agent, task, or tool call emitted it. What looks like working diagnostics
+      in a terminal is unattributable the moment the crew runs anywhere else.
+    fix: >
+      Remove the print(). For operator diagnostics, emit through a module logger
+      (logging.getLogger(__name__).info(...)) so the record carries its own
+      module and level and lands in the application's log sink rather than the
+      crew's narration stream. If the information needs to reach the agent,
+      return it as part of the tool's result instead.
