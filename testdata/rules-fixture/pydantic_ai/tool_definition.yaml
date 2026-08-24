@@ -62,3 +62,62 @@ rules:
       list[str], a Pydantic model, etc.). Pydantic AI propagates these
       annotations into the schema the model sees, so the model emits
       correctly-shaped arguments and validation stops rejecting them.
+
+  - id: PYD-010
+    title: Pydantic AI tool description is a placeholder
+    severity: low
+    confidence: 0.85
+    language: python
+    applies_to:
+      - pydantic_ai_tool
+    scope: tool
+    match:
+      has_description_text:
+        - todo
+        - tbd
+        - fixme
+        - placeholder
+        - no description
+        - does stuff
+    explanation: >
+      The docstring passes the PYD-001 has-a-description check but carries a
+      placeholder marker instead of real content. Pydantic AI forwards this text
+      to the model verbatim as the tool's selection signal, so a stub like
+      "TODO: describe this tool" is functionally indistinguishable from no
+      description at all and the model still has to guess from the function
+      name. It also costs more here than in most SDKs: Pydantic AI parses the
+      docstring's parameter sections into the argument schema, so a placeholder
+      body strips the per-argument guidance at the same time as the tool-level
+      guidance, and nothing in the pipeline reports the omission.
+    fix: >
+      Replace the placeholder with a real description covering what the tool
+      does, what it returns, and when the model should call it, and add the
+      parameter section (Google, NumPy, or Sphinx style) that Pydantic AI reads
+      into the argument schema.
+
+  - id: PYD-011
+    title: Pydantic AI tool description is too short to guide model selection
+    severity: low
+    confidence: 0.8
+    language: python
+    applies_to:
+      - pydantic_ai_tool
+    scope: tool
+    match:
+      all:
+        - has_docstring: true
+        - description_length_lt: 40
+    explanation: >
+      A description under 40 characters is rarely enough to convey what a tool
+      does, what it returns, and when to call it rather than a similarly named
+      neighbor. Pydantic AI passes the docstring to the model as its only
+      selection signal, so a stub like "Gets data." leaves scope and
+      preconditions to guesswork, which shows up as mis-selection or missed
+      calls under ambiguous prompts. A docstring this short also has no room for
+      the parameter section Pydantic AI parses into the argument schema, so the
+      arguments reach the model undescribed as well.
+    fix: >
+      Expand the description to at least a full sentence covering inputs,
+      outputs, and when this tool should be used over the alternatives, and
+      document each parameter in a section Pydantic AI can parse into the
+      argument schema.

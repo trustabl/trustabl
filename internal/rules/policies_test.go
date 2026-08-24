@@ -1986,6 +1986,35 @@ def fetch_data(x: str) -> dict:
     return {}
 `,
 		toolConfig: nil, wantFires: false},
+
+	// ─── PYD-010 / PYD-011: Pydantic AI description quality ─────────────────
+	// PYD-010 is has_description_text (placeholder markers); PYD-011 pairs
+	// description_length_lt with has_docstring so an ABSENT docstring stays
+	// PYD-001's finding rather than double-reporting here.
+	{name: "PYD-010 fires on placeholder description", ruleID: "PYD-010", kind: models.KindPydanticAITool, src: `
+def lookup_order(order_id: str) -> str:
+    """TODO: describe this tool."""
+    return order_id
+`, wantFires: true},
+	{name: "PYD-010 silent on a real description", ruleID: "PYD-010", kind: models.KindPydanticAITool, src: `
+def lookup_order(order_id: str) -> str:
+    """Look up a single order by its identifier and return its current status."""
+    return order_id
+`, wantFires: false},
+	{name: "PYD-011 fires on a too-short description", ruleID: "PYD-011", kind: models.KindPydanticAITool, src: `
+def list_orders(customer_id: str) -> str:
+    """Gets data."""
+    return customer_id
+`, wantFires: true},
+	{name: "PYD-011 silent on a full description", ruleID: "PYD-011", kind: models.KindPydanticAITool, src: `
+def list_orders(customer_id: str) -> str:
+    """List every order belonging to one customer, most recent first."""
+    return customer_id
+`, wantFires: false},
+	{name: "PYD-011 silent when the docstring is absent (PYD-001's case)", ruleID: "PYD-011", kind: models.KindPydanticAITool, src: `
+def list_orders(customer_id: str) -> str:
+    return customer_id
+`, wantFires: false},
 }
 
 // policyRepoRuleCases covers repo-scoped rules.
@@ -2246,7 +2275,6 @@ var policyRepoRuleCases = []policyRepoCase{
 		},
 		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKOpenAIAgents}},
 		false},
-
 }
 
 // optionsWithPermissionMode builds a ClaudeAgentOptionsDef whose captured
