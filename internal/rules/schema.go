@@ -18,7 +18,9 @@ type PolicyMeta struct {
 
 // RuleDef is one rule entry inside a policy file.
 // Category is not in YAML — the loader copies it from PolicyMeta.Category.
-// Language defaults to "python" if absent in YAML — the loader fills it in.
+// Language defaults to "python" for tool/agent scope if absent in YAML — the
+// loader fills it in. Subagent, skill, and repo rules do not gate on language,
+// so an omitted language stays empty for those scopes.
 type RuleDef struct {
 	ID          string                  `yaml:"id"`
 	Title       string                  `yaml:"title"`
