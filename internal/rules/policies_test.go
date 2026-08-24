@@ -1986,6 +1986,32 @@ def fetch_data(x: str) -> dict:
     return {}
 `,
 		toolConfig: nil, wantFires: false},
+
+	// ─── LC-018 / LC-019: LangChain description quality ─────────────────────
+	{name: "LC-018 fires on placeholder description", ruleID: "LC-018", kind: models.KindLangChainTool, src: `
+def lookup_order(order_id: str) -> str:
+    """TODO: describe this tool."""
+    return order_id
+`, wantFires: true},
+	{name: "LC-018 silent on a real description", ruleID: "LC-018", kind: models.KindLangChainTool, src: `
+def lookup_order(order_id: str) -> str:
+    """Look up a single order by its identifier and return its current status."""
+    return order_id
+`, wantFires: false},
+	{name: "LC-019 fires on a too-short description", ruleID: "LC-019", kind: models.KindLangChainTool, src: `
+def list_orders(customer_id: str) -> str:
+    """Gets data."""
+    return customer_id
+`, wantFires: true},
+	{name: "LC-019 silent on a full description", ruleID: "LC-019", kind: models.KindLangChainTool, src: `
+def list_orders(customer_id: str) -> str:
+    """List every order belonging to one customer, most recent first."""
+    return customer_id
+`, wantFires: false},
+	{name: "LC-019 silent when the docstring is absent (LC-001's case)", ruleID: "LC-019", kind: models.KindLangChainTool, src: `
+def list_orders(customer_id: str) -> str:
+    return customer_id
+`, wantFires: false},
 }
 
 // policyRepoRuleCases covers repo-scoped rules.
@@ -2246,7 +2272,6 @@ var policyRepoRuleCases = []policyRepoCase{
 		},
 		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKOpenAIAgents}},
 		false},
-
 }
 
 // optionsWithPermissionMode builds a ClaudeAgentOptionsDef whose captured
