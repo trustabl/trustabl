@@ -53,3 +53,34 @@ rules:
     fix: >
       Pass `timeout=` (typically 5–30s) to the request. Surface failures as a
       structured error the model can react to.
+
+  - id: CSDK-020
+    title: TypeScript Claude SDK tool HTTP call has no timeout
+    severity: high
+    confidence: 0.6
+    language: typescript
+    applies_to:
+      - claude_sdk_tool
+    scope: tool
+    match:
+      has_http_call_without_timeout: true
+    explanation: >
+      This TypeScript Claude SDK tool makes an outbound HTTP call (fetch /
+      axios / got / undici) with no deadline — no signal, timeout, or
+      abortSignal option. Node's fetch has no implicit deadline, so a slow or
+      unresponsive host blocks the tool callback until the socket eventually
+      dies. Because the call sits inside the agent's turn, that stalls the
+      conversation rather than failing it: the model gets no result and no
+      error, the turn cannot advance, and a max_turns cap does not help because
+      the run is stuck inside a single turn rather than taking too many. In a
+      server embedding the SDK it also holds the request worker for the
+      duration. The exposure compounds with CSDK-013: a tool that fetches a
+      model-controlled URL and cannot time out can be pointed at an internal
+      host that simply never answers.
+    fix: >
+      Attach a deadline. On modern runtimes,
+      await fetch(url, { signal: AbortSignal.timeout(15_000) }); on older ones,
+      create an AbortController, abort it from a setTimeout, pass
+      controller.signal, and clear the timer in a finally. axios and got take a
+      timeout option directly. Return the abort as a structured tool error so
+      the model can retry or route around it instead of the turn hanging.

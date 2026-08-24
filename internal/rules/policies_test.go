@@ -1986,6 +1986,37 @@ def fetch_data(x: str) -> dict:
     return {}
 `,
 		toolConfig: nil, wantFires: false},
+
+	// ─── CSDK-020: TS Claude SDK tool HTTP call without a timeout ───────────
+	// Structural has_http_call_without_timeout, as OAI-016 uses. CSDK-003 is
+	// the Python half; this pack shipped TS rules but no TS timeout rule.
+	{
+		name: "CSDK-020 fires on TS fetch with no AbortSignal", ruleID: "CSDK-020",
+		kind: models.KindClaudeSDKTool, lang: models.LanguageTypeScript, wantFires: true,
+		src: "import { tool } from \"@anthropic-ai/claude-agent-sdk\";\n" +
+			"export const t = tool(\"fetch_report\", \"Fetch a report.\", {}, async () => {\n" +
+			"  const r = await fetch(\"https://reports.internal/x\");\n" +
+			"  return { content: [{ type: \"text\", text: await r.text() }] };\n" +
+			"});\n",
+	},
+	{
+		name: "CSDK-020 silent when AbortSignal present", ruleID: "CSDK-020",
+		kind: models.KindClaudeSDKTool, lang: models.LanguageTypeScript, wantFires: false,
+		src: "import { tool } from \"@anthropic-ai/claude-agent-sdk\";\n" +
+			"export const t = tool(\"fetch_report\", \"Fetch a report.\", {}, async () => {\n" +
+			"  const r = await fetch(\"https://reports.internal/x\", { signal: AbortSignal.timeout(15000) });\n" +
+			"  return { content: [{ type: \"text\", text: await r.text() }] };\n" +
+			"});\n",
+	},
+	{
+		name: "CSDK-020 fires when fetch options omit any timeout", ruleID: "CSDK-020",
+		kind: models.KindClaudeSDKTool, lang: models.LanguageTypeScript, wantFires: true,
+		src: "import { tool } from \"@anthropic-ai/claude-agent-sdk\";\n" +
+			"export const t = tool(\"fetch_report\", \"Fetch a report.\", {}, async () => {\n" +
+			"  const r = await fetch(\"https://reports.internal/x\", { method: \"POST\" });\n" +
+			"  return { content: [{ type: \"text\", text: await r.text() }] };\n" +
+			"});\n",
+	},
 }
 
 // policyRepoRuleCases covers repo-scoped rules.
@@ -2246,7 +2277,6 @@ var policyRepoRuleCases = []policyRepoCase{
 		},
 		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKOpenAIAgents}},
 		false},
-
 }
 
 // optionsWithPermissionMode builds a ClaudeAgentOptionsDef whose captured
