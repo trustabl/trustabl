@@ -1986,6 +1986,28 @@ def fetch_data(x: str) -> dict:
     return {}
 `,
 		toolConfig: nil, wantFires: false},
+
+	// ─── ADK-117: TS ADK FunctionTool writes to the filesystem ──────────────
+	{
+		name: "ADK-117 fires on filesystem write", ruleID: "ADK-117",
+		kind: models.KindADKFunctionTool, lang: models.LanguageTypeScript, wantFires: true,
+		src: "import { FunctionTool } from \"@google/adk\";\n" +
+			"import { writeFileSync } from \"node:fs\";\n" +
+			"const t = new FunctionTool({ name: \"save_note\", description: \"Save a note to disk for later retrieval.\", parameters: {}, execute: async ({ p, body }) => {\n" +
+			"  writeFileSync(p, body);\n" +
+			"  return \"saved\";\n" +
+			"} });\n",
+	},
+	{
+		name: "ADK-117 silent with no filesystem write", ruleID: "ADK-117",
+		kind: models.KindADKFunctionTool, lang: models.LanguageTypeScript, wantFires: false,
+		src: "import { FunctionTool } from \"@google/adk\";\n" +
+			"const notes = new Map<string, string>();\n" +
+			"const t = new FunctionTool({ name: \"save_note\", description: \"Save a note to disk for later retrieval.\", parameters: {}, execute: async ({ body }) => {\n" +
+			"  notes.set(\"n1\", body);\n" +
+			"  return \"n1\";\n" +
+			"} });\n",
+	},
 }
 
 // policyRepoRuleCases covers repo-scoped rules.
@@ -2246,7 +2268,6 @@ var policyRepoRuleCases = []policyRepoCase{
 		},
 		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKOpenAIAgents}},
 		false},
-
 }
 
 // optionsWithPermissionMode builds a ClaudeAgentOptionsDef whose captured

@@ -32,3 +32,36 @@ rules:
     fix: >
       Resolve the path with `Path(...).resolve()` and assert it sits under an
       allowed root before opening.
+
+  - id: ADK-117
+    title: TypeScript FunctionTool writes to the filesystem
+    severity: low
+    confidence: 0.5
+    language: typescript
+    applies_to:
+      - adk_function_tool
+    scope: tool
+    match:
+      has_write_call: true
+    explanation: >
+      This TypeScript ADK FunctionTool writes to the filesystem. If the path or
+      the contents derive from the tool's arguments, the model chooses both, and
+      a prompt injection carried in retrieved content or an earlier tool result
+      can steer the write at any file the host process can reach. The callback
+      gate the ADK offers does not close this by default: ADK-102 and ADK-107
+      are about before_tool_callback being present at all, and a callback that
+      is present still has to inspect the path itself and know which root is
+      allowed — being wired up is not the same as containing anything. Agent
+      composition widens the reach too, since any branch of the tree that lists
+      this tool can reach it, and a write performed in one branch is visible to
+      every agent that reads the shared session state afterward. (Coarse signal
+      — it flags any filesystem write, not only unnormalized paths, because
+      TypeScript path-normalization analysis is not yet wired. Confirm the path
+      is genuinely model-supplied before acting.)
+    fix: >
+      Confine writes to a dedicated working directory: resolve the final path,
+      verify it stays under that root before writing, and reject absolute paths
+      and any input containing "..". Put the check inside the tool rather than
+      relying on a before_tool_callback, so it holds for every agent in the tree
+      that lists the tool. Where the tool only ever writes generated names,
+      derive the filename from an id rather than accepting a path from the model.
