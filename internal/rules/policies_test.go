@@ -1986,6 +1986,32 @@ def fetch_data(x: str) -> dict:
     return {}
 `,
 		toolConfig: nil, wantFires: false},
+
+	// ─── AG2-016 / AG2-017: AutoGen description quality ─────────────────────
+	{name: "AG2-016 fires on placeholder description", ruleID: "AG2-016", kind: models.KindAutoGenTool, src: `
+def lookup_order(order_id: str) -> str:
+    """TODO: describe this tool."""
+    return order_id
+`, wantFires: true},
+	{name: "AG2-016 silent on a real description", ruleID: "AG2-016", kind: models.KindAutoGenTool, src: `
+def lookup_order(order_id: str) -> str:
+    """Look up a single order by its identifier and return its current status."""
+    return order_id
+`, wantFires: false},
+	{name: "AG2-017 fires on a too-short description", ruleID: "AG2-017", kind: models.KindAutoGenTool, src: `
+def list_orders(customer_id: str) -> str:
+    """Gets data."""
+    return customer_id
+`, wantFires: true},
+	{name: "AG2-017 silent on a full description", ruleID: "AG2-017", kind: models.KindAutoGenTool, src: `
+def list_orders(customer_id: str) -> str:
+    """List every order belonging to one customer, most recent first."""
+    return customer_id
+`, wantFires: false},
+	{name: "AG2-017 silent when the docstring is absent (AG2-007's case)", ruleID: "AG2-017", kind: models.KindAutoGenTool, src: `
+def list_orders(customer_id: str) -> str:
+    return customer_id
+`, wantFires: false},
 }
 
 // policyRepoRuleCases covers repo-scoped rules.
@@ -2246,7 +2272,6 @@ var policyRepoRuleCases = []policyRepoCase{
 		},
 		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKOpenAIAgents}},
 		false},
-
 }
 
 // optionsWithPermissionMode builds a ClaudeAgentOptionsDef whose captured
