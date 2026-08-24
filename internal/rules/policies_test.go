@@ -1986,6 +1986,25 @@ def fetch_data(x: str) -> dict:
     return {}
 `,
 		toolConfig: nil, wantFires: false},
+
+	// ─── CREW-008: CrewAI tool raises with no structured error contract ─────
+	{name: "CREW-008 fires on uncaught raise", ruleID: "CREW-008", kind: models.KindCrewAITool, src: `
+def lookup_order(order_id: str) -> str:
+    """Look up an order."""
+    if not order_id:
+        raise ValueError("order_id is required")
+    return order_id
+`, wantFires: true},
+	{name: "CREW-008 silent when the failure is caught", ruleID: "CREW-008", kind: models.KindCrewAITool, src: `
+def lookup_order(order_id: str) -> str:
+    """Look up an order."""
+    try:
+        if not order_id:
+            raise ValueError("order_id is required")
+        return order_id
+    except ValueError:
+        return "error: order_id was empty; supply the customer's order number"
+`, wantFires: false},
 }
 
 // policyRepoRuleCases covers repo-scoped rules.
@@ -2246,7 +2265,6 @@ var policyRepoRuleCases = []policyRepoCase{
 		},
 		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKOpenAIAgents}},
 		false},
-
 }
 
 // optionsWithPermissionMode builds a ClaudeAgentOptionsDef whose captured
