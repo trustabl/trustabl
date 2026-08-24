@@ -1,0 +1,37 @@
+policy:
+  id: vercel_ai_observability
+  name: Vercel AI SDK tool observability hygiene
+  category: vercel_ai
+  description: >
+    Rules covering how a Vercel AI SDK tool emits diagnostics. Tool execute()
+    bodies that write to stdout are invisible to the model and can corrupt
+    stdio-based transports (MCP) that share the channel.
+
+rules:
+  - id: VAI-017
+    title: Vercel AI tool execute() writes diagnostics to stdout
+    severity: low
+    confidence: 0.65
+    language: typescript
+    applies_to:
+      - vercel_ai_tool
+    scope: tool
+    match:
+      has_print_call: true
+    explanation: >
+      This Vercel AI SDK tool's execute() handler writes to the process's
+      stdout (console.log / console.info / console.debug / process.stdout.write).
+      The model never sees that output — only the return value flows back into
+      the agent loop — so the diagnostic silently disappears in production
+      logs that capture structured records but not raw stdout. If the same
+      tool is ever exposed over an MCP stdio server (or any transport that
+      uses stdout as a protocol channel), the loose frames will interleave
+      with JSON-RPC messages and corrupt the stream. stderr counterparts
+      (console.warn / console.error / process.stderr.write) are the
+      remediation and do not fire.
+    fix: >
+      Remove the stdout write. If the information is needed for ops, emit it
+      through a structured logger that lands in the application's log sink, or
+      use console.error / process.stderr.write so diagnostics stay off the
+      protocol channel. If the information needs to reach the model, include
+      it in the tool's return value instead.
