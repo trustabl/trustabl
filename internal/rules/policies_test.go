@@ -1986,6 +1986,50 @@ def fetch_data(x: str) -> dict:
     return {}
 `,
 		toolConfig: nil, wantFires: false},
+
+	// ─── LC-009 / LC-023: LangChain path safety (python + typescript) ───────
+	// LC-009 is the per-param Python flow check; LC-023 is the coarse TS
+	// filesystem-write signal, mirroring CSDK-012 until TS path normalization
+	// analysis exists.
+	{name: "LC-009 fires on path param in open()", ruleID: "LC-009", kind: models.KindLangChainTool, src: `
+def read_note(note_path: str) -> str:
+    """Read a note."""
+    with open(note_path, "r") as f:
+        return f.read()
+`, wantFires: true},
+	{name: "LC-009 silent with .resolve()", ruleID: "LC-009", kind: models.KindLangChainTool, src: `
+from pathlib import Path
+def read_note(note_path: str) -> str:
+    """Read a note."""
+    p = Path(note_path).resolve()
+    with open(p, "r") as f:
+        return f.read()
+`, wantFires: false},
+	{name: "LC-009 silent on non-pathish param", ruleID: "LC-009", kind: models.KindLangChainTool, src: `
+def get_note_meta(note_id: str) -> dict:
+    """Get note metadata."""
+    return {"id": note_id}
+`, wantFires: false},
+	{
+		name: "LC-023 fires on TS filesystem write", ruleID: "LC-023",
+		kind: models.KindLangChainTool, lang: models.LanguageTypeScript, wantFires: true,
+		src: "import { tool } from \"@langchain/core/tools\";\n" +
+			"import { writeFileSync } from \"node:fs\";\n" +
+			"export const t = tool(async ({ p, body }: { p: string; body: string }) => {\n" +
+			"  writeFileSync(p, body);\n" +
+			"  return \"saved\";\n" +
+			"}, { name: \"save_note\", description: \"Save a note.\", schema: {} });\n",
+	},
+	{
+		name: "LC-023 silent with no filesystem write", ruleID: "LC-023",
+		kind: models.KindLangChainTool, lang: models.LanguageTypeScript, wantFires: false,
+		src: "import { tool } from \"@langchain/core/tools\";\n" +
+			"const notes = new Map<string, string>();\n" +
+			"export const t = tool(async ({ body }: { body: string }) => {\n" +
+			"  notes.set(\"n1\", body);\n" +
+			"  return \"n1\";\n" +
+			"}, { name: \"save_note\", description: \"Save a note.\", schema: {} });\n",
+	},
 }
 
 // policyRepoRuleCases covers repo-scoped rules.
@@ -2246,7 +2290,6 @@ var policyRepoRuleCases = []policyRepoCase{
 		},
 		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKOpenAIAgents}},
 		false},
-
 }
 
 // optionsWithPermissionMode builds a ClaudeAgentOptionsDef whose captured

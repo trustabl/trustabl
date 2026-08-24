@@ -1,0 +1,79 @@
+policy:
+  id: langchain_path_safety
+  name: LangChain filesystem path safety
+  category: langchain
+  description: >
+    Rules that catch a model-supplied filesystem path flowing into an I/O call
+    inside a LangChain tool without containment. A traversal payload like
+    ../../etc/passwd reaches real filesystem state if the tool does not resolve
+    the path and check it against an allowed root.
+
+rules:
+  - id: LC-009
+    title: LangChain tool uses a path parameter in I/O without validation
+    severity: high
+    confidence: 0.7
+    language: python
+    applies_to:
+      - langchain_tool
+    scope: tool
+    # call_uses_unnormalized_path_param is per-param: a tool with two path
+    # params and one .resolve() correctly fires on the unresolved one. A
+    # body-wide check would suppress the finding whenever any normalization
+    # appears, masking real exposure on the other param.
+    match:
+      call_uses_unnormalized_path_param:
+        callees:
+          - open
+          - Path
+        callee_prefixes:
+          - shutil.
+          - os.
+    explanation: >
+      This tool takes a path-like parameter and hands it to a file or directory
+      operation without resolving it or checking it against an allowed root, so
+      a model-supplied ../../etc/passwd reaches the real filesystem. The tool's
+      args_schema does not close this: a Pydantic field typed str or Path
+      validates fine while still carrying a traversal payload, because the
+      schema constrains the argument's type and not the region of the filesystem
+      it points at. LangChain agents are also a common target for indirect
+      injection — a retrieved document or a page fetched mid-run can carry the
+      path the model then passes here — so the argument should be treated as
+      hostile even when the user is not. Detection is heuristic; confirm the
+      parameter is genuinely model-supplied before applying the fix.
+    fix: >
+      Resolve the path with Path(...).resolve() and assert the result sits under
+      an allowed root before touching it, rejecting anything that escapes.
+      Encode the check as a validator on the args_schema field so containment
+      holds for every tool that accepts the path rather than being
+      re-implemented per call site.
+
+  - id: LC-023
+    title: TypeScript LangChain tool writes to the filesystem
+    severity: low
+    confidence: 0.5
+    language: typescript
+    applies_to:
+      - langchain_tool
+    scope: tool
+    match:
+      has_write_call: true
+    explanation: >
+      This LangChain.js tool writes to the filesystem. If the path or the
+      contents derive from the tool's arguments, the model chooses both, and a
+      prompt injection can steer the write at any file the Node process can
+      reach. The injection route is the ordinary one in this framework rather
+      than an exotic case: a retrieval chain feeds fetched documents into the
+      same context the model plans from, so text in a page or a knowledge-base
+      record can supply the filename the model then passes here. The Zod schema
+      does not help — it constrains the argument's type, not the region of the
+      filesystem it points at, so a traversal payload validates cleanly.
+      (Coarse signal — it flags any filesystem write, not only unnormalized
+      paths, because TypeScript path-normalization analysis is not yet wired.
+      Confirm the path is genuinely model-supplied before acting.)
+    fix: >
+      Confine writes to a dedicated working directory: resolve the final path,
+      verify it stays under that root before writing, and reject absolute paths
+      and any input containing "..". Where the tool only ever writes generated
+      names, derive the filename from an id rather than accepting a path from
+      the model at all.
