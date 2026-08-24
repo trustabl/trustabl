@@ -1986,6 +1986,38 @@ def fetch_data(x: str) -> dict:
     return {}
 `,
 		toolConfig: nil, wantFires: false},
+
+	// ─── OAI-027 / OAI-028: TS OpenAI Agents description quality ────────────
+	{
+		name: "OAI-027 fires on placeholder description", ruleID: "OAI-027",
+		kind: models.KindOpenAITool, lang: models.LanguageTypeScript, wantFires: true,
+		src: "import { tool } from \"@openai/agents\";\n" +
+			"export const t = tool({ name: \"lookup_order\", description: \"TODO: describe this tool.\", parameters: {}, execute: async () => \"x\" });\n",
+	},
+	{
+		name: "OAI-027 silent on a real description", ruleID: "OAI-027",
+		kind: models.KindOpenAITool, lang: models.LanguageTypeScript, wantFires: false,
+		src: "import { tool } from \"@openai/agents\";\n" +
+			"export const t = tool({ name: \"lookup_order\", description: \"Look up one order by its number and return its fulfillment status.\", parameters: {}, execute: async () => \"x\" });\n",
+	},
+	{
+		name: "OAI-028 fires on a too-short description", ruleID: "OAI-028",
+		kind: models.KindOpenAITool, lang: models.LanguageTypeScript, wantFires: true,
+		src: "import { tool } from \"@openai/agents\";\n" +
+			"export const t = tool({ name: \"list_orders\", description: \"Gets data.\", parameters: {}, execute: async () => \"x\" });\n",
+	},
+	{
+		name: "OAI-028 silent on a full description", ruleID: "OAI-028",
+		kind: models.KindOpenAITool, lang: models.LanguageTypeScript, wantFires: false,
+		src: "import { tool } from \"@openai/agents\";\n" +
+			"export const t = tool({ name: \"list_orders\", description: \"List every order belonging to one customer, most recent first.\", parameters: {}, execute: async () => \"x\" });\n",
+	},
+	{
+		name: "OAI-028 silent when the description is absent (OAI-022's case)", ruleID: "OAI-028",
+		kind: models.KindOpenAITool, lang: models.LanguageTypeScript, wantFires: false,
+		src: "import { tool } from \"@openai/agents\";\n" +
+			"export const t = tool({ name: \"list_orders\", parameters: {}, execute: async () => \"x\" });\n",
+	},
 }
 
 // policyRepoRuleCases covers repo-scoped rules.
@@ -2246,7 +2278,6 @@ var policyRepoRuleCases = []policyRepoCase{
 		},
 		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKOpenAIAgents}},
 		false},
-
 }
 
 // optionsWithPermissionMode builds a ClaudeAgentOptionsDef whose captured
