@@ -5,7 +5,8 @@ policy:
   description: >
     Agent-scope safety rules for Google ADK LlmAgents and workflow
     agents. Covers description hygiene, callback-based interception
-    of shell tools, and sub-agent shell exposure.
+    of shell tools, sub-agent shell exposure, and unrestricted MCP
+    tool surfaces.
 
 rules:
   - id: ADK-101
@@ -282,3 +283,38 @@ rules:
       Pass a `description` in the `new LlmAgent({...})` options that names this
       agent's role and the kind of input it handles. One sentence is enough; treat
       it as documentation the parent agent's model reads to route.
+
+  - id: ADK-111
+    title: Agent wires an MCPToolset with no tool_filter
+    severity: high
+    confidence: 0.75
+    language: python
+    applies_to:
+      - adk_llm_agent
+    scope: agent
+    match:
+      all:
+        - agent_class: [LlmAgent]
+        - agent_uses_hosted_tool_class: [MCPToolset]
+        - not:
+            agent_hosted_tool_kwarg_present:
+              class: MCPToolset
+              kwarg: tool_filter
+    explanation: >
+      This LlmAgent wires an MCPToolset with no tool_filter=. Unlike an
+      explicit tools=[FunctionTool(...), ...] list, MCPToolset connects
+      the agent to every tool the remote MCP server currently exposes —
+      a surface that is not enumerable from the agent's source, can grow
+      or change behavior whenever the server is updated, and is entirely
+      outside this codebase's control. tool_filter= is ADK's only
+      mechanism for narrowing that catalog to a named allow-list; without
+      it, the agent inherits the server's full, and potentially
+      MCPToolset-server-controlled, tool set with no static boundary a
+      code reviewer can check.
+    fix: >
+      Pass tool_filter=[...] to the MCPToolset constructor naming the
+      specific tool names this agent is allowed to call, e.g.
+      MCPToolset(connection_params=..., tool_filter=["read_file",
+      "list_directory"]). Re-review the filter whenever the agent's task
+      changes, and treat any server tool not in the list as excluded by
+      default.

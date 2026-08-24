@@ -45,6 +45,11 @@ var ADKHostedToolClasses = map[string]bool{
 	"UrlContextTool":            true,
 	"DiscoveryEngineSearchTool": true,
 	"EnterpriseSearchTool":      true,
+	// MCPToolset (src/google/adk/tools/mcp_tool/mcp_toolset.py) connects an
+	// agent to a whole MCP server's tool catalog; its tool_filter= kwarg is
+	// the only allow-list narrowing that catalog, so it must be classified
+	// as a hosted tool for ADK-111 to see the kwarg via HostedToolDef.Kwargs.
+	"MCPToolset": true,
 }
 
 // IsADKHostedToolClass reports whether className is a recognized ADK

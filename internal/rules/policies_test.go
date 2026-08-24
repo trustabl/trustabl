@@ -3539,6 +3539,59 @@ var policyAgentRuleCases = []policyAgentCase{
 		models.RepoInventory{},
 		true},
 
+	// ─── ADK-111 MCPToolset without tool_filter (E1 hosted-kwarg) ────────────
+	{"ADK-111 fires when MCPToolset has no tool_filter", "ADK-111",
+		models.AgentDef{
+			SDK:      models.SDKGoogleADK,
+			Class:    "LlmAgent",
+			Language: models.LanguagePython,
+			Name:     "fs",
+			HostedToolRefs: []models.HostedToolRef{
+				{Class: "MCPToolset", Resolved: &models.HostedToolDef{Class: "MCPToolset"}},
+			},
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"name": {Value: &models.Expr{Kind: models.ExprLiteralString, Text: `"fs"`}},
+			}},
+		},
+		models.RepoInventory{},
+		true},
+	{"ADK-111 silent when MCPToolset sets tool_filter", "ADK-111",
+		models.AgentDef{
+			SDK:      models.SDKGoogleADK,
+			Class:    "LlmAgent",
+			Language: models.LanguagePython,
+			Name:     "fs",
+			HostedToolRefs: []models.HostedToolRef{
+				{Class: "MCPToolset", Resolved: &models.HostedToolDef{Class: "MCPToolset",
+					Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+						"tool_filter": {Value: &models.Expr{Kind: models.ExprList, Text: `["read_file"]`}},
+					}}}},
+			},
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"name": {Value: &models.Expr{Kind: models.ExprLiteralString, Text: `"fs"`}},
+			}},
+		},
+		models.RepoInventory{},
+		false},
+	// An agent with no MCPToolset at all is out of scope for this rule —
+	// nothing to restrict, so it must not fire just because tool_filter is
+	// absent.
+	{"ADK-111 silent when agent has no MCPToolset", "ADK-111",
+		models.AgentDef{
+			SDK:      models.SDKGoogleADK,
+			Class:    "LlmAgent",
+			Language: models.LanguagePython,
+			Name:     "fs",
+			HostedToolRefs: []models.HostedToolRef{
+				{Class: "GoogleSearchTool", Resolved: &models.HostedToolDef{Class: "GoogleSearchTool"}},
+			},
+			Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+				"name": {Value: &models.Expr{Kind: models.ExprLiteralString, Text: `"fs"`}},
+			}},
+		},
+		models.RepoInventory{},
+		false},
+
 	// ─── ADK-008 bash tool without a restrictive policy (E1 hosted-kwarg) ────
 	{"ADK-008 fires when ExecuteBashTool has no policy", "ADK-008",
 		models.AgentDef{

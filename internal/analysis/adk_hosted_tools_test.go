@@ -19,6 +19,7 @@ func TestIsADKHostedToolClass(t *testing.T) {
 		{"LongRunningTool", "LongRunningTool", true},
 		{"LangchainTool", "LangchainTool", true},
 		{"CrewaiTool", "CrewaiTool", true},
+		{"MCPToolset", "MCPToolset", true},
 		{"WebSearchTool (OpenAI, not ADK)", "WebSearchTool", false},
 		{"BashTools (typo)", "BashTools", false},
 		{"empty", "", false},
