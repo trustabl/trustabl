@@ -309,3 +309,68 @@ rules:
     fix: >
       Rename the method (or set the `#[tool]` `name = "..."` argument) to a
       verb-object form, e.g. `summarize_invoice`, `fetch_weather`.
+
+  - id: MCP-025
+    title: MCP tool description is a placeholder
+    severity: low
+    confidence: 0.85
+    language: python
+    applies_to:
+      - mcp_tool
+    scope: tool
+    match:
+      has_description_text:
+        - todo
+        - tbd
+        - fixme
+        - placeholder
+        - no description
+        - does stuff
+    explanation: >
+      The docstring passes the MCP-001 has-a-description check but carries a
+      placeholder marker instead of real content. The server advertises this
+      string across the protocol boundary in its tools/list response, so it is
+      the entire account of the tool that every connecting client and model
+      receives — and a stub like "TODO: describe this tool" is functionally
+      indistinguishable from no description at all. A placeholder is worse here
+      than in an in-process SDK for two reasons. The consumer has no other
+      context to fall back on: it cannot read the source, the neighboring tools,
+      or the project's docs the way a developer working in the repo can. And the
+      server's authors never see the consequence, because mis-selection shows up
+      in someone else's client session as a wrong answer, not as an error on
+      this side of the connection.
+    fix: >
+      Replace the placeholder with a real description covering what the tool
+      does, what it returns, and when a model should call it rather than a
+      neighboring tool on this server. Write it for a reader with no other
+      knowledge of the server, since that is what a connecting client is.
+
+  - id: MCP-026
+    title: MCP tool description is too short to guide model selection
+    severity: low
+    confidence: 0.8
+    language: python
+    applies_to:
+      - mcp_tool
+    scope: tool
+    match:
+      all:
+        - has_docstring: true
+        - description_length_lt: 40
+    explanation: >
+      A description under 40 characters is rarely enough to convey what a tool
+      does, what it returns, and when to call it rather than a similarly named
+      neighbor. It is the whole of what the server publishes about the tool in
+      tools/list, so a stub like "Gets data." leaves scope and preconditions to
+      guesswork for every client that connects. The ambiguity is not confined to
+      this server's own tools, either: a client typically connects several
+      servers at once and the model chooses across all of them from these
+      strings alone, so a thin description competes badly against a
+      well-described tool from an unrelated server that only approximately fits
+      the request.
+    fix: >
+      Expand the description to at least a full sentence covering inputs,
+      outputs, and the situation in which this tool should be used over the
+      alternatives. Name the domain the tool acts on rather than assuming the
+      server name conveys it, since the model sees the tool alongside those of
+      every other connected server.
