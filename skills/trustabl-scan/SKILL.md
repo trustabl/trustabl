@@ -74,7 +74,7 @@ on `PATH`:
 ```bash
 "$TRUSTABL_BIN" scan . --format json          # JSON, same shape the tool returns
 "$TRUSTABL_BIN" scan . --strict               # exit 1 on low+ findings (info/META never fail)
-"$TRUSTABL_BIN" scan . --detectors claude_sdk # narrow to one SDK: claude_sdk|openai_sdk|google_adk|openshell
+"$TRUSTABL_BIN" scan . --detectors claude_sdk # claude_sdk|openai_sdk|google_adk|openshell|mcp|langchain|crewai|pydantic_ai|vercel_ai|autogen|claude_skill
 "$TRUSTABL_BIN" scan . --vuln-scan            # also match declared deps against OSV → CVE findings
 "$TRUSTABL_BIN" scan . --bom-out bom.json     # write a CycloneDX SBOM (+ VEX vulnerabilities under --vuln-scan)
 ```
