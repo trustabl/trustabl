@@ -83,3 +83,44 @@ rules:
       Pass maxIterations to the AgentExecutor options, sized to the task, and set
       handleParsingErrors so a malformed step is surfaced rather than retried
       indefinitely.
+
+  - id: LC-103
+    title: LangChain agent wires a raw HTTP Requests built-in tool
+    severity: medium
+    confidence: 0.75
+    language: python
+    applies_to:
+      - langchain_agent
+      - langchain_agent_executor
+      - langchain_state_graph
+    scope: agent
+    match:
+      agent_uses_hosted_tool_class:
+        - RequestsGetTool
+        - RequestsPostTool
+        - RequestsPutTool
+        - RequestsPatchTool
+        - RequestsDeleteTool
+    explanation: >
+      This agent's tools list includes a langchain_community Requests built-in
+      (RequestsGetTool / RequestsPostTool / RequestsPutTool / RequestsPatchTool /
+      RequestsDeleteTool). These tools issue an outbound HTTP request to a URL the
+      model supplies; only the method is fixed by the class. Because the
+      destination is model-chosen rather than pinned by the tool, a prompt
+      injection in content the agent has already read can steer the request at
+      whatever the agent host can reach — the cloud metadata endpoint
+      (169.254.169.254), a localhost admin port, or an internal service no
+      external caller could address. The write-method variants can mutate those
+      services rather than only read them, and each response body returns into the
+      conversation as untrusted text that may carry a further injection. LangChain
+      gates this family behind allow_dangerous_requests=True precisely because it
+      hands the model an unconstrained fetch.
+    fix: >
+      Prefer a purpose-built tool that pins the base URL and accepts only a path
+      or query from the model over the generic Requests built-in. Where open HTTP
+      is genuinely required, constrain the destination: allow-list the permitted
+      hosts, reject private and link-local ranges, re-validate the destination
+      after every redirect, and route the agent's egress through a proxy that
+      refuses internal addresses. Treat each response body as untrusted input —
+      keep it out of the system prompt and do not let it widen the agent's tool
+      permissions.

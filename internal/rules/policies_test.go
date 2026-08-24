@@ -2505,6 +2505,25 @@ var policyAgentRuleCases = []policyAgentCase{
 			}}},
 		models.RepoInventory{}, false},
 
+	{"LC-103 fires when agent wires RequestsGetTool", "LC-103",
+		models.AgentDef{
+			SDK: models.SDKLangChain, Class: "ReactAgent", Language: models.LanguagePython,
+			HostedToolRefs: []models.HostedToolRef{{Class: "RequestsGetTool"}},
+		},
+		models.RepoInventory{}, true},
+	{"LC-103 fires when an AgentExecutor wires RequestsPostTool", "LC-103",
+		models.AgentDef{
+			SDK: models.SDKLangChain, Class: "AgentExecutor", Language: models.LanguagePython,
+			HostedToolRefs: []models.HostedToolRef{{Class: "RequestsPostTool"}},
+		},
+		models.RepoInventory{}, true},
+	{"LC-103 silent on a benign hosted tool", "LC-103",
+		models.AgentDef{
+			SDK: models.SDKLangChain, Class: "ReactAgent", Language: models.LanguagePython,
+			HostedToolRefs: []models.HostedToolRef{{Class: "TavilySearchResults"}},
+		},
+		models.RepoInventory{}, false},
+
 	// ─── CrewAI agent rules (CREW-*) ────────────────────────────────────────
 	{"CREW-101 fires when allow_code_execution=True", "CREW-101",
 		models.AgentDef{
