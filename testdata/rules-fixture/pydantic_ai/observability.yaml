@@ -1,0 +1,37 @@
+policy:
+  id: pydantic_ai_observability
+  name: Pydantic AI tool observability hygiene
+  category: pydantic_ai
+  description: >
+    Rules covering how a Pydantic AI tool emits diagnostics. A tool body that
+    prints to stdout writes outside the SDK's instrumentation, so the record
+    reaches neither the model nor the trace the rest of the run is captured in.
+
+rules:
+  - id: PYD-012
+    title: Pydantic AI tool prints to stdout for diagnostics
+    severity: low
+    confidence: 0.65
+    language: python
+    applies_to:
+      - pydantic_ai_tool
+    scope: tool
+    match:
+      has_print_call: true
+    explanation: >
+      The tool body calls print(), which writes to the process's stdout. The
+      model never sees it — only the return value flows back into the agent run
+      — so the output silently disappears in any deployment that captures
+      structured records rather than raw stdout. It is a bigger loss in this SDK
+      than in most: Pydantic AI emits OpenTelemetry spans for each run and tool
+      call, so everything around this print is already correlated to a trace,
+      and a bare print is the one diagnostic that lands outside it, unattached
+      to the run that produced it. If the tool is ever also served over an MCP
+      stdio transport, the loose print frames interleave with JSON-RPC messages
+      and corrupt the stream.
+    fix: >
+      Remove the print(). For operator diagnostics, emit through a module logger
+      (logging.getLogger(__name__).info(...)), or attach the detail to the
+      current span via Logfire or the OpenTelemetry API so it is correlated with
+      the run that produced it. If the information needs to reach the model,
+      return it as part of the tool's result instead.
