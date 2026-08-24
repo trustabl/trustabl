@@ -89,6 +89,7 @@ type MatchExpr struct {
 	AgentHostedToolKwargValue      *HostedToolKwargValueExpr `yaml:"agent_hosted_tool_kwarg_value,omitempty"`
 	AgentRunCallMaxTurnsMissing    *bool                     `yaml:"agent_run_call_max_turns_missing,omitempty"`
 	AgentRunCallUsageLimitsMissing *bool                     `yaml:"agent_run_call_usage_limits_missing,omitempty"`
+	AgentFileURLForceDownload      *bool                     `yaml:"agent_file_url_force_download,omitempty"`
 
 	// Subagent-scope predicates
 	SubagentGrantsTool []string `yaml:"subagent_grants_tool,omitempty"`

@@ -32,6 +32,11 @@ type Expr struct {
 	// In-memory carrier so hosted-tool discovery can attach a call's kwargs to
 	// the HostedToolDef; not serialized.
 	CallKwargs map[string]*KwargTree `json:"-"`
+	// CallArgs holds positional arguments of a call expression, in source
+	// order. Used to unwrap NativeTool(<inner>(...)) so the inner tool's
+	// kwargs (e.g. force_download=True) land on HostedToolDef.Kwargs.
+	// In-memory only; not serialized.
+	CallArgs []Expr `json:"-"`
 }
 
 type ExprKind string
@@ -82,6 +87,12 @@ type AgentDef struct {
 	InputGuards    []GuardrailRef  `json:"input_guards"`
 	OutputGuards   []GuardrailRef  `json:"output_guards"`
 	Opaque         bool            `json:"opaque"` // true if Agent(**config) or tools=non-literal
+	// FileURLForceDownload is the most-dangerous force_download value observed
+	// on a FileUrl-family constructor (FileUrl / ImageUrl / AudioUrl /
+	// VideoUrl / DocumentUrl) in this agent's file. Empty if none set a
+	// non-default value. Normalized to "True" or "allow-local". In-memory
+	// only — PYD-104 reads it; not serialized.
+	FileURLForceDownload string `json:"-"`
 }
 
 type GuardrailKind string

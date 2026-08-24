@@ -737,6 +737,7 @@ func exprFromNode(n *sitter.Node, src []byte) *models.KwargTree {
 		// Also carry the kwargs on the Expr itself, so list elements (which keep
 		// only the Expr, not this KwargTree) retain a hosted-tool call's kwargs.
 		e.CallKwargs = children
+		e.CallArgs = positionalCallArgs(n, src)
 		return &models.KwargTree{Value: e, Children: children}
 	}
 	// For a dict literal passed as a kwarg value
@@ -784,6 +785,29 @@ func nilToEmpty(t *models.KwargTree) *models.KwargTree {
 		return &models.KwargTree{Children: map[string]*models.KwargTree{}}
 	}
 	return t
+}
+
+// positionalCallArgs returns the positional (non-keyword) arguments of a call
+// node, in source order. Keyword arguments and **unpacks are skipped. Used to
+// unwrap NativeTool(<inner>(...)) so the inner constructor's kwargs are
+// reachable on the list-item Expr.
+func positionalCallArgs(n *sitter.Node, src []byte) []models.Expr {
+	args := n.ChildByFieldName("arguments")
+	if args == nil {
+		return nil
+	}
+	var out []models.Expr
+	for i := 0; i < int(args.NamedChildCount()); i++ {
+		child := args.NamedChild(i)
+		if child == nil || child.Type() == "keyword_argument" || child.Type() == "dictionary_splat" {
+			continue
+		}
+		tree := exprFromNode(child, src)
+		if tree != nil && tree.Value != nil {
+			out = append(out, *tree.Value)
+		}
+	}
+	return out
 }
 
 func discoverGuardrailsInFile(pf ParsedFile) []models.GuardrailDef {

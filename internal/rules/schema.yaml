@@ -346,6 +346,14 @@ rules:
 #       resolvable to it by variable name, and none of those calls set
 #       usage_limits. Same silence rule as agent_run_call_max_turns_missing.
 #
+#   agent_file_url_force_download: bool
+#       Pydantic AI only. Returns true if discovery stamped
+#       AgentDef.FileURLForceDownload as "True" or "allow-local" — a
+#       FileUrl / ImageUrl / AudioUrl / VideoUrl / DocumentUrl constructor
+#       in the agent's file set force_download to a host-side download
+#       (True) or a private-IP-allowing download ('allow-local'). Silent
+#       when the field is empty (kwarg absent or False).
+#
 #
 # ━━━ SUBAGENT-SCOPE PREDICATES ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # (used only in scope: subagent rules)

@@ -66,6 +66,11 @@ func DiscoverPydanticAIAgents(files []ParsedFile) []models.AgentDef {
 }
 
 func discoverPydanticAIAgentsInFile(pf ParsedFile) []models.AgentDef {
+	// One file-level walk: PYD-104 attributes FileUrl.force_download to every
+	// Pydantic agent declared in the same file (a multi-agent file
+	// over-attributes — the same v1 limit LangGraph's file-level graph tools
+	// already accept).
+	fileURLForce := pydanticFileURLForceDownload(pf)
 	var out []models.AgentDef
 	astutil.Walk(pf.Tree.RootNode(), func(n *sitter.Node) bool {
 		if n.Type() != "call" {
@@ -86,8 +91,9 @@ func discoverPydanticAIAgentsInFile(pf ParsedFile) []models.AgentDef {
 				Line:     int(n.StartPoint().Row) + 1,
 				EndLine:  int(n.EndPoint().Row) + 1,
 			},
-			Kwargs: kwargs,
-			Opaque: opaque,
+			Kwargs:               kwargs,
+			Opaque:               opaque,
+			FileURLForceDownload: fileURLForce,
 		}
 		// Pydantic agents may carry a name= string literal; capture it as the
 		// human-facing label.
@@ -106,4 +112,58 @@ func discoverPydanticAIAgentsInFile(pf ParsedFile) []models.AgentDef {
 		return true
 	})
 	return out
+}
+
+// pydanticFileURLClasses is the closed set of Pydantic AI FileUrl subclasses
+// that accept force_download. FileUrl itself is abstract but included so a
+// rare direct/aliased construction still matches. calleeName strips a module
+// qualifier (pydantic_ai.DocumentUrl -> DocumentUrl).
+var pydanticFileURLClasses = map[string]bool{
+	"FileUrl":     true,
+	"ImageUrl":    true,
+	"AudioUrl":    true,
+	"VideoUrl":    true,
+	"DocumentUrl": true,
+}
+
+// pydanticFileURLForceDownload walks pf for FileUrl-family constructors and
+// returns the most-dangerous force_download value observed: "allow-local"
+// outranks "True". Empty string means no constructor set a non-default value
+// (absent or False). 'allow-local' lets the host fetch private IPs, bypassing
+// Pydantic AI's SSRF guard; True still downloads on the host (with the
+// private-IP blocklist that has already needed CVE fixes).
+func pydanticFileURLForceDownload(pf ParsedFile) string {
+	worst := ""
+	astutil.Walk(pf.Tree.RootNode(), func(n *sitter.Node) bool {
+		if n.Type() != "call" {
+			return true
+		}
+		fn := n.ChildByFieldName("function")
+		if fn == nil {
+			return true
+		}
+		name := calleeName(astutil.NodeText(fn, pf.Source))
+		if !pydanticFileURLClasses[name] {
+			return true
+		}
+		val, present := astutil.KwargValue(n, pf.Source, "force_download")
+		if !present {
+			return true
+		}
+		norm := normalizeForceDownload(val)
+		switch {
+		case norm == "allow-local":
+			worst = "allow-local"
+		case (norm == "True" || norm == "true") && worst == "":
+			worst = "True"
+		}
+		return true
+	})
+	return worst
+}
+
+// normalizeForceDownload strips quotes from a force_download kwarg's source
+// text so '"allow-local"' and 'allow-local' compare equal.
+func normalizeForceDownload(val string) string {
+	return strings.Trim(strings.TrimSpace(val), `"'`)
 }

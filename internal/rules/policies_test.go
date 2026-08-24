@@ -3857,6 +3857,33 @@ var policyAgentRuleCases = []policyAgentCase{
 		models.AgentDef{SDK: models.SDKPydanticAI, Class: "PydanticAgent", Language: models.LanguagePython},
 		models.RepoInventory{}, false},
 
+	{"PYD-104 fires on FileUrl force_download=True", "PYD-104",
+		models.AgentDef{
+			SDK: models.SDKPydanticAI, Class: "PydanticAgent", Language: models.LanguagePython,
+			FileURLForceDownload: "True",
+		},
+		models.RepoInventory{}, true},
+	{"PYD-104 fires on FileUrl force_download=allow-local", "PYD-104",
+		models.AgentDef{
+			SDK: models.SDKPydanticAI, Class: "PydanticAgent", Language: models.LanguagePython,
+			FileURLForceDownload: "allow-local",
+		},
+		models.RepoInventory{}, true},
+	{"PYD-104 fires when WebFetchTool sets force_download=True", "PYD-104",
+		models.AgentDef{
+			SDK: models.SDKPydanticAI, Class: "PydanticAgent", Language: models.LanguagePython,
+			HostedToolRefs: []models.HostedToolRef{
+				{Class: "WebFetchTool", Resolved: &models.HostedToolDef{Class: "WebFetchTool",
+					Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+						"force_download": {Value: &models.Expr{Kind: models.ExprNameRef, Text: "True"}},
+					}}}},
+			},
+		},
+		models.RepoInventory{}, true},
+	{"PYD-104 silent when force_download is unset", "PYD-104",
+		models.AgentDef{SDK: models.SDKPydanticAI, Class: "PydanticAgent", Language: models.LanguagePython},
+		models.RepoInventory{}, false},
+
 	{"PYD-105 fires when end_strategy=exhaustive", "PYD-105",
 		models.AgentDef{
 			SDK: models.SDKPydanticAI, Class: "PydanticAgent", Language: models.LanguagePython,

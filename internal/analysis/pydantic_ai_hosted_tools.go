@@ -11,9 +11,10 @@ import (
 // Pydantic AI ships provider-native tools — code execution, web fetch, URL
 // context, web search — that the model can invoke directly. The dangerous
 // subset (model-driven code execution and model-chosen URL fetching) is
-// recognized so the agent-scope rules PYD-102 / PYD-103 can flag the
-// capability. Benign provider tools are intentionally omitted so a match is
-// always a meaningful security signal.
+// recognized so the agent-scope rules PYD-102 / PYD-103 / PYD-104 can flag the
+// capability (PYD-104 reads WebFetchTool.force_download off HostedToolDef.Kwargs).
+// Benign provider tools are intentionally omitted so a match is always a
+// meaningful security signal.
 //
 // Native tools are wired onto an agent in two shapes:
 //
@@ -91,6 +92,22 @@ func classifyPydanticAIHostedToolCall(callItem models.Expr, filePath string) (mo
 			Line:     callItem.Line,
 			EndLine:  callItem.EndLine,
 		},
-		Kwargs: hostedKwargTree(callItem),
+		Kwargs: pydanticHostedKwargTree(callItem),
 	}, true
+}
+
+// pydanticHostedKwargTree returns the kwargs that belong to the native tool
+// class itself. For the modern NativeTool(WebFetchTool(force_download=True))
+// form the list item's own CallKwargs are NativeTool's (usually empty); the
+// inner constructor's kwargs live on the first positional CallArgs entry.
+// Legacy builtin_tools=[WebFetchTool(force_download=True)] has the kwargs on
+// the list item directly.
+func pydanticHostedKwargTree(callItem models.Expr) *models.KwargTree {
+	if _, wrapped := nativeToolInnerClass(callItem.Text); wrapped && len(callItem.CallArgs) > 0 {
+		inner := callItem.CallArgs[0]
+		if tree := hostedKwargTree(inner); tree != nil {
+			return tree
+		}
+	}
+	return hostedKwargTree(callItem)
 }

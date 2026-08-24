@@ -121,3 +121,83 @@ agent = Agent(
 		t.Errorf("HostedToolRefs: got %+v, want one WebFetchTool", a.HostedToolRefs)
 	}
 }
+
+// PYD-104 FileUrl arm: a DocumentUrl(..., force_download=True) in the same file
+// as the Agent stamps FileURLForceDownload so the agent-scope predicate fires.
+func TestPydanticAIAgent_FileURLForceDownloadTrue(t *testing.T) {
+	src := `from pydantic_ai import Agent
+from pydantic_ai.messages import DocumentUrl
+
+agent = Agent("openai:gpt-4o")
+doc = DocumentUrl("https://example.com/doc.pdf", force_download=True)
+`
+	pf := parsePyFile(t, "fileurl.py", src)
+	agents := analysis.DiscoverPydanticAIAgents([]analysis.ParsedFile{pf})
+	if len(agents) != 1 {
+		t.Fatalf("got %d agents, want 1", len(agents))
+	}
+	if agents[0].FileURLForceDownload != "True" {
+		t.Errorf("FileURLForceDownload: got %q, want True", agents[0].FileURLForceDownload)
+	}
+}
+
+func TestPydanticAIAgent_FileURLForceDownloadAllowLocalOutranksTrue(t *testing.T) {
+	src := `from pydantic_ai import Agent
+from pydantic_ai.messages import ImageUrl, DocumentUrl
+
+agent = Agent("openai:gpt-4o")
+ImageUrl("https://example.com/a.png", force_download=True)
+DocumentUrl("https://example.com/doc.pdf", force_download="allow-local")
+`
+	pf := parsePyFile(t, "fileurl_rank.py", src)
+	agents := analysis.DiscoverPydanticAIAgents([]analysis.ParsedFile{pf})
+	if len(agents) != 1 {
+		t.Fatalf("got %d agents, want 1", len(agents))
+	}
+	if agents[0].FileURLForceDownload != "allow-local" {
+		t.Errorf("FileURLForceDownload: got %q, want allow-local", agents[0].FileURLForceDownload)
+	}
+}
+
+func TestPydanticAIAgent_FileURLForceDownloadSilentWhenFalse(t *testing.T) {
+	src := `from pydantic_ai import Agent
+from pydantic_ai.messages import DocumentUrl
+
+agent = Agent("openai:gpt-4o")
+doc = DocumentUrl("https://example.com/doc.pdf")
+`
+	pf := parsePyFile(t, "fileurl_default.py", src)
+	agents := analysis.DiscoverPydanticAIAgents([]analysis.ParsedFile{pf})
+	if len(agents) != 1 {
+		t.Fatalf("got %d agents, want 1", len(agents))
+	}
+	if agents[0].FileURLForceDownload != "" {
+		t.Errorf("FileURLForceDownload: got %q, want empty", agents[0].FileURLForceDownload)
+	}
+}
+
+// PYD-104 WebFetchTool arm: NativeTool(WebFetchTool(force_download=True)) must
+// put force_download on the HostedToolDef kwargs (inner constructor, not NativeTool).
+func TestResolveEdges_PydanticWebFetchForceDownloadKwarg(t *testing.T) {
+	src := `from pydantic_ai import Agent, NativeTool, WebFetchTool
+
+agent = Agent(
+    "openai:gpt-4o",
+    capabilities=[NativeTool(WebFetchTool(force_download=True))],
+)
+`
+	pf := parsePyFile(t, "webfetch.py", src)
+	inv := models.RepoInventory{Agents: analysis.DiscoverPydanticAIAgents([]analysis.ParsedFile{pf})}
+	analysis.ResolveEdges(&inv, []analysis.ParsedFile{pf})
+
+	if len(inv.HostedTools) != 1 {
+		t.Fatalf("HostedTools: got %d, want 1", len(inv.HostedTools))
+	}
+	kw := inv.HostedTools[0].Kwargs
+	if kw == nil || kw.Children["force_download"] == nil || kw.Children["force_download"].Value == nil {
+		t.Fatalf("force_download kwarg not captured on HostedToolDef: %+v", kw)
+	}
+	if got := kw.Children["force_download"].Value.Text; got != "True" {
+		t.Errorf("force_download: got %q, want True", got)
+	}
+}

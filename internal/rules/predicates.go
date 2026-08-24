@@ -843,6 +843,20 @@ func PredAgentRunCallUsageLimitsMissing(a models.AgentDef, inv models.RepoInvent
 	return agentRunCallMissingKwarg(a, inv, models.SDKPydanticAI, "usage_limits")
 }
 
+// PredAgentFileURLForceDownload fires when this Pydantic AI agent sits in a
+// file that constructs a FileUrl-family object with force_download set to
+// True or 'allow-local'. Discovery stamps the normalized value on
+// AgentDef.FileURLForceDownload; this predicate just reads it. Silent when
+// the field is empty (absent or False).
+func PredAgentFileURLForceDownload(a models.AgentDef) bool {
+	switch a.FileURLForceDownload {
+	case "True", "allow-local":
+		return true
+	default:
+		return false
+	}
+}
+
 // ─── subagent predicates ──────────────────────────────────────────────────────
 
 // PredSubagentGrantsTool reports whether the subagent grants any of names.

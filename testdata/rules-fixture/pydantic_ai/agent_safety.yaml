@@ -5,8 +5,8 @@ policy:
   description: >
     Agent-scope safety rules for Pydantic AI agents (the Agent(...) constructor).
     These flag missing output validation, model-driven code execution and URL
-    fetching wired as native tools, and a retry strategy that re-runs an
-    already-executed tool.
+    fetching wired as native tools, a FileUrl force_download that fetches on the
+    agent host, and a retry strategy that re-runs an already-executed tool.
 
 rules:
   - id: PYD-101
@@ -97,6 +97,49 @@ rules:
       a proxy that rejects requests to internal addresses. Prefer a purpose-built
       tool that fetches from a fixed, vetted set of endpoints over an open URL
       fetcher, and treat retrieved or searched content as untrusted input.
+
+  - id: PYD-104
+    title: Pydantic AI FileUrl forces a host-side download
+    severity: medium
+    confidence: 0.8
+    language: python
+    applies_to:
+      - pydantic_ai_agent
+    scope: agent
+    match:
+      any:
+        - agent_file_url_force_download: true
+        - agent_hosted_tool_kwarg_value:
+            class: WebFetchTool
+            kwarg: force_download
+            value: "True"
+        - agent_hosted_tool_kwarg_value:
+            class: WebFetchTool
+            kwarg: force_download
+            value: "allow-local"
+    explanation: >
+      This agent constructs a FileUrl-family object (ImageUrl, AudioUrl, VideoUrl,
+      DocumentUrl) with force_download set to True or "allow-local", or wires a
+      WebFetchTool with the same kwarg. force_download=True makes the Pydantic AI
+      process download the URL itself instead of passing it through to the model
+      provider, so a prompt injection or a caller-supplied URL is fetched from
+      the agent host — the SSRF surface Pydantic AI's own fetchers have already
+      needed CVE fixes for (CVE-2026-46678, CVE-2026-25580). force_download=
+      "allow-local" goes further: the host still downloads, but private IPs are
+      allowed, which turns off the private-range half of that SSRF guard (cloud
+      metadata stays blocked). The default False lets providers that support URL
+      passthrough fetch the resource themselves, without opening a host-side
+      request.
+    fix: >
+      Leave force_download at its False default so the URL is passed to the
+      provider when it supports that, and never set "allow-local" in production.
+      If the host must download, keep force_download=True only for URLs you
+      control, put egress controls around the process (a host allow-list,
+      blocked private and link-local ranges), and reject caller- or
+      model-supplied URLs. On any endpoint that accepts client-submitted
+      FileUrls, run Pydantic AI's history sanitizer with
+      allowed_file_url_force_download left empty so True and "allow-local" are
+      reset.
 
   - id: PYD-105
     title: Pydantic AI agent retries with the exhaustive end strategy
