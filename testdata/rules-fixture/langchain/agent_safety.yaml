@@ -83,3 +83,37 @@ rules:
       Pass maxIterations to the AgentExecutor options, sized to the task, and set
       handleParsingErrors so a malformed step is surfaced rather than retried
       indefinitely.
+
+  - id: LC-112
+    title: LangChain privileged create_agent lacks human-approval prerequisites
+    severity: high
+    confidence: 0.7
+    language: python
+    applies_to:
+      - langchain_agent
+    scope: agent
+    match:
+      all:
+        - agent_class:
+            - CreateAgent
+        - agent_uses_hosted_tool_class:
+            - PythonREPLTool
+            - PythonAstREPLTool
+            - ShellTool
+        - any:
+            - agent_kwarg_list_empty:
+                - middleware
+            - agent_kwarg_missing:
+                - checkpointer
+    explanation: >
+      This LangChain v1 create_agent exposes a built-in that can execute arbitrary
+      Python or shell commands, but it lacks middleware and/or checkpoint state
+      needed to support a resumable human approval boundary. Without those
+      structural prerequisites, the model can reach a high-impact execution tool
+      without an explicit interrupt/resume control point that Trustabl can verify.
+    fix: >
+      Add human-in-the-loop approval middleware for the privileged tool and pass a
+      checkpointer so interrupted execution can be persisted and resumed after the
+      decision. Keep the REPL/shell tool sandboxed and narrowly scoped. This rule
+      only verifies the structural prerequisites; review that the middleware is in
+      fact configured to require approval for the privileged tool.
