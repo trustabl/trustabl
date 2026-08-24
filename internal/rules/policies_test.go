@@ -1986,6 +1986,32 @@ def fetch_data(x: str) -> dict:
     return {}
 `,
 		toolConfig: nil, wantFires: false},
+
+	// ─── CREW-010 / CREW-011: CrewAI description quality ────────────────────
+	{name: "CREW-010 fires on placeholder description", ruleID: "CREW-010", kind: models.KindCrewAITool, src: `
+def lookup_order(order_id: str) -> str:
+    """TODO: describe this tool."""
+    return order_id
+`, wantFires: true},
+	{name: "CREW-010 silent on a real description", ruleID: "CREW-010", kind: models.KindCrewAITool, src: `
+def lookup_order(order_id: str) -> str:
+    """Look up a single order by its identifier and return its current status."""
+    return order_id
+`, wantFires: false},
+	{name: "CREW-011 fires on a too-short description", ruleID: "CREW-011", kind: models.KindCrewAITool, src: `
+def list_orders(customer_id: str) -> str:
+    """Gets data."""
+    return customer_id
+`, wantFires: true},
+	{name: "CREW-011 silent on a full description", ruleID: "CREW-011", kind: models.KindCrewAITool, src: `
+def list_orders(customer_id: str) -> str:
+    """List every order belonging to one customer, most recent first."""
+    return customer_id
+`, wantFires: false},
+	{name: "CREW-011 silent when the docstring is absent (CREW-001's case)", ruleID: "CREW-011", kind: models.KindCrewAITool, src: `
+def list_orders(customer_id: str) -> str:
+    return customer_id
+`, wantFires: false},
 }
 
 // policyRepoRuleCases covers repo-scoped rules.
@@ -2246,7 +2272,6 @@ var policyRepoRuleCases = []policyRepoCase{
 		},
 		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKOpenAIAgents}},
 		false},
-
 }
 
 // optionsWithPermissionMode builds a ClaudeAgentOptionsDef whose captured
