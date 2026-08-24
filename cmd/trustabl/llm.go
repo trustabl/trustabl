@@ -18,12 +18,12 @@ func newLLMCommand() *cobra.Command {
 		Use:   "llm",
 		Short: "Manage LLM provider configuration",
 		Long: `Manage the optional LLM provider configuration (provider, model, and API key)
-used for bring-your-own-key enrichment. Configuration is stored in your user
-config directory with 0600 permissions.
+used by "trustabl enrich" for bring-your-own-key enrichment. Configuration is
+stored in your user config directory with 0600 permissions.
 
-NOTE: LLM enrichment is not wired into the scan yet. These commands only store
-the provider, model, and key for that future path — no scan makes an LLM call
-today, with or without a key configured.`,
+"trustabl scan" never calls an LLM. Enrichment is a separate post-scan command
+that uses this stored provider, or ANTHROPIC_API_KEY / OPENAI_API_KEY /
+GOOGLE_API_KEY from the environment.`,
 		Example: `  # One-time setup
   trustabl llm provider set anthropic
   trustabl llm key set
