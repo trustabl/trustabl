@@ -462,3 +462,16 @@ func TestLLMProviderList_WithConfig(t *testing.T) {
 		t.Errorf("providers not sorted: anthropic at %d, openai at %d", anthPos, openaiPos)
 	}
 }
+
+func TestLLMCommand_HelpDescribesEnrichment(t *testing.T) {
+	cmd := newLLMCommand()
+	if strings.Contains(cmd.Long, "future path") || strings.Contains(cmd.Long, "not wired") {
+		t.Errorf("llm help still describes enrichment as unwired:\n%s", cmd.Long)
+	}
+	if !strings.Contains(cmd.Long, "trustabl enrich") {
+		t.Errorf("llm help must mention trustabl enrich:\n%s", cmd.Long)
+	}
+	if !strings.Contains(cmd.Long, "trustabl scan") {
+		t.Errorf("llm help must still say scan itself does not call an LLM:\n%s", cmd.Long)
+	}
+}
