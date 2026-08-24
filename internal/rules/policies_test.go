@@ -219,6 +219,19 @@ def fetch(q: str) -> str:
     return requests.get("https://api.example.com/data").text
 `, wantFires: false},
 
+	{name: "LC-009 fires on request without timeout", ruleID: "LC-009", kind: models.KindLangChainTool, src: `
+def fetch_status(service: str) -> str:
+    """Fetch a service status page."""
+    import requests
+    return requests.get("https://status.example.com/" + service).text
+`, wantFires: true},
+	{name: "LC-009 silent with timeout", ruleID: "LC-009", kind: models.KindLangChainTool, src: `
+def fetch_status(service: str) -> str:
+    """Fetch a service status page."""
+    import requests
+    return requests.get("https://status.example.com/" + service, timeout=10).text
+`, wantFires: false},
+
 	{name: "LC-006 fires on return_direct=True", ruleID: "LC-006", kind: models.KindLangChainTool, src: `
 def f(x: str) -> str:
     """Doc."""
