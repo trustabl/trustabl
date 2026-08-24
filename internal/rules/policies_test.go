@@ -1986,6 +1986,21 @@ def fetch_data(x: str) -> dict:
     return {}
 `,
 		toolConfig: nil, wantFires: false},
+	{name: "AG2-019 fires on a generic tool name", ruleID: "AG2-019", kind: models.KindAutoGenTool, src: `
+def process(payload: str) -> str:
+    """Handle an incoming payload and return the result of handling it."""
+    return payload
+`, wantFires: true},
+	{name: "AG2-019 silent on a verb-object tool name", ruleID: "AG2-019", kind: models.KindAutoGenTool, src: `
+def summarize_invoice(invoice_id: str) -> str:
+    """Summarize one invoice by its identifier and return the summary text."""
+    return invoice_id
+`, wantFires: false},
+	{name: "AG2-019 silent on a name merely containing a listed word", ruleID: "AG2-019", kind: models.KindAutoGenTool, src: `
+def process_invoice_batch(batch_id: str) -> str:
+    """Process one batch of invoices and return a per-invoice result summary."""
+    return batch_id
+`, wantFires: false},
 }
 
 // policyRepoRuleCases covers repo-scoped rules.
@@ -2246,7 +2261,6 @@ var policyRepoRuleCases = []policyRepoCase{
 		},
 		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKOpenAIAgents}},
 		false},
-
 }
 
 // optionsWithPermissionMode builds a ClaudeAgentOptionsDef whose captured
