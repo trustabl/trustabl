@@ -310,7 +310,7 @@ rules:
       Rename the method (or set the `#[tool]` `name = "..."` argument) to a
       verb-object form, e.g. `summarize_invoice`, `fetch_weather`.
 
-  - id: MCP-023
+  - id: MCP-029
     title: PHP MCP tool has no type-annotated parameters
     severity: medium
     confidence: 0.85
