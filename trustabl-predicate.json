@@ -1,0 +1,16 @@
+{
+  "scanId": "scan_ad1aaeb9154c046f",
+  "engineVersion": "dev",
+  "rulesSha": "aa5c508e39c478dffcdf3aea5517b02fec1f83c8",
+  "rulesOrigin": "unsigned:default",
+  "repo": "https://github.com/google/adk-python",
+  "overallScore": 0.6339651799104253,
+  "verdict": "fail",
+  "severityCounts": {
+    "critical": 0,
+    "high": 44,
+    "medium": 1833,
+    "low": 2,
+    "info": 19
+  }
+}

@@ -69,8 +69,9 @@ func main() {
 
 	rootCmd := &cobra.Command{
 		Use:   "trustabl",
-		Short: "Static analyzer for agent reliability",
-		Long: `Trustabl is a static analyzer for AI-agent codebases.
+		Short: "Find and fix agent reliability issues",
+		Long: `Trustabl finds and fixes reliability, safety, and security defects in
+AI-agent codebases.
 
 It scans repositories that use agent SDKs — Claude Agent SDK, OpenAI Agents SDK,
 Google ADK, LangChain, CrewAI, Pydantic AI, Vercel AI, and AutoGen — and Model

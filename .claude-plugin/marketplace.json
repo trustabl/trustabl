@@ -11,7 +11,7 @@
     {
       "name": "trustabl",
       "source": "./",
-      "description": "Self-audit AI agent, tool, and MCP-server code for security and reliability misconfigurations with Trustabl, the static analyzer for the OpenAI Agents SDK, Claude Agent SDK, Google ADK, and MCP.",
+      "description": "Self-audit AI agent, tool, and MCP-server code for security and reliability misconfigurations with Trustabl, the agent reliability scanner for the OpenAI Agents SDK, Claude Agent SDK, Google ADK, and MCP.",
       "homepage": "https://github.com/trustabl/trustabl",
       "license": "Apache-2.0",
       "category": "security",

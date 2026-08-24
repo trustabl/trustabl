@@ -1,7 +1,7 @@
 ---
 name: trustabl
 description: >
-  Runs Trustabl — a static analyzer for agent reliability — against the
+  Runs Trustabl — the agent reliability scanner — against the
   current repository or a specified path. Analyzes code built with Claude
   Agent SDK, OpenAI Agents SDK, Google ADK, MCP, LangChain/LangGraph,
   CrewAI, AutoGen, Pydantic AI, or the Vercel AI SDK. Models the tools,

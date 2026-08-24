@@ -328,7 +328,7 @@ func buildRun(sr models.ScanResult, toolVersion string) Run {
 	run := Run{
 		Tool: Tool{Driver: ToolComponent{
 			Name:            "trustabl",
-			FullName:        "Trustabl — static analyzer for agent reliability",
+			FullName:        "Trustabl — find and fix agent reliability issues",
 			InformationURI:  "https://github.com/trustabl/trustabl",
 			Version:         toolVersion,
 			SemanticVersion: toolVersion,

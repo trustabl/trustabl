@@ -6,7 +6,7 @@
       "tool": {
         "driver": {
           "name": "trustabl",
-          "fullName": "Trustabl — static analyzer for agent reliability",
+          "fullName": "Trustabl — find and fix agent reliability issues",
           "informationUri": "https://github.com/trustabl/trustabl",
           "version": "0.0.0-test",
           "semanticVersion": "0.0.0-test",
