@@ -1,0 +1,45 @@
+policy:
+  id: mcp_repo_hygiene
+  name: MCP server repo hygiene
+  category: mcp
+  description: >
+    Repo-scoped hygiene rules for projects that implement an MCP server. Fire
+    once per scan against the repo manifest and inventory rather than per tool.
+
+rules:
+  - id: MCP-201
+    title: MCP server project ships no agent-guidance doc (AGENTS.md/CLAUDE.md)
+    severity: low
+    confidence: 0.9
+    applies_to:
+      - mcp
+    scope: repo
+    match:
+      all:
+        - repo_has_sdk_in_code:
+            - mcp
+        - not:
+            repo_component_present:
+              - agents_md
+              - claude_md
+    explanation: >
+      The project implements an MCP server in code but ships no agent-guidance
+      doc (AGENTS.md or CLAUDE.md) at the repo root. AGENTS.md is the
+      cross-vendor convention an editing coding agent reads before it acts, so
+      with neither file present any agent that opens this repo has no
+      project-specific guidance on how tools must be registered, named,
+      described, and schema-typed. That matters more in an MCP server than in
+      most projects: everything this repo exports crosses a trust boundary to
+      whatever client and model connect to it, and the tool name, description,
+      and input schema are the entire contract those consumers see. A tool added
+      without the local conventions does not fail here — it degrades tool
+      selection in every downstream client, and the server's authors are not the
+      ones who observe it.
+    fix: >
+      Add an AGENTS.md at the repo root (a CLAUDE.md also satisfies this rule).
+      State the tool naming convention and namespace prefix, what a description
+      must cover for a client that has no other context about this server, how
+      input schemas must be typed, which operations are destructive and what
+      gates them, and the exact test, lint, and build commands. Keep it short
+      and concrete so an editing agent can act on it without re-deriving the
+      conventions.
