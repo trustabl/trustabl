@@ -21,7 +21,6 @@ rules:
         - any:
             - has_shell_call: true
             - has_code_exec_call: true
-            - has_write_call: true
         - any:
             - not:
                 tool_decorator_kwarg_present:
@@ -30,22 +29,22 @@ rules:
                 kwarg: needsApproval
                 value: "false"
     explanation: >
-      This Vercel AI SDK tool shells out, executes dynamic code, or writes the
-      filesystem, but has no needsApproval gate — the option is absent or
+      This Vercel AI SDK tool shells out or executes dynamic code, but has no
+      needsApproval gate — the option is absent or
       explicitly set to false. needsApproval is the Vercel AI SDK's
       human-in-the-loop gate for sensitive tool calls, and its default is
       false — so an un-gated privileged tool executes attacker-influenced
       model output with no human checkpoint. Passing true or a per-call
       approval function both count as a gate and do not fire. This complements
-      VAI-001 (subprocess), VAI-002 (eval / new Function), and write-path
-      rules: those flag the dangerous call; VAI-013 flags the missing approval
-      gate around it. SDK 7 moved approval to toolApproval on generateText,
+      VAI-001 (subprocess) and VAI-002 (eval / new Function): those flag the
+      dangerous call; VAI-013 flags the missing approval gate around it. SDK 7
+      moved approval to toolApproval on generateText,
       streamText, or ToolLoopAgent. This tool-scoped rule cannot verify that
       separate setting, so a finding in SDK 7 code requires manual review.
     fix: >
       Pass needsApproval: true to the tool() or dynamicTool() options for
-      tools that execute commands, run code, or mutate the filesystem, and
-      handle the resulting approval requests in your agent loop. SDK 7+ uses
+      tools that execute commands or run code, and handle the resulting
+      approval requests in your agent loop. SDK 7+ uses
       toolApproval on generateText, streamText, or ToolLoopAgent, but this rule
       cannot yet verify that call or agent-level setting. If approval is
       intentionally automated for a trusted tool, gate the agent with input

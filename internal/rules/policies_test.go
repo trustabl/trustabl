@@ -374,12 +374,6 @@ import { tool } from "ai";
 import { z } from "zod";
 export const t = tool({ description: "calc", inputSchema: z.object({ expr: z.string() }), needsApproval: false, execute: async ({ expr }) => eval(expr) });
 `},
-	{name: "VAI-013 fires on filesystem write with no needsApproval", ruleID: "VAI-013", kind: models.KindVercelAITool, lang: models.LanguageTypeScript, wantFires: true, src: `
-import { tool } from "ai";
-import { z } from "zod";
-import { writeFileSync } from "fs";
-export const t = tool({ description: "save", inputSchema: z.object({ path: z.string(), data: z.string() }), execute: async ({ path, data }) => writeFileSync(path, data) });
-`},
 	{name: "VAI-013 silent on approved dynamic shell tool", ruleID: "VAI-013", kind: models.KindVercelAITool, lang: models.LanguageTypeScript, wantFires: false, src: `
 import { dynamicTool } from "ai";
 import { execSync } from "child_process";
