@@ -1986,6 +1986,29 @@ def fetch_data(x: str) -> dict:
     return {}
 `,
 		toolConfig: nil, wantFires: false},
+
+	// ─── PYD-009: Pydantic AI path param reaching I/O unnormalized ──────────
+	// call_uses_unnormalized_path_param is per-param, so the third case pins
+	// that a non-pathish param does not drag the rule in.
+	{name: "PYD-009 fires on path param in open()", ruleID: "PYD-009", kind: models.KindPydanticAITool, src: `
+def read_note(note_path: str) -> str:
+    """Read a note."""
+    with open(note_path, "r") as f:
+        return f.read()
+`, wantFires: true},
+	{name: "PYD-009 silent with .resolve()", ruleID: "PYD-009", kind: models.KindPydanticAITool, src: `
+from pathlib import Path
+def read_note(note_path: str) -> str:
+    """Read a note."""
+    p = Path(note_path).resolve()
+    with open(p, "r") as f:
+        return f.read()
+`, wantFires: false},
+	{name: "PYD-009 silent on non-pathish param", ruleID: "PYD-009", kind: models.KindPydanticAITool, src: `
+def get_note_meta(note_id: str) -> dict:
+    """Get note metadata."""
+    return {"id": note_id}
+`, wantFires: false},
 }
 
 // policyRepoRuleCases covers repo-scoped rules.
@@ -2246,7 +2269,6 @@ var policyRepoRuleCases = []policyRepoCase{
 		},
 		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKOpenAIAgents}},
 		false},
-
 }
 
 // optionsWithPermissionMode builds a ClaudeAgentOptionsDef whose captured

@@ -1,0 +1,47 @@
+policy:
+  id: pydantic_ai_path_safety
+  name: Pydantic AI filesystem path safety
+  category: pydantic_ai
+  description: >
+    Rules that catch a model-supplied filesystem path flowing into an I/O call
+    inside a Pydantic AI tool without containment. A traversal payload like
+    ../../etc/passwd reaches real filesystem state if the tool does not resolve
+    the path and check it against an allowed root.
+
+rules:
+  - id: PYD-009
+    title: Pydantic AI tool uses a path parameter in I/O without validation
+    severity: high
+    confidence: 0.7
+    language: python
+    applies_to:
+      - pydantic_ai_tool
+    scope: tool
+    # call_uses_unnormalized_path_param is per-param: a tool with two path
+    # params and one .resolve() correctly fires on the unresolved one. A
+    # body-wide check would suppress the finding whenever any normalization
+    # appears, masking real exposure on the other param.
+    match:
+      call_uses_unnormalized_path_param:
+        callees:
+          - open
+          - Path
+        callee_prefixes:
+          - shutil.
+          - os.
+    explanation: >
+      This tool takes a path-like parameter and hands it to a file or directory
+      operation without resolving it or checking it against an allowed root, so
+      a model-supplied ../../etc/passwd reaches the real filesystem. Pydantic
+      AI's type layer does not help here: a parameter annotated str or Path
+      validates fine while still carrying a traversal payload, because the
+      annotation constrains the value's type, not the region of the filesystem
+      it points at. Whatever the agent process can read or write, the model can
+      reach through this tool. Detection is heuristic — confirm the parameter is
+      genuinely model-supplied before applying the fix.
+    fix: >
+      Resolve the path with Path(...).resolve() and assert the result sits under
+      an allowed root before touching it, rejecting anything that escapes.
+      Encode that as a validator on the parameter's type (a Pydantic
+      AfterValidator or a custom path type) so containment holds for every tool
+      that accepts it rather than being re-implemented per call site.
