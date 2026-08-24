@@ -75,9 +75,9 @@ func main() {
 It scans repositories that use agent SDKs — Claude Agent SDK, OpenAI Agents SDK,
 Google ADK, LangChain, CrewAI, Pydantic AI, Vercel AI, and AutoGen — and Model
 Context Protocol (MCP) servers, then reports reliability and safety weaknesses in
-the tools, agents, and subagents it discovers. Python and TypeScript codebases
-are analyzed in depth; JavaScript and Go are recognized during recon but not yet
-AST-parsed.
+the tools, agents, and subagents it discovers. Python, TypeScript, and JavaScript
+are analyzed in depth (JS through the TypeScript-family pipeline). Go, C#, PHP,
+and Rust have MCP-server tool discovery.
 
 Detection rules are not built into this binary: they are resolved from the
 trustabl-rules repository at scan time and cached locally, with an offline
