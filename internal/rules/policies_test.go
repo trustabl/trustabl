@@ -1362,6 +1362,21 @@ def run_cmd(name: str) -> str:
 		src: "<?php\nuse PhpMcp\\Server\\Attributes\\McpTool;\nclass T {\n    #[McpTool(name: 'summarize_invoice', description: 'Summarize')]\n    public function summarizeInvoice(string $input): string { return $input; }\n}\n",
 	},
 	{
+		name: "MCP-023 fires on PHP untyped params", ruleID: "MCP-023",
+		kind: models.KindMCPTool, lang: models.LanguagePHP, wantFires: true,
+		src: "<?php\nuse PhpMcp\\Server\\Attributes\\McpTool;\nclass T {\n    #[McpTool(name: 'search_docs', description: 'Search')]\n    public function searchDocs($query, $limit) { return $query; }\n}\n",
+	},
+	{
+		name: "MCP-023 silent with PHP type hints", ruleID: "MCP-023",
+		kind: models.KindMCPTool, lang: models.LanguagePHP, wantFires: false,
+		src: "<?php\nuse PhpMcp\\Server\\Attributes\\McpTool;\nclass T {\n    #[McpTool(name: 'search_docs', description: 'Search')]\n    public function searchDocs(string $query, int $limit): string { return $query; }\n}\n",
+	},
+	{
+		name: "MCP-023 silent on zero-param PHP tool", ruleID: "MCP-023",
+		kind: models.KindMCPTool, lang: models.LanguagePHP, wantFires: false,
+		src: "<?php\nuse PhpMcp\\Server\\Attributes\\McpTool;\nclass T {\n    #[McpTool(name: 'ping', description: 'Health check')]\n    public function ping(): string { return 'ok'; }\n}\n",
+	},
+	{
 		name: "MCP-021 fires on Rust tool with no description", ruleID: "MCP-021",
 		kind: models.KindMCPTool, lang: models.LanguageRust, wantFires: true,
 		src: "use rmcp::tool;\nimpl T {\n    #[tool]\n    fn fetch_weather(&self) -> String { String::new() }\n}\n",
