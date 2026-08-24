@@ -1,0 +1,36 @@
+policy:
+  id: langchain_error_handling
+  name: LangChain error contract hygiene
+  category: langchain
+  description: >
+    Rules covering how a LangChain / LangGraph tool surfaces failures back to
+    the model. Raising raw exceptions yields opaque ToolMessage strings that
+    the model cannot branch on intelligently.
+
+rules:
+  - id: LC-008
+    title: LangChain tool raises exceptions without a structured error contract
+    severity: low
+    confidence: 0.6
+    language: python
+    applies_to:
+      - langchain_tool
+    scope: tool
+    match:
+      all:
+        - has_raise: true
+        - has_try_except: false
+    explanation: >
+      When a LangChain tool raises, AgentExecutor and LangGraph's ToolNode
+      surface the exception to the model as an opaque ToolMessage (or halt the
+      run if handle_tool_error is unset). The model cannot tell a transient,
+      retryable failure from a permanent one, so it retries a charge that
+      already committed or abandons a call that would have succeeded on retry.
+      Returning a structured error object lets the model branch on the failure
+      mode. LC-102's max_iterations cap does not help — it bounds how many
+      steps the executor takes, not how the model interprets one failed step.
+    fix: >
+      Catch known failure modes and return a structured payload such as
+      `{"error": "...", "retryable": False}` instead of raising. Distinguish
+      transient faults (timeout, 503) from permanent ones (bad argument,
+      not-found) so the model can retry or escalate.
