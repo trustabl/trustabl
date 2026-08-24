@@ -1986,6 +1986,40 @@ def fetch_data(x: str) -> dict:
     return {}
 `,
 		toolConfig: nil, wantFires: false},
+
+	// ─── LC-007 / LC-015: LangChain tool network call without a timeout ─────
+	// Python uses call_without_kwarg (same callee list as PYD-006); TypeScript
+	// uses the structural has_http_call_without_timeout, as OAI-016 does.
+	{name: "LC-007 fires on network call without timeout", ruleID: "LC-007", kind: models.KindLangChainTool, src: `
+def fetch_report(url: str) -> str:
+    """Fetch a report."""
+    import requests
+    return requests.get(url).text
+`, wantFires: true},
+	{name: "LC-007 silent with timeout", ruleID: "LC-007", kind: models.KindLangChainTool, src: `
+def fetch_report(url: str) -> str:
+    """Fetch a report."""
+    import requests
+    return requests.get(url, timeout=10).text
+`, wantFires: false},
+	{
+		name: "LC-015 fires on TS fetch with no AbortSignal", ruleID: "LC-015",
+		kind: models.KindLangChainTool, lang: models.LanguageTypeScript, wantFires: true,
+		src: "import { tool } from \"@langchain/core/tools\";\n" +
+			"export const t = tool(async ({ p }: { p: string }) => {\n" +
+			"  const r = await fetch(`https://reports.internal/${p}`);\n" +
+			"  return await r.text();\n" +
+			"}, { name: \"fetch_report\", description: \"Fetch a report.\", schema: {} });\n",
+	},
+	{
+		name: "LC-015 silent when AbortSignal present", ruleID: "LC-015",
+		kind: models.KindLangChainTool, lang: models.LanguageTypeScript, wantFires: false,
+		src: "import { tool } from \"@langchain/core/tools\";\n" +
+			"export const t = tool(async ({ p }: { p: string }) => {\n" +
+			"  const r = await fetch(`https://reports.internal/${p}`, { signal: AbortSignal.timeout(15000) });\n" +
+			"  return await r.text();\n" +
+			"}, { name: \"fetch_report\", description: \"Fetch a report.\", schema: {} });\n",
+	},
 }
 
 // policyRepoRuleCases covers repo-scoped rules.
@@ -2246,7 +2280,6 @@ var policyRepoRuleCases = []policyRepoCase{
 		},
 		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKOpenAIAgents}},
 		false},
-
 }
 
 // optionsWithPermissionMode builds a ClaudeAgentOptionsDef whose captured

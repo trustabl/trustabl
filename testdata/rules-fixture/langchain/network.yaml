@@ -1,0 +1,83 @@
+policy:
+  id: langchain_network
+  name: LangChain tool network hygiene
+  category: langchain
+  description: >
+    Network-call hygiene inside LangChain tool functions. A tool that issues an
+    outbound request with no deadline hangs the agent's executor loop until the
+    remote gives up, so the run never completes and never reports why.
+
+rules:
+  - id: LC-007
+    title: LangChain tool network call has no timeout
+    severity: high
+    confidence: 0.85
+    language: python
+    applies_to:
+      - langchain_tool
+    scope: tool
+    match:
+      call_without_kwarg:
+        callees:
+          - requests.get
+          - requests.post
+          - requests.put
+          - requests.delete
+          - requests.patch
+          - requests.head
+          - requests.request
+          - httpx.get
+          - httpx.post
+          - httpx.put
+          - httpx.delete
+          - httpx.patch
+          - httpx.head
+          - httpx.request
+          - requests.Session.get
+          - requests.Session.post
+          - urllib.request.urlopen
+          # Bare `urlopen` covers the from-import form.
+          - urlopen
+          # Aliased aiohttp sessions canonicalize to aiohttp.ClientSession.<m>.
+          - aiohttp.ClientSession.get
+          - aiohttp.ClientSession.post
+        missing: timeout
+    explanation: >
+      This LangChain tool makes a network request with no timeout, so it hangs
+      indefinitely on a slow or unresponsive remote. The tool runs synchronously
+      inside the AgentExecutor loop: a stalled request blocks that iteration
+      until the connection eventually dies, so the agent neither finishes the run
+      nor tells the model anything went wrong. LC-102's max_iterations cap does
+      not help — it bounds how many steps the executor takes, not how long one
+      step is allowed to take.
+    fix: >
+      Pass timeout= (typically 5–30 seconds) to the request. Choose a value tight
+      enough to fail fast and loose enough for this endpoint's legitimate slow
+      responses, and catch the resulting timeout so the tool returns a structured
+      error the model can act on instead of stalling the run.
+
+  - id: LC-015
+    title: TypeScript LangChain tool network call has no timeout
+    severity: high
+    confidence: 0.6
+    language: typescript
+    applies_to:
+      - langchain_tool
+    scope: tool
+    match:
+      has_http_call_without_timeout: true
+    explanation: >
+      This LangChain.js tool makes an outbound HTTP call (fetch / axios / got /
+      undici) with no deadline — no `signal`, `timeout`, or `abortSignal` option.
+      Node's `fetch` has no implicit deadline, so an unresponsive host blocks the
+      tool callback forever, holding the executor iteration and the request
+      worker behind it. Paired with LC-013 the exposure compounds: a
+      model-controlled URL that also cannot time out can be steered at an
+      internal host that simply never answers.
+    fix: >
+      Attach a deadline. On modern runtimes,
+      `await fetch(url, { signal: AbortSignal.timeout(15_000) })`; on older ones,
+      create an `AbortController`, abort it from a `setTimeout`, pass
+      `controller.signal`, and clear the timer in a `finally`. axios and got take
+      a `timeout` option directly. Return the abort as a structured tool error so
+      the model can retry or route around it.
