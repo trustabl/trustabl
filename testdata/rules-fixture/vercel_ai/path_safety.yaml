@@ -1,0 +1,38 @@
+policy:
+  id: vercel_ai_path_safety
+  name: Vercel AI SDK filesystem path safety
+  category: vercel_ai
+  description: >
+    Flags Vercel AI SDK tools whose execute() handler writes to the filesystem.
+    A write whose path or contents derive from model-supplied arguments lets a
+    prompt-injected agent overwrite anything the host process can reach.
+
+rules:
+  - id: VAI-015
+    title: Vercel AI tool writes to the filesystem
+    severity: low
+    confidence: 0.5
+    language: typescript
+    applies_to:
+      - vercel_ai_tool
+    scope: tool
+    match:
+      has_write_call: true
+    explanation: >
+      This tool's execute() handler writes to the filesystem. If the path or the
+      contents derive from the tool's arguments, the model chooses both, and a
+      prompt injection carried in retrieved content or an earlier tool result can
+      steer the write at any file the host process can reach — a config file, a
+      build artifact, source in the deployed bundle. The usual deployment shape
+      makes this worse than it looks: Vercel AI tools typically run inside the
+      same server process as the request handler, not in a sandbox, so the write
+      inherits the application's own filesystem permissions rather than a
+      restricted set. (Coarse signal — it flags any filesystem write, not only
+      unnormalized paths, because TypeScript path-normalization analysis is not
+      yet wired. Confirm the path is genuinely model-supplied before acting.)
+    fix: >
+      Confine writes to a dedicated working directory: resolve the final path,
+      verify it stays under that root before writing, and reject absolute paths
+      and any input containing "..". Where the tool only ever writes to
+      generated names, derive the filename server-side from an id rather than
+      accepting a path from the model at all.
