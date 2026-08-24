@@ -39,15 +39,15 @@ These wrap the same open-source CLI and are free to install and run. They are
 source-available under a proprietary licence, not open source. Calling them
 Apache-2.0 would be wrong.
 
-| Integration | Licence |
-|---|---|
-| GitHub Action (`trustabl/trustabl-action`) | Apache-2.0 |
-| VS Code extension | Apache-2.0 |
-| GitLab CI/CD component | Proprietary (source-available) |
-| Bitbucket pipe | Proprietary (source-available) |
-| Cursor plugin | Proprietary (source-available) |
-| AWS (CodePipeline / CodeCatalyst) | Proprietary (source-available) |
-| Azure DevOps extension | Proprietary (source-available) |
+| Integration | Where to get it | Licence |
+|---|---|---|
+| GitHub Action | [repo](https://github.com/trustabl/trustabl-action) · [Marketplace](https://github.com/marketplace/actions/trustabl-fix-agent-reliability-issues) | Apache-2.0 |
+| VS Code extension | [repo](https://github.com/trustabl/trustabl-vscode) | Apache-2.0 |
+| GitLab CI/CD component | [repo](https://gitlab.com/trustabl-ai/components) · CI/CD Catalog | Proprietary (source-available) |
+| Bitbucket pipe | [repo](https://bitbucket.org/hoolisoftware/trustabl-pipe) · Atlassian's official Pipes catalog | Proprietary (source-available) |
+| Cursor plugin | [repo](https://github.com/trustabl/trustabl-cursor) · [cursor.directory](https://cursor.directory/plugins/trustabl) | Proprietary (source-available) |
+| AWS (CodePipeline / CodeCatalyst) | [repo](https://github.com/trustabl/trustabl-aws) | Proprietary (source-available) |
+| Azure DevOps extension | [repo](https://github.com/trustabl/trustabl-azure-devops) · [Marketplace](https://marketplace.visualstudio.com/items?itemName=trustabl.trustabl-azure-devops-extension) | Proprietary (source-available) |
 
 None of these require a Console subscription.
 
