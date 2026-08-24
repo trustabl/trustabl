@@ -230,6 +230,50 @@ def f(x: str) -> str:
     return x
 `, toolConfig: map[string]string{}, wantFires: false},
 
+	// ─── LC-007 LangChain tool network call without timeout ──────────────────
+	{name: "LC-007 fires on requests.get without timeout", ruleID: "LC-007", kind: models.KindLangChainTool, src: `
+def fetch(q: str) -> str:
+    """Fetch."""
+    import requests
+    return requests.get("https://api.example.com/data").text
+`, wantFires: true},
+	{name: "LC-007 fires on requests.post without timeout", ruleID: "LC-007", kind: models.KindLangChainTool, src: `
+def create(q: str) -> str:
+    """Create."""
+    import requests
+    return requests.post("https://api.example.com/data", json={"q": q}).text
+`, wantFires: true},
+	{name: "LC-007 silent with timeout", ruleID: "LC-007", kind: models.KindLangChainTool, src: `
+def fetch(q: str) -> str:
+    """Fetch."""
+    import requests
+    return requests.get("https://api.example.com/data", timeout=10).text
+`, wantFires: false},
+	{name: "LC-007 fires on timeout=None", ruleID: "LC-007", kind: models.KindLangChainTool, src: `
+import requests
+def fetch(url: str) -> str:
+    """Fetch."""
+    return requests.get(url, timeout=None).text
+`, wantFires: true},
+	{name: "LC-007 silent on httpx.get without timeout", ruleID: "LC-007", kind: models.KindLangChainTool, src: `
+def fetch(q: str) -> str:
+    """Fetch."""
+    import httpx
+    return httpx.get("https://api.example.com/data").text
+`, wantFires: false},
+	{name: "LC-007 silent on non-network tool", ruleID: "LC-007", kind: models.KindLangChainTool, src: `
+def echo(q: str) -> str:
+    """Echo."""
+    return q
+`, wantFires: false},
+	{name: "LC-007 fires on session-alias get without timeout", ruleID: "LC-007", kind: models.KindLangChainTool, src: `
+import requests
+def fetch(url: str) -> str:
+    """Fetch."""
+    s = requests.Session()
+    return s.get(url).text
+`, wantFires: true},
+
 	// LangChain TypeScript tool rules — parseTSTool runs DiscoverTSLangChainTools,
 	// so each snippet must import from the langchain ecosystem to be discovered.
 	{name: "LC-010 fires on TS tool with no description", ruleID: "LC-010", kind: models.KindLangChainTool, lang: models.LanguageTypeScript, wantFires: true, src: `

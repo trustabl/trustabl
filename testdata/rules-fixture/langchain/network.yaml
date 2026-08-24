@@ -1,0 +1,43 @@
+policy:
+  id: langchain_network
+  name: LangChain tool network hygiene
+  category: langchain
+  description: >
+    Network-call hygiene inside LangChain tool functions. A tool that makes a
+    Requests HTTP call without a finite timeout can remain blocked when an
+    upstream service fails to respond, stalling the agent tool invocation.
+
+rules:
+  - id: LC-007
+    title: LangChain tool network call has no timeout
+    severity: high
+    confidence: 0.85
+    language: python
+    applies_to:
+      - langchain_tool
+    scope: tool
+    match:
+      call_without_kwarg:
+        callees:
+          - requests.get
+          - requests.post
+          - requests.put
+          - requests.delete
+          - requests.patch
+          - requests.head
+          - requests.request
+          - requests.Session.get
+          - requests.Session.post
+        missing: timeout
+    explanation: >
+      This LangChain tool performs a Requests HTTP call without a finite
+      timeout, so it can remain blocked when an upstream service or network
+      fails to respond. The tool invocation cannot complete while the request
+      waits, which consumes worker and runtime resources and prevents the
+      agent step from finishing. A kwarg present with literal None counts as
+      missing.
+    fix: >
+      Configure an explicit finite Requests timeout appropriate to the
+      upstream service's latency and SLA, and handle timeout failures as a
+      structured tool error the model can react to rather than letting the
+      call remain blocked.
