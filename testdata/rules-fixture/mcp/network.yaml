@@ -51,3 +51,36 @@ rules:
       Pass timeout= (typically 5-30 seconds depending on the endpoint) to every
       outbound call. Return the timeout to the client as a structured tool error
       rather than letting the handler block.
+
+  - id: MCP-024
+    title: TypeScript MCP tool HTTP call has no timeout
+    severity: high
+    confidence: 0.6
+    language: typescript
+    applies_to:
+      - mcp_tool
+    scope: tool
+    match:
+      has_http_call_without_timeout: true
+    explanation: >
+      This TypeScript MCP tool handler makes an outbound HTTP call (fetch /
+      axios / got / undici) with no deadline — no signal, timeout, or
+      abortSignal option. Node's fetch has no implicit deadline, so a slow or
+      unresponsive upstream blocks the handler until the socket eventually
+      dies. The stall crosses the server's trust boundary rather than staying
+      local: the connecting client is waiting on a JSON-RPC response that never
+      arrives, and because MCP gives it no way to cancel an in-flight tool call,
+      the client is left to its own timeout, an abandoned request, or a hung
+      session. Nothing in the response says why. On a stdio server the effect is
+      worse than one slow tool, since a single process serves the connection and
+      a handler parked on a dead socket is holding it. The exposure compounds
+      with MCP-013: a handler that fetches a caller-controlled URL and cannot
+      time out can be steered at an internal host that never answers.
+    fix: >
+      Attach a deadline. On modern runtimes,
+      await fetch(url, { signal: AbortSignal.timeout(15_000) }); on older ones,
+      create an AbortController, abort it from a setTimeout, pass
+      controller.signal, and clear the timer in a finally. axios and got take a
+      timeout option directly. Return the abort as a structured tool result the
+      model can act on, so the client learns the upstream was unreachable rather
+      than waiting on a response that is not coming.
