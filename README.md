@@ -328,6 +328,12 @@ The rule schema's `language:` field gates per-language rule sets.
   wraps the scan and uploads SARIF to the Security tab for you; for any other
   CI, `--format sarif --output <file>` produces a SARIF 2.1.0 report that feeds
   `github/codeql-action/upload-sarif` or any SARIF-aware step.
+- **Trustabl is open core.** Everything documented here is Apache-2.0 and
+  complete for its job: the scan needs no key and no network, and autofix uses
+  your own LLM key. Policy generation, compliance mapping and signed governance
+  snapshots are Trustabl Console, a separate commercial product. See
+  [docs/open-source-vs-console.md](docs/open-source-vs-console.md) for the full
+  capability split.
 
 ## What it produces
 
