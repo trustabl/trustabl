@@ -22,7 +22,8 @@ It proves:
 - that nobody altered the report afterwards without breaking the signature
 
 It does **not** prove the agent is safe, that the repo is compliant, or that the
-code behaves correctly at runtime. Trustabl is a static scanner; the attestation
+code behaves correctly at runtime. Trustabl analyses code, not running agents;
+the attestation
 inherits exactly the coverage the scan had, no more.
 
 > **Tier.** This is the free-tier **basic attestation** — it signs the scan
