@@ -1986,6 +1986,38 @@ def fetch_data(x: str) -> dict:
     return {}
 `,
 		toolConfig: nil, wantFires: false},
+
+	// ─── LC-021 / LC-022: TS LangChain description quality ──────────────────
+	{
+		name: "LC-021 fires on placeholder description", ruleID: "LC-021",
+		kind: models.KindLangChainTool, lang: models.LanguageTypeScript, wantFires: true,
+		src: "import { tool } from \"@langchain/core/tools\";\n" +
+			"export const t = tool(async () => \"x\", { name: \"lookup_order\", description: \"TODO: describe this tool.\", schema: {} });\n",
+	},
+	{
+		name: "LC-021 silent on a real description", ruleID: "LC-021",
+		kind: models.KindLangChainTool, lang: models.LanguageTypeScript, wantFires: false,
+		src: "import { tool } from \"@langchain/core/tools\";\n" +
+			"export const t = tool(async () => \"x\", { name: \"lookup_order\", description: \"Look up one order by its number and return its fulfillment status.\", schema: {} });\n",
+	},
+	{
+		name: "LC-022 fires on a too-short description", ruleID: "LC-022",
+		kind: models.KindLangChainTool, lang: models.LanguageTypeScript, wantFires: true,
+		src: "import { tool } from \"@langchain/core/tools\";\n" +
+			"export const t = tool(async () => \"x\", { name: \"list_orders\", description: \"Gets data.\", schema: {} });\n",
+	},
+	{
+		name: "LC-022 silent on a full description", ruleID: "LC-022",
+		kind: models.KindLangChainTool, lang: models.LanguageTypeScript, wantFires: false,
+		src: "import { tool } from \"@langchain/core/tools\";\n" +
+			"export const t = tool(async () => \"x\", { name: \"list_orders\", description: \"List every order belonging to one customer, most recent first.\", schema: {} });\n",
+	},
+	{
+		name: "LC-022 silent when the description is absent (LC-010's case)", ruleID: "LC-022",
+		kind: models.KindLangChainTool, lang: models.LanguageTypeScript, wantFires: false,
+		src: "import { tool } from \"@langchain/core/tools\";\n" +
+			"export const t = tool(async () => \"x\", { name: \"list_orders\", schema: {} });\n",
+	},
 }
 
 // policyRepoRuleCases covers repo-scoped rules.
@@ -2246,7 +2278,6 @@ var policyRepoRuleCases = []policyRepoCase{
 		},
 		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKOpenAIAgents}},
 		false},
-
 }
 
 // optionsWithPermissionMode builds a ClaudeAgentOptionsDef whose captured
