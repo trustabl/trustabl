@@ -1389,6 +1389,56 @@ def run_cmd(name: str) -> str:
 		src: "use rmcp::tool;\nimpl T {\n    #[tool(description = \"Summarize\")]\n    fn summarize_invoice(&self) -> String { String::new() }\n}\n",
 	},
 	{
+		name: "MCP-027 fires on camelCase mutating tool with no idempotency param", ruleID: "MCP-027",
+		kind: models.KindMCPTool, lang: models.LanguageTypeScript, wantFires: true,
+		src: "import { McpServer } from \"@modelcontextprotocol/sdk/server/mcp.js\";\n" +
+			"const server = new McpServer({ name: \"s\", version: \"1.0.0\" });\n" +
+			"server.registerTool(\"createCharge\", { description: \"Charge a card\", inputSchema: { amount: z.number() } }, async ({ amount }) => ({ content: [{ type: \"text\", text: String(amount) }] }));\n",
+	},
+	{
+		name: "MCP-027 silent when idempotency key present", ruleID: "MCP-027",
+		kind: models.KindMCPTool, lang: models.LanguageTypeScript, wantFires: false,
+		src: "import { McpServer } from \"@modelcontextprotocol/sdk/server/mcp.js\";\n" +
+			"const server = new McpServer({ name: \"s\", version: \"1.0.0\" });\n" +
+			"server.registerTool(\"createCharge\", { description: \"Charge a card\", inputSchema: { amount: z.number(), idempotencyKey: z.string() } }, async ({ amount }) => ({ content: [{ type: \"text\", text: String(amount) }] }));\n",
+	},
+	{
+		name: "MCP-027 silent on non-mutating tool name", ruleID: "MCP-027",
+		kind: models.KindMCPTool, lang: models.LanguageTypeScript, wantFires: false,
+		src: "import { McpServer } from \"@modelcontextprotocol/sdk/server/mcp.js\";\n" +
+			"const server = new McpServer({ name: \"s\", version: \"1.0.0\" });\n" +
+			"server.registerTool(\"getBalance\", { description: \"Read balance\", inputSchema: { id: z.string() } }, async ({ id }) => ({ content: [{ type: \"text\", text: id }] }));\n",
+	},
+	{
+		name: "MCP-028 fires on ambiguous TypeScript tool name", ruleID: "MCP-028",
+		kind: models.KindMCPTool, lang: models.LanguageTypeScript, wantFires: true,
+		src: "import { McpServer } from \"@modelcontextprotocol/sdk/server/mcp.js\";\n" +
+			"const server = new McpServer({ name: \"s\", version: \"1.0.0\" });\n" +
+			"server.registerTool(\"process\", { description: \"Does a thing\", inputSchema: { x: z.string() } }, async ({ x }) => ({ content: [{ type: \"text\", text: x }] }));\n",
+	},
+	{
+		name: "MCP-028 silent on descriptive name", ruleID: "MCP-028",
+		kind: models.KindMCPTool, lang: models.LanguageTypeScript, wantFires: false,
+		src: "import { McpServer } from \"@modelcontextprotocol/sdk/server/mcp.js\";\n" +
+			"const server = new McpServer({ name: \"s\", version: \"1.0.0\" });\n" +
+			"server.registerTool(\"summarizeInvoice\", { description: \"Summarize an invoice\", inputSchema: { x: z.string() } }, async ({ x }) => ({ content: [{ type: \"text\", text: x }] }));\n",
+	},
+	{
+		name: "MCP-029 fires on PHP mutating tool without key", ruleID: "MCP-029",
+		kind: models.KindMCPTool, lang: models.LanguagePHP, wantFires: true,
+		src: "<?php\nuse PhpMcp\\Server\\Attributes\\McpTool;\nclass T {\n    #[McpTool(name: 'create_order', description: 'Create an order')]\n    public function createOrder(string $customer): array { return []; }\n}\n",
+	},
+	{
+		name: "MCP-029 silent with idempotency key", ruleID: "MCP-029",
+		kind: models.KindMCPTool, lang: models.LanguagePHP, wantFires: false,
+		src: "<?php\nuse PhpMcp\\Server\\Attributes\\McpTool;\nclass T {\n    #[McpTool(name: 'create_order', description: 'Create an order')]\n    public function createOrder(string $customer, string $idempotency_key): array { return []; }\n}\n",
+	},
+	{
+		name: "MCP-029 silent on non-mutating PHP tool name", ruleID: "MCP-029",
+		kind: models.KindMCPTool, lang: models.LanguagePHP, wantFires: false,
+		src: "<?php\nuse PhpMcp\\Server\\Attributes\\McpTool;\nclass T {\n    #[McpTool(name: 'fetch_weather', description: 'Fetch the weather')]\n    public function fetchWeather(string $city): string { return $city; }\n}\n",
+	},
+	{
 		name: "MCP-012 fires on TS tool shelling out", ruleID: "MCP-012",
 		kind: models.KindMCPTool, lang: models.LanguageTypeScript, wantFires: true,
 		src: "import { McpServer } from \"@modelcontextprotocol/sdk/server/mcp.js\";\n" +
@@ -2246,7 +2296,6 @@ var policyRepoRuleCases = []policyRepoCase{
 		},
 		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKOpenAIAgents}},
 		false},
-
 }
 
 // optionsWithPermissionMode builds a ClaudeAgentOptionsDef whose captured

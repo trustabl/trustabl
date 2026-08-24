@@ -46,3 +46,83 @@ rules:
       Accept an idempotency key parameter (idempotency_key / request_id) and
       de-duplicate server-side so a retried call is a no-op after the first
       success.
+
+  - id: MCP-027
+    title: TypeScript MCP mutating tool has no idempotency key
+    severity: medium
+    confidence: 0.5
+    language: typescript
+    applies_to:
+      - mcp_tool
+    scope: tool
+    match:
+      all:
+        - name_has_prefix:
+            - create
+            - send
+            - delete
+            - post
+            - update
+            - refund
+            - charge
+            - issue
+        - not:
+            param_name_matches:
+              contains:
+                - idempot
+              exact:
+                - requestId
+                - request_id
+                - txnId
+                - txn_id
+    explanation: >
+      This TypeScript MCP tool's name implies a side effect (create/send/refund/…)
+      but its inputSchema exposes no idempotency parameter. MCP clients retry
+      tool calls under timeouts and ambiguous failures, the model may repeat the
+      action when a result reads as inconclusive, and a lost response after the
+      side effect committed is at-least-once delivery — so the same charge, send,
+      or delete can fire twice. Without a key the connecting client cannot make
+      the retry safe. The prefix set matches both `create_charge` and
+      `createCharge` naming, so it fires on idiomatic TypeScript tool names.
+    fix: >
+      Add an `idempotencyKey` (or `requestId`) field to the tool's inputSchema,
+      thread it to the downstream API, and confirm that API treats a repeated
+      key as a no-op rather than a second mutation.
+
+  - id: MCP-029
+    title: PHP MCP mutating tool has no idempotency key
+    severity: medium
+    confidence: 0.55
+    language: php
+    applies_to:
+      - mcp_tool
+    scope: tool
+    match:
+      all:
+        - name_has_prefix:
+            - create_
+            - send_
+            - delete_
+            - post_
+            - update_
+            - refund_
+            - charge_
+            - issue_
+        - not:
+            param_name_matches:
+              contains:
+                - idempot
+              exact:
+                - request_id
+                - txn_id
+    explanation: >
+      This PHP MCP tool's name signals a side effect (create/send/refund/…) but
+      the handler takes no idempotency-key parameter. MCP clients retry tool
+      calls under timeouts and ambiguous failures, and a lost response after the
+      side effect committed is at-least-once delivery — so the same charge,
+      order, or message can fire twice. Without a key the handler executes the
+      mutation twice.
+    fix: >
+      Accept an idempotency key parameter (idempotency_key / request_id) on the
+      #[McpTool] method and de-duplicate server-side so a retried call is a
+      no-op after the first success.
