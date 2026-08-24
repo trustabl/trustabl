@@ -1986,6 +1986,38 @@ def fetch_data(x: str) -> dict:
     return {}
 `,
 		toolConfig: nil, wantFires: false},
+
+	// ─── MCP-024: TS MCP tool HTTP call without a timeout ───────────────────
+	{
+		name: "MCP-024 fires on TS fetch with no AbortSignal", ruleID: "MCP-024",
+		kind: models.KindMCPTool, lang: models.LanguageTypeScript, wantFires: true,
+		src: "import { McpServer } from \"@modelcontextprotocol/sdk/server/mcp.js\";\n" +
+			"const s = new McpServer({ name: \"orders\", version: \"1.0.0\" });\n" +
+			"s.tool(\"fetch_report\", \"Fetch a report.\", {}, async () => {\n" +
+			"  const r = await fetch(\"https://reports.internal/x\");\n" +
+			"  return { content: [{ type: \"text\", text: await r.text() }] };\n" +
+			"});\n",
+	},
+	{
+		name: "MCP-024 silent when AbortSignal present", ruleID: "MCP-024",
+		kind: models.KindMCPTool, lang: models.LanguageTypeScript, wantFires: false,
+		src: "import { McpServer } from \"@modelcontextprotocol/sdk/server/mcp.js\";\n" +
+			"const s = new McpServer({ name: \"orders\", version: \"1.0.0\" });\n" +
+			"s.tool(\"fetch_report\", \"Fetch a report.\", {}, async () => {\n" +
+			"  const r = await fetch(\"https://reports.internal/x\", { signal: AbortSignal.timeout(15000) });\n" +
+			"  return { content: [{ type: \"text\", text: await r.text() }] };\n" +
+			"});\n",
+	},
+	{
+		name: "MCP-024 fires when fetch options omit any timeout", ruleID: "MCP-024",
+		kind: models.KindMCPTool, lang: models.LanguageTypeScript, wantFires: true,
+		src: "import { McpServer } from \"@modelcontextprotocol/sdk/server/mcp.js\";\n" +
+			"const s = new McpServer({ name: \"orders\", version: \"1.0.0\" });\n" +
+			"s.tool(\"fetch_report\", \"Fetch a report.\", {}, async () => {\n" +
+			"  const r = await fetch(\"https://reports.internal/x\", { method: \"POST\" });\n" +
+			"  return { content: [{ type: \"text\", text: await r.text() }] };\n" +
+			"});\n",
+	},
 }
 
 // policyRepoRuleCases covers repo-scoped rules.
@@ -2246,7 +2278,6 @@ var policyRepoRuleCases = []policyRepoCase{
 		},
 		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKOpenAIAgents}},
 		false},
-
 }
 
 // optionsWithPermissionMode builds a ClaudeAgentOptionsDef whose captured
