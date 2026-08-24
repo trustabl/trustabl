@@ -388,9 +388,9 @@ flowchart TD
     end
 
     subgraph S2["Step 2 — Inventory (per-language AST)"]
-        disc["analysis.DiscoverTools<br/>DiscoverAgents<br/>DiscoverGuardrails<br/>DiscoverSessions<br/>DiscoverSubagents<br/>DiscoverSkills<br/>DiscoverDependencies<br/>DiscoverSlashCommands<br/>DiscoverPlugins<br/>DiscoverClaudeSettings<br/>DiscoverADKAgents<br/>DiscoverADKTools<br/>DiscoverClaudeAgentOptions<br/>LangChain/CrewAI/AutoGen/PydanticAI (Py)<br/>TS: OpenAI/ADK/LangChain/Vercel/MCP-proper<br/>Go/CSharp/PHP/Rust MCP"]
+        disc["analysis.DiscoverTools<br/>DiscoverAgents<br/>DiscoverGuardrails<br/>DiscoverSessions<br/>DiscoverSubagents<br/>DiscoverSkills<br/>DiscoverDependencies<br/>DiscoverSlashCommands<br/>DiscoverPlugins<br/>DiscoverClaudeSettings<br/>DiscoverADKAgents<br/>DiscoverADKTools<br/>DiscoverClaudeAgentOptions<br/>DiscoverAgentRunCalls<br/>LangChain/CrewAI/AutoGen/PydanticAI (Py)<br/>TS: OpenAI/ADK/LangChain/Vercel/MCP-proper<br/>Go/CSharp/PHP/Rust MCP"]
         edges["analysis.ResolveEdges"]
-        inv[["RepoInventory<br/>Tools · Agents · Guardrails · Sessions<br/>SDKsDetected · HasShellInvocations · UsesDefaultTracing<br/>Dependencies (BOM)<br/>MCPServers · Subagents · Skills · SlashCommands<br/>PluginManifests · ClaudeSettings · ClaudeAgentOptions"]]
+        inv[["RepoInventory<br/>Tools · Agents · Guardrails · Sessions<br/>SDKsDetected · HasShellInvocations · UsesDefaultTracing<br/>Dependencies (BOM)<br/>MCPServers · Subagents · Skills · SlashCommands<br/>PluginManifests · ClaudeSettings · ClaudeAgentOptions<br/>AgentRunCalls"]]
         disc --> edges --> inv
     end
 
@@ -596,7 +596,20 @@ For each language recon cleared, do the AST work and produce a `RepoInventory`:
   config object; its `permission_mode` is the in-code analogue of
   settings.json `defaultMode`, read by `repo_claude_options_permission_mode_is`
   (CSDK-202). Its presence also marks the repo `claude_agent_sdk` so the pack
-  loads for options-only repos.
+  loads for options-only repos. `repo_claude_options_max_turns_missing`
+  (CSDK-204) reads the same slice: it fires when at least one
+  `ClaudeAgentOptions(...)` exists and none of them set `max_turns`.
+- **DiscoverAgentRunCalls** (`agent_run_calls.go`) — captures execution-limit
+  kwargs that live on the *run call*, not the agent constructor. OpenAI
+  Agents SDK: `Runner.run` / `run_sync` / `run_streamed` (object segment
+  must be exactly `Runner`, first positional arg is the agent ident).
+  Pydantic AI: `<agent>.run` / `run_sync` / `run_stream` (receiver is the
+  agent ident; import-gated to `pydantic_ai`). Each hit is an
+  `AgentRunCallDef` on `RepoInventory.AgentRunCalls`. OAI-112
+  (`agent_run_call_max_turns_missing`) and PYD-106
+  (`agent_run_call_usage_limits_missing`) correlate those calls to a
+  same-file `AgentDef.VarName`. Opaque receivers / non-ident agents are
+  skipped, same limitation as other call-capture discoverers.
 - **DiscoverADKAgents** (`adk_agents.go`) — finds `LlmAgent(...)`,
   `SequentialAgent(...)`, `ParallelAgent(...)`, `LoopAgent(...)`,
   `LanggraphAgent(...)`, and the `Agent(...)` alias (normalized to `LlmAgent`
@@ -757,7 +770,9 @@ For each language recon cleared, do the AST work and produce a `RepoInventory`:
   `CodeExecutionTool` / `WebFetchTool` / `UrlContextTool` / `WebSearchTool` native
   tools under `capabilities=` / `builtin_tools=` (the modern `NativeTool(...)`
   wrapper unwrapped one level) are classified in `pydantic_ai_hosted_tools.go`
-  during `ResolveEdges`. PYD-104 (`force_download`), the bare-`tools=[fn]` ToolDef
+  during `ResolveEdges`. PYD-106 (`agent_run_call_usage_limits_missing`) reads
+  `RepoInventory.AgentRunCalls` for this agent's `usage_limits`, not the
+  constructor. PYD-104 (`force_download`), the bare-`tools=[fn]` ToolDef
   shape, and the `RunContext` param-strip for PYD-002 are v1 gaps.
 - **DiscoverTSVercelTools / DiscoverTSVercelAgents** (`ts_vercel_tools.go`,
   `ts_vercel_agents.go`, `ts_vercel_hosted_tools.go`) — TS Vercel AI SDK,
@@ -1058,6 +1073,7 @@ Shipped rules (one row per YAML rule entry):
 | CSDK-201 | repo     | claude_sdk | high     | `claude_sdk/repo.yaml`             | Project default permission mode bypasses approvals                                    |
 | CSDK-202 | repo     | claude_sdk | high     | `claude_sdk/repo.yaml`             | Session permission mode bypasses approvals                                            |
 | CSDK-203 | repo     | claude_sdk | low      | `claude_sdk/repo_hygiene.yaml`     | Claude Agent SDK code with no agent-guidance doc (AGENTS.md/CLAUDE.md)                |
+| CSDK-204 | repo     | claude_sdk | low      | `claude_sdk/repo.yaml`             | Claude Agent SDK session sets no explicit max_turns limit                             |
 | CSDK-010 | tool     | claude_sdk | high     | `claude_sdk/shell_safety.yaml`     | TypeScript tool body spawns a subprocess (`language: typescript`)                     |
 | CSDK-011 | tool     | claude_sdk | high     | `claude_sdk/code_execution.yaml`   | TypeScript tool body calls eval / new Function on dynamic input                       |
 | CSDK-012 | tool     | claude_sdk | high     | `claude_sdk/path_safety.yaml`      | TypeScript tool writes to the filesystem                                               |
@@ -1097,6 +1113,7 @@ Shipped rules (one row per YAML rule entry):
 | OAI-109  | agent    | openai_sdk | high     | `openai_sdk/agent_safety.yaml`     | Agent uses WebSearchTool without input_guardrails                                     |
 | OAI-110  | agent    | openai_sdk | high     | `openai_sdk/agent_safety.yaml`     | Agent wires a content-fetching tool without output_guardrails                         |
 | OAI-111  | agent    | openai_sdk | high     | `openai_sdk/approvals.yaml`        | Agent wires a privileged hosted tool without needs_approval                           |
+| OAI-112  | agent    | openai_sdk | low      | `openai_sdk/agent_safety.yaml`     | OpenAI Agents SDK agent has no explicit max_turns limit (`Runner.run` family)         |
 | OAI-201  | repo     | openai_sdk | medium   | `openai_sdk/tracing.yaml`          | Project uses default OpenAI tracing                                                   |
 | OAI-202  | repo     | openai_sdk | low      | `openai_sdk/repo_hygiene.yaml`     | OpenAI Agents project with no agent-guidance doc (AGENTS.md/CLAUDE.md)                |
 | ADK-001  | tool     | google_adk | low      | `google_adk/tool_definition.yaml`  | FunctionTool-wrapped function has no docstring                                        |
@@ -1310,6 +1327,7 @@ classDiagram
         SDKsDetected
         HasShellInvocations
         UsesDefaultTracing
+        AgentRunCalls
     }
     class ToolDef {
         Name
@@ -1379,7 +1397,8 @@ RepoInventory {
     SlashCommands      []SlashCommandDef
     PluginManifests    []PluginManifest
     ClaudeSettings     []ClaudeSettings
-    ClaudeAgentOptions []ClaudeAgentOptionsDef  // ClaudeAgentOptions(...) session configs (permission_mode, etc.)
+    ClaudeAgentOptions []ClaudeAgentOptionsDef  // ClaudeAgentOptions(...) session configs (permission_mode, max_turns, etc.)
+    AgentRunCalls      []AgentRunCallDef        // Runner.run / agent.run call sites (max_turns, usage_limits)
     SDKsDetected        []SDK     // observed in code, PLUS claude_agent_sdk when any markdown subagent OR ClaudeAgentOptions(...) is present (drives the policy-selection step)
     HasShellInvocations bool      // any Python function calling subprocess.* / os.system / os.popen ("openshell" risk surface, not an SDK)
     Manifest            ScanManifest
