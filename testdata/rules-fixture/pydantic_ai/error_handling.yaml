@@ -1,0 +1,51 @@
+policy:
+  id: pydantic_ai_error_handling
+  name: Pydantic AI error contract hygiene
+  category: pydantic_ai
+  description: >
+    Rules covering how a Pydantic AI tool surfaces failure. Pydantic AI draws a
+    hard line between the two: ModelRetry is fed back to the model as a
+    correction it can act on, while any other exception aborts the whole run.
+    A tool that raises the wrong kind turns a recoverable failure into a dead
+    run.
+
+rules:
+  - id: PYD-008
+    title: Pydantic AI tool raises without a ModelRetry or structured error path
+    severity: low
+    confidence: 0.6
+    language: python
+    applies_to:
+      - pydantic_ai_tool
+    scope: tool
+    # has_raise + no try/except is the same shape as CSDK-005 and MCP-006. The
+    # `not: has_body_text` clause is a suppressor, not the detection signal: a
+    # tool whose only raise IS `raise ModelRetry(...)` is already using the
+    # SDK's recovery channel correctly, and firing on it would be a false
+    # positive. ModelRetry is a bare imported name with no structural
+    # signature, which is the narrow case the schema reserves has_body_text for.
+    match:
+      all:
+        - has_raise: true
+        - has_try_except: false
+        - not:
+            has_body_text:
+              - ModelRetry
+    explanation: >
+      This tool raises an exception that is neither caught nor a ModelRetry.
+      Pydantic AI treats the two paths very differently: ModelRetry is captured
+      by the agent, appended to the message history as feedback, and the model
+      gets another attempt bounded by the agent's retries setting. Every other
+      exception propagates out of agent.run() and ends the run, so a transient
+      failure the model could have worked around — a bad argument it could
+      correct, a lookup that missed — kills the whole call instead. The caller
+      also receives a raw traceback rather than a result, and the message may
+      carry internal detail (paths, connection strings) the tool never meant to
+      expose.
+    fix: >
+      Decide which failures the model can act on. For those, raise
+      ModelRetry("...") with a message that tells the model exactly what to
+      change, so the agent re-prompts within its retry budget. For failures the
+      model cannot fix, catch the specific exception and return a structured
+      result the caller can branch on (an error field plus a retryable flag)
+      rather than letting it escape agent.run().
