@@ -1986,6 +1986,23 @@ def fetch_data(x: str) -> dict:
     return {}
 `,
 		toolConfig: nil, wantFires: false},
+
+	// ─── AG2-015: mutating AutoGen tool with no idempotency key ─────────────
+	{name: "AG2-015 fires on mutating tool without key", ruleID: "AG2-015", kind: models.KindAutoGenTool, src: `
+def refund_payment(charge_id: str, amount_cents: int) -> dict:
+    """Refund a charge."""
+    return {"ok": True}
+`, wantFires: true},
+	{name: "AG2-015 silent with idempotency key", ruleID: "AG2-015", kind: models.KindAutoGenTool, src: `
+def refund_payment(charge_id: str, amount_cents: int, idempotency_key: str) -> dict:
+    """Refund a charge."""
+    return {"ok": True}
+`, wantFires: false},
+	{name: "AG2-015 silent on a read-only tool name", ruleID: "AG2-015", kind: models.KindAutoGenTool, src: `
+def get_payment(charge_id: str) -> dict:
+    """Get a charge."""
+    return {"ok": True}
+`, wantFires: false},
 }
 
 // policyRepoRuleCases covers repo-scoped rules.
@@ -2246,7 +2263,6 @@ var policyRepoRuleCases = []policyRepoCase{
 		},
 		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKOpenAIAgents}},
 		false},
-
 }
 
 // optionsWithPermissionMode builds a ClaudeAgentOptionsDef whose captured
