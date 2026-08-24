@@ -1986,6 +1986,38 @@ def fetch_data(x: str) -> dict:
     return {}
 `,
 		toolConfig: nil, wantFires: false},
+
+	// ─── CSDK-021 / CSDK-022: TS Claude SDK description quality ─────────────
+	{
+		name: "CSDK-021 fires on placeholder description", ruleID: "CSDK-021",
+		kind: models.KindClaudeSDKTool, lang: models.LanguageTypeScript, wantFires: true,
+		src: "import { tool } from \"@anthropic-ai/claude-agent-sdk\";\n" +
+			"export const t = tool(\"lookup_order\", \"TODO: describe this tool.\", {}, async () => ({ content: [] }));\n",
+	},
+	{
+		name: "CSDK-021 silent on a real description", ruleID: "CSDK-021",
+		kind: models.KindClaudeSDKTool, lang: models.LanguageTypeScript, wantFires: false,
+		src: "import { tool } from \"@anthropic-ai/claude-agent-sdk\";\n" +
+			"export const t = tool(\"lookup_order\", \"Look up one order by its number and return its fulfillment status.\", {}, async () => ({ content: [] }));\n",
+	},
+	{
+		name: "CSDK-022 fires on a too-short description", ruleID: "CSDK-022",
+		kind: models.KindClaudeSDKTool, lang: models.LanguageTypeScript, wantFires: true,
+		src: "import { tool } from \"@anthropic-ai/claude-agent-sdk\";\n" +
+			"export const t = tool(\"list_orders\", \"Gets data.\", {}, async () => ({ content: [] }));\n",
+	},
+	{
+		name: "CSDK-022 silent on a full description", ruleID: "CSDK-022",
+		kind: models.KindClaudeSDKTool, lang: models.LanguageTypeScript, wantFires: false,
+		src: "import { tool } from \"@anthropic-ai/claude-agent-sdk\";\n" +
+			"export const t = tool(\"list_orders\", \"List every order belonging to one customer, most recent first.\", {}, async () => ({ content: [] }));\n",
+	},
+	{
+		name: "CSDK-022 silent when the description is absent (CSDK-014's case)", ruleID: "CSDK-022",
+		kind: models.KindClaudeSDKTool, lang: models.LanguageTypeScript, wantFires: false,
+		src: "import { tool } from \"@anthropic-ai/claude-agent-sdk\";\n" +
+			"export const t = tool(\"list_orders\", \"\", {}, async () => ({ content: [] }));\n",
+	},
 }
 
 // policyRepoRuleCases covers repo-scoped rules.
@@ -2246,7 +2278,6 @@ var policyRepoRuleCases = []policyRepoCase{
 		},
 		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKOpenAIAgents}},
 		false},
-
 }
 
 // optionsWithPermissionMode builds a ClaudeAgentOptionsDef whose captured
