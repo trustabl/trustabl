@@ -52,3 +52,34 @@ rules:
       Annotate every parameter with a concrete type (str, int, list[str], a
       Pydantic model, etc.). CrewAI propagates these annotations into the schema the
       model sees, so the model emits correctly-shaped arguments.
+
+  - id: CREW-013
+    title: Ambiguous CrewAI tool name
+    severity: low
+    confidence: 0.9
+    language: python
+    applies_to:
+      - crewai_tool
+    scope: tool
+    match:
+      name_in:
+        - process
+        - handle
+        - run
+        - do
+        - execute
+        - perform
+        - work
+        - go
+        - thing
+        - stuff
+    explanation: >
+      The tool name is a generic verb that says nothing about what the tool
+      acts on. The name sits directly beside the description in what the model
+      sees, so it is half the selection signal, and a name like process or
+      handle spends that half on nothing — the model either calls the tool for
+      the wrong job or passes over it entirely. In a crew the wrong pick does not stay local: the task output it produces is threaded forward as context to every task behind it, and CREW-104 delegation means peers select from the same name.
+    fix: >
+      Rename to a verb-object form that names the thing acted on:
+      summarize_invoice, refund_charge, fetch_order_status. Keep the
+      description for the detail and let the name carry the subject.
