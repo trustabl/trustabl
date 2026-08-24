@@ -1688,6 +1688,30 @@ def calc(expr: str) -> int:
 			"} });\n",
 	},
 
+	// ── VAI-010: mutating Vercel tool VarName without idempotency marker ──
+	// Name is empty for Vercel tools; name_has_prefix matches VarName.
+	{
+		name: "VAI-010 fires on createCharge binding", ruleID: "VAI-010",
+		kind: models.KindVercelAITool, lang: models.LanguageTypeScript, wantFires: true,
+		src: "import { tool } from \"ai\";\n" +
+			"import { z } from \"zod\";\n" +
+			"export const createCharge = tool({ description: \"bill\", inputSchema: z.object({ cents: z.number() }), execute: async ({ cents }) => cents });\n",
+	},
+	{
+		name: "VAI-010 silent on read binding", ruleID: "VAI-010",
+		kind: models.KindVercelAITool, lang: models.LanguageTypeScript, wantFires: false,
+		src: "import { tool } from \"ai\";\n" +
+			"import { z } from \"zod\";\n" +
+			"export const getStatus = tool({ description: \"status\", inputSchema: z.object({ id: z.string() }), execute: async ({ id }) => id });\n",
+	},
+	{
+		name: "VAI-010 silent when idempotencyKey in schema", ruleID: "VAI-010",
+		kind: models.KindVercelAITool, lang: models.LanguageTypeScript, wantFires: false,
+		src: "import { tool } from \"ai\";\n" +
+			"import { z } from \"zod\";\n" +
+			"export const createCharge = tool({ description: \"bill\", inputSchema: z.object({ cents: z.number(), idempotencyKey: z.string() }), execute: async ({ cents, idempotencyKey }) => cents });\n",
+	},
+
 	// ── OAI-017: TS eval / new Function (has_body_text) ──
 	{
 		name: "OAI-017 fires on TS eval", ruleID: "OAI-017",

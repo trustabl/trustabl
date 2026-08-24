@@ -413,6 +413,19 @@ func TestPred_NameHasPrefix_Miss(t *testing.T) {
 	}
 }
 
+func TestPred_NameHasPrefix_FallsBackToVarName(t *testing.T) {
+	// Vercel AI tools leave Name empty; the binding identifier is VarName.
+	tool := models.ToolDef{VarName: "createCharge"}
+	if !rules.PredNameHasPrefix([]string{"create", "send"}, tool) {
+		t.Error("expected NameHasPrefix hit via VarName when Name is empty")
+	}
+	tool.Name = "get_order"
+	tool.VarName = "createCharge"
+	if rules.PredNameHasPrefix([]string{"create", "send"}, tool) {
+		t.Error("Name must win over VarName when both are set")
+	}
+}
+
 // ─── param_name_matches ───────────────────────────────────────────────────────
 
 func TestPred_ParamNameMatches_ExactHit(t *testing.T) {
