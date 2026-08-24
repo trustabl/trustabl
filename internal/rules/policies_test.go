@@ -1986,6 +1986,27 @@ def fetch_data(x: str) -> dict:
     return {}
 `,
 		toolConfig: nil, wantFires: false},
+
+	// ─── AG2-014: AutoGen path param reaching I/O unnormalized ──────────────
+	{name: "AG2-014 fires on path param in open()", ruleID: "AG2-014", kind: models.KindAutoGenTool, src: `
+def read_note(note_path: str) -> str:
+    """Read a note."""
+    with open(note_path, "r") as f:
+        return f.read()
+`, wantFires: true},
+	{name: "AG2-014 silent with .resolve()", ruleID: "AG2-014", kind: models.KindAutoGenTool, src: `
+from pathlib import Path
+def read_note(note_path: str) -> str:
+    """Read a note."""
+    p = Path(note_path).resolve()
+    with open(p, "r") as f:
+        return f.read()
+`, wantFires: false},
+	{name: "AG2-014 silent on non-pathish param", ruleID: "AG2-014", kind: models.KindAutoGenTool, src: `
+def get_note_meta(note_id: str) -> dict:
+    """Get note metadata."""
+    return {"id": note_id}
+`, wantFires: false},
 }
 
 // policyRepoRuleCases covers repo-scoped rules.
@@ -2246,7 +2267,6 @@ var policyRepoRuleCases = []policyRepoCase{
 		},
 		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKOpenAIAgents}},
 		false},
-
 }
 
 // optionsWithPermissionMode builds a ClaudeAgentOptionsDef whose captured

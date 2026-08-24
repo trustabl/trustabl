@@ -1,0 +1,50 @@
+policy:
+  id: autogen_path_safety
+  name: AutoGen filesystem path safety
+  category: autogen
+  description: >
+    Rules that catch a model-supplied filesystem path flowing into an I/O call
+    inside a registered AutoGen tool without containment. A traversal payload
+    like ../../etc/passwd reaches real filesystem state if the tool does not
+    resolve the path and check it against an allowed root.
+
+rules:
+  - id: AG2-014
+    title: AutoGen tool uses a path parameter in I/O without validation
+    severity: high
+    confidence: 0.7
+    language: python
+    applies_to:
+      - autogen_tool
+    scope: tool
+    # call_uses_unnormalized_path_param is per-param: a tool with two path
+    # params and one .resolve() correctly fires on the unresolved one. A
+    # body-wide check would suppress the finding whenever any normalization
+    # appears, masking real exposure on the other param.
+    match:
+      call_uses_unnormalized_path_param:
+        callees:
+          - open
+          - Path
+        callee_prefixes:
+          - shutil.
+          - os.
+    explanation: >
+      This registered tool takes a path-like parameter and hands it to a file or
+      directory operation without resolving it or checking it against an allowed
+      root, so a model-supplied ../../etc/passwd reaches the real filesystem.
+      Type hints do not close this: a parameter annotated str or Path passes
+      AutoGen's schema generation while still carrying a traversal payload,
+      because the annotation constrains the argument's type and not the region
+      of the filesystem it points at. Registered tools also sidestep the
+      containment AG2-001 is about — a crew may run its generated code inside a
+      Docker executor, but a tool registered with register_for_execution runs in
+      the host process, with the host's filesystem view, whatever the code
+      executor is configured to do. Whatever the tool reads is then posted into
+      the message history both agents keep reasoning over.
+    fix: >
+      Resolve the path with Path(...).resolve() and assert the result sits under
+      an allowed root before touching it, rejecting anything that escapes. Keep
+      that check inside the registered function itself: it is the only boundary
+      the tool path crosses, since the code executor's sandbox does not apply
+      here.
