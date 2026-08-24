@@ -1986,6 +1986,30 @@ def fetch_data(x: str) -> dict:
     return {}
 `,
 		toolConfig: nil, wantFires: false},
+
+	// ─── VAI-015: Vercel AI tool writes to the filesystem (typescript) ──────
+	// Coarse has_write_call signal, mirroring CSDK-012 until TS path
+	// normalization analysis exists.
+	{
+		name: "VAI-015 fires on filesystem write", ruleID: "VAI-015",
+		kind: models.KindVercelAITool, lang: models.LanguageTypeScript, wantFires: true,
+		src: "import { tool } from \"ai\";\n" +
+			"import { writeFileSync } from \"node:fs\";\n" +
+			"export const t = tool({ description: \"Save a note to disk for later retrieval.\", inputSchema: {}, execute: async ({ p, body }) => {\n" +
+			"  writeFileSync(p, body);\n" +
+			"  return \"saved\";\n" +
+			"} });\n",
+	},
+	{
+		name: "VAI-015 silent with no filesystem write", ruleID: "VAI-015",
+		kind: models.KindVercelAITool, lang: models.LanguageTypeScript, wantFires: false,
+		src: "import { tool } from \"ai\";\n" +
+			"const notes = new Map<string, string>();\n" +
+			"export const t = tool({ description: \"Save a note to disk for later retrieval.\", inputSchema: {}, execute: async ({ body }) => {\n" +
+			"  notes.set(\"n1\", body);\n" +
+			"  return \"n1\";\n" +
+			"} });\n",
+	},
 }
 
 // policyRepoRuleCases covers repo-scoped rules.
@@ -2246,7 +2270,6 @@ var policyRepoRuleCases = []policyRepoCase{
 		},
 		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKOpenAIAgents}},
 		false},
-
 }
 
 // optionsWithPermissionMode builds a ClaudeAgentOptionsDef whose captured
