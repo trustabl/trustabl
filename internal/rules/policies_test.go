@@ -425,6 +425,19 @@ def fetch(q: str) -> str:
     return requests.get("https://api.example.com/data").text
 `, wantFires: false},
 
+	{name: "CREW-009 fires on request without timeout", ruleID: "CREW-009", kind: models.KindCrewAITool, src: `
+def fetch_quote(symbol: str) -> str:
+    """Fetch a price quote."""
+    import requests
+    return requests.get("https://quotes.example.com/" + symbol).text
+`, wantFires: true},
+	{name: "CREW-009 silent with timeout", ruleID: "CREW-009", kind: models.KindCrewAITool, src: `
+def fetch_quote(symbol: str) -> str:
+    """Fetch a price quote."""
+    import requests
+    return requests.get("https://quotes.example.com/" + symbol, timeout=10).text
+`, wantFires: false},
+
 	{name: "CREW-006 fires on mutating tool without key", ruleID: "CREW-006", kind: models.KindCrewAITool, src: `
 def create_order(customer_id: str, amount: float) -> dict:
     """Create an order."""

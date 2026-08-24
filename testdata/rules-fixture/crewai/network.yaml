@@ -1,0 +1,56 @@
+policy:
+  id: crewai_network
+  name: CrewAI tool network hygiene
+  category: crewai
+  description: >
+    Network-call hygiene inside CrewAI tool functions. A tool that makes a
+    network request without a timeout can hang the agent run indefinitely.
+
+rules:
+  - id: CREW-009
+    title: CrewAI tool network call has no timeout
+    severity: high
+    confidence: 0.85
+    language: python
+    applies_to:
+      - crewai_tool
+    scope: tool
+    match:
+      call_without_kwarg:
+        callees:
+          - requests.get
+          - requests.post
+          - requests.put
+          - requests.delete
+          - requests.patch
+          - requests.head
+          - requests.request
+          - httpx.get
+          - httpx.post
+          - httpx.put
+          - httpx.delete
+          - httpx.patch
+          - httpx.head
+          - httpx.request
+          - requests.Session.get
+          - requests.Session.post
+          - urllib.request.urlopen
+          # Bare `urlopen` covers the from-import form.
+          - urlopen
+          # Aliased aiohttp sessions canonicalize to aiohttp.ClientSession.<m>.
+          - aiohttp.ClientSession.get
+          - aiohttp.ClientSession.post
+        missing: timeout
+    explanation: >
+      This CrewAI tool makes a network request with no timeout, so it hangs
+      indefinitely on a slow or unresponsive remote. The call runs inside the
+      agent's step, and max_iter bounds how many steps an agent takes rather than
+      how long one lasts, so nothing in the crew caps it. In a sequential process
+      the stall also blocks every task queued behind this one: a single
+      unresponsive endpoint stops the whole crew, not just the agent that called
+      it, and no result is produced for any of them.
+    fix: >
+      Pass timeout= (typically 5–30 seconds) to the request. Choose a value tight
+      enough to fail fast and loose enough for a legitimately slow endpoint, and
+      return the timeout to the model as a structured, retryable error so the
+      agent can react rather than waiting on a call that will never return.
