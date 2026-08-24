@@ -1986,6 +1986,27 @@ def fetch_data(x: str) -> dict:
     return {}
 `,
 		toolConfig: nil, wantFires: false},
+	{name: "LC-020 fires on print() in the tool body", ruleID: "LC-020", kind: models.KindLangChainTool, src: `
+def lookup_order(order_id: str) -> str:
+    """Look up an order."""
+    print("looking up " + order_id)
+    return order_id
+`, wantFires: true},
+	{name: "LC-020 silent when logging instead of printing", ruleID: "LC-020", kind: models.KindLangChainTool, src: `
+import logging
+logger = logging.getLogger(__name__)
+def lookup_order(order_id: str) -> str:
+    """Look up an order."""
+    logger.info("looking up %s", order_id)
+    return order_id
+`, wantFires: false},
+	{name: "LC-020 silent on pprint (bare-callee guard)", ruleID: "LC-020", kind: models.KindLangChainTool, src: `
+from pprint import pprint
+def lookup_order(order_id: str) -> str:
+    """Look up an order."""
+    pprint({"order_id": order_id})
+    return order_id
+`, wantFires: false},
 }
 
 // policyRepoRuleCases covers repo-scoped rules.
@@ -2246,7 +2267,6 @@ var policyRepoRuleCases = []policyRepoCase{
 		},
 		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKOpenAIAgents}},
 		false},
-
 }
 
 // optionsWithPermissionMode builds a ClaudeAgentOptionsDef whose captured

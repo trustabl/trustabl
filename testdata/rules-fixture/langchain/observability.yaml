@@ -1,0 +1,38 @@
+policy:
+  id: langchain_observability
+  name: LangChain tool observability hygiene
+  category: langchain
+  description: >
+    Rules covering how a LangChain tool emits diagnostics. A tool body that
+    prints to stdout writes outside the callback system the rest of the run is
+    recorded through, so the record reaches neither the model nor the trace.
+
+rules:
+  - id: LC-020
+    title: LangChain tool prints to stdout for diagnostics
+    severity: low
+    confidence: 0.65
+    language: python
+    applies_to:
+      - langchain_tool
+    scope: tool
+    match:
+      has_print_call: true
+    explanation: >
+      The tool body calls print(), which writes to the process's stdout. The
+      model never sees it — only the return value flows back into the executor
+      loop — so the output silently disappears in any deployment that captures
+      structured records rather than raw stdout. It is a bigger loss in this SDK
+      than in most, because LangChain already threads every tool start, end, and
+      error through its callback system into LangSmith or whatever tracer is
+      configured. A bare print is the one diagnostic that lands outside that,
+      detached from the run and the step that produced it, so the moment anyone
+      debugs from a trace rather than a terminal it is simply not there. If the
+      same tool is ever served over an MCP stdio transport, the loose print
+      frames interleave with JSON-RPC messages and corrupt the stream.
+    fix: >
+      Remove the print(). For operator diagnostics, emit through a module logger
+      (logging.getLogger(__name__).info(...)) so it lands in the application's
+      log sink, or attach the detail to the run through the callback system so
+      it is correlated with the step that produced it. If the information needs
+      to reach the model, return it as part of the tool's result instead.
