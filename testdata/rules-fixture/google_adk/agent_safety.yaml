@@ -282,3 +282,39 @@ rules:
       Pass a `description` in the `new LlmAgent({...})` options that names this
       agent's role and the kind of input it handles. One sentence is enough; treat
       it as documentation the parent agent's model reads to route.
+
+  - id: ADK-112
+    title: Workflow agent has no description
+    severity: medium
+    confidence: 0.85
+    language: python
+    applies_to:
+      - adk_sequential_agent
+      - adk_parallel_agent
+      - adk_loop_agent
+    scope: agent
+    match:
+      all:
+        - agent_class: [SequentialAgent, ParallelAgent, LoopAgent]
+        - agent_kwarg_missing: [description]
+    explanation: >
+      Google ADK routes delegation using the description= field on each agent in
+      a sub_agents tree, and a workflow agent is routed to exactly like an
+      LlmAgent is: when the parent decides whether to hand off, the model sees
+      only the child's description. A SequentialAgent, ParallelAgent, or
+      LoopAgent with no description sits in the tree but gives the parent's model
+      no signal to pick it, so it is effectively unreachable through delegation
+      — a silent routing bug, not an error. It is easier to miss on a workflow
+      agent than on an LlmAgent: a workflow agent has no instruction= and no
+      model= of its own, so nothing else about its construction reads as
+      model-facing text and the missing description does not look like an
+      omission. What the agent orchestrates is also invisible from the outside —
+      the parent cannot infer "runs these three steps in order" from the class
+      name alone.
+    fix: >
+      Add a description= kwarg naming what the workflow accomplishes and the
+      kind of input it expects, not its mechanics — the parent's model is
+      choosing whether this branch is the right one, so "drafts, reviews, and
+      revises a support reply" routes correctly where "sequential agent" does
+      not. One sentence is usually enough. Treat it as documentation for the
+      parent agent's model.
