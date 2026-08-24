@@ -77,3 +77,63 @@ rules:
       Pass a one-sentence description in the tool() config (or the
       DynamicStructuredTool options) naming what the tool does, the inputs it
       expects, and what it returns. Write it for the model, not a human reader.
+
+  - id: LC-021
+    title: TypeScript LangChain tool description is a placeholder
+    severity: low
+    confidence: 0.85
+    language: typescript
+    applies_to:
+      - langchain_tool
+    scope: tool
+    match:
+      has_description_text:
+        - todo
+        - tbd
+        - fixme
+        - placeholder
+        - no description
+        - does stuff
+    explanation: >
+      The tool sets a description, so it passes LC-010, but the string is a
+      placeholder rather than real content. LangChain.js has no docstring to
+      fall back on — the description field is the entire account of the tool the
+      model sees — so "TODO: describe this tool" leaves the model guessing from
+      the tool name. The Zod schema does not compensate: it constrains the shape
+      of the arguments once the model has chosen this tool, never whether
+      choosing it was right. Mis-selection scales badly here because a
+      LangChain agent is routinely handed a dozen or more tools at once, and
+      each wrong pick consumes an iteration against the executor's maxIterations
+      budget, so a run can exhaust its steps and return nothing useful.
+    fix: >
+      Replace the placeholder with a real description covering what the tool
+      does, what it returns, and when the model should call it rather than a
+      neighboring tool. The string is passed to the model verbatim, so write it
+      for the model rather than a human maintainer.
+
+  - id: LC-022
+    title: TypeScript LangChain tool description is too short to guide model selection
+    severity: low
+    confidence: 0.8
+    language: typescript
+    applies_to:
+      - langchain_tool
+    scope: tool
+    match:
+      all:
+        - has_docstring: true
+        - description_length_lt: 40
+    explanation: >
+      A description under 40 characters is rarely enough to convey what a tool
+      does, what it returns, and when to call it rather than a similarly named
+      neighbor. With no docstring fallback in LangChain.js, a stub like "Gets
+      data." is the whole prompt-side account of the tool, so scope and
+      preconditions are left to guesswork. The cost compounds in the executor
+      loop: each mis-selected call spends an iteration against the
+      maxIterations bound LC-111 checks for, so a thin description can burn the
+      run's step budget rather than the run producing an answer.
+    fix: >
+      Expand the description to at least a full sentence covering inputs,
+      outputs, and the situation in which this tool should be used over the
+      alternatives. Where two tools are easy to confuse, say in each which one
+      the other case belongs to.
