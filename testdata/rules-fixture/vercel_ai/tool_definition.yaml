@@ -58,3 +58,60 @@ rules:
       field per argument (z.object({ city: z.string(), units: z.enum([...]) })).
       Reserve dynamicTool for the rare case where the input genuinely cannot be
       typed, and even then validate the shape inside execute() before using it.
+
+  - id: VAI-013
+    title: Vercel AI tool description is a placeholder
+    severity: low
+    confidence: 0.85
+    language: typescript
+    applies_to:
+      - vercel_ai_tool
+    scope: tool
+    match:
+      has_description_text:
+        - todo
+        - tbd
+        - fixme
+        - placeholder
+        - no description
+        - does stuff
+    explanation: >
+      The tool sets a description, so it passes VAI-004, but the string is a
+      placeholder rather than real content. That leaves the tool in exactly the
+      state VAI-004 exists to prevent: the Vercel AI SDK has no docstring
+      fallback, so this string is the entire account of the tool in the prompt,
+      and "TODO: describe this tool" tells the model nothing the function name
+      did not. The model skips the tool or calls it with the wrong arguments,
+      and nothing in the SDK reports that the description was a stub — the only
+      symptom is a tool the model uses badly or not at all.
+    fix: >
+      Replace the placeholder with a real description covering what the tool
+      does, what it returns, and when the model should call it rather than a
+      neighboring tool. The SDK passes the string to the model verbatim, so
+      write it for the model rather than a human maintainer.
+
+  - id: VAI-014
+    title: Vercel AI tool description is too short to guide model selection
+    severity: low
+    confidence: 0.8
+    language: typescript
+    applies_to:
+      - vercel_ai_tool
+    scope: tool
+    match:
+      all:
+        - has_docstring: true
+        - description_length_lt: 40
+    explanation: >
+      A description under 40 characters is rarely enough to convey what a tool
+      does, what it returns, and when to call it rather than a similarly named
+      neighbor. With no docstring fallback in this SDK, a stub like "Gets data."
+      is the whole prompt-side account of the tool, so scope and preconditions
+      are left to guesswork. Each mis-selected call also consumes a step against
+      the VAI-007 tool-loop bound, so a thin description spends the loop budget
+      instead of the run producing an answer.
+    fix: >
+      Expand the description to at least a full sentence covering inputs,
+      outputs, and the situation in which this tool should be used over the
+      alternatives. Where two tools are easy to confuse, say in each which one
+      the other case belongs to.

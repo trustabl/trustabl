@@ -1986,6 +1986,40 @@ def fetch_data(x: str) -> dict:
     return {}
 `,
 		toolConfig: nil, wantFires: false},
+
+	// ─── VAI-013 / VAI-014: Vercel AI description quality (typescript) ──────
+	// has_description_text and description_length_lt both read
+	// ToolDef.Description, which for TS is the explicit `description` field.
+	{
+		name: "VAI-013 fires on placeholder description", ruleID: "VAI-013",
+		kind: models.KindVercelAITool, lang: models.LanguageTypeScript, wantFires: true,
+		src: "import { tool } from \"ai\";\n" +
+			"export const t = tool({ description: \"TODO: describe this tool.\", inputSchema: {}, execute: async () => \"x\" });\n",
+	},
+	{
+		name: "VAI-013 silent on a real description", ruleID: "VAI-013",
+		kind: models.KindVercelAITool, lang: models.LanguageTypeScript, wantFires: false,
+		src: "import { tool } from \"ai\";\n" +
+			"export const t = tool({ description: \"Look up a single order by its identifier and return its status.\", inputSchema: {}, execute: async () => \"x\" });\n",
+	},
+	{
+		name: "VAI-014 fires on a too-short description", ruleID: "VAI-014",
+		kind: models.KindVercelAITool, lang: models.LanguageTypeScript, wantFires: true,
+		src: "import { tool } from \"ai\";\n" +
+			"export const t = tool({ description: \"Gets data.\", inputSchema: {}, execute: async () => \"x\" });\n",
+	},
+	{
+		name: "VAI-014 silent on a full description", ruleID: "VAI-014",
+		kind: models.KindVercelAITool, lang: models.LanguageTypeScript, wantFires: false,
+		src: "import { tool } from \"ai\";\n" +
+			"export const t = tool({ description: \"List every order belonging to one customer, most recent first.\", inputSchema: {}, execute: async () => \"x\" });\n",
+	},
+	{
+		name: "VAI-014 silent when the description is absent (VAI-004's case)", ruleID: "VAI-014",
+		kind: models.KindVercelAITool, lang: models.LanguageTypeScript, wantFires: false,
+		src: "import { tool } from \"ai\";\n" +
+			"export const t = tool({ inputSchema: {}, execute: async () => \"x\" });\n",
+	},
 }
 
 // policyRepoRuleCases covers repo-scoped rules.
@@ -2246,7 +2280,6 @@ var policyRepoRuleCases = []policyRepoCase{
 		},
 		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKOpenAIAgents}},
 		false},
-
 }
 
 // optionsWithPermissionMode builds a ClaudeAgentOptionsDef whose captured
