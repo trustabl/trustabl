@@ -45,6 +45,104 @@ is the copy the signature covers.
 
 ---
 
+## Producing one — the normal path
+
+This is what you run on your own machine to attest a scan result. Key mode, no
+transparency log, nothing published.
+
+`attest` and `verify` shell out to [cosign](https://github.com/sigstore/cosign).
+cosign is needed **only** for attestation — a plain `scan` never touches it. Both
+cosign v2 and v3 are supported and tested. Trustabl picks the right
+no-transparency-log mechanism per cosign version automatically.
+
+### Step 0 — install cosign
+
+Follow the install commands for your OS. Nothing else here works without it.
+
+### Step 1 — generate a signing key pair
+
+```sh
+export COSIGN_PASSWORD=""        # skip the passphrase prompt (omit for a real key)
+cosign generate-key-pair          # writes cosign.key (private) + cosign.pub (public)
+```
+
+You sign with `cosign.key` and hand consumers `cosign.pub`.
+
+### Step 2 — attest
+
+Two ways, depending on whether you already have a scan result.
+
+**Attest a report you already have** — the `attest` subcommand loads a persisted
+report and signs it:
+
+```sh
+trustabl attest report.json \
+  --key cosign.key --bundle att.bundle.json --no-tlog
+```
+
+**Or scan and sign in one step:**
+
+```sh
+trustabl scan https://github.com/google/adk-samples \
+  --json-out report.json \
+  --attest --attest-key cosign.key --attest-bundle att.bundle.json --attest-no-tlog
+```
+
+Either way you get `report.json`, `trustabl-predicate.json`, and the signed
+`att.bundle.json`.
+
+> **Exit 1 here only means findings were present.** The bundle is still written —
+> it signs the verdict, pass or fail. Do not treat a non-zero exit as a signing
+> failure.
+
+### Step 3 — verify (what a consumer runs)
+
+```sh
+trustabl verify report.json --key cosign.pub --bundle att.bundle.json --no-tlog
+```
+
+`Verified OK`, exit 0 — the report is authentic and unmodified.
+
+### Step 4 — prove tamper detection
+
+Worth doing once so you trust the mechanism:
+
+```sh
+echo '{"tampered":true}' >> report.json
+trustabl verify report.json --key cosign.pub --bundle att.bundle.json --no-tlog
+```
+
+Verification now **fails**, exit 1. The signature is bound to the exact report
+bytes, so any edit is caught.
+
+---
+
+## Keyless — the CI path
+
+Keyless has **no private key to manage**, because it borrows the runner's ambient
+OIDC identity. That only exists in CI, so this is not the path for a laptop.
+
+```sh
+trustabl attest report.json --bundle att.bundle.json
+
+trustabl verify report.json --bundle att.bundle.json \
+  --certificate-identity "https://github.com/<org>/<repo>/.github/workflows/<file>@refs/heads/main" \
+  --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
+```
+
+Omitting `--key` is what selects keyless. Signing goes through Fulcio and the
+entry lands in Rekor.
+
+> **Every keyless run writes a permanent entry to the PUBLIC Rekor transparency
+> log.** It cannot be deleted. Do not run keyless attestation on a private repo
+> whose name you do not want published, and do not wire it to run on every push.
+
+**`--certificate-identity` is not optional in practice.** Verifying without
+pinning the identity and issuer confirms only that *somebody* signed this — not
+that your pipeline did.
+
+---
+
 ## Reading the predicate
 
 A real predicate, from a scan of `google/adk-python`:
@@ -130,47 +228,6 @@ it does not understand.
 
 The `subject` digest is the SHA-256 of the report. **This is the binding.** If
 the report is edited by one byte, verification fails.
-
----
-
-## Verifying
-
-`attest` and `verify` shell out to [cosign](https://github.com/sigstore/cosign).
-cosign is needed **only** for attestation — a plain `scan` never touches it. Both
-cosign v2 and v3 are supported and tested.
-
-### Key mode (offline, no transparency log)
-
-```bash
-trustabl scan . --json-out report.json --attest \
-  --attest-key cosign.key --attest-bundle att.bundle.json --attest-no-tlog
-
-trustabl verify report.json --bundle att.bundle.json --key cosign.pub --no-tlog
-```
-
-Use this for air-gapped or internal pipelines where you hold the key and do not
-want a public record.
-
-### Keyless mode (CI identity, public transparency log)
-
-```bash
-trustabl attest report.json --bundle att.bundle.json
-
-trustabl verify report.json --bundle att.bundle.json \
-  --certificate-identity "https://github.com/<org>/<repo>/.github/workflows/<file>@refs/heads/main" \
-  --certificate-oidc-issuer "https://token.actions.githubusercontent.com"
-```
-
-Signing uses the runner's ambient GitHub OIDC identity through Fulcio, and the
-entry lands in Rekor.
-
-> **Every keyless run writes a permanent entry to the PUBLIC Rekor transparency
-> log.** It cannot be deleted. Do not run keyless attestation on a private repo
-> whose name you do not want published, and do not wire it to run on every push.
-
-**`--certificate-identity` is not optional in practice.** Verifying without
-pinning the identity and issuer confirms only that *somebody* signed this — not
-that your pipeline did.
 
 ---
 
