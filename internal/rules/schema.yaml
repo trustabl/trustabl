@@ -171,8 +171,16 @@ rules:
 #   has_shell_call:         body calls subprocess.* / os.system / os.popen / os.spawn*
 #   has_code_exec_call:     body calls the eval/exec/compile builtins (bare callee,
 #                           so re.compile and other attribute calls are not flagged)
-#   has_print_call:         body calls the print builtin (bare callee, so pprint and
-#                           other callees containing "print" are not flagged)
+#   has_print_call:         body writes to stdout for diagnostics. Python: calls
+#                           the print builtin (bare callee, so pprint and other
+#                           callees containing "print" are not flagged).
+#                           TypeScript/JavaScript: calls console.log /
+#                           console.info / console.debug / process.stdout.write.
+#                           console.warn, console.error and process.stderr.write
+#                           are deliberately NOT flagged — Node routes them to
+#                           stderr, which is the remediation (and on an MCP stdio
+#                           server the only safe destination, since stdout carries
+#                           the JSON-RPC frames).
 #   has_write_call:         body opens a file 'w'/'a'/'x', or shutil.copy/copy2/move/rmtree
 #   has_dynamic_url_call:   HTTP call where the URL is a non-literal (param/f-string)
 #   has_http_call_without_timeout: (TypeScript only) a fetch/axios/got/undici call
