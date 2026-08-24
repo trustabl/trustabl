@@ -58,3 +58,36 @@ rules:
       field per argument (z.object({ city: z.string(), units: z.enum([...]) })).
       Reserve dynamicTool for the rare case where the input genuinely cannot be
       typed, and even then validate the shape inside execute() before using it.
+
+  - id: VAI-016
+    title: Ambiguous Vercel AI tool binding name
+    severity: low
+    confidence: 0.85
+    language: typescript
+    applies_to:
+      - vercel_ai_tool
+    scope: tool
+    match:
+      name_in:
+        - process
+        - handle
+        - run
+        - do
+        - execute
+        - perform
+        - work
+        - go
+        - thing
+        - stuff
+    explanation: >
+      A Vercel AI SDK tool whose binding identifier is a generic name like
+      `process`, `handle`, or `run` gives the model no signal about intent once
+      that binding is registered under the agent's tools record. Vercel leaves
+      ToolDef.Name empty (the model-facing name is the record key), so this rule
+      matches the binding identifier (VarName). Authors often register
+      `tools: { process }` or reuse a throwaway binding that later becomes the
+      public name — the model then mis-routes or under-calls the tool.
+    fix: >
+      Rename the binding to a verb-object form (e.g. `summarizeInvoice`,
+      `fetchWeather`) and use that same identifier as the agent's tools-record
+      key so the model-facing name stays descriptive.
