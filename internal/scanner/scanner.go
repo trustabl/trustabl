@@ -179,7 +179,7 @@ func Run(cfg Config) (models.ScanResult, error) {
 		rep.Fatal(err)
 		return models.ScanResult{}, fmt.Errorf("recon: %w", err)
 	}
-	rep.EndPhase(fmt.Sprintf("%d files · %s", len(profile.Manifest.PythonFiles), languagesLabel(profile.Languages)))
+	rep.EndPhase(fmt.Sprintf("%d files · %s", profile.Manifest.SourceFileCount(), languagesLabel(profile.Languages)))
 	reconStop()
 	log.Verbosef("recon: languages %s · %d SDK deps declared", languagesLabel(profile.Languages), len(profile.SDKDeps))
 	if log.Enabled(logx.LevelDebug) {
@@ -194,7 +194,7 @@ func Run(cfg Config) (models.ScanResult, error) {
 	// Step 2: inventory (per-language AST; Python only for now)
 	rep.StartPhase("inventory", "Inventory")
 	inventoryStop := log.Timer("inventory")
-	rep.SetTotal(len(profile.Manifest.PythonFiles) + len(profile.Manifest.TypeScriptFiles) + len(profile.Manifest.JavaScriptFiles) + len(profile.Manifest.GoFiles) + len(profile.Manifest.CSharpFiles) + len(profile.Manifest.PHPFiles) + len(profile.Manifest.RustFiles))
+	rep.SetTotal(profile.Manifest.SourceFileCount())
 	tools, parsed, pySkipped, err := analysis.DiscoverTools(ctx, profile.Manifest, func(path string) {
 		rep.Advance(path)
 	})

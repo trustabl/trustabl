@@ -293,6 +293,16 @@ type ScanManifest struct {
 	Components             []AgentComponent `json:"components,omitempty"`
 }
 
+// SourceFileCount returns the number of source files across every language the
+// inventory step parses (Python, TypeScript, JavaScript, Go, C#, PHP, Rust).
+// This is the count that pairs with the detected-languages label — using a
+// single language's bucket would undercount any multi-language repo. Data files
+// (YAML/JSON/Markdown) are intentionally excluded: they are not AST-parsed.
+func (m ScanManifest) SourceFileCount() int {
+	return len(m.PythonFiles) + len(m.TypeScriptFiles) + len(m.JavaScriptFiles) +
+		len(m.GoFiles) + len(m.CSharpFiles) + len(m.PHPFiles) + len(m.RustFiles)
+}
+
 // SDK identifies a tool/agent SDK we know about.
 type SDK string
 
