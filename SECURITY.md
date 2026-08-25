@@ -14,9 +14,10 @@ Useful things to include: the version (`trustabl --version`), the platform, the
 smallest input that reproduces it, and what you expected instead. A proof of
 concept is welcome but not required.
 
-We will acknowledge the report and tell you whether we consider it in scope. If
-we accept it, we will keep you updated through the advisory and credit you in
-the release notes unless you would rather we did not.
+We aim to acknowledge a report within three working days, and to tell you
+whether it is in scope within a week. If we accept it, we will keep you updated
+through the advisory and credit you in the release notes unless you would rather
+we did not.
 
 ## Supported versions
 

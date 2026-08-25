@@ -1,6 +1,6 @@
 cff-version: 1.2.0
-message: "If you use Trustabl in your work, please cite it as below."
-title: Trustabl
+title: "Trustabl: static analysis and automated remediation for AI agent reliability"
+message: "If you use Trustabl in your research, please cite it as below."
 abstract: >-
   Trustabl finds and fixes reliability, safety, and security defects in AI-agent
   codebases. It discovers a repository's agent and tool inventory with
@@ -9,21 +9,18 @@ abstract: >-
   Scanning is fully local and deterministic - no LLM, no network, no code upload.
 type: software
 authors:
-  - name: Trustabl
-    website: "https://trustabl.ai"
+  - family-names: Hogan
+    given-names: Mike
+    affiliation: Trustabl
 repository-code: "https://github.com/trustabl/trustabl"
-url: "https://trustabl.ai"
+url: "https://www.trustabl.ai"
 license: Apache-2.0
 version: 0.1.7
 date-released: "2026-08-14"
 keywords:
-  - agent-reliability
-  - ai-agents
-  - static-analysis
-  - sarif
-  - mcp
-  - claude-agent-sdk
-  - openai-agents-sdk
-  - google-adk
-  - langchain
-  - crewai
+  - AI agent reliability
+  - static analysis
+  - automated remediation
+  - Model Context Protocol
+  - LLM agents
+  - AI safety
