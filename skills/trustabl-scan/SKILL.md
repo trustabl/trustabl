@@ -13,7 +13,7 @@ description: >-
 
 # Self-audit agent code with Trustabl
 
-Trustabl is a static analyzer for agent-SDK code. It models the tools, agents,
+Trustabl finds and fixes reliability defects in agent-SDK code. It models the tools, agents,
 subagents, and MCP servers a repo declares and checks them against a rule
 catalog, reporting reliability and safety weaknesses with an explanation, a
 suggested fix, and a confidence score. Run it as a self-audit at generation

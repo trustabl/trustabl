@@ -90,7 +90,7 @@ brews:
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     homepage: "https://github.com/trustabl/trustabl"
-    description: "Static analyzer for agent reliability"
+    description: "Find and fix agent reliability issues"
     license: "Apache-2.0"
     install: |
       bin.install "trustabl"
@@ -106,7 +106,7 @@ scoops:
       name: scoop-bucket
       token: "{{ .Env.SCOOP_BUCKET_GITHUB_TOKEN }}"
     homepage: "https://github.com/trustabl/trustabl"
-    description: "Static analyzer for agent reliability"
+    description: "Find and fix agent reliability issues"
     license: Apache-2.0
 
 # Docker is NOT built here: this goreleaser run executes on a macOS runner
