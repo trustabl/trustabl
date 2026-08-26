@@ -13,7 +13,7 @@ CrewAI, and MCP agents — before production.
   <a href="https://github.com/trustabl/trustabl/actions/workflows/test.yml"><img src="https://img.shields.io/github/actions/workflow/status/trustabl/trustabl/test.yml?branch=main&amp;label=tests" alt="Tests"></a>
   <a href="go.mod"><img src="https://img.shields.io/github/go-mod/go-version/trustabl/trustabl" alt="Go version"></a>
   <br>
-  <a href="https://github.com/trustabl/trustabl-rules"><img src="https://img.shields.io/badge/rules-206-brightgreen" alt="206 detection rules"></a>
+  <a href="https://github.com/trustabl/trustabl-rules"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Ftrustabl%2Ftrustabl-rules%2Fmain%2Fbadges%2Frules.json" alt="Detection rule count"></a>
   <a href="COVERAGE.md"><img src="https://img.shields.io/badge/SDKs-9-blue" alt="9 SDKs supported"></a>
   <a href="COVERAGE.md"><img src="https://img.shields.io/badge/languages-7-blue" alt="7 languages supported"></a>
   <a href="COVERAGE.md"><img src="https://img.shields.io/badge/scopes-5-blue" alt="5 detection scopes"></a>
@@ -50,7 +50,7 @@ trustabl scan . --format json > scan.json
 trustabl enrich --input scan.json --repo . --diff --apply                     # preview, then fix
 ```
 
-185+ rules · 9 SDKs · 7 languages · human, JSON, or SARIF 2.1.0 output ·
+9 SDKs · 7 languages · human, JSON, or SARIF 2.1.0 output ·
 CI-friendly exit codes · also runs as a local stdio MCP server (`trustabl mcp`).
 
 Deepest coverage for **Claude Agent SDK**, **OpenAI Agents SDK**, **Google ADK**,
@@ -328,6 +328,12 @@ The rule schema's `language:` field gates per-language rule sets.
   wraps the scan and uploads SARIF to the Security tab for you; for any other
   CI, `--format sarif --output <file>` produces a SARIF 2.1.0 report that feeds
   `github/codeql-action/upload-sarif` or any SARIF-aware step.
+- **Trustabl is open core.** Everything documented here is Apache-2.0 and
+  complete for its job: the scan needs no key and no network, and autofix uses
+  your own LLM key. Policy generation, compliance mapping and signed governance
+  snapshots are Trustabl Console, a separate commercial product. See
+  [docs/open-source-vs-console.md](docs/open-source-vs-console.md) for the full
+  capability split.
 
 ## What it produces
 
