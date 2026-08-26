@@ -61,6 +61,51 @@ matrix.
 Scanning needs no key and no network. Applying fixes uses your own Anthropic,
 OpenAI, or Google key.
 
+## What a scan looks like
+
+Real output, scanning an agent repo that ships a Claude Agent SDK client, an MCP
+server, a subagent, and two skills:
+
+```console
+$ trustabl scan .
+
+Scan summary
+  Languages:          typescript, javascript
+  SDKs:               claude_agent_sdk
+  Tool definitions:   2    (custom tools with function bodies)
+  Agent tool grants:  14   (tool names the agent may call)
+  MCP servers:        1    (createSdkMcpServer)
+  Subagents:          1    (inbox-searcher)
+  Skills:             2    (action-creator, listener-creator)
+  Findings:           14
+  Overall score:      66%
+
+Surface readiness
+  skill:action-creator          45%  (5 findings)
+  skill:listener-creator        54%  (4 findings)
+  agent:AIClient.queryStream    64%  (2 findings)
+  subagent:inbox-searcher       79%  (1 finding)
+  tool:search_inbox             98%  (1 finding)
+  tool:read_emails             100%  (0 findings)
+
+Findings
+  inbox-searcher
+    [CSDK-201]  HIGH  Subagent is granted Bash  (agent/.claude/agents/inbox-searcher.md:1-5)
+        A subagent with shell access can run arbitrary commands if it is
+        compromised or misdirected.
+        fix: Remove `Bash` from the subagent's `tools:` list unless shell access
+        is essential. Prefer specific tools (Read, Grep, Glob) for read-only roles.
+```
+
+Three things worth noticing:
+
+- **It scores each surface separately.** A repo-wide number hides the problem;
+  `skill:action-creator` at 45% tells you where to look first.
+- **Every finding carries a fix**, not just a complaint — and
+  `trustabl enrich --apply` writes those fixes to source.
+- **The exit code is the CI gate.** `0` when nothing reaches medium severity,
+  `1` when something does, so a pipeline can stop a bad agent from shipping.
+
 ## AI agents pass their demo and fail in production
 
 The failures are rarely exotic. They are the same handful of gaps, over and over:
