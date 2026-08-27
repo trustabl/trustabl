@@ -77,3 +77,34 @@ rules:
       Pass a one-sentence description in the tool() config (or the
       DynamicStructuredTool options) naming what the tool does, the inputs it
       expects, and what it returns. Write it for the model, not a human reader.
+
+  - id: LC-024
+    title: Ambiguous LangChain tool name
+    severity: low
+    confidence: 0.9
+    language: python
+    applies_to:
+      - langchain_tool
+    scope: tool
+    match:
+      name_in:
+        - process
+        - handle
+        - run
+        - do
+        - execute
+        - perform
+        - work
+        - go
+        - thing
+        - stuff
+    explanation: >
+      The tool name is a generic verb that says nothing about what the tool
+      acts on. The name sits directly beside the description in what the model
+      sees, so it is half the selection signal, and a name like process or
+      handle spends that half on nothing — the model either calls the tool for
+      the wrong job or passes over it entirely. A LangChain agent is routinely handed a dozen or more tools at once, so a name that does not discriminate competes against every neighbor in the list, and each wrong pick spends an iteration against LC-102's max_iterations budget.
+    fix: >
+      Rename to a verb-object form that names the thing acted on:
+      summarize_invoice, refund_charge, fetch_order_status. Keep the
+      description for the detail and let the name carry the subject.
