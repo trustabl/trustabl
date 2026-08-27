@@ -1,0 +1,41 @@
+policy:
+  id: autogen_error_handling
+  name: AutoGen error contract hygiene
+  category: autogen
+  description: >
+    Rules covering how a registered AutoGen tool surfaces failure. An
+    unhandled exception in a tool breaks the two-agent reply loop the whole
+    conversation is built on, so the failure surfaces as a stalled or aborted
+    chat rather than something either agent can reason about.
+
+rules:
+  - id: AG2-013
+    title: AutoGen tool raises without a structured error contract
+    severity: low
+    confidence: 0.6
+    language: python
+    applies_to:
+      - autogen_tool
+    scope: tool
+    match:
+      all:
+        - has_raise: true
+        - has_try_except: false
+    explanation: >
+      This registered tool raises an exception it never catches. AutoGen
+      executes tools on the executor agent's side of the conversation and sends
+      the result back as that agent's reply, so an uncaught exception either
+      aborts initiate_chat outright or comes back as a stringified traceback
+      posted into the message history. In the second case both agents keep
+      talking with a traceback as the last observation: the assistant has no
+      failure mode to branch on and no signal about whether a retry could
+      succeed, so it re-issues the same call until the max_round or auto-reply
+      cap (AG2-004, AG2-006) ends the conversation. The traceback also stays in
+      the transcript, carrying file paths and internal detail into every
+      subsequent turn's context.
+    fix: >
+      Catch the failure modes you expect and return a structured value the
+      assistant can branch on — name the failure and say whether retrying could
+      help and what would need to change — instead of letting the exception
+      escape the registered function. Reserve raising for programmer errors no
+      amount of agent reasoning can work around.

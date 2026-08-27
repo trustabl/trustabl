@@ -1986,6 +1986,25 @@ def fetch_data(x: str) -> dict:
     return {}
 `,
 		toolConfig: nil, wantFires: false},
+
+	// ─── AG2-013: AutoGen tool raises with no structured error contract ─────
+	{name: "AG2-013 fires on uncaught raise", ruleID: "AG2-013", kind: models.KindAutoGenTool, src: `
+def lookup_order(order_id: str) -> str:
+    """Look up an order."""
+    if not order_id:
+        raise ValueError("order_id is required")
+    return order_id
+`, wantFires: true},
+	{name: "AG2-013 silent when the failure is caught", ruleID: "AG2-013", kind: models.KindAutoGenTool, src: `
+def lookup_order(order_id: str) -> str:
+    """Look up an order."""
+    try:
+        if not order_id:
+            raise ValueError("order_id is required")
+        return order_id
+    except ValueError:
+        return "error: order_id was empty; supply the customer's order number"
+`, wantFires: false},
 }
 
 // policyRepoRuleCases covers repo-scoped rules.
@@ -2246,7 +2265,6 @@ var policyRepoRuleCases = []policyRepoCase{
 		},
 		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKOpenAIAgents}},
 		false},
-
 }
 
 // optionsWithPermissionMode builds a ClaudeAgentOptionsDef whose captured
