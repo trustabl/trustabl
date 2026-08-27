@@ -309,3 +309,34 @@ rules:
     fix: >
       Rename the method (or set the `#[tool]` `name = "..."` argument) to a
       verb-object form, e.g. `summarize_invoice`, `fetch_weather`.
+
+  - id: MCP-028
+    title: Ambiguous TypeScript MCP tool name
+    severity: low
+    confidence: 0.85
+    language: typescript
+    applies_to:
+      - mcp_tool
+    scope: tool
+    match:
+      name_in:
+        - process
+        - handle
+        - run
+        - do
+        - execute
+        - perform
+        - work
+        - go
+        - thing
+        - stuff
+    explanation: >
+      A TypeScript MCP tool's name is the first argument to
+      `server.registerTool(...)` (or the legacy `server.tool(...)`). Names like
+      `process`, `handle`, or `run` give a connecting model no signal about
+      intent. Because an MCP server is consumed by clients the author does not
+      control, an ambiguous name degrades tool selection everywhere the server is
+      mounted and collides more easily with similarly-named tools from other
+      servers in the same session.
+    fix: >
+      Rename to a verb-object form, e.g. `summarizeInvoice`, `fetchWeather`.
