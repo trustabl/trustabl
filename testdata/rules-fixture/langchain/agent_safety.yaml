@@ -21,14 +21,16 @@ rules:
       agent_uses_hosted_tool_class:
         - PythonREPLTool
         - PythonAstREPLTool
+        - PythonREPL
         - ShellTool
     explanation: >
       This agent's tools list includes a LangChain built-in that executes code or
-      shell commands chosen by the model: PythonREPLTool / PythonAstREPLTool run
-      arbitrary Python, and ShellTool runs arbitrary shell commands. Once such a
-      tool is wired, a prompt injection or a confused model has a direct path to
-      arbitrary code execution in the agent process — these built-ins were the
-      vector in multiple published LangChain RCE advisories.
+      shell commands chosen by the model: PythonREPLTool / PythonAstREPLTool and
+      the bare PythonREPL utility run arbitrary Python, and ShellTool runs
+      arbitrary shell commands. Once such a tool is wired, a prompt injection or a
+      confused model has a direct path to arbitrary code execution in the agent
+      process — these built-ins were the vector in multiple published LangChain
+      RCE advisories.
     fix: >
       Remove the REPL/shell built-in from production agents. If you genuinely need
       code execution, run it in an isolated sandbox (no filesystem, no network, no
@@ -59,6 +61,74 @@ rules:
       Pass max_iterations= (and optionally max_execution_time=) to AgentExecutor,
       sized to the task. Also set handle_parsing_errors= so a malformed model step
       is surfaced rather than retried indefinitely.
+
+  - id: LC-103
+    title: LangChain agent wires a read-only raw HTTP built-in tool
+    severity: medium
+    confidence: 0.7
+    language: python
+    applies_to:
+      - langchain_agent
+      - langchain_agent_executor
+      - langchain_state_graph
+    scope: agent
+    match:
+      agent_uses_hosted_tool_class:
+        - RequestsGetTool
+    explanation: >
+      This agent wires RequestsGetTool, a langchain_community built-in that issues
+      an outbound GET to a URL the model supplies. Because the destination is
+      model-controlled rather than an allow-listed API, a prompt injection can aim
+      it at internal-only services or the cloud metadata endpoint
+      (169.254.169.254) and read back credentials the agent was never meant to
+      reach — server-side request forgery driven by the model. The response body
+      then re-enters the conversation as untrusted text, so the fetched host gains
+      a second-order prompt-injection channel into the agent. LangChain itself
+      treats this tool as dangerous: it refuses to construct unless the caller
+      passes allow_dangerous_requests=True.
+    fix: >
+      Replace the generic requests built-in with a purpose-built tool that pins the
+      host and path template and takes only the query parameters the task needs, so
+      the model chooses the arguments and never the destination. If a general
+      fetcher is genuinely required, resolve the URL and reject non-public address
+      space (link-local, loopback, RFC 1918) before the request, cap the response
+      size, and treat the returned body as untrusted input rather than instructions.
+
+  - id: LC-104
+    title: LangChain agent wires a state-changing raw HTTP built-in tool
+    severity: high
+    confidence: 0.75
+    language: python
+    applies_to:
+      - langchain_agent
+      - langchain_agent_executor
+      - langchain_state_graph
+    scope: agent
+    match:
+      agent_uses_hosted_tool_class:
+        - RequestsPostTool
+        - RequestsPutTool
+        - RequestsPatchTool
+        - RequestsDeleteTool
+    explanation: >
+      This agent wires a langchain_community requests built-in that performs a
+      write — POST, PUT, PATCH, or DELETE — against a URL the model supplies, with
+      a request body the model also supplies. Both the destination and the payload
+      are model-controlled, so a prompt injection is not limited to reading data it
+      should not reach: it can create, overwrite, or delete state on any host the
+      agent can route to, including internal admin APIs that trust callers by
+      network position alone. Unlike a GET, the effect is not undone by discarding
+      the response, and the agent's own retry behaviour can repeat the write.
+      LangChain treats these tools as dangerous: they refuse to construct unless
+      the caller passes allow_dangerous_requests=True.
+    fix: >
+      Remove the generic write-capable requests built-in from the tool surface.
+      Expose each mutation the agent legitimately needs as its own tool that pins
+      the method, host, and path, validates the payload against a schema, and
+      carries an idempotency key so a retry cannot double-apply. Gate genuinely
+      destructive operations behind a human-in-the-loop approval (a LangGraph
+      interrupt_before breakpoint or a tool-approval middleware) rather than
+      letting the model invoke them unattended.
 
   - id: LC-111
     title: TypeScript LangChain AgentExecutor has no explicit maxIterations limit
