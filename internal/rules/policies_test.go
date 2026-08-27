@@ -1986,6 +1986,36 @@ def fetch_data(x: str) -> dict:
     return {}
 `,
 		toolConfig: nil, wantFires: false},
+
+	// ─── PYD-008: Pydantic AI tool raises with no ModelRetry path ───────────
+	// has_raise + no try/except, minus a has_body_text suppressor for
+	// ModelRetry. Three cases: the raise, and BOTH silencing routes — catching
+	// the failure, and raising ModelRetry (the SDK's own recovery channel,
+	// which must not be reported as a defect).
+	{name: "PYD-008 fires on uncaught raise", ruleID: "PYD-008", kind: models.KindPydanticAITool, src: `
+def lookup_order(order_id: str) -> str:
+    """Look up an order."""
+    if not order_id:
+        raise ValueError("order_id is required")
+    return order_id
+`, wantFires: true},
+	{name: "PYD-008 silent when the failure is caught", ruleID: "PYD-008", kind: models.KindPydanticAITool, src: `
+def lookup_order(order_id: str) -> dict:
+    """Look up an order."""
+    try:
+        if not order_id:
+            raise ValueError("order_id is required")
+        return {"order_id": order_id}
+    except ValueError as exc:
+        return {"error": str(exc), "retryable": False}
+`, wantFires: false},
+	{name: "PYD-008 silent on raise ModelRetry", ruleID: "PYD-008", kind: models.KindPydanticAITool, src: `
+def lookup_order(order_id: str) -> str:
+    """Look up an order."""
+    if not order_id:
+        raise ModelRetry("order_id was empty; supply the customer's order number")
+    return order_id
+`, wantFires: false},
 }
 
 // policyRepoRuleCases covers repo-scoped rules.
@@ -2246,7 +2276,6 @@ var policyRepoRuleCases = []policyRepoCase{
 		},
 		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKOpenAIAgents}},
 		false},
-
 }
 
 // optionsWithPermissionMode builds a ClaudeAgentOptionsDef whose captured
