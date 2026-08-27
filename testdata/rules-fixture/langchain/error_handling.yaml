@@ -1,0 +1,39 @@
+policy:
+  id: langchain_error_handling
+  name: LangChain error contract hygiene
+  category: langchain
+  description: >
+    Rules covering how a LangChain tool surfaces failure. By default an
+    exception raised inside a tool escapes the AgentExecutor and ends the run,
+    so the model never sees the failure and never gets a chance to recover from
+    it.
+
+rules:
+  - id: LC-008
+    title: LangChain tool raises without a structured error contract
+    severity: low
+    confidence: 0.6
+    language: python
+    applies_to:
+      - langchain_tool
+    scope: tool
+    match:
+      all:
+        - has_raise: true
+        - has_try_except: false
+    explanation: >
+      This tool raises an exception it never catches. LangChain does not feed
+      tool exceptions back to the model unless you opt in: with the default
+      handle_tool_error=False the exception propagates out of the AgentExecutor
+      and aborts the run, so the model is never told the step failed and the
+      caller gets a traceback instead of an answer. Opting in with
+      handle_tool_error=True is barely better — the model receives the raw
+      str(exception), an opaque sentence with no failure mode, no indication
+      whether a retry could succeed, and whatever internal detail the message
+      happened to carry (file paths, hostnames, query fragments).
+    fix: >
+      Catch the failure modes you expect and return a structured result the
+      model can branch on — an error field naming the failure and a retryable
+      flag — instead of letting the exception escape. Where you do want
+      LangChain to intercept, set handle_tool_error to a callable that maps the
+      exception to a specific, model-readable message rather than to True.
