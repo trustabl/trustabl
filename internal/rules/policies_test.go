@@ -1986,6 +1986,25 @@ def fetch_data(x: str) -> dict:
     return {}
 `,
 		toolConfig: nil, wantFires: false},
+
+	// ─── LC-017: mutating LangChain tool with no idempotency key ────────────
+	// Same name_has_prefix + param_name_matches shape as MCP-007. Third case
+	// pins that a non-mutating name is not swept in by the missing key alone.
+	{name: "LC-017 fires on mutating tool without key", ruleID: "LC-017", kind: models.KindLangChainTool, src: `
+def refund_payment(charge_id: str, amount_cents: int) -> dict:
+    """Refund a charge."""
+    return {"ok": True}
+`, wantFires: true},
+	{name: "LC-017 silent with idempotency key", ruleID: "LC-017", kind: models.KindLangChainTool, src: `
+def refund_payment(charge_id: str, amount_cents: int, idempotency_key: str) -> dict:
+    """Refund a charge."""
+    return {"ok": True}
+`, wantFires: false},
+	{name: "LC-017 silent on a read-only tool name", ruleID: "LC-017", kind: models.KindLangChainTool, src: `
+def get_payment(charge_id: str) -> dict:
+    """Get a charge."""
+    return {"ok": True}
+`, wantFires: false},
 }
 
 // policyRepoRuleCases covers repo-scoped rules.
@@ -2246,7 +2265,6 @@ var policyRepoRuleCases = []policyRepoCase{
 		},
 		models.RepoInventory{SDKsDetected: []models.SDK{models.SDKOpenAIAgents}},
 		false},
-
 }
 
 // optionsWithPermissionMode builds a ClaudeAgentOptionsDef whose captured
