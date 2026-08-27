@@ -810,7 +810,7 @@ For each language recon cleared, do the AST work and produce a `RepoInventory`:
   `#[...]` is parsed as a `comment` node — so the attribute is read from the
   comment text immediately preceding the method via regex. Emits
   `ToolDef{Kind: mcp_tool, Language: php}`, so deriveSDKsDetected stamps SDKMCP
-  and the mcp/ pack's `language: php` rules (MCP-019/020) audit them. Multi-line
+  and the mcp/ pack's `language: php` rules (MCP-019/020/029) audit them. Multi-line
   `#[...]` attributes, `#[McpResource]` / `#[McpPrompt]`, and PHP body-fact
   predicates are v1 gaps.
 - **DiscoverRustMCPTools** (`rust_mcp.go`) — Rust MCP tools parsed with

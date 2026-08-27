@@ -309,3 +309,27 @@ rules:
     fix: >
       Rename the method (or set the `#[tool]` `name = "..."` argument) to a
       verb-object form, e.g. `summarize_invoice`, `fetch_weather`.
+
+  - id: MCP-029
+    title: PHP MCP tool has no type-annotated parameters
+    severity: medium
+    confidence: 0.85
+    language: php
+    applies_to:
+      - mcp_tool
+    scope: tool
+    match:
+      has_params: true
+      has_typed_params: false
+    explanation: >
+      MCP derives a PHP tool's advertised input JSON schema from the handler's
+      parameter type hints. PHP type hints are optional; without them the
+      published schema is unconstrained, so connecting models send unvalidated
+      inputs that frequently cause runtime errors inside the server. Go, C#,
+      and Rust MCP tools cannot express this gap — those languages are
+      statically typed — which is why this sibling of MCP-002 exists only for
+      PHP.
+    fix: >
+      Add type hints to every parameter (`function search(string $query, int
+      $limit = 10): array`). Use typed properties or DTO classes for structured
+      inputs so the published schema constrains them.
