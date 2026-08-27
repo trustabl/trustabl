@@ -54,3 +54,34 @@ rules:
       Annotate every parameter with a concrete type (str, int, list[str], a
       typing.Annotated description, etc.). AutoGen propagates these annotations into
       the schema the model sees, so the model emits correctly-shaped arguments.
+
+  - id: AG2-019
+    title: Ambiguous AutoGen tool name
+    severity: low
+    confidence: 0.9
+    language: python
+    applies_to:
+      - autogen_tool
+    scope: tool
+    match:
+      name_in:
+        - process
+        - handle
+        - run
+        - do
+        - execute
+        - perform
+        - work
+        - go
+        - thing
+        - stuff
+    explanation: >
+      The tool name is a generic verb that says nothing about what the tool
+      acts on. The name sits directly beside the description in what the model
+      sees, so it is half the selection signal, and a name like process or
+      handle spends that half on nothing — the model either calls the tool for
+      the wrong job or passes over it entirely. Each wrong pick costs a full round of the conversation — propose, execute, reply — so an ambiguous name spends the AG2-004 max_round budget rather than the chat reaching an answer.
+    fix: >
+      Rename to a verb-object form that names the thing acted on:
+      summarize_invoice, refund_charge, fetch_order_status. Keep the
+      description for the detail and let the name carry the subject.
