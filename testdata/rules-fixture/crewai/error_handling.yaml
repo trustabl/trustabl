@@ -1,0 +1,39 @@
+policy:
+  id: crewai_error_handling
+  name: CrewAI error contract hygiene
+  category: crewai
+  description: >
+    Rules covering how a CrewAI tool surfaces failure. A tool that raises hands
+    the agent a stringified exception in place of a result, and in a sequential
+    crew that unusable output is threaded forward as context to every task
+    behind it.
+
+rules:
+  - id: CREW-008
+    title: CrewAI tool raises without a structured error contract
+    severity: low
+    confidence: 0.6
+    language: python
+    applies_to:
+      - crewai_tool
+    scope: tool
+    match:
+      all:
+        - has_raise: true
+        - has_try_except: false
+    explanation: >
+      This tool raises an exception it never catches. CrewAI stringifies the
+      exception and returns it to the agent as the tool's observation, so the
+      agent sees a bare message — no failure mode, no signal about whether a
+      retry could succeed — and typically burns its remaining max_iter budget
+      re-calling the same tool the same way. The damage does not stop at that
+      agent: a crew threads each task's output forward as context, so an
+      unusable error string becomes the input every downstream task reasons
+      over. The raw message also crosses into the conversation intact, carrying
+      whatever internal detail it held (file paths, hostnames, query fragments).
+    fix: >
+      Catch the failure modes you expect and return a structured string the
+      agent can act on — name the failure and say plainly whether retrying could
+      help and what would have to change — rather than letting the exception
+      escape. Reserve raising for programmer errors the agent genuinely cannot
+      work around.
