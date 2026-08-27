@@ -2461,6 +2461,13 @@ var policySkillRuleCases = []policySkillCase{
 		models.SkillDef{Name: "helper",
 			Location: models.Location{FilePath: ".claude/skills/helper/SKILL.md"},
 			Body:     "# Helper\n\nSummarises the current git diff."}, models.RepoInventory{}, false},
+
+	{"CSKILL-087 fires when the description is a placeholder", "CSKILL-087",
+		models.SkillDef{Name: "helper", Description: "TODO: describe this skill.",
+			Location: models.Location{FilePath: ".claude/skills/helper/SKILL.md"}}, models.RepoInventory{}, true},
+	{"CSKILL-087 silent when the description is real content", "CSKILL-087",
+		models.SkillDef{Name: "helper", Description: "Summarises the current git diff.",
+			Location: models.Location{FilePath: ".claude/skills/helper/SKILL.md"}}, models.RepoInventory{}, false},
 }
 
 // policyAgentRuleCases covers agent-scoped rules.
