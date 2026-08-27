@@ -230,6 +230,40 @@ def f(x: str) -> str:
     return x
 `, toolConfig: map[string]string{}, wantFires: false},
 
+	{name: "LC-008 fires on raise without try", ruleID: "LC-008", kind: models.KindLangChainTool, src: `
+def process(x: str) -> dict:
+    """Process x."""
+    if not x:
+        raise ValueError("empty input")
+    return {"x": x}
+`, wantFires: true},
+	{name: "LC-008 silent with try/except", ruleID: "LC-008", kind: models.KindLangChainTool, src: `
+def process(x: str) -> dict:
+    """Process x."""
+    try:
+        if not x:
+            raise ValueError("empty")
+        return {"x": x}
+    except ValueError as e:
+        return {"error": str(e)}
+`, wantFires: false},
+
+	{name: "LC-009 fires on mutating tool without key", ruleID: "LC-009", kind: models.KindLangChainTool, src: `
+def create_order(customer_id: str, amount: float) -> dict:
+    """Create an order."""
+    return {"ok": True}
+`, wantFires: true},
+	{name: "LC-009 silent with idempotency key", ruleID: "LC-009", kind: models.KindLangChainTool, src: `
+def create_order(customer_id: str, amount: float, idempotency_key: str) -> dict:
+    """Create an order."""
+    return {"ok": True}
+`, wantFires: false},
+	{name: "LC-009 silent on non-mutating name", ruleID: "LC-009", kind: models.KindLangChainTool, src: `
+def get_order(order_id: str) -> dict:
+    """Get an order."""
+    return {"id": order_id}
+`, wantFires: false},
+
 	// LangChain TypeScript tool rules — parseTSTool runs DiscoverTSLangChainTools,
 	// so each snippet must import from the langchain ecosystem to be discovered.
 	{name: "LC-010 fires on TS tool with no description", ruleID: "LC-010", kind: models.KindLangChainTool, lang: models.LanguageTypeScript, wantFires: true, src: `
@@ -286,6 +320,22 @@ export const t = tool(async (i) => i.q, { name: "x", description: "X.", schema: 
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 export const t = tool(async (i) => i.q, { name: "x", description: "X.", schema: z.object({ q: z.string() }) });
+`},
+
+	{name: "LC-016 fires on camelCase mutating tool with no idempotency param", ruleID: "LC-016", kind: models.KindLangChainTool, lang: models.LanguageTypeScript, wantFires: true, src: `
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+export const t = tool(async (i) => i.amount, { name: "createCharge", description: "Charge a card.", schema: z.object({ amount: z.number() }) });
+`},
+	{name: "LC-016 silent when idempotency key present", ruleID: "LC-016", kind: models.KindLangChainTool, lang: models.LanguageTypeScript, wantFires: false, src: `
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+export const t = tool(async (i) => i.amount, { name: "createCharge", description: "Charge a card.", schema: z.object({ amount: z.number(), idempotencyKey: z.string() }) });
+`},
+	{name: "LC-016 silent on non-mutating tool name", ruleID: "LC-016", kind: models.KindLangChainTool, lang: models.LanguageTypeScript, wantFires: false, src: `
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+export const t = tool(async (i) => i.id, { name: "getBalance", description: "Read balance.", schema: z.object({ id: z.string() }) });
 `},
 
 	// ─── Vercel AI SDK tool rules (VAI-*) ───────────────────────────────────

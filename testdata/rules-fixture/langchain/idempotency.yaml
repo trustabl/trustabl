@@ -1,0 +1,92 @@
+policy:
+  id: langchain_idempotency
+  name: LangChain mutating-tool idempotency
+  category: langchain
+  description: >
+    Rules that flag mutating LangChain / LangGraph tools (create/send/refund/...)
+    without an idempotency key. AgentExecutor and LangGraph re-invoke tools
+    under timeouts and ambiguous failures; without a key the same side-effecting
+    action can fire twice.
+
+rules:
+  - id: LC-009
+    title: Mutating LangChain tool has no idempotency key
+    severity: medium
+    confidence: 0.55
+    language: python
+    applies_to:
+      - langchain_tool
+    scope: tool
+    match:
+      all:
+        - name_has_prefix:
+            - create_
+            - send_
+            - delete_
+            - post_
+            - update_
+            - refund_
+            - charge_
+            - issue_
+        - not:
+            param_name_matches:
+              contains:
+                - idempot
+              exact:
+                - request_id
+                - txn_id
+    explanation: >
+      Tool name suggests a side effect (create/send/refund/…). LangChain's
+      AgentExecutor and LangGraph ToolNode retry or re-select a tool when a
+      result times out or reads as inconclusive, and a lost response after the
+      side effect already committed is at-least-once delivery. Without an
+      idempotency key the same action fires twice — a duplicate charge, a
+      double-sent message, a repeated delete. LC-102's max_iterations bound
+      does not prevent this: it caps how many steps run, not whether one
+      mutating step is safe to retry. The downstream service must also honor
+      the key for this protection to be effective.
+    fix: >
+      Add an `idempotency_key: str` parameter and pass it through to the backing
+      API so a retried call is recognized and deduplicated rather than
+      re-executed.
+
+  - id: LC-016
+    title: TypeScript LangChain mutating tool has no idempotency key
+    severity: medium
+    confidence: 0.5
+    language: typescript
+    applies_to:
+      - langchain_tool
+    scope: tool
+    match:
+      all:
+        - name_has_prefix:
+            - create
+            - send
+            - delete
+            - post
+            - update
+            - refund
+            - charge
+            - issue
+        - not:
+            param_name_matches:
+              contains:
+                - idempot
+              exact:
+                - requestId
+                - request_id
+                - txnId
+                - txn_id
+    explanation: >
+      This LangChain.js tool's name implies a side effect (create/send/refund/…)
+      but its Zod schema exposes no idempotency parameter. AgentExecutor and
+      LangGraph re-invoke tools when a result times out or reads as
+      inconclusive, and a lost response after the side effect committed is
+      at-least-once delivery — so the same charge, send, or delete can fire
+      twice. The prefix set matches both `create_charge` and `createCharge`
+      naming, so it fires on idiomatic TypeScript tool names.
+    fix: >
+      Add an `idempotencyKey` (or `requestId`) field to the tool's Zod schema,
+      thread it to the downstream API, and confirm that API treats a repeated
+      key as a no-op rather than a second mutation.
