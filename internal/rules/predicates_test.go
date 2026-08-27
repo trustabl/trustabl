@@ -381,6 +381,186 @@ def foo(x: str) -> dict:
 	}
 }
 
+// ─── has_raise / has_try_except on TypeScript ─────────────────────────────────
+
+// tsErrorContractCases covers one snippet per TS discovery path. All six share
+// tsHandlerFacts, so a regression in the fact walk would surface here rather
+// than in whichever pack happened to ship the first TS error-contract rule.
+var tsErrorContractCases = []struct {
+	name     string
+	kind     models.ToolKind
+	throwing string
+	caught   string
+}{
+	{
+		name: "claude_sdk",
+		kind: models.KindClaudeSDKTool,
+		throwing: `
+import { tool } from "@anthropic-ai/claude-agent-sdk";
+import { z } from "zod";
+export const t = tool("f", "f", { id: z.string() }, async ({ id }) => {
+  if (!id) throw new Error("id required");
+  return { content: [] };
+});
+`,
+		caught: `
+import { tool } from "@anthropic-ai/claude-agent-sdk";
+import { z } from "zod";
+export const t = tool("f", "f", { id: z.string() }, async ({ id }) => {
+  try {
+    return { content: [{ type: "text", text: id }] };
+  } catch (e) {
+    return { content: [{ type: "text", text: "error" }] };
+  }
+});
+`,
+	},
+	{
+		name: "langchain",
+		kind: models.KindLangChainTool,
+		throwing: `
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+export const t = tool(async (i) => {
+  if (!i.id) throw new Error("id required");
+  return i.id;
+}, { name: "lookup", description: "Look up.", schema: z.object({ id: z.string() }) });
+`,
+		caught: `
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+export const t = tool(async (i) => {
+  try {
+    return i.id;
+  } catch (e) {
+    return JSON.stringify({ error: "failed", retryable: false });
+  }
+}, { name: "lookup", description: "Look up.", schema: z.object({ id: z.string() }) });
+`,
+	},
+	{
+		name: "vercel_ai",
+		kind: models.KindVercelAITool,
+		throwing: `
+import { tool } from "ai";
+import { z } from "zod";
+export const t = tool({ description: "look up", inputSchema: z.object({ id: z.string() }), execute: async ({ id }) => {
+  if (!id) throw new Error("id required");
+  return id;
+} });
+`,
+		caught: `
+import { tool } from "ai";
+import { z } from "zod";
+export const t = tool({ description: "look up", inputSchema: z.object({ id: z.string() }), execute: async ({ id }) => {
+  try {
+    return id;
+  } catch (e) {
+    return { error: "failed" };
+  }
+} });
+`,
+	},
+	{
+		name: "openai_agents",
+		kind: models.KindOpenAITool,
+		throwing: `
+import { tool } from "@openai/agents";
+export const t = tool({ name: "f", description: "f", parameters: {}, execute: async () => {
+  throw new Error("boom");
+} });
+`,
+		caught: `
+import { tool } from "@openai/agents";
+export const t = tool({ name: "f", description: "f", parameters: {}, execute: async () => {
+  try {
+    return "ok";
+  } catch (e) {
+    return "error";
+  }
+} });
+`,
+	},
+	{
+		name: "mcp",
+		kind: models.KindMCPTool,
+		throwing: `
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+const server = new McpServer({ name: "s", version: "1.0.0" });
+server.registerTool("search", { description: "Search the docs", inputSchema: { q: z.string() } }, async ({ q }) => {
+  if (!q) throw new Error("q required");
+  return { content: [] };
+});
+`,
+		caught: `
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+const server = new McpServer({ name: "s", version: "1.0.0" });
+server.registerTool("search", { description: "Search the docs", inputSchema: { q: z.string() } }, async ({ q }) => {
+  try {
+    return { content: [] };
+  } catch (e) {
+    return { content: [{ type: "text", text: "error" }], isError: true };
+  }
+});
+`,
+	},
+}
+
+// Before PredHasRaise branched on language it returned false for every TS tool
+// — the Python path matches the "raise_statement" node type, which the TS
+// grammar does not have. A TS error-contract rule would have loaded, validated
+// and never fired, which reads as coverage rather than as a gap.
+func TestPred_HasRaise_TypeScript_Throw(t *testing.T) {
+	for _, tc := range tsErrorContractCases {
+		t.Run(tc.name, func(t *testing.T) {
+			tool, pf := parseTSTool(t, tc.throwing, tc.kind)
+			if !rules.PredHasRaise(tool, pf) {
+				t.Errorf("expected HasRaise true for a TS throw (facts=%v)", tool.Facts)
+			}
+			if rules.PredHasTryExcept(tool, pf) {
+				t.Errorf("expected HasTryExcept false with no try/catch (facts=%v)", tool.Facts)
+			}
+		})
+	}
+}
+
+func TestPred_HasTryExcept_TypeScript_Caught(t *testing.T) {
+	for _, tc := range tsErrorContractCases {
+		t.Run(tc.name, func(t *testing.T) {
+			tool, pf := parseTSTool(t, tc.caught, tc.kind)
+			if !rules.PredHasTryExcept(tool, pf) {
+				t.Errorf("expected HasTryExcept true for a TS try/catch (facts=%v)", tool.Facts)
+			}
+			if rules.PredHasRaise(tool, pf) {
+				t.Errorf("expected HasRaise false with no throw (facts=%v)", tool.Facts)
+			}
+		})
+	}
+}
+
+// A re-throw from inside a catch satisfies both predicates, so the shipped
+// `has_raise AND NOT has_try_except` shape stays silent — the same outcome the
+// Python path gives for a `raise` inside an `except`.
+func TestPred_TypeScript_ThrowInsideCatch_SatisfiesBoth(t *testing.T) {
+	tool, pf := parseTSTool(t, `
+import { tool } from "@anthropic-ai/claude-agent-sdk";
+import { z } from "zod";
+export const t = tool("f", "f", { id: z.string() }, async ({ id }) => {
+  try {
+    return { content: [] };
+  } catch (e) {
+    throw new Error("wrapped: " + e);
+  }
+});
+`, models.KindClaudeSDKTool)
+	if !rules.PredHasRaise(tool, pf) {
+		t.Errorf("expected HasRaise true for the re-throw (facts=%v)", tool.Facts)
+	}
+	if !rules.PredHasTryExcept(tool, pf) {
+		t.Errorf("expected HasTryExcept true for the enclosing try (facts=%v)", tool.Facts)
+	}
+}
+
 // ─── name_in ──────────────────────────────────────────────────────────────────
 
 func TestPred_NameIn_Hit(t *testing.T) {
