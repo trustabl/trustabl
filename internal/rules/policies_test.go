@@ -362,6 +362,29 @@ import { z } from "zod";
 export const t = tool({ description: "x", inputSchema: z.object({ city: z.string() }), execute: async ({ city }) => city });
 `},
 
+	// VAI-017: TS stdout diagnostics (prints_stdout → has_print_call)
+	{name: "VAI-017 fires on console.log", ruleID: "VAI-017", kind: models.KindVercelAITool, lang: models.LanguageTypeScript, wantFires: true, src: `
+import { tool } from "ai";
+import { z } from "zod";
+export const t = tool({ description: "lookup", inputSchema: z.object({ id: z.string() }), execute: async ({ id }) => {
+  console.log("looking up", id);
+  return id;
+} });
+`},
+	{name: "VAI-017 silent without stdout write", ruleID: "VAI-017", kind: models.KindVercelAITool, lang: models.LanguageTypeScript, wantFires: false, src: `
+import { tool } from "ai";
+import { z } from "zod";
+export const t = tool({ description: "lookup", inputSchema: z.object({ id: z.string() }), execute: async ({ id }) => id });
+`},
+	{name: "VAI-017 silent on console.error (stderr)", ruleID: "VAI-017", kind: models.KindVercelAITool, lang: models.LanguageTypeScript, wantFires: false, src: `
+import { tool } from "ai";
+import { z } from "zod";
+export const t = tool({ description: "lookup", inputSchema: z.object({ id: z.string() }), execute: async ({ id }) => {
+  console.error("looking up", id);
+  return id;
+} });
+`},
+
 	// ─── CrewAI tool rules (CREW-*) ─────────────────────────────────────────
 	{name: "CREW-001 fires on tool with no docstring", ruleID: "CREW-001", kind: models.KindCrewAITool, src: `
 def search(q: str) -> str:
