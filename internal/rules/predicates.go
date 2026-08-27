@@ -121,6 +121,17 @@ func PredHasCodeExecCall(t models.ToolDef, pf analysis.ParsedFile) bool {
 // text merely contains "print(" are not flagged — the false positive that
 // substring matching cannot avoid.
 func PredHasPrintCall(t models.ToolDef, pf analysis.ParsedFile) bool {
+	// TypeScript tools carry the signal as a discovery-computed fact (set by
+	// tsHandlerFacts for console.log / console.info / console.debug /
+	// process.stdout.write). The Python AST walk below looks for the "call"
+	// node type, which does not exist in the TS grammar — it uses
+	// "call_expression" — so without this branch the predicate was
+	// structurally always false for TS and any typescript rule using it could
+	// never fire. Branch on language so the Python path stays byte-identical,
+	// mirroring PredHasShellCall / PredHasWriteCall.
+	if models.IsTSOrJS(t.Language) {
+		return t.Facts["prints_stdout"] == "true"
+	}
 	root := analysis.FindFunctionNode(t, pf)
 	if root == nil {
 		return false

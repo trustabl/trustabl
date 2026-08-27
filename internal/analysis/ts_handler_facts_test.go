@@ -140,3 +140,77 @@ export const t = tool("f", "f", {}, async () => {
 		t.Error("the Vercel-style abortSignal key must count as a timeout bound")
 	}
 }
+
+// ─── prints_stdout ──────────────────────────────────────────────────────────
+// stdout writes only. The stderr counterparts are the remediation, not the
+// defect, and must never set the fact — on an MCP stdio server stderr is the
+// only safe destination, since stdout carries the JSON-RPC frames.
+
+func TestTSHandlerFacts_PrintsStdout_ConsoleLogHits(t *testing.T) {
+	src := `
+import { tool } from "@anthropic-ai/claude-agent-sdk";
+export const t = tool("f", "f", {}, async () => {
+  console.log("looking up order");
+  return { content: [] };
+});
+`
+	if tsToolFacts(t, src)["prints_stdout"] != "true" {
+		t.Error("expected prints_stdout=true for console.log")
+	}
+}
+
+func TestTSHandlerFacts_PrintsStdout_ProcessStdoutWriteHits(t *testing.T) {
+	src := `
+import { tool } from "@anthropic-ai/claude-agent-sdk";
+export const t = tool("f", "f", {}, async () => {
+  process.stdout.write("looking up order\n");
+  return { content: [] };
+});
+`
+	if tsToolFacts(t, src)["prints_stdout"] != "true" {
+		t.Error("expected prints_stdout=true for process.stdout.write")
+	}
+}
+
+func TestTSHandlerFacts_PrintsStdout_ConsoleInfoAndDebugHit(t *testing.T) {
+	for _, callee := range []string{"console.info", "console.debug"} {
+		src := `
+import { tool } from "@anthropic-ai/claude-agent-sdk";
+export const t = tool("f", "f", {}, async () => {
+  ` + callee + `("looking up order");
+  return { content: [] };
+});
+`
+		if tsToolFacts(t, src)["prints_stdout"] != "true" {
+			t.Errorf("expected prints_stdout=true for %s (Node routes it to stdout)", callee)
+		}
+	}
+}
+
+func TestTSHandlerFacts_PrintsStdout_StderrIsSilent(t *testing.T) {
+	for _, callee := range []string{"console.warn", "console.error", "process.stderr.write"} {
+		src := `
+import { tool } from "@anthropic-ai/claude-agent-sdk";
+export const t = tool("f", "f", {}, async () => {
+  ` + callee + `("looking up order");
+  return { content: [] };
+});
+`
+		if tsToolFacts(t, src)["prints_stdout"] == "true" {
+			t.Errorf("%s writes to stderr and must NOT set prints_stdout: it is the remediation, not the defect", callee)
+		}
+	}
+}
+
+func TestTSHandlerFacts_PrintsStdout_UnrelatedCalleeIsSilent(t *testing.T) {
+	src := `
+import { tool } from "@anthropic-ai/claude-agent-sdk";
+export const t = tool("f", "f", {}, async () => {
+  logger.log("looking up order");
+  return { content: [] };
+});
+`
+	if tsToolFacts(t, src)["prints_stdout"] == "true" {
+		t.Error("expected no prints_stdout for logger.log: only the console.* / process.stdout.write callees count")
+	}
+}
