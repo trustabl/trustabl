@@ -60,7 +60,7 @@ These properties are merged into every event automatically:
 | Property | Type | Example | Purpose |
 |---|---|---|---|
 | `anonymous_id` | string | `"a3f2c…"` | Anonymous installation identifier (UUID v4) |
-| `cli_version` | string | `"0.9.1"` | Correlate observations to releases |
+| `cli_version` | string | `"0.1.7"` | Correlate observations to releases |
 
 ---
 
@@ -91,14 +91,14 @@ Fired on a successful scan (exit code 0 or 1 — findings present or not, but no
 |---|---|---|---|
 | `duration_ms` | int | `4200` | Wall-clock milliseconds from start to finish |
 | `repo_size_bucket` | string | `"medium"` | `"small"` (< 20 files), `"medium"` (< 200 files), `"large"` (≥ 200 files). File count includes Python, TypeScript, JavaScript, Go, YAML, JSON, Markdown, C#, PHP, and Rust files. |
-| `sdks_detected` | []string | `["openai_sdk","claude_sdk"]` | SDK identifiers observed in code (not just declared as deps) |
+| `sdks_detected` | []string | `["openai_agents","claude_agent_sdk"]` | SDK identifiers observed in code (the `models.SDK` enum: `claude_agent_sdk`, `openai_agents`, `mcp`, `google_adk`, `langchain`, `crewai`, `pydantic_ai`, `vercel_ai`, `autogen` — not detector category names like `openai_sdk`) |
 | `languages_detected` | []string | `["python","typescript"]` | Languages recognized in the repo |
 | `tools_count` | int | `12` | Number of tool definitions discovered |
 | `agents_count` | int | `3` | Number of agent declarations discovered |
 | `findings_by_severity` | object | `{"high":2,"medium":5}` | Finding count per severity level |
 | `rule_ids_fired` | object | `{"CSDK-001":3,"OAI-005":1}` | Count of hits per rule ID. Rule IDs are public identifiers; no finding content is included. |
 | `rules_sha` | string | `"abc1234"` | Resolved commit SHA of the rule pack used for this scan |
-| `schema_version` | int | `4` | Rule schema version of the resolved pack |
+| `schema_version` | int | `14` | Rule schema version of the resolved pack (`manifest.yaml` / `SupportedSchemaVersion`) |
 | `exit_code` | int | `1` | Process exit code: `0` (clean) or `1` (findings present) |
 | `features_used` | []string | `["attest","sarif_out"]` | Optional features activated for this scan. Possible values: `attest`, `vuln_scan`, `sarif_out`, `json_out`, `bom_out`, `no_rules_update`. |
 | `repo_id_hash` | string | `"3a9f…"` | 32-character hex prefix of a salted SHA-256 of the CI repo env var (`GITHUB_REPOSITORY`, `CI_PROJECT_PATH`, `CIRCLE_PROJECT_REPONAME`). Empty when not running in CI or when no recognized repo env var is set. Used only for deduplication — **the hash is one-way and the repo name cannot be recovered from it**. |
@@ -115,7 +115,8 @@ Fired when the scan exits with code 2 (a scanner or I/O error, not a findings-ba
 | `phase` | string | `"rules"` | Pipeline phase where the failure occurred. Derived from `error_category` — no additional data collected. Values: `"rules"`, `"clone"`, `"inventory"`, `"unknown"`. |
 | `duration_ms` | int | `800` | Wall-clock milliseconds until failure |
 | `rules_sha` | string | `"abc1234"` | Resolved rules SHA at time of failure. Empty string if the failure occurred before rules were resolved. |
-| `schema_version` | int | `4` | Rule schema version at time of failure. `0` if not yet resolved. |
+| `schema_version` | int | `14` | Rule schema version at time of failure. `0` if not yet resolved. |
+| `exit_code` | int | `2` | Always `2` for `scan.failed` (scanner / I/O error). |
 
 ---
 
@@ -125,7 +126,7 @@ Fired for every non-scan subcommand invocation.
 
 | Property | Type | Example | Notes |
 |---|---|---|---|
-| `command` | string | `"mcp"` | Dotted command name. Possible values: `version`, `mcp`, `enrich`, `attest`, `verify`, `capabilities`, `rules.pull`, `rules.validate`, `vulndb.pull`. |
+| `command` | string | `"mcp"` | Dotted command name. Possible values: `version`, `mcp`, `enrich`, `attest`, `verify`, `capabilities`, `rules.pull`, `rules.validate`, `vulndb.pull`, `forge`. (`trustabl forge` also sends `explicit_count`, the number of `--policy` values the user passed.) |
 
 ---
 
@@ -137,7 +138,7 @@ Fired **only** when a user explicitly chooses "Send anonymous crash report" afte
 |---|---|---|---|
 | `panic_value` | string | `"runtime error: index out of range [2] with length 2"` | The recovered panic value, passed through best-effort redaction of common secret shapes (e.g. `sk-ant-*`, `sk-proj-*`, long hex/base64 strings). Not guaranteed to be free of all sensitive content. |
 | `stack` | string | `"goroutine 1 [running]:\nmain.(...)\n\tmain.go:42\n..."` | Scrubbed stack frames only — no argument values, no source lines, file paths trimmed to `basename:line`. |
-| `version` | string | `"0.9.1"` | CLI build version |
+| `version` | string | `"0.1.7"` | CLI build version |
 | `commit` | string | `"abc1234"` | Build commit SHA |
 | `os` | string | `"darwin"` | `GOOS` |
 | `arch` | string | `"arm64"` | `GOARCH` |
