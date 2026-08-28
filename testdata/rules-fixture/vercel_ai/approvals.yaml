@@ -30,22 +30,22 @@ rules:
                 value: "false"
     explanation: >
       This Vercel AI SDK tool shells out or executes dynamic code, but has no
-      needsApproval gate — the option is absent or
-      explicitly set to false. needsApproval is the Vercel AI SDK's
-      human-in-the-loop gate for sensitive tool calls, and its default is
-      false — so an un-gated privileged tool executes attacker-influenced
-      model output with no human checkpoint. Passing true or a per-call
-      approval function both count as a gate and do not fire. This complements
-      VAI-001 (subprocess) and VAI-002 (eval / new Function): those flag the
-      dangerous call; VAI-013 flags the missing approval gate around it. SDK 7
-      moved approval to toolApproval on generateText,
-      streamText, or ToolLoopAgent. This tool-scoped rule cannot verify that
-      separate setting, so a finding in SDK 7 code requires manual review.
+      needsApproval gate — the option is absent or explicitly set to false.
+      needsApproval is the Vercel AI SDK's human-in-the-loop gate for sensitive
+      tool calls, and its default is false — so an un-gated privileged tool
+      executes attacker-influenced model output with no human checkpoint.
+      Passing true or a per-call approval function both count as a gate and do
+      not fire. This complements VAI-001 (subprocess) and VAI-002 (eval / new
+      Function): those flag the dangerous call; VAI-013 flags the missing
+      approval gate around it. SDK 7 deprecated needsApproval on tool() in
+      favor of toolApproval on generateText, streamText, or ToolLoopAgent;
+      existing code still works, but new code should migrate approval to the
+      call or agent level.
     fix: >
       Pass needsApproval: true to the tool() or dynamicTool() options for
-      tools that execute commands or run code, and handle the resulting
-      approval requests in your agent loop. SDK 7+ uses
-      toolApproval on generateText, streamText, or ToolLoopAgent, but this rule
-      cannot yet verify that call or agent-level setting. If approval is
-      intentionally automated for a trusted tool, gate the agent with input
-      validation and document the decision.
+      tools that execute commands or run code, and
+      handle the resulting approval requests in your agent loop. For SDK 7+,
+      prefer configuring toolApproval on generateText, streamText, or
+      ToolLoopAgent instead. If approval is intentionally automated for a
+      trusted tool, gate the agent with input validation and document the
+      decision.
