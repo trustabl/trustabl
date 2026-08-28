@@ -757,8 +757,10 @@ For each language recon cleared, do the AST work and produce a `RepoInventory`:
   `CodeExecutionTool` / `WebFetchTool` / `UrlContextTool` / `WebSearchTool` native
   tools under `capabilities=` / `builtin_tools=` (the modern `NativeTool(...)`
   wrapper unwrapped one level) are classified in `pydantic_ai_hosted_tools.go`
-  during `ResolveEdges`. PYD-104 (`force_download`), the bare-`tools=[fn]` ToolDef
-  shape, and the `RunContext` param-strip for PYD-002 are v1 gaps.
+  during `ResolveEdges`, with inner-constructor kwargs (e.g. `force_download`)
+  captured on the `HostedToolDef`. A file-level FileUrl-family walk stamps
+  `AgentDef.FileURLForceDownload` for PYD-104. The bare-`tools=[fn]` ToolDef
+  shape and the `RunContext` param-strip for PYD-002 remain v1 gaps.
 - **DiscoverTSVercelTools / DiscoverTSVercelAgents** (`ts_vercel_tools.go`,
   `ts_vercel_agents.go`, `ts_vercel_hosted_tools.go`) — TS Vercel AI SDK,
   import-gated to the bare `ai` core module (the disambiguator from the
