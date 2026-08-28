@@ -38,14 +38,14 @@ rules:
       not fire. This complements VAI-001 (subprocess) and VAI-002 (eval / new
       Function): those flag the dangerous call; VAI-013 flags the missing
       approval gate around it. SDK 7 deprecated needsApproval on tool() in
-      favor of toolApproval on generateText, streamText, or ToolLoopAgent;
-      existing code still works, but new code should migrate approval to the
-      call or agent level.
+      favor of toolApproval on generateText, streamText, or ToolLoopAgent.
+      This tool-scoped rule cannot verify that separate setting, so a finding
+      in SDK 7 code requires manual review.
     fix: >
       Pass needsApproval: true to the tool() or dynamicTool() options for
       tools that execute commands or run code, and
       handle the resulting approval requests in your agent loop. For SDK 7+,
-      prefer configuring toolApproval on generateText, streamText, or
-      ToolLoopAgent instead. If approval is intentionally automated for a
-      trusted tool, gate the agent with input validation and document the
-      decision.
+      configure toolApproval on generateText, streamText, or ToolLoopAgent;
+      this rule cannot verify that call or agent-level setting. If approval is
+      intentionally automated for a trusted tool, gate the agent with input
+      validation and document the decision.
