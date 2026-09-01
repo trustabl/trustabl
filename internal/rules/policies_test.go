@@ -2180,6 +2180,59 @@ var policyRepoRuleCases = []policyRepoCase{
 		},
 		false},
 
+	// ─── CSDK-205 acceptEdits with no tool deny-list (repo-scoped) ───────────
+	{"CSDK-205 fires when acceptEdits is set and no construction sets disallowed_tools", "CSDK-205",
+		models.RepoProfile{},
+		models.RepoInventory{
+			SDKsDetected:       []models.SDK{models.SDKClaudeAgentSDK},
+			ClaudeAgentOptions: []models.ClaudeAgentOptionsDef{optionsWithPermissionMode("acceptEdits")},
+		},
+		true},
+	{"CSDK-205 silent when a deny-list is set alongside acceptEdits", "CSDK-205",
+		models.RepoProfile{},
+		models.RepoInventory{
+			SDKsDetected:       []models.SDK{models.SDKClaudeAgentSDK},
+			ClaudeAgentOptions: []models.ClaudeAgentOptionsDef{optionsWithModeAndDisallowedTools("acceptEdits", "Bash")},
+		},
+		false},
+	{"CSDK-205 silent when permission_mode is default", "CSDK-205",
+		models.RepoProfile{},
+		models.RepoInventory{
+			SDKsDetected:       []models.SDK{models.SDKClaudeAgentSDK},
+			ClaudeAgentOptions: []models.ClaudeAgentOptionsDef{optionsWithPermissionMode("default")},
+		},
+		false},
+	// bypassPermissions is CSDK-202's rule to own — CSDK-205 only targets
+	// acceptEdits, so a bypassPermissions-only repo stays silent here even
+	// though it also has no disallowed_tools.
+	{"CSDK-205 silent when permission_mode is bypassPermissions (CSDK-202's rule, not this one)", "CSDK-205",
+		models.RepoProfile{},
+		models.RepoInventory{
+			SDKsDetected:       []models.SDK{models.SDKClaudeAgentSDK},
+			ClaudeAgentOptions: []models.ClaudeAgentOptionsDef{optionsWithPermissionMode("bypassPermissions")},
+		},
+		false},
+	// No ClaudeAgentOptions construction anywhere: nothing to flag.
+	{"CSDK-205 silent when repo has no ClaudeAgentOptions", "CSDK-205",
+		models.RepoProfile{},
+		models.RepoInventory{
+			SDKsDetected:       []models.SDK{models.SDKClaudeAgentSDK},
+			ClaudeAgentOptions: nil,
+		},
+		false},
+	// The only construction is Opaque: repo_claude_options_disallowed_tools_missing
+	// skips it (concrete == 0, so the predicate returns false), which makes the
+	// all: conjunction false regardless of the permission_mode read (which does
+	// NOT skip Opaque) — asymmetric skip rules between the two predicates still
+	// silence the combined rule.
+	{"CSDK-205 silent when the only ClaudeAgentOptions is opaque", "CSDK-205",
+		models.RepoProfile{},
+		models.RepoInventory{
+			SDKsDetected:       []models.SDK{models.SDKClaudeAgentSDK},
+			ClaudeAgentOptions: []models.ClaudeAgentOptionsDef{opaqueOptionsWithPermissionMode("acceptEdits")},
+		},
+		false},
+
 	// ─── CSDK-203 / ADK-201 / OAI-202 (team rules): SDK code but no agent doc ─
 	// repo_has_sdk_in_code reads inv.SDKsDetected; repo_component_present reads
 	// profile.Manifest.Components. Fire = SDK present AND neither an agents_md
@@ -2271,6 +2324,36 @@ func optionsWithMaxTurns(v string) models.ClaudeAgentOptionsDef {
 			},
 		},
 	}
+}
+
+// opaqueOptionsWithPermissionMode builds an Opaque ClaudeAgentOptionsDef whose
+// captured kwargs still contain permission_mode — mirroring a construction
+// built with ** unpacking that also passes an explicit permission_mode
+// alongside it. PredRepoClaudeOptionsPermissionModeIs does not skip Opaque
+// constructions (a presence/value check on captured kwargs is still
+// trustworthy), while repoClaudeOptionsMissingKwarg does (an absence check on
+// an opaque call's kwarg set is not evidence of a missing value) — this
+// asymmetry is what CSDK-205's opaque test case exercises.
+func opaqueOptionsWithPermissionMode(mode string) models.ClaudeAgentOptionsDef {
+	opt := optionsWithPermissionMode(mode)
+	opt.Opaque = true
+	return opt
+}
+
+// optionsWithModeAndDisallowedTools builds a ClaudeAgentOptionsDef whose
+// captured kwargs contain both permission_mode and disallowed_tools, mirroring
+// what DiscoverClaudeAgentOptions produces from
+// ClaudeAgentOptions(permission_mode="...", disallowed_tools=[...]).
+func optionsWithModeAndDisallowedTools(mode string, tools ...string) models.ClaudeAgentOptionsDef {
+	items := make([]models.Expr, 0, len(tools))
+	for _, t := range tools {
+		items = append(items, models.Expr{Kind: models.ExprLiteralString, Text: `"` + t + `"`})
+	}
+	opt := optionsWithPermissionMode(mode)
+	opt.Kwargs.Children["disallowed_tools"] = &models.KwargTree{
+		Value: &models.Expr{Kind: models.ExprList, List: items},
+	}
+	return opt
 }
 
 // policySubagentRuleCases covers subagent-scoped rules.
