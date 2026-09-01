@@ -79,14 +79,14 @@ item fell through classification and became an opaque External `ToolRef`
   `internal/rules/policies_test.go`; `TestPolicyRules_AllRulesCovered`
   passes. `go build ./...` and `go test ./...` are clean.
 
-**Known gap (per the three-repo model):** this change is in the engine
-fixture (`testdata/rules-fixture/`) only, per the scoped ask for this
-session. It is not yet mirrored into `trustabl-rules` (production) or
-given a rationale doc in `trustabl-rulebook`
-(`docs/Policy/google_adk/agent_safety.md`) — both sibling repos exist
-locally at `../trustabl-rules` and `../trustabl-rulebook`. Per
-`CLAUDE.md`'s sync obligation, ADK-111 is tested but not yet shipped to
-users; that mirroring + rationale-doc step is next before this can ship.
+**Known gap (per the three-repo model):** this change was initially
+scoped to the engine fixture only. It has since been mirrored into
+`trustabl-rules` (production) via
+[trustabl-rules#51](https://github.com/trustabl/trustabl-rules/pull/51)
+and given a rationale doc in `trustabl-rulebook`
+(`docs/Policy/google_adk/agent_safety.md`), so ADK-111 is fully
+shipped per `CLAUDE.md`'s sync obligation — engine, rules, and
+rulebook are all in sync.
 
 ## Class 1 — Claude SDK / OpenAI SDK: scoping only (not implemented)
 
