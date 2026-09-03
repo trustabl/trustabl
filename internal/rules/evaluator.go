@@ -120,6 +120,9 @@ func (e MatchExpr) EvaluateRepo(p models.RepoProfile, inv models.RepoInventory) 
 	if e.RepoClaudeOptionsMaxTurnsMissing != nil && PredRepoClaudeOptionsMaxTurnsMissing(inv) != *e.RepoClaudeOptionsMaxTurnsMissing {
 		return false
 	}
+	if e.RepoClaudeOptionsDisallowedToolsMissing != nil && PredRepoClaudeOptionsDisallowedToolsMissing(inv) != *e.RepoClaudeOptionsDisallowedToolsMissing {
+		return false
+	}
 	return true
 }
 
@@ -406,9 +409,10 @@ var predicatesByScope = map[models.Scope]map[string]bool{
 	models.ScopeRepo: {
 		"repo_has_sdk_in_code":   true,
 		"repo_component_present": true, "repo_uses_default_tracing": true,
-		"repo_claude_default_mode_is":            true,
-		"repo_claude_options_permission_mode_is": true,
-		"repo_claude_options_max_turns_missing":  true,
+		"repo_claude_default_mode_is":                  true,
+		"repo_claude_options_permission_mode_is":       true,
+		"repo_claude_options_max_turns_missing":        true,
+		"repo_claude_options_disallowed_tools_missing": true,
 	},
 }
 
@@ -486,6 +490,7 @@ func (e MatchExpr) setPredicateNames() []string {
 	add(len(e.RepoClaudeDefaultModeIs) > 0, "repo_claude_default_mode_is")
 	add(len(e.RepoClaudeOptionsPermissionModeIs) > 0, "repo_claude_options_permission_mode_is")
 	add(e.RepoClaudeOptionsMaxTurnsMissing != nil, "repo_claude_options_max_turns_missing")
+	add(e.RepoClaudeOptionsDisallowedToolsMissing != nil, "repo_claude_options_disallowed_tools_missing")
 	return n
 }
 

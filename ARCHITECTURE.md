@@ -595,8 +595,13 @@ For each language recon cleared, do the AST work and produce a `RepoInventory`:
   `RepoInventory.ClaudeAgentOptions`). This is the claude-agent-sdk session
   config object; its `permission_mode` is the in-code analogue of
   settings.json `defaultMode`, read by `repo_claude_options_permission_mode_is`
-  (CSDK-202). Its presence also marks the repo `claude_agent_sdk` so the pack
-  loads for options-only repos.
+  (CSDK-202). `max_turns` and `disallowed_tools` absence are both read via the
+  shared `repoClaudeOptionsMissingKwarg` helper — `repo_claude_options_max_turns_missing`
+  (CSDK-204) and `repo_claude_options_disallowed_tools_missing`, the latter
+  combined with a permissive `permission_mode` for CSDK-205. All kwargs are
+  captured generically onto `Kwargs`, so no discovery change was needed to add
+  the `disallowed_tools` reader. Its presence also marks the repo
+  `claude_agent_sdk` so the pack loads for options-only repos.
 - **DiscoverADKAgents** (`adk_agents.go`) — finds `LlmAgent(...)`,
   `SequentialAgent(...)`, `ParallelAgent(...)`, `LoopAgent(...)`,
   `LanggraphAgent(...)`, and the `Agent(...)` alias (normalized to `LlmAgent`
@@ -1058,6 +1063,8 @@ Shipped rules (one row per YAML rule entry):
 | CSDK-201 | repo     | claude_sdk | high     | `claude_sdk/repo.yaml`             | Project default permission mode bypasses approvals                                    |
 | CSDK-202 | repo     | claude_sdk | high     | `claude_sdk/repo.yaml`             | Session permission mode bypasses approvals                                            |
 | CSDK-203 | repo     | claude_sdk | low      | `claude_sdk/repo_hygiene.yaml`     | Claude Agent SDK code with no agent-guidance doc (AGENTS.md/CLAUDE.md)                |
+| CSDK-204 | repo     | claude_sdk | low      | `claude_sdk/repo.yaml`             | Claude Agent SDK session sets no explicit max_turns limit                             |
+| CSDK-205 | repo     | claude_sdk | medium   | `claude_sdk/repo.yaml`             | Claude Agent SDK session auto-approves edits with no tool deny-list                   |
 | CSDK-010 | tool     | claude_sdk | high     | `claude_sdk/shell_safety.yaml`     | TypeScript tool body spawns a subprocess (`language: typescript`)                     |
 | CSDK-011 | tool     | claude_sdk | high     | `claude_sdk/code_execution.yaml`   | TypeScript tool body calls eval / new Function on dynamic input                       |
 | CSDK-012 | tool     | claude_sdk | high     | `claude_sdk/path_safety.yaml`      | TypeScript tool writes to the filesystem                                               |
@@ -1565,7 +1572,10 @@ ClaudeSettings {
 ClaudeAgentOptionsDef {
     Location                          // file_path = .py path of the ClaudeAgentOptions(...) call
     Kwargs *KwargTree                 // captured constructor kwargs (in-memory; not serialized).
-                                      //   permission_mode read by repo_claude_options_permission_mode_is
+                                      //   permission_mode read by repo_claude_options_permission_mode_is;
+                                      //   max_turns / disallowed_tools absence read by
+                                      //   repo_claude_options_max_turns_missing /
+                                      //   repo_claude_options_disallowed_tools_missing
     Opaque bool                       // true when the call used **unpacking
 }
 

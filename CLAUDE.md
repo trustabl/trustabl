@@ -350,16 +350,22 @@ When changing a rule (add / remove / edit severity, confidence, match, text):
 6. Commit and push the rules repo **and** the rulebook (the user pushes engine
    commits manually; confirm before pushing any of the three).
 
-> **Rulebook status (2026-08-12):** the fixture and production both carry
-> **204** rules across ten SDK categories (`autogen`, `claude_sdk`,
+> **Rulebook status (2026-09-01):** the fixture and production both carry
+> **208** rules across ten SDK categories (`autogen`, `claude_sdk`,
 > `claude_skill`, `crewai`, `google_adk`, `langchain`, `mcp`, `openai_sdk`,
-> `pydantic_ai`, `vercel_ai`) — in sync as of the `claude_skill` reconciliation
-> that added `skill_quality_text.yaml` (CSKILL-080..086) to the fixture and
-> dropped the fixture-only CSKILL-062..064 test artifacts. Known gap: CSKILL-
-> 080..086 ship in production with no paired rationale doc in
-> `trustabl-rulebook/docs/Policy/claude_skill/` (only `skill_safety.md`
-> exists there) — `check_rulebook.py` should be failing on this and needs a
-> `skill_quality_text.md` doc to close it.
+> `pydantic_ai`, `vercel_ai`) — in sync as of CSDK-205 (Claude SDK repo-scope:
+> `acceptEdits` with no `disallowed_tools` deny-list), which closes the Claude
+> SDK half of Class 1 in `docs/decisions/tool-allowlist-scope.md`. The
+> previously-noted CSKILL-080..086 rationale-doc gap has since been closed
+> (`trustabl-rulebook/docs/Policy/claude_skill/skill_quality_text.md` now
+> exists); `check_rulebook.py` reports 0 warnings against the current pack.
+> The count also grew by ADK-111 (`MCPToolset` with no `tool_filter`, Class 2
+> of the same tool-allowlist-scope decision) and the OpenAI/Pydantic AI
+> agent-run-call execution-limit rules landing since the 204 figure was last
+> recorded here — this note had drifted 3 rules behind actual production
+> before this update; re-derive the count from
+> `grep -rhoE '^\s*-\s*id:\s*\S+' testdata/rules-fixture/*/*.yaml | wc -l`
+> rather than trusting this note indefinitely.
 
 The rule-authoring contract (required fields, ID conventions, per-scope
 `applies_to` values, framing discipline) lives in

@@ -496,3 +496,13 @@ rules:
 #       untrustworthy, so their silence isn't evidence of a missing cap. A repo
 #       with zero ClaudeAgentOptions constructions never fires. Used by
 #       CSDK-204.
+#   repo_claude_options_disallowed_tools_missing: true | false
+#       Fires when the repo has at least one non-opaque ClaudeAgentOptions(...)
+#       construction and NONE of them set disallowed_tools. Reads
+#       RepoInventory.ClaudeAgentOptions[].Kwargs (disallowed_tools) via the
+#       same lookup and Opaque-skip rules as
+#       repo_claude_options_max_turns_missing. A repo with zero
+#       ClaudeAgentOptions constructions never fires. Note: a construction that
+#       sets disallowed_tools=[] or disallowed_tools=None still counts as "set"
+#       — the presence check only requires a non-nil Value, the same tri-state
+#       gap max_turns=None already has. Used by CSDK-205.

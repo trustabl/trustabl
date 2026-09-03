@@ -1155,24 +1155,47 @@ func PredRepoClaudeOptionsPermissionModeIs(modes []string, inv models.RepoInvent
 	return false
 }
 
-// PredRepoClaudeOptionsMaxTurnsMissing fires when the repo constructs at least
-// one ClaudeAgentOptions(...) and NO such construction sets max_turns. This is
-// an absence check across every construction, not a per-call value match: a
-// single options object that sets an explicit cap silences the rule for the
-// repo. Constructions marked Opaque (built with ** unpacking) are skipped —
-// their kwarg set is untrustworthy, so their silence is not evidence of a
-// missing cap. A repo with no ClaudeAgentOptions at all never fires: there is
-// no session config to flag.
-func PredRepoClaudeOptionsMaxTurnsMissing(inv models.RepoInventory) bool {
+// repoClaudeOptionsMissingKwarg fires when the repo constructs at least one
+// ClaudeAgentOptions(...) and NO such construction sets kwarg. This is an
+// absence check across every construction, not a per-call value match: a
+// single options object that sets the kwarg silences the rule for the repo.
+// Constructions marked Opaque (built with ** unpacking) are skipped — their
+// kwarg set is untrustworthy, so their silence is not evidence of a missing
+// value. A repo with no ClaudeAgentOptions at all never fires: there is no
+// session config to flag. Shared by PredRepoClaudeOptionsMaxTurnsMissing and
+// PredRepoClaudeOptionsDisallowedToolsMissing — mirrors the shape
+// agentRunCallMissingKwarg uses for the agent-run-call family.
+func repoClaudeOptionsMissingKwarg(inv models.RepoInventory, kwarg string) bool {
 	concrete := 0
 	for _, opt := range inv.ClaudeAgentOptions {
 		if opt.Opaque {
 			continue
 		}
 		concrete++
-		if node := lookupKwargInTree(opt.Kwargs, "max_turns"); node != nil && node.Value != nil {
+		if node := lookupKwargInTree(opt.Kwargs, kwarg); node != nil && node.Value != nil {
 			return false
 		}
 	}
 	return concrete > 0
+}
+
+// PredRepoClaudeOptionsMaxTurnsMissing fires when the repo constructs at least
+// one ClaudeAgentOptions(...) and NO such construction sets max_turns. See
+// repoClaudeOptionsMissingKwarg for the absence-check and Opaque-skip rules.
+func PredRepoClaudeOptionsMaxTurnsMissing(inv models.RepoInventory) bool {
+	return repoClaudeOptionsMissingKwarg(inv, "max_turns")
+}
+
+// PredRepoClaudeOptionsDisallowedToolsMissing fires when the repo constructs
+// at least one ClaudeAgentOptions(...) and NO such construction sets
+// disallowed_tools. Claude SDK's allowed_tools only auto-approves — it does
+// not restrict which tools can run — so the risk signal is the absence of a
+// deny-list, not an empty allow-list. See repoClaudeOptionsMissingKwarg for
+// the absence-check and Opaque-skip rules. Note: a construction that sets
+// disallowed_tools=[] (empty list) or disallowed_tools=None still counts as
+// "set" here, since the presence check only requires a non-nil Value — this
+// mirrors the same tri-state limitation PredRepoClaudeOptionsMaxTurnsMissing
+// already has for max_turns=None.
+func PredRepoClaudeOptionsDisallowedToolsMissing(inv models.RepoInventory) bool {
+	return repoClaudeOptionsMissingKwarg(inv, "disallowed_tools")
 }

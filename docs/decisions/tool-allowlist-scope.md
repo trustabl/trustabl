@@ -4,11 +4,12 @@ This closes out the design blocker on detecting agents with missing or
 overly-broad tool access control. Investigation split the supported SDKs
 into three behavior classes, because "empty allow-list" does not mean the
 same thing in each one. This doc records the LangChain decision (not
-applicable) and scopes the Claude SDK / OpenAI SDK work (not yet
-implemented). Google ADK is the one class that shipped as a real rule —
-see [ADK-111](../../testdata/rules-fixture/google_adk/agent_safety.yaml) —
-because ADK is the one SDK where an explicit allow-list genuinely narrows an
-otherwise-unbounded tool surface.
+applicable), scopes and partially ships the Claude SDK / OpenAI SDK work
+(Class 1), and records Google ADK, the one class that shipped as a real rule
+first — see [ADK-111](../../testdata/rules-fixture/google_adk/agent_safety.yaml)
+— because ADK is the one SDK where an explicit allow-list genuinely narrows an
+otherwise-unbounded tool surface. Claude SDK's repo-scope half of Class 1
+shipped next, as **CSDK-205** — see below.
 
 ## Class 3 — LangChain: no permission-model concept (not applicable)
 
@@ -88,24 +89,74 @@ and given a rationale doc in `trustabl-rulebook`
 shipped per `CLAUDE.md`'s sync obligation — engine, rules, and
 rulebook are all in sync.
 
-## Class 1 — Claude SDK / OpenAI SDK: scoping only (not implemented)
+## Class 1 — Claude SDK / OpenAI SDK
 
-Per instruction, no predicate or rule was written for this class this
-session. What follows is what's confirmed present vs. missing, and the
-smallest concrete change that would make the "no `disallowed_tools` AND a
-permissive/bypassing `permission_mode`" signal detectable.
+Claude SDK repo-scope: **shipped as CSDK-205.** Claude SDK agent-scope and the
+OpenAI Agents SDK half remain not implemented — see below for each.
 
-### Claude SDK: closer than expected — mostly already wired
+### Claude SDK repo-scope: shipped (CSDK-205)
+
+`ClaudeAgentOptionsDef` (`internal/models/agent.go`) already captured every
+constructor kwarg generically onto a single `Kwargs *KwargTree` — so
+`disallowed_tools` was structurally present in the data whenever source set
+it, and no discovery change was needed. `internal/rules/predicates.go`
+previously exposed only two repo-scope readers of that struct:
+`PredRepoClaudeOptionsPermissionModeIs` (value check on `permission_mode`)
+and `PredRepoClaudeOptionsMaxTurnsMissing` (absence check, hardcoded to the
+`max_turns` kwarg name).
+
+Delivered:
+
+- Generalized `PredRepoClaudeOptionsMaxTurnsMissing`'s body into a shared
+  helper, `repoClaudeOptionsMissingKwarg(inv, kwarg string)`
+  (`internal/rules/predicates.go`) — the same shape `agentRunCallMissingKwarg`
+  uses for the agent-run-call family. `PredRepoClaudeOptionsMaxTurnsMissing`'s
+  observable behavior is unchanged; `PredRepoClaudeOptionsDisallowedToolsMissing`
+  is the new reader built on the same helper.
+- The standard four-file schema change (`schema.go` + `predicates.go` +
+  `evaluator.go` + `schema.yaml`), plus a `schema_version` bump (14 → 15) in
+  the fixture and `trustabl-rules` manifests.
+- Rule **CSDK-205** in `claude_sdk/repo.yaml` (fixture and production, both
+  synced), severity medium / confidence 0.7:
+  `repo_claude_options_permission_mode_is: [acceptEdits]` combined (`all:`)
+  with `repo_claude_options_disallowed_tools_missing: true`. The mode list is
+  `acceptEdits` only, deliberately excluding `bypassPermissions` — CSDK-202
+  already owns that value at high/0.9, and including it here would make every
+  tripping repo report twice on the same `ClaudeAgentOptions(...)` call.
+  `acceptEdits` is the genuinely uncovered surface: file edits auto-approve,
+  and `allowed_tools` only auto-approves rather than restricts, so with no
+  `disallowed_tools` deny-list nothing bounds the rest of the tool surface.
+- Fire/silent cases in `policyRepoRuleCases`
+  (`internal/rules/policies_test.go`), including a case exercising the
+  asymmetric Opaque-skip between the two combined predicates (permission_mode
+  reads Opaque constructions; the missing-kwarg helper skips them).
+- Rationale doc updated: `../trustabl-rulebook/docs/Policy/claude_sdk/repo.md`
+  gained a CSDK-205 rule-by-rule defense block, and its "what this policy
+  does not cover" section — which previously said `acceptEdits` was
+  deliberately not flagged — was corrected to say only *bare* `acceptEdits`
+  (with a deny-list present) goes unflagged.
+
+**Known gap carried forward, not fixed:** the presence check underlying
+`repoClaudeOptionsMissingKwarg` only requires `node.Value != nil`, so
+`disallowed_tools=[]` (empty list) and `disallowed_tools=None` both read as
+"set" and silence CSDK-205 — the same tri-state gap `max_turns=None` already
+had for CSDK-204. Documented in the rulebook's confidence-gap section rather
+than fixed, since tightening it would also change CSDK-204's long-shipped
+behavior.
+
+### Claude SDK agent-scope: scoped, not yet built
 
 There are two separate places `permission_mode` / `disallowed_tools` can
-appear in a Claude SDK codebase, and they're captured very differently:
+appear in a Claude SDK codebase; the repo-scope one (`ClaudeAgentOptions(...)`
+session config) is now covered by CSDK-205 above. The agent-scope one remains
+scoped but unbuilt:
 
-**1. Agent-scope (`AgentDefinition(...)` in Python, or a `query(...)`
-main-agent's inline `options` in TS).** These constructors' kwargs land on
-`AgentDef.Kwargs` generically, via the same `extractCallKwargs` mechanism
-every other SDK's kwargs go through (`internal/analysis/agents.go`). This
-is confirmed already exercised: `testdata/rules-fixture/claude_sdk/agent_safety.yaml`
-already has a rule matching
+**`AgentDefinition(...)` in Python, or a `query(...)` main-agent's inline
+`options` in TS.** These constructors' kwargs land on `AgentDef.Kwargs`
+generically, via the same `extractCallKwargs` mechanism every other SDK's
+kwargs go through (`internal/analysis/agents.go`). This is confirmed already
+exercised: `testdata/rules-fixture/claude_sdk/agent_safety.yaml` already has
+a rule matching
 `agent_kwarg_value: {kwarg: permissionMode, value: bypassPermissions}`,
 and separate rules already read `agent_grants_builtin_tool` against
 `options.allowedTools` directly. For the TS `query(...)` main agent
@@ -115,44 +166,22 @@ options object as a nested `KwargTree` when options are inline
 `options.permissionMode` and `options.disallowedTools` are reachable via
 dotted-path lookup the same way.
 
-**This means the Class-1 agent-scope rule needs no new discovery or
-schema field.** It's buildable today, purely as a new rule, from the
-already-existing generic predicates:
+**This means the agent-scope rule needs no new discovery or schema field.**
+It's buildable today, purely as a new rule, from the already-existing generic
+predicates:
 
 ```yaml
 match:
   all:
-    - agent_kwarg_value: {kwarg: permissionMode, value: bypassPermissions}  # or the accept-edits mode, whichever counts as "permissive" — needs a product decision on the exact mode list
+    - agent_kwarg_value: {kwarg: permissionMode, value: acceptEdits}  # not bypassPermissions — mirror the CSDK-205 reasoning: that value already has its own rule
     - agent_kwarg_missing: [disallowedTools]
 ```
 
 (Python `AgentDefinition` would use `permission_mode`/`disallowed_tools`;
-same combinator, different kwarg spelling.)
-
-**2. Repo-scope (`ClaudeAgentOptions(...)` session config, not an
-agent).** `internal/analysis/claude_agent_options.go`'s
-`DiscoverClaudeAgentOptions` also captures every kwarg generically onto
-`ClaudeAgentOptionsDef.Kwargs` — so `disallowed_tools` is structurally
-present in the data today whenever the source sets it. But
-`internal/rules/predicates.go` currently exposes only two repo-scope
-readers of that struct: `PredRepoClaudeOptionsPermissionModeIs` (value
-check on `permission_mode`) and `PredRepoClaudeOptionsMaxTurnsMissing`
-(absence check, but hardcoded to the `max_turns` kwarg name). **There is
-no existing predicate reading `disallowed_tools` absence at repo scope.**
-
-The smallest fix: a new repo-scope predicate mirroring
-`PredRepoClaudeOptionsMaxTurnsMissing`'s exact shape
-(`internal/rules/predicates.go:1158-1176` — skip `Opaque` constructions,
-fire only if at least one concrete `ClaudeAgentOptions(...)` exists and
-none set the kwarg), parameterized on `disallowed_tools` instead of
-`max_turns` — or, better, generalize `PredRepoClaudeOptionsMaxTurnsMissing`
-into a `repoClaudeOptionsMissingKwarg(inv, kwarg string)` helper (the same
-shape `agentRunCallMissingKwarg` already uses for the agent-run-call
-family) so both `max_turns` and `disallowed_tools` share one
-implementation. That's the standard four-file schema change
-(`schema.go` + `predicates.go` + `evaluator.go` + `schema.yaml`) the
-fixture's `CLAUDE.md` documents, plus a `schema_version` bump in both the
-fixture and `trustabl-rules` manifests.
+same combinator, different kwarg spelling.) This is a separate rule from
+CSDK-205, not a mirror of it — an agent's own `AgentDefinition(...)` posture
+and the session-level `ClaudeAgentOptions(...)` posture are two distinct
+constructs that can disagree within the same repo.
 
 ### OpenAI Agents SDK: not actually scoped yet — needs its own investigation
 

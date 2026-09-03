@@ -84,3 +84,35 @@ rules:
       surface and handle rather than to raise it: if a task legitimately
       needs many turns, split it into bounded sub-sessions instead of
       removing the bound.
+
+  - id: CSDK-205
+    title: Claude Agent SDK session auto-approves edits with no tool deny-list
+    severity: medium
+    confidence: 0.7
+    applies_to:
+      - claude_sdk
+    scope: repo
+    match:
+      all:
+        - repo_claude_options_permission_mode_is:
+            - acceptEdits
+        - repo_claude_options_disallowed_tools_missing: true
+    explanation: >
+      A ClaudeAgentOptions(...) in this project sets permission_mode to
+      "acceptEdits", which auto-approves file writes and edits without a
+      prompt, and no construction in the project sets disallowed_tools. Claude
+      SDK's allowed_tools only auto-approves listed tools — it does not
+      restrict which tools can run, so an unlisted tool still executes,
+      falling back to whatever the current permission_mode allows. With
+      acceptEdits already removing the approval step for Write/Edit and no
+      deny-list to bound the rest of the tool surface, a prompt-injected or
+      mistaken model action can reach shell commands, network fetches, or any
+      other tool the session can see, with nothing short of a human noticing
+      to stop it.
+    fix: >
+      Pass disallowed_tools= to ClaudeAgentOptions(...), naming the tools this
+      session must never call — at minimum shell execution and any tool that
+      reaches the network or credentials. Keep acceptEdits if auto-approving
+      file edits is intentional, but pair it with an explicit deny-list so the
+      rest of the tool surface stays gated, or drop back to permission_mode
+      "default" if edits should prompt too.
