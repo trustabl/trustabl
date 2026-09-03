@@ -154,28 +154,133 @@ implementation. That's the standard four-file schema change
 fixture's `CLAUDE.md` documents, plus a `schema_version` bump in both the
 fixture and `trustabl-rules` manifests.
 
-### OpenAI Agents SDK: not actually scoped yet — needs its own investigation
+### OpenAI Agents SDK: researched — mis-filed as Class 1, real mechanisms are Class-2-shaped
 
-This is the part of Class 1 that is genuinely unresearched, not just
-unimplemented. A grep across every OpenAI-touching discovery file
-(`internal/analysis/agents.go`, `agent_run_calls.go`, `hosted_tools.go`,
-`ts_openai_agents.go`, `ts_openai_hosted_tools.go`, `mcp_servers.go`,
-`ts_openai_mcp_servers.go`) for `needs_approval|tool_use_behavior|
-RunConfig|approval` finds exactly one relevant hit: `needs_approval` as a
-**per-hosted-tool** kwarg (`ShellTool(needs_approval=False)`,
-`LocalShellTool`, `CodeInterpreterTool`, `ApplyPatchTool` — already
-covered by the shipped rule OAI-111). There is no discovered concept in
-this codebase resembling a session- or agent-level `permission_mode` or
-`disallowed_tools` for the OpenAI Agents SDK — nothing analogous to
-`ClaudeAgentOptions` exists in the inventory today.
+The prior session's grep of this codebase's own discovery files found only
+per-tool `needs_approval` (OAI-111) and correctly flagged the OpenAI half as
+genuinely unresearched rather than guessing. This session read the actual
+`openai-agents-python` / `openai-agents-js` source and docs (not just how
+other SDKs work) to close that gap. Verdict: **a session/run-level
+permission model is confirmed absent, for an architectural reason** — but
+**two real registry-wide allow-list mechanisms exist**, missed by the
+earlier grep because they're keyed on `tool_filter` / `allowed_tools`, not
+`permission_mode` / `disallowed_tools` / `RunConfig`. Both are closer in
+shape to ADK's `MCPToolset(tool_filter=)` (Class 2) than to Claude's session
+config (Class 1) — the original three-class grouping mis-filed OpenAI.
 
-Before proposing fields for this half, the open question is whether the
-`openai-agents` SDK itself has a real mechanism matching the "auto-approve
-list that doesn't restrict" shape at all (a `RunConfig`-level approval
-hook is the most likely candidate, `Runner.run(..., hooks=...)` or
-similar), or whether the original Class 1 grouping conflated OpenAI's
-per-tool `needs_approval` (already handled by OAI-111) with a session-wide
-concept that doesn't exist in this SDK. That's a scoping question for the
-next session, not a "smallest fix" like the Claude SDK half above — it
-needs the same kind of `openai-agents` source reading that grounded the
-ADK `MCPToolset` finding here, before any schema work is proposed.
+**Confirmed absent: no run-level or session-level permission model.**
+`RunConfig` (`src/agents/run_config.py`, all 25 fields read directly) has no
+`allowed_tools`, `disallowed_tools`, or `permission_mode` — its only
+tool-adjacent fields (`tool_error_formatter`, `tool_not_found_behavior`,
+`tool_name_collision_policy`, `tool_execution: ToolExecutionConfig`) are
+execution/error-shaping knobs, not authorization. `Runner.run` /
+`run_sync` / `run_streamed` take no permission parameter. And the
+`Runner.run(..., hooks=...)` approval-hook this doc previously hypothesized
+as the most likely candidate **does not exist**: `RunHooks.on_tool_start`
+and `on_tool_end` (`src/agents/lifecycle.py`) both return `None` — they are
+observational, with no way to veto or filter a tool call. That earlier
+guess is retracted here.
+
+The architectural reason: an OpenAI agent starts with **zero** tools, and
+`Agent(tools=[...])` is the complete, enumerable surface — the same
+situation this doc already reasoned through for LangChain (Class 3) and
+for ADK's plain `tools=`. Claude's `allowed_tools` / `permission_mode`
+exist only because a Claude session starts with a broad built-in tool set
+already available to narrow. OpenAI has no such implicit default, so
+"absent `tools=`" is the *most* restrictive state, not the least, and OAI's
+per-tool `needs_approval` is not the tip of a session-wide iceberg — it's
+the whole per-tool story.
+
+**Real mechanism 1 — MCP server `tool_filter`.** `src/agents/mcp/util.py`
+defines `ToolFilterStatic{allowed_tool_names, blocked_tool_names}`;
+`ToolFilter = ToolFilterCallable | ToolFilterStatic | None`, and when
+`None`, **no filtering occurs — the agent gets every tool the remote MCP
+server currently exposes**, not enumerable from source, able to grow when
+the server changes. `create_static_tool_filter(...)` returns `None` when
+both lists are `None`. Used as
+`MCPServerStdio(params={...}, tool_filter=create_static_tool_filter(
+allowed_tool_names=[...]))`. TS confirms the same shape:
+`MCPServerStdio({ toolFilter })` + `createMCPToolStaticFilter({ allowed,
+blocked })` (`MCPToolFilterStatic`). This is structurally identical to
+ADK-111's `MCPToolset(tool_filter=)` — "absent = unbounded, risky" is
+unambiguous.
+
+Discovery gap: **Python discards it.** `classifyMCPServerCall`
+(`internal/analysis/mcp_servers.go:33-58`) has an explicit comment —
+*"Kwargs intentionally not captured at v1"* — leaving `MCPServerDef.Kwargs`
+nil even though the field exists (`internal/models/agent.go:141`). **TS
+already captures it** (`ts_openai_mcp_servers.go:82`,
+`def.Kwargs = astutil.TSObjectKwargs(...)`). But no predicate anywhere
+reads `MCPServerDef` at all — a grep of `internal/rules/predicates.go` for
+`MCPServer`/`mcp_server` returns zero hits; the existing OAI-106 only reads
+the agent's generic `mcp_servers` kwarg presence, never the resolved
+`MCPServerDef`s. This needs **both** a discovery change (populate Python
+`MCPServerDef.Kwargs`, same move as ADK-111's `Expr.CallKwargs` → queryable
+struct) **and** a new MCP-server-scoped predicate family — the standard
+four-file schema change plus a `schema_version` bump in both the fixture
+and `trustabl-rules`. Not a rules-only change.
+
+**Real mechanism 2 — `HostedMCPTool.tool_config.allowed_tools`.**
+`HostedMCPTool` (`src/agents/tool.py`) wraps `tool_config: Mcp`, a raw
+pass-through of the Responses API `Mcp` TypedDict
+(`openai/types/responses/tool_param.py`). `allowed_tools:
+Optional[McpAllowedTools]` — *"List of allowed tool names or a filter
+object"* — bounds which tools of the remote server the model can see, and
+is orthogonal to `require_approval` (which only gates human confirmation).
+Absent `allowed_tools` = the model gets the server's entire catalogue —
+same "risky absence" shape as mechanism 1, but for the *hosted* MCP path.
+
+Unlike mechanism 1, **this one is reachable in Python with zero engine
+changes**: `HostedMCPTool` is already in `HostedToolClasses`
+(`internal/analysis/hosted_tools.go:17`); Python dict literals already
+recurse into nested `KwargTree` children
+(`internal/analysis/agents.go:750`, `dictChildren`), so
+`tool_config={"allowed_tools": [...]}` is already a reachable leaf; and
+`HostedToolKwargExpr.Kwarg` is documented dotted-path-capable
+(`internal/rules/schema.go:141`), resolved by the existing
+`PredAgentHostedToolKwargPresent` (`internal/rules/predicates.go:735-745`).
+A rule of the ADK-111 shape — `agent_uses_hosted_tool_class:
+[HostedMCPTool]` combined with `not: agent_hosted_tool_kwarg_present:
+{class: HostedMCPTool, kwarg: tool_config.allowed_tools}` — is buildable
+today as a **rules-only change**, no schema/predicate/evaluator work, no
+`schema_version` bump. This is the cheapest available win of the three
+candidates here. TS caveat: `classifyTSOpenAIHostedFactoryCall`
+(`internal/analysis/ts_openai_hosted_tools.go:41-65`) never sets `Kwargs`
+at all, so `hostedMcpTool({...})`'s options are invisible on the TS path
+until that's added — such a rule would ship Python-only at first.
+
+**The absent-semantic nuance (OpenAI's version of Claude's
+auto-approve-vs-restrict trap):** `require_approval` on `HostedMCPTool`
+diverges *by language* for an identical source-level omission:
+
+- **TypeScript**: `hostedMcpTool()` (`packages/agents-core/src/tool.ts`)
+  injects `require_approval: 'never'` when the option is omitted — stated
+  directly in source and restated in the official JS MCP guide
+  ("`requireApproval` … Defaults to `'never'`"). Omission is **risky**.
+- **Python**: `tool_config` is passed through raw with no default
+  injection by the SDK, so omission falls through to the Responses API's
+  platform default, which OpenAI's API guide states in prose as
+  approval-required ("By default, OpenAI will request your approval before
+  any data is shared with a connector or remote MCP server"). Omission is
+  **safe** — but this is a *platform* default stated in docs, not pinned by
+  any quotable line of SDK source, and is therefore weaker evidence than
+  the TS finding and subject to change server-side without an SDK version
+  bump. Any future rule on `require_approval` must be language-gated (two
+  rules, per `CLAUDE.md`'s SDK-scoped-rules discipline) — and should be
+  scoped to TS first, where the default is verifiable in code.
+
+| Construct | Absent means | Semantic |
+|---|---|---|
+| `Agent(tools=[...])` | zero tools | safe — no rule (same as LangChain / plain ADK `tools=`) |
+| MCP `tool_filter` / `toolFilter` | server's full catalogue | risky — ADK-111 shape (mechanism 1) |
+| `HostedMCPTool.tool_config.allowed_tools` | server's full catalogue | risky — ADK-111 shape (mechanism 2) |
+| `HostedMCPTool.tool_config.require_approval` | TS: never-approve; Python: platform default approve | risky in TS, safe in Python — language-gated |
+| `function_tool(needs_approval=)` | `False` | risky — already shipped as OAI-111 |
+| `function_tool(is_enabled=)` | `True` | not a security gate — dynamic enablement, ignore |
+
+**Not implemented this session** (research-only, per instruction). Next
+session can pick up directly, in cost order: (1) `HostedMCPTool`
+`allowed_tools` rule — rules-only; (2) TS hosted-tool kwarg capture, which
+unblocks both the TS `allowedTools` rule and the TS `require_approval:
+'never'` rule; (3) MCP `tool_filter` — discovery + new predicate family +
+schema bump.
