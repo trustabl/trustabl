@@ -2972,6 +2972,67 @@ var policyAgentRuleCases = []policyAgentCase{
 		models.RepoInventory{},
 		false},
 
+	// ─── OAI-115 HostedMCPTool without tool_config.allowed_tools (E1 hosted-kwarg) ─
+	{"OAI-115 fires when tool_config has no allowed_tools", "OAI-115",
+		models.AgentDef{
+			SDK:      models.SDKOpenAIAgents,
+			Class:    "Agent",
+			Language: models.LanguagePython,
+			HostedToolRefs: []models.HostedToolRef{
+				{Class: "HostedMCPTool", Resolved: &models.HostedToolDef{Class: "HostedMCPTool",
+					Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+						"tool_config": {Children: map[string]*models.KwargTree{
+							"server_label": {Value: &models.Expr{Kind: models.ExprLiteralString, Text: `"deepwiki"`}},
+							"server_url":   {Value: &models.Expr{Kind: models.ExprLiteralString, Text: `"https://mcp.deepwiki.com/mcp"`}},
+						}},
+					}}}},
+			},
+		},
+		models.RepoInventory{},
+		true},
+	{"OAI-115 fires when HostedMCPTool has no kwargs at all", "OAI-115",
+		models.AgentDef{
+			SDK:      models.SDKOpenAIAgents,
+			Class:    "Agent",
+			Language: models.LanguagePython,
+			HostedToolRefs: []models.HostedToolRef{
+				{Class: "HostedMCPTool", Resolved: &models.HostedToolDef{Class: "HostedMCPTool"}},
+			},
+		},
+		models.RepoInventory{},
+		true},
+	{"OAI-115 silent when tool_config sets allowed_tools", "OAI-115",
+		models.AgentDef{
+			SDK:      models.SDKOpenAIAgents,
+			Class:    "Agent",
+			Language: models.LanguagePython,
+			HostedToolRefs: []models.HostedToolRef{
+				{Class: "HostedMCPTool", Resolved: &models.HostedToolDef{Class: "HostedMCPTool",
+					Kwargs: &models.KwargTree{Children: map[string]*models.KwargTree{
+						"tool_config": {Children: map[string]*models.KwargTree{
+							"server_label":  {Value: &models.Expr{Kind: models.ExprLiteralString, Text: `"deepwiki"`}},
+							"allowed_tools": {Value: &models.Expr{Kind: models.ExprList, List: []models.Expr{{Kind: models.ExprLiteralString, Text: `"ask_question"`}}}},
+						}},
+					}}}},
+			},
+		},
+		models.RepoInventory{},
+		false},
+	// An agent with no HostedMCPTool at all is out of scope for this rule —
+	// nothing to restrict, so it must not fire just because allowed_tools is
+	// absent.
+	{"OAI-115 silent when agent has no HostedMCPTool", "OAI-115",
+		models.AgentDef{
+			SDK:      models.SDKOpenAIAgents,
+			Class:    "Agent",
+			Language: models.LanguagePython,
+			HostedToolRefs: []models.HostedToolRef{
+				{Class: "WebSearchTool", Resolved: &models.HostedToolDef{Class: "WebSearchTool"}},
+			},
+		},
+		models.RepoInventory{},
+		false},
+
 	// ─── CSDK-101 Claude subagent granted Bash ────────────────────────────────
 	{"CSDK-101 fires when AgentDefinition grants Bash", "CSDK-101",
 		models.AgentDef{

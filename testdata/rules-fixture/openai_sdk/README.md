@@ -18,5 +18,5 @@ This pack is calibrated against the OpenAI Agents SDK as documented at the URL a
 - `shell_safety.yaml` — OAI-012 (subprocess spawn)
 - `code_execution.yaml` — OAI-013 (eval/exec/compile on dynamic input)
 - `agent_safety.yaml` — OAI-101 (no input_guardrails + shell tools), OAI-102 (stop_on_first_tool), OAI-103 (loop pattern), OAI-104 (raw Agent + FS tools), OAI-109 (WebSearchTool without input_guardrails)
-- `mcp_safety.yaml` — OAI-106 (mcp_servers + no input_guardrails)
+- `mcp_safety.yaml` — OAI-106 (mcp_servers + no input_guardrails), OAI-115 (HostedMCPTool with no tool_config.allowed_tools)
 - `tracing.yaml` — OAI-201 (default tracing in use)
