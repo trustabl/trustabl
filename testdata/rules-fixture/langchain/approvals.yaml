@@ -1,0 +1,44 @@
+policy:
+  id: langchain_approvals
+  name: LangChain tool approval gates
+  category: langchain
+  description: >
+    Rules covering explicit human-review prerequisites around
+    high-impact LangChain agent tool calls.
+
+rules:
+  - id: LC-103
+    title: Dangerous LangChain create_agent lacks a resumable human-review gate
+    severity: high
+    confidence: 0.65
+    language: python
+    applies_to:
+      - langchain_agent
+    scope: agent
+    match:
+      all:
+        - agent_class:
+            - CreateAgent
+        - agent_uses_hosted_tool_class:
+            - PythonREPLTool
+            - PythonAstREPLTool
+            - ShellTool
+        - any:
+            - agent_kwarg_list_empty:
+                - middleware
+            - agent_kwarg_missing:
+                - checkpointer
+    explanation: >
+      This LangChain create_agent wires a Python or shell execution tool but
+      lacks one or more visible prerequisites for LangChain's resumable
+      human-review flow: a non-empty middleware configuration and an effective
+      checkpointer. Without a visible pause/review boundary, model-selected
+      Python or shell actions may proceed directly to execution. This is a
+      structural static-analysis signal only: middleware presence does not prove
+      that HumanInTheLoopMiddleware is configured, that interrupt_on covers the
+      dangerous tool, or that a human meaningfully reviews the requested action.
+    fix: >
+      Configure HumanInTheLoopMiddleware with an interrupt_on policy covering
+      each high-impact execution tool, and configure a checkpointer so the
+      agent can pause and resume around the human decision. Pair approval with
+      sandboxing, least privilege, restricted credentials, and execution timeouts.
